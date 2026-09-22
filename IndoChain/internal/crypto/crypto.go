@@ -1,6 +1,6 @@
 package crypto
 
-import "github.com/DesKaOne/DesKaEcosystem/internal/core/types"
+import "github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/types"
 
 type Hasher interface {
 	Hash(data []byte) types.Hash

@@ -3,7 +3,7 @@ package transaction
 import (
 	"crypto/sha256"
 
-	"github.com/DesKaOne/DesKaEcosystem/internal/core/types"
+	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/types"
 )
 
 func Hash(tx Transaction) types.Hash {
