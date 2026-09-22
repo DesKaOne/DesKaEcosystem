@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/DesKaOne/DesKaEcosystem/DesKaCash/backend/internal/ledger"
+	"github.com/jackc/pgx/v5"
 )
 
 var ErrDuplicate = errors.New("duplicate record")
@@ -142,5 +143,14 @@ func mapDBError(err error) error {
 	if err == nil {
 		return nil
 	}
+
+	var pgErr *pgx.PgError
+	if errors.As(err, &pgErr) {
+		switch pgErr.Code {
+		case "23505":
+			return ErrDuplicate
+		}
+	}
+
 	return fmt.Errorf("postgres: %w", err)
 }
