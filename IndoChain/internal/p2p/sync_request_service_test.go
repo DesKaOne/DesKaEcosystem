@@ -38,8 +38,11 @@ func TestSyncRequestServiceDelegatesToHandler(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(resp.Blocks) != 0 {
-		t.Fatalf("expected empty response, got %d blocks", len(resp.Blocks))
+	if len(resp.Blocks) != 1 {
+		t.Fatalf("expected one block, got %d", len(resp.Blocks))
+	}
+	if resp.Blocks[0].Header.Height != 1 {
+		t.Fatalf("got height %d, want 1", resp.Blocks[0].Header.Height)
 	}
 }
 
