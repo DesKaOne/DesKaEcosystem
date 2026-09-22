@@ -6,6 +6,7 @@ import (
 )
 
 var (
+	ErrDuplicateAccount     = errors.New("duplicate account")
 	ErrDuplicateTransaction = errors.New("duplicate transaction")
 	ErrInvalidAmount        = errors.New("invalid amount")
 )
