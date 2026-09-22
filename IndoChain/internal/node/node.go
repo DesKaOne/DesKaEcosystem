@@ -63,9 +63,13 @@ func NewDevnet(store storage.ChainStore) (*Node, error) {
 
 // ImportBlock validates and executes the next block against canonical state,
 // then commits the resulting block and state before advancing the node head.
-func (n *Node) ImportBlock(b block.Block, rules block.ExecutionRules) error {
+func (n *Node) ImportBlock(b block.Block, publicKey []byte) error {
 	if n == nil || n.Store == nil || n.State == nil {
 		return ErrNilStore
+	}
+	rules, err := n.Config.BlockRules(publicKey)
+	if err != nil {
+		return err
 	}
 	expectedHeight := n.Head.Header.Height + 1
 	if err := block.ValidateHeader(b, expectedHeight, n.HeadHash, rules); err != nil {
