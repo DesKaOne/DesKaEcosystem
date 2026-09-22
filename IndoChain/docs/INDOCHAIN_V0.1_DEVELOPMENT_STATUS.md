@@ -38,7 +38,7 @@ Namun IndoChain **belum merupakan blockchain production-ready**. Pekerjaan besar
 | Read RPC | 🟢 | Native read-side endpoints/components |
 | CI | 🟢 | Go test/vet workflow exists; latest run must be checked separately |
 | PoS | 🟡 | Protocol/design direction; runtime not yet complete |
-| BFT consensus | 🟡 | Protocol/design direction; operational engine not yet complete |
+| BFT consensus | 🟡 | Draft message boundary implemented; algorithm/quorum/finality still pending |
 | Validator runtime | 🟡 | Design/components exist, full consensus loop not yet complete |
 | Block production | 🟡 | Not yet a complete production loop |
 | Native gas/fee | 🟡 | Design direction exists; execution integration remains |
@@ -202,6 +202,18 @@ This is a foundation, not yet proof of a production-ready multi-node network.
 Native read-side RPC functionality exists for chain/head/block/transaction-oriented queries.
 
 EVM `eth_*` compatibility is still future work.
+
+### 4.9 Consensus Message Boundary
+
+The first executable consensus-message boundary is now implemented under `IndoChain/internal/consensus`.
+
+Current development message model contains protocol version, chain ID, epoch, height, round, sender/validator identifier, message type, payload, and signature.
+
+Supported logical message types are proposal, vote, finality evidence, and validator-set update.
+
+The boundary validates chain/version context, message type, sender/signature requirements, and payload size. Consensus signing uses the dedicated INDOCHAIN-CONSENSUS domain and deterministic development signing bytes.
+
+This milestone deliberately does not implement proposer selection, BFT rounds, quorum, validator-set transitions, finality, or P2P transport.
 
 ---
 
@@ -445,7 +457,7 @@ Meaning:
 - deterministic state/block foundation: implemented
 - storage/recovery: implemented foundation
 - mempool/P2P/sync: substantial foundation
-- consensus: next major implementation boundary
+- consensus message boundary: implemented foundation; consensus engine: next major implementation boundary
 - EVM: future execution milestone
 - production network: not yet
 
@@ -496,6 +508,7 @@ When there is a conflict, the implementation and dedicated protocol specificatio
 ## Status
 
 **Snapshot date:** 2026-09-23  
+**Latest verified green CI before consensus-message milestone:** `cd0542e81eecabc5201ae3941e9a94040d825596` (IndoChain CI run 503)  
 **Branch:** `dev/indochain-v0.1`  
 **Stage:** Core Protocol Implementation / Pre-Consensus Integration  
-**Next major boundary:** Consensus + Validator Runtime + Multi-node Devnet  
+**Next major boundary:** Consensus Engine + Validator Runtime + Multi-node Devnet  
