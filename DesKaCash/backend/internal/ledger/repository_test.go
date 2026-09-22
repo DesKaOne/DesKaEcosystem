@@ -1,20 +1,24 @@
 package ledger
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
 
 func TestMemoryRepositoryRoundTrip(t *testing.T) {
 	repo := NewMemoryRepository()
+	ctx := context.Background()
 
 	account, err := NewAccount("acc-1", "user-1")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if err := repo.SaveAccount(account); err != nil {
+	if err := repo.SaveAccount(ctx, account); err != nil {
 		t.Fatal(err)
 	}
 
-	got, err := repo.GetAccount("acc-1")
+	got, err := repo.GetAccount(ctx, "acc-1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,11 +31,11 @@ func TestMemoryRepositoryRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := repo.CreateTransaction(tx); err != nil {
+	if err := repo.CreateTransaction(ctx, tx); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := repo.CreateTransaction(tx); err != ErrDuplicateTransaction {
+	if err := repo.CreateTransaction(ctx, tx); err != ErrDuplicateTransaction {
 		t.Fatalf("expected duplicate transaction error, got %v", err)
 	}
 
@@ -44,11 +48,11 @@ func TestMemoryRepositoryRoundTrip(t *testing.T) {
 		Amount:        tx.Amount,
 	}
 
-	if err := repo.CreateEntry(entry); err != nil {
+	if err := repo.CreateEntry(ctx, entry); err != nil {
 		t.Fatal(err)
 	}
 
-	entries, err := repo.ListEntries("acc-1")
+	entries, err := repo.ListEntries(ctx, "acc-1")
 	if err != nil {
 		t.Fatal(err)
 	}
