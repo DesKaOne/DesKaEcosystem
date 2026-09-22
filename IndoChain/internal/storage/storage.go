@@ -13,22 +13,19 @@ var (
 	ErrEmptyStore    = errors.New("empty chain store")
 )
 
-// ChainStore defines the storage boundary used by node initialization.
-// Persistence is intentionally deferred; the interface must remain independent
-// from any specific database implementation.
 type ChainStore interface {
 	SaveBlock(block.Block, types.Hash) error
 	GetBlock(height types.Height) (block.Block, types.Hash, error)
 	SaveState(*state.State) error
 	LoadState() (*state.State, error)
 	Head() (block.Block, types.Hash, error)
+	CommitBlockState(block.Block, types.Hash, *state.State) error
 }
 
-// MemoryStore is a deterministic development-only chain store.
 type MemoryStore struct {
-	blocks map[types.Height]storedBlock
-	state  *state.State
-	head   types.Height
+	blocks  map[types.Height]storedBlock
+	state   *state.State
+	head    types.Height
 	hasHead bool
 }
 
@@ -38,9 +35,7 @@ type storedBlock struct {
 }
 
 func NewMemoryStore() *MemoryStore {
-	return &MemoryStore{
-		blocks: make(map[types.Height]storedBlock),
-	}
+	return &MemoryStore{blocks: make(map[types.Height]storedBlock)}
 }
 
 func (s *MemoryStore) SaveBlock(b block.Block, hash types.Hash) error {
@@ -92,6 +87,21 @@ func (s *MemoryStore) Head() (block.Block, types.Hash, error) {
 		return block.Block{}, types.Hash{}, ErrEmptyStore
 	}
 	return s.GetBlock(s.head)
+}
+
+// CommitBlockState is the development storage atomicity boundary.
+// A persistent implementation must provide durable atomic commit semantics.
+func (s *MemoryStore) CommitBlockState(b block.Block, hash types.Hash, st *state.State) error {
+	if s == nil {
+		return ErrEmptyStore
+	}
+	if st == nil {
+		return errors.New("nil state")
+	}
+	if err := s.SaveBlock(b, hash); err != nil {
+		return err
+	}
+	return s.SaveState(st)
 }
 
 var _ ChainStore = (*MemoryStore)(nil)
