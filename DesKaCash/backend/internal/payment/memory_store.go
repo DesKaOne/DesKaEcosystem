@@ -57,6 +57,26 @@ func (s *MemoryPaymentStore) Get(ctx context.Context, id string) (Payment, error
 	return payment, nil
 }
 
+func (s *MemoryPaymentStore) GetByIdempotencyKey(ctx context.Context, key string) (Payment, error) {
+	if err := ctx.Err(); err != nil {
+		return Payment{}, err
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	id, ok := s.byKey[key]
+	if !ok {
+		return Payment{}, ErrPaymentNotFound
+	}
+
+	payment, ok := s.payments[id]
+	if !ok {
+		return Payment{}, ErrPaymentNotFound
+	}
+	return payment, nil
+}
+
 func (s *MemoryPaymentStore) Save(ctx context.Context, payment Payment) error {
 	if err := ctx.Err(); err != nil {
 		return err
