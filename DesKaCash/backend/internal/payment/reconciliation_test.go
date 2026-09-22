@@ -173,3 +173,30 @@ func TestReconcilerRejectsTerminalStatusRegression(t *testing.T) {
 		t.Fatalf("expected no ledger credit, got %d", len(creditor.credits))
 	}
 }
+
+func TestReconcilerDoesNotReprocessDuplicateWebhookPayload(t *testing.T) {
+	payment, err := NewPayment("pay-1", "acct-1", "demo", "idem-1", ledger.FromDIDR(100))
+	if err != nil {
+		t.Fatal(err)
+	}
+	payment.ProviderID = "provider-1"
+
+	reconciler, creditor := newReconciler(payment)
+	event := WebhookEvent{
+		ID: "event-1", Provider: "demo", ProviderID: "provider-1",
+		Status: StatusSucceeded, Amount: payment.Amount.BaseUnits,
+	}
+
+	if _, err := reconciler.ReconcileWebhook(context.Background(), event, payment.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	duplicate := event
+	duplicate.Status = StatusFailed
+	if _, err := reconciler.ReconcileWebhook(context.Background(), duplicate, payment.ID); !errors.Is(err, ErrWebhookPaymentMismatch) {
+		t.Fatalf("expected duplicate payload mismatch, got %v", err)
+	}
+	if len(creditor.credits) != 1 {
+		t.Fatalf("expected one ledger credit, got %d", len(creditor.credits))
+	}
+}
