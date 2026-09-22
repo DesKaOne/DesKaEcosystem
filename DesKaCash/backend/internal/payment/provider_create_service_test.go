@@ -42,8 +42,17 @@ func TestProviderCreateServicePropagatesProviderError(t *testing.T) {
 	provider := &failingProvider{}
 	service := NewProviderCreateService(store, provider)
 
-	if _, err := service.Create(context.Background(), "pay-1", "acct-1", "fake", "idem-1", ledger.FromDIDR(100)); err == nil {
+	_, err := service.Create(context.Background(), "pay-1", "acct-1", "fake", "idem-1", ledger.FromDIDR(100))
+	if err == nil {
 		t.Fatal("expected provider error")
+	}
+
+	got, getErr := store.Get(context.Background(), "pay-1")
+	if getErr != nil {
+		t.Fatal(getErr)
+	}
+	if got.Status != StatusPending {
+		t.Fatalf("expected pending payment after provider error, got %q", got.Status)
 	}
 }
 
@@ -55,6 +64,14 @@ func TestProviderCreateServiceRejectsAmountMismatch(t *testing.T) {
 	_, err := service.Create(context.Background(), "pay-1", "acct-1", "fake", "idem-1", ledger.FromDIDR(100))
 	if !errors.Is(err, ErrProviderAmountMismatch) {
 		t.Fatalf("expected amount mismatch, got %v", err)
+	}
+
+	got, getErr := store.Get(context.Background(), "pay-1")
+	if getErr != nil {
+		t.Fatal(getErr)
+	}
+	if got.Status != StatusPending {
+		t.Fatalf("expected pending payment after amount mismatch, got %q", got.Status)
 	}
 }
 
