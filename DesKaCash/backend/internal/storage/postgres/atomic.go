@@ -9,11 +9,21 @@ import (
 )
 
 // ApplyCredit atomically applies a successful credit to an account.
-//
-// The account row is locked for the duration of the transaction. The
-// transaction ID is inserted before the balance mutation, while the unique
-// constraints in PostgreSQL protect against duplicate application.
 func (r *Repository) ApplyCredit(ctx context.Context, tx ledger.Transaction, reference string) error {
+	return r.applyBalanceChange(ctx, tx, reference, ledger.EntryCredit)
+}
+
+// ApplyDebit atomically applies a successful debit to an account.
+func (r *Repository) ApplyDebit(ctx context.Context, tx ledger.Transaction, reference string) error {
+	return r.applyBalanceChange(ctx, tx, reference, ledger.EntryDebit)
+}
+
+func (r *Repository) applyBalanceChange(
+	ctx context.Context,
+	tx ledger.Transaction,
+	reference string,
+	entryType ledger.EntryType,
+) error {
 	dbtx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -44,6 +54,10 @@ func (r *Repository) ApplyCredit(ctx context.Context, tx ledger.Transaction, ref
 		return ledger.ErrInvalidAmount
 	}
 
+	if entryType == ledger.EntryDebit && tx.Amount.BaseUnits > account.Balance.BaseUnits {
+		return ledger.ErrInsufficientFunds
+	}
+
 	_, err = dbtx.ExecContext(ctx, `
 		INSERT INTO transactions
 			(id, account_id, asset, amount_base_units, type, status, provider_id, reference, created_at)
@@ -54,7 +68,11 @@ func (r *Repository) ApplyCredit(ctx context.Context, tx ledger.Transaction, ref
 		return mapDBError(err)
 	}
 
-	account.Balance.BaseUnits += tx.Amount.BaseUnits
+	if entryType == ledger.EntryDebit {
+		account.Balance.BaseUnits -= tx.Amount.BaseUnits
+	} else {
+		account.Balance.BaseUnits += tx.Amount.BaseUnits
+	}
 	account.Version++
 
 	_, err = dbtx.ExecContext(ctx, `
@@ -70,7 +88,7 @@ func (r *Repository) ApplyCredit(ctx context.Context, tx ledger.Transaction, ref
 		INSERT INTO ledger_entries
 			(id, account_id, transaction_id, type, asset, amount_base_units, reference, created_at)
 		VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''), $8)
-	`, tx.ID+":credit", tx.AccountID, tx.ID, ledger.EntryCredit,
+	`, tx.ID+":"+string(entryType), tx.AccountID, tx.ID, entryType,
 		tx.Asset, tx.Amount.BaseUnits, reference, tx.CreatedAt)
 	if err != nil {
 		return mapDBError(err)
