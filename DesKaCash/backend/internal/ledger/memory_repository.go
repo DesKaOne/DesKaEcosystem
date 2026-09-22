@@ -29,6 +29,17 @@ func (r *MemoryRepository) GetAccount(ctx context.Context, id string) (Account, 
 	return account, nil
 }
 
+func (r *MemoryRepository) CreateAccount(ctx context.Context, account Account) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if _, exists := r.accounts[account.ID]; exists {
+		return ErrInvalidAccount
+	}
+	r.accounts[account.ID] = account
+	return nil
+}
+
 func (r *MemoryRepository) SaveAccount(ctx context.Context, account Account) error {
 	if err := ctx.Err(); err != nil {
 		return err
