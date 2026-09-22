@@ -54,3 +54,27 @@ CREATE TABLE ledger_entries (
 
 CREATE INDEX ledger_entries_account_id_created_at_idx
     ON ledger_entries (account_id, created_at);
+
+
+CREATE TABLE ledger_postings (
+    id TEXT PRIMARY KEY,
+    transaction_id TEXT NOT NULL REFERENCES transactions(id),
+    account_id TEXT NOT NULL REFERENCES accounts(id),
+    asset TEXT NOT NULL,
+    type TEXT NOT NULL,
+    amount_base_units BIGINT NOT NULL,
+    reference TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT ledger_postings_asset_check CHECK (asset = 'dIDR'),
+    CONSTRAINT ledger_postings_amount_check CHECK (amount_base_units > 0),
+    CONSTRAINT ledger_postings_type_check CHECK (
+        type IN ('debit', 'credit')
+    )
+);
+
+CREATE INDEX ledger_postings_transaction_id_idx
+    ON ledger_postings (transaction_id);
+
+CREATE INDEX ledger_postings_account_id_idx
+    ON ledger_postings (account_id);
