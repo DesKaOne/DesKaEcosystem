@@ -255,7 +255,7 @@ Setelah perubahan posting model, CI harus dicek berdasarkan SHA branch terbaru s
 
 Branch aktif: `dev/deskacash-v0.1`.
 
-Snapshot commit terbaru saat update dokumen ini: `b677bb89e2696be2cf005a8ad4166a4f87013102`.
+Snapshot commit terbaru saat update dokumen ini: `7e33b9a6186bfeda083fa5edc4817b9a65f1f371`.
 
 Angka comparison terhadap `main` dapat berubah setelah commit baru.
 
