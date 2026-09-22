@@ -146,7 +146,12 @@ func mapDBError(err error) error {
 	if errors.As(err, &pgErr) {
 		switch pgErr.Code {
 		case "23505":
-			return ledger.ErrDuplicateTransaction
+			switch pgErr.ConstraintName {
+			case "accounts_pkey":
+				return ledger.ErrDuplicateAccount
+			case "transactions_pkey", "ledger_entries_pkey", "ledger_entries_transaction_id_key":
+				return ledger.ErrDuplicateTransaction
+			}
 		}
 	}
 
