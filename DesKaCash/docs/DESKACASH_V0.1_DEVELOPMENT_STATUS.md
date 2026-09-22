@@ -1,0 +1,364 @@
+# DesKaCash v0.1 — Development Status / Handover
+
+Status: **Development / Core backend prototype**  
+Branch: `dev/deskacash-v0.1`  
+Repository: `DesKaOne/DesKaEcosystem`  
+Last reviewed: 2026-09-23
+
+> Dokumen ini adalah titik handover untuk melanjutkan development DesKaCash jika percakapan/chat sebelumnya sudah penuh.
+
+## 1. Executive Summary
+
+Per 2026-09-23, DesKaCash sudah melewati tahap skeleton dan sudah memiliki core backend Go yang dapat dikembangkan sebagai prototype financial transaction service.
+
+Yang sudah nyata di branch:
+- Go backend module.
+- HTTP server dan `/health`.
+- Domain ledger/account/transaction/money.
+- In-memory ledger repository dan tests.
+- PostgreSQL repository dan migration.
+- Atomic credit/debit dengan database transaction dan row locking.
+- Payment abstraction/provider boundary.
+- Payment creation + idempotency key handling.
+- Webhook event model dan duplicate-event protection.
+- Payment reconciliation/state transition logic.
+- Provider amount/status validation.
+- PostgreSQL integration tests untuk ledger/debit path.
+- GitHub Actions CI dengan PostgreSQL service, `go test ./...`, dan `go vet ./...`.
+- Feature-scope document untuk arah v0.1.
+- Arah integrasi IndoChain/dIDR sudah terdokumentasi.
+
+Belum production-ready sebagai e-wallet. Belum terlihat implementasi lengkap untuk authentication/user service, wallet business API, real Midtrans adapter, PPOB adapter, payout/withdrawal, persistent webhook store PostgreSQL, complete double-entry ledger, reservation/hold, real IndoChain RPC integration, Flutter frontend, dan production deployment.
+
+## 2. Current Development Classification
+
+Posisi saat ini:
+
+Architecture / Scope → Domain Prototype → Ledger Prototype → Payment/Reconciliation Core → Real Provider Adapter → Wallet API → PPOB / External Money Movement → IndoChain Integration → Hardening → Production
+
+Jadi DesKaCash sekarang paling tepat disebut **Core financial backend prototype — ledger + payment lifecycle foundation**.
+
+## 3. Repository Structure
+
+DesKaCash/
+  README.md
+  backend/
+    go.mod
+    go.sum
+    cmd/deskacash/main.go
+    internal/config/
+    internal/httpapi/
+    internal/ledger/
+    internal/payment/
+    internal/storage/postgres/
+    migrations/001_init_ledger.sql
+  docs/
+    DESKACASH_V0.1_FEATURE_SCOPE.md
+    DESKACASH_V0.1_DEVELOPMENT_STATUS.md
+
+## 4. Ledger Core
+
+Package `internal/ledger` sudah memiliki Account, Money, Entry, Transaction, Repository, Service, memory repository, dan tests.
+
+Account memiliki account ID, user ID, asset, balance dalam base units, dan version.
+
+Current code menggunakan `AssetDIDR = "dIDR"`.
+
+Account sengaja dipisahkan dari alamat IndoChain.
+
+### Important architecture gap
+
+Feature scope menetapkan PostgreSQL double-entry ledger sebagai source of truth. Namun implementation saat ini masih menggunakan model account balance + ledger_entries + transactions, dan operasi credit/debit masih meng-update balance account secara langsung di dalam database transaction.
+
+Jadi **double-entry immutable ledger penuh belum selesai di code**.
+
+Target berikutnya:
+- immutable postings;
+- debit/credit pair;
+- balanced transaction;
+- account normal balance;
+- reversal sebagai transaction baru;
+- balance projection dari postings.
+
+## 5. PostgreSQL
+
+Migration `001_init_ledger.sql` membuat:
+- `accounts`;
+- `transactions`;
+- `ledger_entries`.
+
+Constraint saat ini:
+- asset harus `dIDR`;
+- amount harus positif;
+- balance tidak boleh negatif;
+- transaction status dibatasi;
+- entry type hanya credit/debit;
+- satu transaction memiliki satu ledger entry melalui unique constraint saat ini.
+
+Repository PostgreSQL sudah memiliki create/get account, save account, create/get transaction, create ledger entry, list ledger entries, dan duplicate error mapping.
+
+## 6. Atomic Credit / Debit
+
+`internal/storage/postgres/atomic.go` melakukan:
+1. begin DB transaction;
+2. select account dengan `FOR UPDATE`;
+3. validasi amount;
+4. validasi insufficient funds untuk debit;
+5. insert transaction;
+6. update account balance;
+7. insert ledger entry;
+8. commit.
+
+Integration tests PostgreSQL untuk path debit/ledger juga sudah tersedia.
+
+## 7. Payment Core
+
+Package `internal/payment` sudah memiliki Payment, status, Provider interface, ProviderPayment, payment creation service, memory payment store, provider create service, webhook event, webhook store, reconciliation service, dan tests.
+
+Payment memiliki internal payment ID, account ID, provider, provider ID, idempotency key, amount, status, reference, dan timestamps.
+
+## 8. Payment State Handling
+
+Status yang tersedia:
+- pending
+- succeeded
+- failed
+- expired
+- reversed
+- refunded
+
+Transition yang dimodelkan:
+- pending → succeeded / failed / expired
+- succeeded → reversed / refunded
+- status yang sama diperbolehkan.
+
+Webhook status divalidasi agar status yang tidak dikenal tidak langsung mempengaruhi payment.
+
+## 9. Webhook Idempotency / Validation
+
+Reconciliation sudah melakukan validasi event ID, provider, provider transaction ID, status, amount, payment/provider matching, amount matching, valid state transition, dan duplicate webhook detection.
+
+Duplicate event yang konsisten diperlakukan sebagai idempotent. Event dengan metadata penting berbeda ditolak.
+
+## 10. Provider Boundary
+
+Interface provider saat ini memiliki Name, CreatePayment, dan GetPayment.
+
+Provider-specific implementation dipisahkan dari application/payment domain.
+
+Feature scope menempatkan Midtrans sebagai payment rail utama untuk collection/top-up v0.1. Provider lain dapat ditambahkan melalui adapter.
+
+**Real provider adapter belum terlihat pada branch saat review ini.**
+
+## 11. Provider Create Flow
+
+Alur saat ini:
+check idempotency key → create local Payment → create provider payment → validate provider amount → save provider ID/reference/status.
+
+Provider amount mismatch ditolak.
+
+## 12. Reconciliation Flow
+
+Alur saat ini:
+Provider → Webhook → Validate event → Find payment → Validate provider ID → Validate amount → Validate status transition → Apply ledger effect → Update payment status → Record webhook.
+
+Untuk `succeeded`, reconciliation melakukan credit ledger.
+
+Untuk `reversed/refunded`, reconciliation membuat transaction baru untuk debit.
+
+## 13. HTTP/API Status
+
+HTTP server sudah tersedia, tetapi endpoint bisnis belum.
+
+Endpoint yang terlihat saat review:
+- `GET /health`
+
+Belum ada endpoint nyata untuk create wallet, balance, transaction history, P2P, top-up, provider webhook, PPOB, atau payout.
+
+Jadi service dapat dijalankan sebagai service dasar, tetapi API bisnis DesKaCash masih tahap berikutnya.
+
+## 14. IndoChain / dIDR Direction
+
+Feature scope sudah menetapkan boundary DesKaCash ↔ IndoChain:
+- DesKaCash menangani application/payment/fiat side;
+- IndoChain menangani blockchain state;
+- dIDR adalah native asset IndoChain;
+- DesKaCash tidak menjadi source of truth blockchain state;
+- IDR fiat dan dIDR on-chain harus dibedakan.
+
+Target blockchain integration mencakup address mapping, native RPC client, read balance, transaction submission/tracking, finality verification, dan IDR ↔ dIDR conversion.
+
+**Namun current code sudah menggunakan `dIDR` sebagai asset pada PostgreSQL application ledger.**
+
+Ini perlu diperjelas pada fase berikutnya karena feature scope juga mendefinisikan v0.1 sebagai fiat IDR wallet dan memisahkan IDR dari dIDR.
+
+Jangan menganggap penggunaan string `dIDR` pada current ledger sebagai bukti bahwa on-chain dIDR integration sudah selesai. RPC client, transaction submission, finality verification, dan conversion service belum terlihat.
+
+## 15. PPOB
+
+Feature scope sudah mendefinisikan PPOBProvider dengan GetProducts, Inquiry, Purchase, GetStatus, dan HandleWebhook.
+
+Target adapter mencakup DigiflazzAdapter, future provider adapter, dan mock provider.
+
+Target flow: product → validate → check balance → reserve → provider transaction → success → commit ledger. Failure harus release reservation. Pending tetap menunggu confirmation.
+
+**PPOB package/adapter belum terlihat pada current backend tree.**
+
+## 16. Current Provider Plan
+
+Midtrans ditargetkan untuk collection/top-up v0.1: bank transfer/VA, dynamic QRIS, dan supported e-wallet payment methods.
+
+Feature scope secara eksplisit tidak mengasumsikan Midtrans sebagai provider untuk arbitrary bank payout, arbitrary e-wallet payout, permanent unique VA per user, atau merchant QRIS scan sebagai wallet payment.
+
+Future provider boundary mencakup unique VA, bank payout, e-wallet payout, withdrawal, dan merchant payment.
+
+## 17. CI
+
+Workflow `.github/workflows/deskaone.yml` mendefinisikan PostgreSQL 16 service, Go 1.24, `go mod tidy`, `go test ./...`, dan `go vet ./...`.
+
+CI berjalan pada `main`, `dev/**`, dan pull request yang menyentuh DesKaCash/workflow.
+
+Status pass/fail run individual tidak diasumsikan dalam dokumen ini; cek run terbaru saat melanjutkan development.
+
+## 18. Branch Position
+
+GitHub comparison saat review menunjukkan `dev/deskacash-v0.1` berada 106 commits ahead dan 3 commits behind terhadap `main`.
+
+Angka ini adalah snapshot saat review dan dapat berubah setelah commit baru.
+
+## 19. Important Architecture Gaps
+
+### A. Double-entry ledger belum final
+Current implementation masih memiliki `account.balance_base_units` dan satu ledger entry per transaction. Target membutuhkan immutable postings, debit/credit pair, balanced transaction, account normal balance, reversal transaction, dan balance projection.
+
+### B. Transaction state machine belum lengkap
+Payment reconciliation memiliki transition rules, tetapi ledger transaction belum menjadi state machine lengkap dengan seluruh invariant target.
+
+### C. Reservation / hold belum ada
+PPOB membutuhkan available balance → reserve → provider processing → commit atau release.
+
+### D. Persistent webhook store belum lengkap
+Webhook store yang terlihat masih memory implementation. Production membutuhkan persistent idempotent storage.
+
+### E. Real provider adapter belum ada
+Provider interface sudah ada, tetapi adapter production Midtrans/PPOB belum terlihat.
+
+### F. User/auth layer belum ada
+Belum terlihat registration, login, authentication, authorization, KYC/KYB boundary, session/token management.
+
+### G. HTTP API belum menjadi business API
+Saat ini baru `/health`.
+
+### H. IndoChain integration belum diimplementasikan
+Dokumentasi architecture sudah ada, tetapi RPC client, transaction submission, finality verification, dan dIDR conversion belum menjadi service nyata pada DesKaCash.
+
+## 20. Recommended Development Order
+
+### Phase 1 — Ledger Hardening
+1. Finalize account model.
+2. Pisahkan IDR vs dIDR secara eksplisit.
+3. Implement immutable postings.
+4. Implement debit/credit balancing.
+5. Add transaction status machine.
+6. Add reversal transaction relation.
+7. Add balance projection.
+8. Add concurrency tests.
+9. Add PostgreSQL invariant tests.
+
+### Phase 2 — Wallet Domain
+1. User/account boundary.
+2. Create wallet.
+3. Get balance.
+4. Transaction history.
+5. P2P transfer.
+6. Idempotency.
+7. Atomic debit/credit.
+
+### Phase 3 — Payment Collection
+1. Payment provider adapter.
+2. Midtrans sandbox adapter.
+3. Top-up create.
+4. Provider webhook endpoint.
+5. Persistent webhook event.
+6. Reconciliation.
+7. Provider polling.
+8. Integration tests.
+
+### Phase 4 — PPOB
+1. PPOBProvider interface.
+2. Product catalog.
+3. Inquiry.
+4. Reservation.
+5. Purchase.
+6. Provider status.
+7. Webhook.
+8. Settlement.
+9. Margin/revenue ledger.
+
+### Phase 5 — External Money Movement
+1. Payout provider abstraction.
+2. Bank payout.
+3. E-wallet payout.
+4. Withdrawal.
+5. Reconciliation.
+
+### Phase 6 — IndoChain
+1. Address mapping.
+2. Native RPC client.
+3. Read dIDR balance.
+4. Submit transaction.
+5. Track transaction.
+6. Verify finality.
+7. IDR ↔ dIDR conversion.
+8. EVM interaction.
+9. Native fee sponsorship integration.
+
+### Phase 7 — Production Hardening
+1. Authentication.
+2. Authorization.
+3. Rate limiting.
+4. Audit logging.
+5. Secrets management.
+6. Observability.
+7. Fraud/risk controls.
+8. Security testing.
+9. Disaster recovery.
+10. Reconciliation operations.
+11. Deployment.
+12. Production runbook.
+
+## 21. Architecture Guardrails
+
+1. Ledger adalah source of truth untuk saldo application/fiat yang memang dikelola DesKaCash.
+2. Provider bukan source of truth saldo DesKaCash.
+3. Webhook harus idempotent.
+4. Duplicate webhook tidak boleh menggandakan financial effect.
+5. Provider transaction ID dan DesKaCash transaction ID harus dibedakan.
+6. Reversal menggunakan transaction baru.
+7. Financial postings tidak boleh diedit sembarangan.
+8. Provider-specific logic berada di adapter.
+9. Business service tetap provider-agnostic.
+10. IDR fiat dan dIDR on-chain tidak boleh dicampur secara konseptual.
+11. Blockchain state tidak boleh dibuat seolah-olah berasal dari PostgreSQL DesKaCash.
+12. Feature yang belum tersedia harus tetap ditandai `COMING_SOON`.
+13. Jangan mengklaim production readiness hanya karena unit/integration tests sudah ada.
+
+## 22. Handover Starting Point
+
+Jika chat sebelumnya penuh, chat baru cukup diberi instruksi:
+
+> Baca `DesKaCash/docs/DESKACASH_V0.1_DEVELOPMENT_STATUS.md` pada branch `dev/deskacash-v0.1`, lalu lanjutkan development DesKaCash dari status terakhir. Sebelum coding, cek kondisi branch dan file yang disebut dalam handover.
+
+Prioritas awal:
+
+Ledger Hardening → IDR vs dIDR boundary → Double-entry immutable postings → Transaction state machine → Wallet API → Provider integration
+
+## 23. Related Documentation
+
+- `DesKaCash/docs/DESKACASH_V0.1_FEATURE_SCOPE.md`
+- `DesKaCash/README.md`
+- IndoChain documentation under `IndoChain/docs/`
+
+---
+
+**Handover principle:** Jangan menebak status dari chat lama. Gunakan branch `dev/deskacash-v0.1` sebagai kondisi aktual dan dokumen ini sebagai peta handover. Jika code dan dokumen berbeda, verifikasi code terlebih dahulu lalu update dokumentasi.
