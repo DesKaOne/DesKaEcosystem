@@ -7,15 +7,15 @@ import (
 
 func sampleTransaction() Transaction {
 	return Transaction{
-		Version:    1,
-		ChainID:    1001,
-		Nonce:      7,
-		Sender:     []byte{1, 2, 3},
-		Recipient:  []byte{4, 5, 6},
-		Value:      42,
-		GasLimit:   21000,
-		Data:       []byte("indochain"),
-		Signature:  []byte{9, 9, 9},
+		Version:   1,
+		ChainID:   1001,
+		Nonce:     7,
+		Sender:    []byte{1, 2, 3},
+		Recipient: []byte{4, 5, 6},
+		Value:     42,
+		GasLimit:  21000,
+		Data:      []byte("indochain"),
+		Signature: []byte{9, 9, 9},
 	}
 }
 
