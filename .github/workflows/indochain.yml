@@ -27,7 +27,12 @@ jobs:
 
       - name: Format check
         run: |
-          test -z "$(gofmt -l .)"
+          files="$(gofmt -l .)"
+          if [ -n "$files" ]; then
+            echo "Files requiring gofmt:"
+            printf '%s\n' "$files"
+            exit 1
+          fi
 
       - name: Test
         run: go test ./...
