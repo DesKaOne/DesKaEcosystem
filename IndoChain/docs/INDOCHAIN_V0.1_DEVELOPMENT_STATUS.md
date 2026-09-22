@@ -38,7 +38,7 @@ Namun IndoChain **belum merupakan blockchain production-ready**. Pekerjaan besar
 | Read RPC | 🟢 | Native read-side endpoints/components |
 | CI | 🟢 | Go test/vet workflow exists; latest run must be checked separately |
 | PoS | 🟡 | Protocol/design direction; runtime not yet complete |
-| BFT consensus | 🟡 | Draft message boundary implemented; algorithm/quorum/finality still pending |
+| BFT consensus | 🟡 | Message and round-state boundaries implemented; algorithm/quorum/finality still pending |
 | Validator runtime | 🟡 | Design/components exist, full consensus loop not yet complete |
 | Block production | 🟡 | Not yet a complete production loop |
 | Native gas/fee | 🟡 | Design direction exists; execution integration remains |
@@ -213,7 +213,17 @@ Supported logical message types are proposal, vote, finality evidence, and valid
 
 The boundary validates chain/version context, message type, sender/signature requirements, and payload size. Consensus signing uses the dedicated INDOCHAIN-CONSENSUS domain and deterministic development signing bytes.
 
-This milestone deliberately does not implement proposer selection, BFT rounds, quorum, validator-set transitions, finality, or P2P transport.
+This milestone deliberately does not implement proposer selection, quorum, validator-set transitions, finality, or P2P transport.
+
+### 4.10 Consensus Round State Boundary
+
+The next consensus foundation is now implemented under `IndoChain/internal/consensus/state.go`.
+
+`RoundState` tracks protocol version, chain ID, epoch, height, round, and development consensus phase. The current phase model is Proposal → Prevote → Precommit → Finalized.
+
+The implementation enforces monotonic phase, round, and height transitions. Increasing the round resets phase to Proposal; increasing height resets round to zero and phase to Proposal. Invalid regressions are rejected without mutating the source value.
+
+This remains a development abstraction. It does not yet implement proposer selection, validator sets, voting power, quorum, timeouts, vote aggregation, evidence, finality certificates, or persistence.
 
 ---
 
@@ -457,7 +467,8 @@ Meaning:
 - deterministic state/block foundation: implemented
 - storage/recovery: implemented foundation
 - mempool/P2P/sync: substantial foundation
-- consensus message boundary: implemented foundation; consensus engine: next major implementation boundary
+- consensus message boundary: implemented foundation
+- consensus round-state boundary: implemented foundation; proposer/quorum/finality engine remains next
 - EVM: future execution milestone
 - production network: not yet
 
@@ -508,7 +519,8 @@ When there is a conflict, the implementation and dedicated protocol specificatio
 ## Status
 
 **Snapshot date:** 2026-09-23  
-**Latest verified green CI before consensus-message milestone:** `cd0542e81eecabc5201ae3941e9a94040d825596` (IndoChain CI run 503)  
+**Latest verified green CI:** `15387e0a6e025259d193bee68b13aaa4a15903ff` (IndoChain CI run 517)
+**Latest consensus round-state implementation:** `de59cb9d6485165613c5e7111521e27a639f69f6`  
 **Branch:** `dev/indochain-v0.1`  
 **Stage:** Core Protocol Implementation / Pre-Consensus Integration  
-**Next major boundary:** Consensus Engine + Validator Runtime + Multi-node Devnet  
+**Next major boundary:** Consensus Engine (proposer/quorum/voting/finality) + Validator Runtime + Multi-node Devnet  
