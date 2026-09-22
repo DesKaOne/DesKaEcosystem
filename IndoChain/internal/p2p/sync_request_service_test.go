@@ -17,7 +17,7 @@ func TestSyncRequestServiceDelegatesToHandler(t *testing.T) {
 	service := &SyncRequestService{
 		Handler: &SyncMessageHandler{
 			Service: &SyncService{
-				Reader: syncServiceReader{},
+				Reader: rangeReader{},
 				MaxLimit: 2,
 			},
 			MaxPayload: 16,
@@ -39,7 +39,7 @@ func TestSyncRequestServiceDelegatesToHandler(t *testing.T) {
 func TestSyncRequestServicePreservesHandlerValidationError(t *testing.T) {
 	service := &SyncRequestService{
 		Handler: &SyncMessageHandler{
-			Service:    &SyncService{Reader: syncServiceReader{}, MaxLimit: 2},
+			Service:    &SyncService{Reader: rangeReader{}, MaxLimit: 2},
 			MaxPayload: 8,
 			MaxLimit:   2,
 		},
