@@ -46,6 +46,38 @@ func newBlockSigner(t *testing.T) *crypto.Ed25519Signer {
 	return signer
 }
 
+func TestTransactionsRootDeterministic(t *testing.T) {
+	signer := newBlockSigner(t)
+	txs := []any{blockTx(t, signer, 0, 30), blockTx(t, signer, 1, 20)}
+	first, err := TransactionsRoot(txs)
+	if err != nil { t.Fatal(err) }
+	second, err := TransactionsRoot(txs)
+	if err != nil { t.Fatal(err) }
+	if first != second { t.Fatalf("root changed between identical calculations: %s vs %s", first, second) }
+}
+
+func TestTransactionsRootDependsOnOrder(t *testing.T) {
+	signer := newBlockSigner(t)
+	firstTx := blockTx(t, signer, 0, 30)
+	secondTx := blockTx(t, signer, 1, 20)
+	first, err := TransactionsRoot([]any{firstTx, secondTx})
+	if err != nil { t.Fatal(err) }
+	second, err := TransactionsRoot([]any{secondTx, firstTx})
+	if err != nil { t.Fatal(err) }
+	if first == second { t.Fatal("transaction order did not affect root") }
+}
+
+func TestValidateTransactionsRootRejectsMismatch(t *testing.T) {
+	signer := newBlockSigner(t)
+	b := Block{
+		Header: Header{TransactionsRoot: types.Hash{1}},
+		Transactions: []any{blockTx(t, signer, 0, 30)},
+	}
+	if err := ValidateTransactionsRoot(b); err != ErrTransactionsRootMismatch {
+		t.Fatalf("expected transactions root mismatch, got %v", err)
+	}
+}
+
 func TestExecuteBlockCommitsAllTransactions(t *testing.T) {
 	signer := newBlockSigner(t)
 	s := state.New()
@@ -84,10 +116,7 @@ func TestExecuteBlockRejectsStateRootMismatch(t *testing.T) {
 	s.Set(types.Address{1}, state.Account{Balance: 100, Nonce: 0})
 
 	b := Block{
-		Header: Header{
-			Version: 1, ChainID: 1001, Height: 1,
-			StateRoot: types.Hash{1},
-		},
+		Header: Header{Version: 1, ChainID: 1001, Height: 1, StateRoot: types.Hash{1}},
 		Transactions: []any{blockTx(t, signer, 0, 30)},
 	}
 	if err := ExecuteBlock(s, b, 1, types.Hash{}, blockRules(signer.PublicKey())); err != ErrStateRootMismatch {
@@ -103,13 +132,9 @@ func TestExecuteBlockRollsBackOnTransactionFailure(t *testing.T) {
 	signer := newBlockSigner(t)
 	s := state.New()
 	s.Set(types.Address{1}, state.Account{Balance: 40, Nonce: 0})
-
 	b := Block{
 		Header: Header{Version: 1, ChainID: 1001, Height: 1},
-		Transactions: []any{
-			blockTx(t, signer, 0, 30),
-			blockTx(t, signer, 1, 30),
-		},
+		Transactions: []any{blockTx(t, signer, 0, 30), blockTx(t, signer, 1, 30)},
 	}
 	if err := ExecuteBlock(s, b, 1, types.Hash{}, blockRules(signer.PublicKey())); err == nil {
 		t.Fatal("expected block execution failure")
