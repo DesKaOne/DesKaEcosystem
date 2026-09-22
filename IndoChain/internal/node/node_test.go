@@ -55,16 +55,6 @@ func TestImportBlockCommitsExecutedState(t *testing.T) {
 	if err != nil { t.Fatal(err) }
 	tx.Signature = sig
 
-	rules := block.ExecutionRules{
-		ChainID: devnet.ChainID, ProtocolVersion: devnet.ProtocolVersion,
-		Transaction: state.ExecutionRules{
-			Validation: transaction.ValidationRules{
-				ProtocolVersion: devnet.ProtocolVersion, ChainID: devnet.ChainID,
-				RequireSender: true, RequireRecipient: true, RequireSignature: true, MinGasLimit: 1,
-			},
-			PublicKey: signer.PublicKey(),
-		},
-	}
 	working := n.State.Snapshot()
 	if err := state.ApplyTransaction(working, tx, rules.Transaction); err != nil { t.Fatal(err) }
 	next := block.Block{
@@ -76,7 +66,7 @@ func TestImportBlockCommitsExecutedState(t *testing.T) {
 	}
 	next.Header.TransactionsRoot, err = block.TransactionsRoot(next.Transactions)
 	if err != nil { t.Fatal(err) }
-	if err := n.ImportBlock(next, rules); err != nil { t.Fatal(err) }
+	if err := n.ImportBlock(next, signer.PublicKey()); err != nil { t.Fatal(err) }
 	if n.Head.Header.Height != 1 { t.Fatalf("head height = %d, want 1", n.Head.Header.Height) }
 	if got, _ := n.State.Get(recipient); got.Balance != 25 { t.Fatalf("recipient balance = %d, want 25", got.Balance) }
 	if got, _ := n.State.Get(sender); got.Balance != 75 { t.Fatalf("sender balance = %d, want 75", got.Balance) }
@@ -94,6 +84,6 @@ func TestImportBlockRejectsWrongParentWithoutMutation(t *testing.T) {
 		Timestamp: n.Head.Header.Timestamp + 1, PreviousHash: types.Hash{9},
 	}}
 	rules := block.ExecutionRules{ChainID: devnet.ChainID, ProtocolVersion: devnet.ProtocolVersion}
-	if err := n.ImportBlock(b, rules); err != block.ErrPreviousHash { t.Fatalf("error = %v, want %v", err, block.ErrPreviousHash) }
+	if err := n.ImportBlock(b, nil); err != block.ErrPreviousHash { t.Fatalf("error = %v, want %v", err, block.ErrPreviousHash) }
 	if n.Head.Header.Height != 0 || n.State.Root() != before { t.Fatal("node mutated after rejecting invalid parent") }
 }
