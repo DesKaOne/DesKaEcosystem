@@ -6,10 +6,7 @@ import (
 	"sync"
 )
 
-var (
-	ErrDuplicatePayment = errors.New("duplicate payment")
-	ErrPaymentNotFound  = errors.New("payment not found")
-)
+var ErrDuplicatePayment = errors.New("duplicate payment")
 
 type MemoryPaymentStore struct {
 	mu       sync.RWMutex
