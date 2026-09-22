@@ -16,6 +16,9 @@ func TestNewDevnetInitializesGenesis(t *testing.T) {
 	store := storage.NewMemoryStore()
 	n, err := NewDevnet(store)
 	if err != nil { t.Fatal(err) }
+	if n.Config.NetworkProfile != devnet.NetworkProfile || n.Config.ChainID != devnet.ChainID || n.Config.ProtocolVersion != devnet.ProtocolVersion {
+		t.Fatal("node config does not match Devnet genesis")
+	}
 	if n.Head.Header.Height != 0 { t.Fatalf("head height = %d, want 0", n.Head.Header.Height) }
 	if n.HeadHash == (types.Hash{}) { t.Fatal("genesis head hash must be non-zero") }
 	storedBlock, storedHash, err := store.Head()
