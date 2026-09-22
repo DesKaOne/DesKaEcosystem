@@ -43,3 +43,10 @@ This helper is only composition logic; it does not perform network I/O or import
 `SyncCoordinator.ApplyResponseFromCursor` binds a synchronization batch to the cursor's known parent hash. On success it returns an advanced cursor; on failure it returns the original cursor unchanged.
 
 This composes the existing planner, coordinator, progress, and cursor boundaries without introducing network I/O or bypassing canonical block import validation.
+
+
+## Next-request boundary
+
+`PlanNextSync` is the small composition boundary for the next synchronization step. It uses the current cursor height and the planner's configured batch size to derive the next request toward the remote height.
+
+It does not perform transport, peer selection, block validation, or import work.
