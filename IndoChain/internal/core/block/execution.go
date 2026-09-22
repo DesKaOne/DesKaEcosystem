@@ -48,6 +48,9 @@ func ExecuteBlock(s *state.State, b Block, expectedHeight types.Height, expected
 	if err := ValidateHeader(b, expectedHeight, expectedPreviousHash, rules); err != nil {
 		return err
 	}
+	if err := ValidateTransactionsRoot(b); err != nil {
+		return err
+	}
 
 	working := s.Snapshot()
 	for index, rawTx := range b.Transactions {
