@@ -32,14 +32,14 @@ func TestApplyResponseFromCursorAdvancesAfterSuccess(t *testing.T) {
 			PreviousHash: parent,
 		},
 	}
-	secondHash, err := block.Hash(first)
+	firstHash, err := block.Hash(first)
 	if err != nil {
 		t.Fatal(err)
 	}
 	second := block.Block{
 		Header: block.Header{
 			Height:       7,
-			PreviousHash: secondHash,
+			PreviousHash: firstHash,
 		},
 	}
 
@@ -60,6 +60,10 @@ func TestApplyResponseFromCursorAdvancesAfterSuccess(t *testing.T) {
 	}
 	if next.Height != 7 {
 		t.Fatalf("height = %d, want 7", next.Height)
+	}
+	secondHash, err := block.Hash(second)
+	if err != nil {
+		t.Fatal(err)
 	}
 	if next.BlockHash != secondHash {
 		t.Fatalf("block hash = %v, want %v", next.BlockHash, secondHash)
