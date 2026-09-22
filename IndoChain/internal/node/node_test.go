@@ -265,7 +265,10 @@ func TestOpenDevnetRecoversFileStoreAfterImportedBlock(t *testing.T) {
 	}
 
 	sender := types.Address([]byte("persistent-sender"))
-	recipient := types.Address([]byte("persistent-recipient"))
+	recipients := []types.Address{
+		types.Address([]byte("persistent-recipient-1")),
+		types.Address([]byte("persistent-recipient-2")),
+	}
 	n.State.Set(sender, state.Account{Balance: 100, Nonce: 0})
 
 	tx := transaction.Transaction{
@@ -273,7 +276,7 @@ func TestOpenDevnetRecoversFileStoreAfterImportedBlock(t *testing.T) {
 		ChainID: devnet.ChainID,
 		Nonce: 0,
 		Sender: sender,
-		Recipient: recipient,
+		Recipient: recipients[0],
 		Value: 40,
 		GasLimit: 100,
 	}
@@ -294,12 +297,12 @@ func TestOpenDevnetRecoversFileStoreAfterImportedBlock(t *testing.T) {
 
 	next := block.Block{
 		Header: block.Header{
-			Version: devnet.ProtocolVersion,
-			ChainID: devnet.ChainID,
-			Height: 1,
-			Timestamp: n.Head.Header.Timestamp + 1,
-			PreviousHash: n.HeadHash,
-			StateRoot: working.Root(),
+			Version:       devnet.ProtocolVersion,
+			ChainID:       devnet.ChainID,
+			Height:        1,
+			Timestamp:     n.Head.Header.Timestamp + 1,
+			PreviousHash:  n.HeadHash,
+			StateRoot:     working.Root(),
 		},
 		Transactions: []any{tx},
 	}
@@ -308,15 +311,6 @@ func TestOpenDevnetRecoversFileStoreAfterImportedBlock(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := n.ImportBlock(next, signer.PublicKey()); err != nil {
-		t.Fatal(err)
-	}
-
-	storedHead, storedHash, err := store.Head()
-	if err != nil {
-		t.Fatal(err)
-	}
-	storedState, err := store.LoadState()
-	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -332,20 +326,70 @@ func TestOpenDevnetRecoversFileStoreAfterImportedBlock(t *testing.T) {
 	if recovered.Head.Header.Height != 1 {
 		t.Fatalf("recovered head height = %d, want 1", recovered.Head.Header.Height)
 	}
-	if recovered.HeadHash != storedHash {
+	if recovered.HeadHash != n.HeadHash {
 		t.Fatal("recovered head hash does not match persisted hash")
 	}
-	if recovered.Head.Header.Height != storedHead.Header.Height {
-		t.Fatal("recovered head does not match persisted head")
-	}
-	if recovered.State.Root() != storedState.Root() {
+	if recovered.State.Root() != n.State.Root() {
 		t.Fatal("recovered state root does not match persisted state")
 	}
-	if got, ok := recovered.State.Get(recipient); !ok || got.Balance != 40 {
+	if got, ok := recovered.State.Get(recipients[0]); !ok || got.Balance != 40 {
 		t.Fatalf("recovered recipient balance = %d, want 40", got.Balance)
 	}
 	if got, ok := recovered.State.Get(sender); !ok || got.Balance != 60 || got.Nonce != 1 {
 		t.Fatalf("recovered sender = %+v, want balance 60 nonce 1", got)
+	}
+
+	tx2 := transaction.Transaction{
+		Version:   devnet.ProtocolVersion,
+		ChainID:   devnet.ChainID,
+		Nonce:     1,
+		Sender:    sender,
+		Recipient: recipients[1],
+		Value:     25,
+		GasLimit:  100,
+	}
+	sig2, err := transaction.Sign(tx2, signer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tx2.Signature = sig2
+
+	rules2, err := recovered.Config.BlockRules(signer.PublicKey())
+	if err != nil {
+		t.Fatal(err)
+	}
+	working2 := recovered.State.Snapshot()
+	if err := state.ApplyTransaction(working2, tx2, rules2.Transaction); err != nil {
+		t.Fatal(err)
+	}
+
+	next2 := block.Block{
+		Header: block.Header{
+			Version:       devnet.ProtocolVersion,
+			ChainID:       devnet.ChainID,
+			Height:        2,
+			Timestamp:     recovered.Head.Header.Timestamp + 1,
+			PreviousHash:  recovered.HeadHash,
+			StateRoot:     working2.Root(),
+		},
+		Transactions: []any{tx2},
+	}
+	next2.Header.TransactionsRoot, err = block.TransactionsRoot(next2.Transactions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := recovered.ImportBlock(next2, signer.PublicKey()); err != nil {
+		t.Fatal(err)
+	}
+
+	if recovered.Head.Header.Height != 2 {
+		t.Fatalf("post-recovery head height = %d, want 2", recovered.Head.Header.Height)
+	}
+	if got, ok := recovered.State.Get(sender); !ok || got.Balance != 35 || got.Nonce != 2 {
+		t.Fatalf("post-recovery sender = %+v, want balance 35 nonce 2", got)
+	}
+	if got, ok := recovered.State.Get(recipients[1]); !ok || got.Balance != 25 {
+		t.Fatalf("post-recovery recipient balance = %d, want 25", got.Balance)
 	}
 }
 
@@ -402,13 +446,13 @@ func TestImportBlockCommitFailureWithoutMutation(t *testing.T) {
 	}
 
 	tx := transaction.Transaction{
-		Version: devnet.ProtocolVersion,
-		ChainID: devnet.ChainID,
-		Nonce: 0,
-		Sender: sender,
-		Recipient: recipient,
-		Value: 30,
-		GasLimit: 100,
+		Version:       devnet.ProtocolVersion,
+		ChainID:       devnet.ChainID,
+		Nonce:         0,
+		Sender:        sender,
+		Recipient:     recipient,
+		Value:         30,
+		GasLimit:      100,
 	}
 	sig, err := transaction.Sign(tx, signer)
 	if err != nil {
@@ -427,12 +471,12 @@ func TestImportBlockCommitFailureWithoutMutation(t *testing.T) {
 
 	next := block.Block{
 		Header: block.Header{
-			Version: devnet.ProtocolVersion,
-			ChainID: devnet.ChainID,
-			Height: 1,
-			Timestamp: n.Head.Header.Timestamp + 1,
-			PreviousHash: n.HeadHash,
-			StateRoot: working.Root(),
+			Version:       devnet.ProtocolVersion,
+			ChainID:       devnet.ChainID,
+			Height:        1,
+			Timestamp:     n.Head.Header.Timestamp + 1,
+			PreviousHash:  n.HeadHash,
+			StateRoot:     working.Root(),
 		},
 		Transactions: []any{tx},
 	}
