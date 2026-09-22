@@ -24,16 +24,23 @@ OpenDevnet validates:
 - stored state availability;
 - head chain ID;
 - head protocol version;
-- stored head hash against a recomputed block hash;
-- non-zero head hash;
-- stored state root against the head state root when the header contains one;
-- genesis identity when the stored head is height zero.
+- every stored block from genesis through the head height;
+- each stored block height matches its storage key;
+- each stored block chain ID and protocol version;
+- each stored block hash against a recomputed block hash;
+- non-zero stored block hashes;
+- genesis block identity;
+- each non-genesis PreviousHash against the preceding stored block hash;
+- stored head hash against the final historical block hash;
+- stored state root against the head state root when the header contains one.
+
+Historical validation prevents a store from appearing healthy merely because its latest block and state are internally consistent while an earlier link in the chain is missing or corrupted.
 
 If any consistency check fails, recovery returns an error instead of creating a fresh chain.
 
 ## Persistent Recovery Integration Test
 
-The node test suite now exercises the recovery boundary against the development FileStore implementation.
+The node test suite exercises the recovery boundary against the development FileStore implementation.
 
 The integration path is:
 
@@ -53,16 +60,23 @@ new FileStore(path)
 OpenDevnet()
     │
     ├── recover head
-    └── recover state
+    ├── recover state
+    └── validate stored history
 ~~~
 
 The test verifies that the reopened node preserves:
 
 - head height;
 - head hash;
-- state root.
+- state root;
+- the ability to import another block after recovery.
 
-This test is intentionally focused on the storage-to-node lifecycle. It does not freeze the FileStore format as a protocol format.
+Additional recovery tests cover:
+
+- missing historical blocks;
+- broken historical parent hashes.
+
+These tests are intentionally focused on the storage-to-node lifecycle. They do not freeze the FileStore format as a protocol format.
 
 ## State Isolation
 
@@ -110,7 +124,16 @@ Examples:
 stored head hash != recomputed block hash
         │
         ▼
-ErrBlockHashMismatch
+ErrHistoryMismatch / ErrBlockHashMismatch
+~~~
+
+or:
+
+~~~text
+block[N].PreviousHash != hash(block[N-1])
+        │
+        ▼
+ErrHistoryMismatch
 ~~~
 
 or:
