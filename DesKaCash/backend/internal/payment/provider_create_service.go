@@ -7,11 +7,11 @@ import (
 )
 
 type ProviderCreateService struct {
-	store    PaymentStore
+	store    PaymentCreator
 	provider Provider
 }
 
-func NewProviderCreateService(store PaymentStore, provider Provider) *ProviderCreateService {
+func NewProviderCreateService(store PaymentCreator, provider Provider) *ProviderCreateService {
 	return &ProviderCreateService{
 		store:    store,
 		provider: provider,
