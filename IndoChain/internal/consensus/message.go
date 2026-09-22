@@ -66,51 +66,30 @@ func (m Message) SigningBytes() []byte {
 }
 
 func (m Message) Sign(signer crypto.Signer) (Message, error) {
-	if signer == nil {
-		return Message{}, ErrMissingSignature
-	}
+	if signer == nil { return Message{}, ErrMissingSignature }
 	sig, err := signer.Sign(m.SigningBytes())
-	if err != nil {
-		return Message{}, err
-	}
+	if err != nil { return Message{}, err }
 	m.Signature = append([]byte(nil), sig...)
 	return m, nil
 }
 
 func ValidateMessage(m Message, rules ValidationRules) error {
-	if rules.ProtocolVersion == 0 || rules.ChainID == 0 {
-		return ErrInvalidConsensusMessage
-	}
-	if m.ProtocolVersion != rules.ProtocolVersion {
-		return ErrWrongProtocolVersion
-	}
-	if m.ChainID != rules.ChainID {
-		return ErrWrongChainID
-	}
+	if rules.ProtocolVersion == 0 || rules.ChainID == 0 { return ErrInvalidConsensusMessage }
+	if m.ProtocolVersion != rules.ProtocolVersion { return ErrWrongProtocolVersion }
+	if m.ChainID != rules.ChainID { return ErrWrongChainID }
 	switch m.Type {
 	case MessageTypeProposal, MessageTypeVote, MessageTypeFinalityEvidence, MessageTypeValidatorSetUpdate:
-	default:
-		return ErrInvalidMessageType
+	default: return ErrInvalidMessageType
 	}
-	if rules.RequireSender && len(m.Sender) == 0 {
-		return ErrMissingSender
-	}
-	if rules.RequireSignature && len(m.Signature) == 0 {
-		return ErrMissingSignature
-	}
-	if rules.MaxPayloadSize > 0 && uint32(len(m.Payload)) > rules.MaxPayloadSize {
-		return ErrMessageTooLarge
-	}
+	if rules.RequireSender && len(m.Sender) == 0 { return ErrMissingSender }
+	if rules.RequireSignature && len(m.Signature) == 0 { return ErrMissingSignature }
+	if rules.MaxPayloadSize > 0 && uint32(len(m.Payload)) > rules.MaxPayloadSize { return ErrMessageTooLarge }
 	return nil
 }
 
 func VerifyMessageSignature(m Message, publicKey []byte) error {
-	if len(publicKey) == 0 || len(m.Signature) == 0 {
-		return ErrInvalidSignature
-	}
-	if !crypto.VerifyEd25519(publicKey, m.SigningBytes(), m.Signature) {
-		return ErrInvalidSignature
-	}
+	if len(publicKey) == 0 || len(m.Signature) == 0 { return ErrInvalidSignature }
+	if !crypto.VerifyEd25519(m.SigningBytes(), m.Signature, publicKey) { return ErrInvalidSignature }
 	return nil
 }
 
@@ -127,9 +106,7 @@ func putU64(b *bytes.Buffer, v uint64) {
 }
 
 func putBytes(b *bytes.Buffer, v []byte) {
-	if uint64(len(v)) > uint64(^uint32(0)) {
-		panic(fmt.Sprintf("consensus field too large: %d", len(v)))
-	}
+	if uint64(len(v)) > uint64(^uint32(0)) { panic(fmt.Sprintf("consensus field too large: %d", len(v))) }
 	var x [4]byte
 	binary.BigEndian.PutUint32(x[:], uint32(len(v)))
 	b.Write(x[:])
