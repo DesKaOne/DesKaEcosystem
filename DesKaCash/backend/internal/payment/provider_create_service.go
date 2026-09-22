@@ -12,6 +12,7 @@ var ErrProviderAmountMismatch = errors.New("provider amount mismatch")
 type PaymentLifecycleStore interface {
 	PaymentCreator
 	Get(ctx context.Context, id string) (Payment, error)
+	GetByIdempotencyKey(ctx context.Context, key string) (Payment, error)
 	Save(ctx context.Context, payment Payment) error
 }
 
@@ -29,6 +30,12 @@ func NewProviderCreateService(store PaymentLifecycleStore, provider Provider) *P
 
 func (s *ProviderCreateService) Create(ctx context.Context, id, accountID, providerName, idempotencyKey string, amount ledger.Money) (Payment, error) {
 	if err := ctx.Err(); err != nil {
+		return Payment{}, err
+	}
+
+	if existing, err := s.store.GetByIdempotencyKey(ctx, idempotencyKey); err == nil {
+		return existing, nil
+	} else if !errors.Is(err, ErrPaymentNotFound) {
 		return Payment{}, err
 	}
 
