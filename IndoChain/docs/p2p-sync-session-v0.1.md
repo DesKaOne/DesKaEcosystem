@@ -14,13 +14,13 @@ It keeps:
 
 1. `NextRequest(remoteHeight)` plans the next bounded range from the current cursor.
 2. The caller obtains a response from the peer or transport layer.
-3. `ApplyResponse(remoteHeight, response)` validates and applies that round.
+3. `ApplyResponse(remoteHeight, response)` first checks whether the session still needs synchronization, then validates and applies that round.
 4. The cursor advances only after the coordinator successfully imports the response.
 5. The caller repeats until `NextRequest` reports that the local cursor is caught up.
 
 ## Failure behavior
 
-Rejected or failed responses do not update the session cursor.
+Rejected or failed responses do not update the session cursor. If the session is already caught up, applying a response is a no-op.
 
 A nil session or missing coordinator is rejected before state mutation.
 
