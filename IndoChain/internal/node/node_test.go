@@ -85,7 +85,6 @@ func TestImportBlockRejectsWrongParentWithoutMutation(t *testing.T) {
 		Version: devnet.ProtocolVersion, ChainID: devnet.ChainID, Height: 1,
 		Timestamp: n.Head.Header.Timestamp + 1, PreviousHash: types.Hash{9},
 	}}
-	rules := block.ExecutionRules{ChainID: devnet.ChainID, ProtocolVersion: devnet.ProtocolVersion}
 	if err := n.ImportBlock(b, nil); err != block.ErrPreviousHash { t.Fatalf("error = %v, want %v", err, block.ErrPreviousHash) }
 	if n.Head.Header.Height != 0 || n.State.Root() != before { t.Fatal("node mutated after rejecting invalid parent") }
 }
