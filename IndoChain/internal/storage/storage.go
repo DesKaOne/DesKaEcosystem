@@ -23,19 +23,21 @@ type ChainStore interface {
 }
 
 type MemoryStore struct {
-	blocks  map[types.Height]storedBlock
+	blocks  map[types.Height]StoredBlock
 	state   *state.State
 	head    types.Height
 	hasHead bool
 }
 
-type storedBlock struct {
-	block block.Block
-	hash  types.Hash
+// StoredBlock is the storage representation of a block and its hash.
+// Exported fields are required so the development FileStore can encode it with gob.
+type StoredBlock struct {
+	Block block.Block
+	Hash  types.Hash
 }
 
 func NewMemoryStore() *MemoryStore {
-	return &MemoryStore{blocks: make(map[types.Height]storedBlock)}
+	return &MemoryStore{blocks: make(map[types.Height]StoredBlock)}
 }
 
 func (s *MemoryStore) SaveBlock(b block.Block, hash types.Hash) error {
@@ -43,9 +45,9 @@ func (s *MemoryStore) SaveBlock(b block.Block, hash types.Hash) error {
 		return ErrEmptyStore
 	}
 	if s.blocks == nil {
-		s.blocks = make(map[types.Height]storedBlock)
+		s.blocks = make(map[types.Height]StoredBlock)
 	}
-	s.blocks[b.Header.Height] = storedBlock{block: b, hash: hash}
+	s.blocks[b.Header.Height] = StoredBlock{Block: b, Hash: hash}
 	if !s.hasHead || b.Header.Height >= s.head {
 		s.head = b.Header.Height
 		s.hasHead = true
@@ -61,7 +63,7 @@ func (s *MemoryStore) GetBlock(height types.Height) (block.Block, types.Hash, er
 	if !ok {
 		return block.Block{}, types.Hash{}, ErrBlockNotFound
 	}
-	return stored.block, stored.hash, nil
+	return stored.Block, stored.Hash, nil
 }
 
 func (s *MemoryStore) SaveState(st *state.State) error {
