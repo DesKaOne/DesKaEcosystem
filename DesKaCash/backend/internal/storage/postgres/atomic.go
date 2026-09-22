@@ -26,7 +26,7 @@ func (r *Repository) ApplyCredit(ctx context.Context, tx ledger.Transaction, ref
 		FROM accounts
 		WHERE id = $1
 		FOR UPDATE
-	`).Scan(
+	`, tx.AccountID).Scan(
 		&account.ID,
 		&account.UserID,
 		&account.Asset,
