@@ -10,8 +10,6 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-var ErrDuplicate = errors.New("duplicate record")
-
 type Repository struct {
 	db *sql.DB
 }
@@ -148,7 +146,7 @@ func mapDBError(err error) error {
 	if errors.As(err, &pgErr) {
 		switch pgErr.Code {
 		case "23505":
-			return ErrDuplicate
+			return ledger.ErrDuplicateTransaction
 		}
 	}
 
