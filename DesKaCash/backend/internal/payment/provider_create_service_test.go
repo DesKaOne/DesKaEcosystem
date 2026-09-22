@@ -75,6 +75,29 @@ func TestProviderCreateServiceRejectsAmountMismatch(t *testing.T) {
 	}
 }
 
+func TestProviderCreateServiceIsIdempotent(t *testing.T) {
+	store := NewMemoryPaymentStore()
+	provider := &countingProvider{}
+	service := NewProviderCreateService(store, provider)
+
+	first, err := service.Create(context.Background(), "pay-1", "acct-1", "fake", "idem-1", ledger.FromDIDR(100))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	second, err := service.Create(context.Background(), "pay-2", "acct-1", "fake", "idem-1", ledger.FromDIDR(100))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if first.ID != second.ID {
+		t.Fatalf("expected same payment id, got %q and %q", first.ID, second.ID)
+	}
+	if provider.calls != 1 {
+		t.Fatalf("expected provider to be called once, got %d", provider.calls)
+	}
+}
+
 type failingProvider struct{}
 
 func (f *failingProvider) Name() string {
@@ -104,5 +127,27 @@ func (mismatchProvider) CreatePayment(context.Context, Payment) (ProviderPayment
 }
 
 func (mismatchProvider) GetPayment(context.Context, string) (ProviderPayment, error) {
+	return ProviderPayment{}, context.DeadlineExceeded
+}
+
+type countingProvider struct {
+	calls int
+}
+
+func (p *countingProvider) Name() string {
+	return "fake"
+}
+
+func (p *countingProvider) CreatePayment(context.Context, Payment) (ProviderPayment, error) {
+	p.calls++
+	return ProviderPayment{
+		ID:        "provider-1",
+		Status:    StatusPending,
+		Amount:    ledger.FromDIDR(100),
+		Reference: "ref-1",
+	}, nil
+}
+
+func (p *countingProvider) GetPayment(context.Context, string) (ProviderPayment, error) {
 	return ProviderPayment{}, context.DeadlineExceeded
 }
