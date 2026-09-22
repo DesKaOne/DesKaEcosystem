@@ -34,6 +34,18 @@ func (r *Repository) GetAccount(ctx context.Context, id string) (ledger.Account,
 	return account, err
 }
 
+func (r *Repository) CreateAccount(ctx context.Context, account ledger.Account) error {
+	const query = `INSERT INTO accounts
+		(id, user_id, asset, balance_base_units, version)
+		VALUES ($1, $2, $3, $4, $5)`
+
+	_, err := r.db.ExecContext(ctx, query,
+		account.ID, account.UserID, account.Asset,
+		account.Balance.BaseUnits, account.Version,
+	)
+	return mapDBError(err)
+}
+
 func (r *Repository) SaveAccount(ctx context.Context, account ledger.Account) error {
 	const query = `UPDATE accounts
 		SET balance_base_units = $2, version = $3, updated_at = NOW()
@@ -130,7 +142,5 @@ func mapDBError(err error) error {
 	if err == nil {
 		return nil
 	}
-	// Driver-specific SQLSTATE mapping will be added with the PostgreSQL
-	// driver dependency. Keep the repository API independent of the driver.
 	return fmt.Errorf("postgres: %w", err)
 }
