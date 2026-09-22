@@ -3,7 +3,6 @@ package main
 import (
 	"log"
 	"net/http"
-	"os"
 
 	"github.com/DesKaOne/DesKaEcosystem/DesKaCash/backend/internal/config"
 	"github.com/DesKaOne/DesKaEcosystem/DesKaCash/backend/internal/httpapi"
@@ -24,6 +23,4 @@ func main() {
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
 	}
-
-	_ = os.Stdout
 }
