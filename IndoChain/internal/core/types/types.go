@@ -17,4 +17,5 @@ func (h Hash) String() string {
 type Height uint64
 type Nonce uint64
 type ChainID uint64
+
 type ProtocolVersion uint16
