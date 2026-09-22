@@ -13,8 +13,7 @@ import (
 
 func blockRules(pub []byte) ExecutionRules {
 	return ExecutionRules{
-		ChainID:         1001,
-		ProtocolVersion: 1,
+		ChainID: 1001, ProtocolVersion: 1,
 		Transaction: state.ExecutionRules{
 			Validation: transaction.ValidationRules{
 				ProtocolVersion: 1, ChainID: 1001,
@@ -39,13 +38,19 @@ func blockTx(t *testing.T, signer *crypto.Ed25519Signer, nonce types.Nonce, valu
 	return tx
 }
 
-func TestExecuteBlockCommitsAllTransactions(t *testing.T) {
+func newBlockSigner(t *testing.T) *crypto.Ed25519Signer {
+	t.Helper()
 	seed := bytes.Repeat([]byte{0x42}, ed25519.SeedSize)
 	signer, err := crypto.NewEd25519Signer(ed25519.NewKeyFromSeed(seed))
 	if err != nil { t.Fatal(err) }
+	return signer
+}
 
+func TestExecuteBlockCommitsAllTransactions(t *testing.T) {
+	signer := newBlockSigner(t)
 	s := state.New()
 	s.Set(types.Address{1}, state.Account{Balance: 100, Nonce: 0})
+
 	b := Block{
 		Header: Header{Version: 1, ChainID: 1001, Height: 1},
 		Transactions: []any{
@@ -53,8 +58,19 @@ func TestExecuteBlockCommitsAllTransactions(t *testing.T) {
 			blockTx(t, signer, 1, 20),
 		},
 	}
+	expectedRoot := func() types.Hash {
+		working := s.Snapshot()
+		_ = state.ApplyTransaction(working, b.Transactions[0].(transaction.Transaction), blockRules(signer.PublicKey()).Transaction)
+		_ = state.ApplyTransaction(working, b.Transactions[1].(transaction.Transaction), blockRules(signer.PublicKey()).Transaction)
+		return working.Root()
+	}()
+	b.Header.StateRoot = expectedRoot
+
 	if err := ExecuteBlock(s, b, 1, types.Hash{}, blockRules(signer.PublicKey())); err != nil {
 		t.Fatal(err)
+	}
+	if s.Root() != expectedRoot {
+		t.Fatalf("unexpected committed root: %s", s.Root())
 	}
 	sender, _ := s.Get(types.Address{1})
 	recipient, _ := s.Get(types.Address{2})
@@ -62,13 +78,32 @@ func TestExecuteBlockCommitsAllTransactions(t *testing.T) {
 	if recipient.Balance != 50 { t.Fatalf("unexpected recipient: %+v", recipient) }
 }
 
-func TestExecuteBlockRollsBackOnTransactionFailure(t *testing.T) {
-	seed := bytes.Repeat([]byte{0x42}, ed25519.SeedSize)
-	signer, err := crypto.NewEd25519Signer(ed25519.NewKeyFromSeed(seed))
-	if err != nil { t.Fatal(err) }
+func TestExecuteBlockRejectsStateRootMismatch(t *testing.T) {
+	signer := newBlockSigner(t)
+	s := state.New()
+	s.Set(types.Address{1}, state.Account{Balance: 100, Nonce: 0})
 
+	b := Block{
+		Header: Header{
+			Version: 1, ChainID: 1001, Height: 1,
+			StateRoot: types.Hash{1},
+		},
+		Transactions: []any{blockTx(t, signer, 0, 30)},
+	}
+	if err := ExecuteBlock(s, b, 1, types.Hash{}, blockRules(signer.PublicKey())); err != ErrStateRootMismatch {
+		t.Fatalf("expected state root mismatch, got %v", err)
+	}
+	sender, _ := s.Get(types.Address{1})
+	if sender.Balance != 100 || sender.Nonce != 0 {
+		t.Fatalf("state committed despite root mismatch: %+v", sender)
+	}
+}
+
+func TestExecuteBlockRollsBackOnTransactionFailure(t *testing.T) {
+	signer := newBlockSigner(t)
 	s := state.New()
 	s.Set(types.Address{1}, state.Account{Balance: 40, Nonce: 0})
+
 	b := Block{
 		Header: Header{Version: 1, ChainID: 1001, Height: 1},
 		Transactions: []any{
