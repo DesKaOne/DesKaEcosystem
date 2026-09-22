@@ -2,14 +2,9 @@ package state
 
 import (
 	"errors"
-	"math"
 
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/transaction"
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/types"
-)
-
-var (
-	ErrBalanceOverflow = errors.New("balance overflow")
 )
 
 // ExecutionRules defines the development transaction-to-state execution boundary.
@@ -42,12 +37,6 @@ func ApplyTransaction(s *State, tx transaction.Transaction, rules ExecutionRules
 
 	s.Replace(working)
 	return nil
-}
-
-// CheckTransferOverflow reports whether adding amount to balance would overflow
-// the development uint64 balance representation.
-func CheckTransferOverflow(balance, amount uint64) bool {
-	return amount > math.MaxUint64-balance
 }
 
 // ApplyNativeTransfer is a low-level execution helper for callers that already
