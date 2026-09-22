@@ -60,3 +60,21 @@ func TestMemoryRepositoryRoundTrip(t *testing.T) {
 		t.Fatalf("expected 1 entry, got %d", len(entries))
 	}
 }
+
+func TestMemoryRepositoryDuplicateAccount(t *testing.T) {
+	repo := NewMemoryRepository()
+	ctx := context.Background()
+
+	account, err := NewAccount("acc-duplicate", "user-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := repo.CreateAccount(ctx, account); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := repo.CreateAccount(ctx, account); err != ErrDuplicateAccount {
+		t.Fatalf("expected duplicate account error, got %v", err)
+	}
+}
