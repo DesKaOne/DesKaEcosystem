@@ -69,7 +69,7 @@ IndoChain menjadi **underlying ledger** yang dapat digunakan oleh berbagai layan
 
 IndoChain memiliki native asset bernama:
 
-> **dIDR — decentralized Indonesian Rupiah**
+> **dIDR — denomination Indonesian Rupiah**
 
 dIDR merupakan native asset yang digunakan di dalam blockchain IndoChain.
 

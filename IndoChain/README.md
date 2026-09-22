@@ -32,7 +32,7 @@ IndoChain dikembangkan dengan fokus pada:
 
 IndoChain memiliki native coin bernama:
 
-> **dIDR — decentralized Indonesian Rupiah**
+> **dIDR — denomination Indonesian Rupiah**
 
 dIDR merupakan native asset yang digunakan di dalam jaringan IndoChain.
 

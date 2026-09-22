@@ -222,7 +222,7 @@ The specific legal, reserve, redemption, custody, and accounting model is outsid
 
 ## dIDR
 
-The native IndoChain asset is **dIDR — decentralized Indonesian Rupiah**.
+The native IndoChain asset is **dIDR — denomination Indonesian Rupiah**.
 
 Current project denomination:
 
