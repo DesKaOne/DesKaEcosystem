@@ -29,3 +29,10 @@ The cursor does not select peers, establish finality, or replace canonical block
 ## v0.1 limitation
 
 This remains a coordination boundary. The existing generic `BlockImporter` does not yet encode the transaction authentication context required by the concrete node import path, so this cursor must not be treated as proof of end-to-end node synchronization.
+
+
+## Planning helper
+
+`SyncPlanFromCursor` connects the cursor boundary to `SyncPlanner`. It starts the next request at `cursor.Height + 1` and applies the planner's existing batch limit. When the cursor is already at the remote height, it produces no request.
+
+This helper is only composition logic; it does not perform network I/O or import blocks.
