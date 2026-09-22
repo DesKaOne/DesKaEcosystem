@@ -11,8 +11,8 @@ import (
 )
 
 var (
-\t_ ledger.Repository = (*Repository)(nil)
-\t_ ledger.PostingStore = (*Repository)(nil)
+	_ ledger.Repository = (*Repository)(nil)
+	_ ledger.PostingStore = (*Repository)(nil)
 )
 
 type Repository struct {
