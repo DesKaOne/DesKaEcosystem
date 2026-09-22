@@ -34,11 +34,15 @@ jobs:
 
       - name: Format check
         run: |
-          if [ -n "$(gofmt -l .)" ]; then
-            echo "Files requiring gofmt:"
-            gofmt -l .
+          files="$(gofmt -l .)"
+
+          if [ -n "$files" ]; then
+            echo "::error::Files requiring gofmt:"
+            printf '%s\n' "$files"
             exit 1
           fi
+
+          echo "All Go files are properly formatted."
 
       - name: Test
         run: go test ./...
