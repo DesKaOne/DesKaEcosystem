@@ -8,6 +8,8 @@ type MemoryRepository struct {
 	accounts     map[string]Account
 	transactions map[string]Transaction
 	entries      map[string][]Entry
+	postings     map[string]Posting
+	postingIDs   map[string][]string
 }
 
 func NewMemoryRepository() *MemoryRepository {
@@ -15,6 +17,8 @@ func NewMemoryRepository() *MemoryRepository {
 		accounts:     make(map[string]Account),
 		transactions: make(map[string]Transaction),
 		entries:      make(map[string][]Entry),
+		postings:     make(map[string]Posting),
+		postingIDs:   make(map[string][]string),
 	}
 }
 
