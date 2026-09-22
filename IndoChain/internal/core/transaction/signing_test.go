@@ -23,7 +23,7 @@ func TestTransactionSignVerify(t *testing.T) {
     if ok { t.Fatal("modified transaction unexpectedly verified") }
 }
 
-func TestSigningBytesExcludeSignature(t *testing.T) {
+func TestDomainSigningBytesExcludeSignature(t *testing.T) {
     tx := Transaction{Version: 1, ChainID: 1001, Nonce: 1, Sender: types.Address{1}, Recipient: types.Address{2}, Value: 10, GasLimit: 1000}
     a, err := SigningBytesWithDomain(tx)
     if err != nil { t.Fatal(err) }
