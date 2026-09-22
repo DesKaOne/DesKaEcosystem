@@ -12,7 +12,7 @@ import (
 	"github.com/DesKaOne/DesKaEcosystem/DesKaCash/backend/internal/ledger"
 )
 
-func TestRepositoryCreditWithPostgres(t *testing.T) {
+func TestRepositoryApplyCreditWithPostgres(t *testing.T) {
 	dsn := os.Getenv("DESKACASH_TEST_DATABASE_URL")
 	if dsn == "" {
 		t.Skip("DESKACASH_TEST_DATABASE_URL is not set")
@@ -59,8 +59,9 @@ func TestRepositoryCreditWithPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	tx.ProviderID = "provider-tx-1"
 
-	if err := repo.Credit(ctx, tx, "provider:integration-1"); err != nil {
+	if err := repo.ApplyCredit(ctx, tx, "provider:integration-1"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -82,6 +83,9 @@ func TestRepositoryCreditWithPostgres(t *testing.T) {
 	if storedTx.Status != ledger.StatusSucceeded {
 		t.Fatalf("expected succeeded transaction, got %s", storedTx.Status)
 	}
+	if storedTx.ProviderID != tx.ProviderID {
+		t.Fatalf("expected provider id %q, got %q", tx.ProviderID, storedTx.ProviderID)
+	}
 
 	entries, err := repo.ListEntries(ctx, account.ID)
 	if err != nil {
@@ -91,7 +95,7 @@ func TestRepositoryCreditWithPostgres(t *testing.T) {
 		t.Fatalf("expected 1 ledger entry, got %d", len(entries))
 	}
 
-	if err := repo.Credit(ctx, tx, "provider:integration-1"); !errors.Is(err, ledger.ErrDuplicateTransaction) {
+	if err := repo.ApplyCredit(ctx, tx, "provider:integration-1"); !errors.Is(err, ledger.ErrDuplicateTransaction) {
 		t.Fatalf("expected duplicate transaction error, got %v", err)
 	}
 
