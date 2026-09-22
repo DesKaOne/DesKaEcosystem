@@ -1022,3 +1022,173 @@ Healthy
 Dokumen ini adalah **master roadmap dan architecture baseline** untuk IndoChain di dalam DesKa Ecosystem.
 
 Detail seperti final consensus implementation, VM, tokenomics, cryptographic suite, wire protocol, block timing, gas schedule dan genesis allocation akan ditetapkan pada dokumen desain teknis masing-masing sebelum implementasi production.
+
+
+---
+
+# EVM Execution & Developer Ecosystem
+
+IndoChain tetap merupakan **blockchain native milik sendiri**. EVM digunakan sebagai execution layer agar developer dapat menggunakan ekosistem smart contract yang sudah dikenal, tanpa menjadikan IndoChain sebagai Ethereum clone.
+
+```text
+                    IndoChain
+                        │
+        ┌───────────────┼────────────────┐
+        │               │                │
+   Consensus Layer  Native Asset     EVM Layer
+        │               │                │
+      PoS+BFT           dIDR         Solidity
+      Validator         Native       Smart Contract
+      P2P/Block         Asset         ABI
+                                      JSON-RPC
+                                      Tooling
+                        │                │
+                        └───────┬────────┘
+                                │
+                         Fee Sponsorship
+```
+
+## Layering
+
+### Native Blockchain Layer
+Fondasi IndoChain tetap mencakup consensus, validator, P2P, block production, mempool, state, storage, dan finality. Core protocol menggunakan Go sebagai bahasa utama.
+
+### Native Asset Layer
+`dIDR` adalah native asset IndoChain. Detail tokenomics, monetary policy, supply, emission, dan genesis allocation ditetapkan pada spesifikasi ekonomi/protocol tersendiri sebelum mainnet.
+
+### EVM Execution Layer
+Target developer workflow:
+
+```text
+Solidity
+   ↓
+Hardhat / Foundry / Remix
+   ↓
+IndoChain JSON-RPC
+   ↓
+EVM Execution
+   ↓
+IndoChain State
+```
+
+Compatibility yang ditargetkan mencakup Solidity, EVM bytecode, ABI, JSON-RPC, contract deployment/execution, events, gas metering, dan tooling EVM yang relevan.
+
+**EVM adalah execution layer IndoChain, bukan pengganti native blockchain layer.**
+
+## Native Account dan EVM Account
+
+Secara konseptual wallet dapat mengelola:
+
+```text
+IndoChain User
+│
+├── Native Account
+│      └── native dIDR balance
+│
+└── EVM Account
+       └── smart contract / token interaction
+```
+
+Binding identity/user, native account, dan EVM account harus ditentukan pada spesifikasi account/address. Format address final belum dianggap production specification.
+
+## Fee Sponsorship
+
+Fee sponsorship dirancang sebagai fitur native IndoChain yang dapat berlaku untuk transaksi native maupun EVM.
+
+```text
+                 Transaction
+                      │
+              ┌───────┴───────┐
+              │               │
+          Native Tx        EVM Tx
+              │               │
+              └───────┬───────┘
+                      │
+                 Fee System
+                      │
+              ┌───────┴───────┐
+              │               │
+          User Pays       Sponsored
+                              │
+                        Fee Sponsor
+```
+
+Desain ini tidak dikunci pada ERC-4337/Paymaster. Karena IndoChain memiliki protocol sendiri, sponsorship dapat diimplementasikan langsung pada transaction format, validation rules, dan execution pipeline.
+
+Konsep transaction:
+
+```text
+Transaction
+├── from
+├── to
+├── amount
+├── nonce
+├── fee
+├── signature
+└── optional fee_payer / sponsor
+```
+
+Authorization sponsor, signature, limits, replay protection, refund, dan anti-abuse ditetapkan pada spesifikasi fee sponsorship.
+
+## DesKaCash Integration
+
+```text
+                         DesKaEcosystem
+                               │
+              ┌────────────────┴────────────────┐
+              │                                 │
+        DesKaCash                           IndoChain
+        Fiat Ledger                       Blockchain
+              │                                 │
+       Top Up / PPOB / P2P                  dIDR
+              │                                 │
+              └──────────────┬──────────────────┘
+                             │
+                         Conversion
+```
+
+PostgreSQL ledger DesKaCash menjadi source of truth untuk saldo fiat DesKaCash, sedangkan IndoChain menjadi source of truth untuk state dan saldo on-chain. DesKaCash cukup menyimpan mapping seperti `user_id`, `blockchain_address`, `chain_id`, wallet type, dan status; saldo blockchain tidak perlu diduplikasi sebagai canonical balance.
+
+Konversi fiat IDR ↔ dIDR merupakan settlement/conversion process tersendiri.
+
+## Developer Ecosystem
+
+Target IndoChain adalah memungkinkan developer membawa skill dan tooling EVM yang sudah mereka miliki:
+
+```text
+Developer
+   ↓
+Solidity
+   ↓
+Hardhat / Foundry / Remix
+   ↓
+IndoChain RPC
+   ↓
+Deploy / Call / Transaction
+   ↓
+IndoChain EVM
+```
+
+Tooling native yang direncanakan:
+
+```text
+indochain-cli
+indochain-sdk-go
+indochain-sdk-dart
+indochain-sdk-python
+indochain-sdk-js
+```
+
+EVM compatibility menjadi developer-facing boundary, sedangkan core blockchain tetap modular dan dapat berkembang secara independen.
+
+## Architectural Principles
+
+1. IndoChain tetap blockchain native milik sendiri.
+2. EVM menjadi execution layer untuk smart contract compatibility.
+3. Consensus, P2P, native state, dan block layer tidak bergantung pada application tooling EVM.
+4. dIDR merupakan native asset IndoChain.
+5. Fee sponsorship dirancang pada level protocol IndoChain.
+6. DesKaCash bukan canonical source untuk blockchain state.
+7. EVM interfaces diperlakukan sebagai compatibility boundary untuk developer.
+8. Native protocol dan EVM execution memiliki batas tanggung jawab yang jelas.
+9. Detail yang belum ditetapkan secara teknis tidak dianggap sebagai production specification.
