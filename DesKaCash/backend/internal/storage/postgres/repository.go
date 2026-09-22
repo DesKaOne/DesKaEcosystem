@@ -10,7 +10,10 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-var (\n\t_ ledger.Repository = (*Repository)(nil)\n\t_ ledger.PostingStore = (*Repository)(nil)\n)
+var (
+\t_ ledger.Repository = (*Repository)(nil)
+\t_ ledger.PostingStore = (*Repository)(nil)
+)
 
 type Repository struct {
 	db *sql.DB
@@ -139,6 +142,49 @@ func (r *Repository) ListEntries(ctx context.Context, accountID string) ([]ledge
 	return entries, nil
 }
 
+
+func (r *Repository) CreatePosting(ctx context.Context, posting ledger.Posting) error {
+	const query = `INSERT INTO ledger_postings
+		(id, transaction_id, account_id, asset, type, amount_base_units, reference)
+		VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''))`
+
+	_, err := r.db.ExecContext(ctx, query,
+		posting.ID, posting.TransactionID, posting.AccountID, posting.Asset,
+		posting.Type, posting.Amount.BaseUnits, posting.Reference,
+	)
+	return mapDBError(err)
+}
+
+func (r *Repository) ListPostings(ctx context.Context, transactionID string) ([]ledger.Posting, error) {
+	const query = `SELECT id, transaction_id, account_id, asset, type,
+		amount_base_units, COALESCE(reference, '')
+		FROM ledger_postings
+		WHERE transaction_id = $1
+		ORDER BY id ASC`
+
+	rows, err := r.db.QueryContext(ctx, query, transactionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var postings []ledger.Posting
+	for rows.Next() {
+		var posting ledger.Posting
+		if err := rows.Scan(
+			&posting.ID, &posting.TransactionID, &posting.AccountID, &posting.Asset,
+			&posting.Type, &posting.Amount.BaseUnits, &posting.Reference,
+		); err != nil {
+			return nil, err
+		}
+		postings = append(postings, posting)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return postings, nil
+}
+
 func mapDBError(err error) error {
 	if err == nil {
 		return nil
@@ -153,6 +199,8 @@ func mapDBError(err error) error {
 				return ledger.ErrDuplicateAccount
 			case "transactions_pkey", "ledger_entries_pkey", "ledger_entries_transaction_id_key":
 				return ledger.ErrDuplicateTransaction
+			case "ledger_postings_pkey":
+				return ledger.ErrDuplicatePosting
 			}
 		}
 	}
