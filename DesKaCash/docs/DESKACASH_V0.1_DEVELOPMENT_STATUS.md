@@ -1,6 +1,6 @@
 # DesKaCash v0.1 — Development Status / Handover
 
-Status: **Development / Core backend prototype — immutable posting model introduced**  
+Status: **Development / Core backend prototype — immutable posting persistence introduced**  
 Branch: `dev/deskacash-v0.1`  
 Repository: `DesKaOne/DesKaEcosystem`  
 Last reviewed: 2026-09-23
@@ -25,7 +25,7 @@ Yang sudah nyata di branch:
 - Provider amount/status validation.
 - PostgreSQL integration tests untuk ledger/debit path.
 - Reconciliation tests yang menggunakan memory ledger nyata untuk reversal/refund.
-- Immutable posting domain model awal dengan validasi debit/credit.
+- Immutable posting domain model awal dengan validasi debit/credit.\n- Immutable posting persistence contract (`PostingStore`).\n- Memory repository posting storage + duplicate protection.\n- PostgreSQL `ledger_postings` table + create/list persistence.\n- Memory/PostgreSQL tests untuk immutable posting persistence.
 - GitHub Actions CI dengan PostgreSQL service, `go test ./...`, dan `go vet ./...`.
 - Feature-scope document untuk arah v0.1.
 - Arah integrasi IndoChain/dIDR sudah terdokumentasi.
@@ -85,7 +85,7 @@ Posting memiliki:
 
 Validasi posting menolak identifier kosong, asset kosong, amount non-positive, dan posting type yang tidak dikenal.
 
-Model ini **belum menjadi source of truth repository** dan belum menggantikan `ledger_entries`/account balance.
+Model ini sudah memiliki persistence layer terpisah melalui `PostingStore`, memory repository, dan PostgreSQL `ledger_postings`. Namun model ini **belum menjadi source of truth repository** dan belum menggantikan `ledger_entries`/account balance.
 
 ### Important architecture gap
 
@@ -119,7 +119,7 @@ Constraint saat ini:
 
 Repository PostgreSQL sudah memiliki create/get account, save account, create/get transaction, create ledger entry, list ledger entries, dan duplicate error mapping.
 
-Immutable `Posting` saat ini baru berada di domain layer; migration dan repository posting belum diubah.
+Immutable `Posting` sekarang sudah memiliki migration dan repository persistence. Repository hanya menyediakan create/read; tidak ada update/delete API untuk posting.
 
 ## 6. Atomic Credit / Debit
 
@@ -255,7 +255,7 @@ Setelah perubahan posting model, CI harus dicek berdasarkan SHA branch terbaru s
 
 Branch aktif: `dev/deskacash-v0.1`.
 
-Snapshot commit terbaru saat update dokumen ini: `c1137a83e2374986090ed4ba23dcb1d9724875ce`.
+Snapshot commit terbaru saat update dokumen ini akan diverifikasi dari branch setelah perubahan posting persistence selesai.
 
 Angka comparison terhadap `main` dapat berubah setelah commit baru.
 
@@ -293,7 +293,7 @@ Dokumentasi architecture sudah ada, tetapi RPC client, transaction submission, f
 ### Phase 1 — Ledger Hardening
 1. Finalize account model.
 2. Pisahkan IDR vs dIDR secara eksplisit.
-3. Implement immutable postings. **Domain model awal sudah ada; persistence dan balancing belum.**
+3. Implement immutable postings. **Domain model dan persistence dasar sudah ada; balancing dan transactional posting belum.**
 4. Implement debit/credit balancing.
 5. Add transaction status machine.
 6. Add reversal transaction relation.
@@ -397,4 +397,4 @@ Prioritas saat ini:
 
 ---
 
-**Handover principle:** Jangan menebak status dari chat lama. Gunakan branch `dev/deskacash-v0.1` sebagai kondisi aktual dan dokumen ini sebagai peta handover. Jika code dan dokumen berbeda, verifikasi code terlebih dahulu lalu update dokumentasi.
+**Latest progression:** immutable postings sekarang sudah dapat disimpan/dibaca melalui memory repository dan PostgreSQL, tetapi belum dipakai sebagai financial source of truth dan belum dipaksa balanced.\n\n**Handover principle:** Jangan menebak status dari chat lama. Gunakan branch `dev/deskacash-v0.1` sebagai kondisi aktual dan dokumen ini sebagai peta handover. Jika code dan dokumen berbeda, verifikasi code terlebih dahulu lalu update dokumentasi.
