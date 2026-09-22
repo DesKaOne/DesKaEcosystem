@@ -18,4 +18,6 @@ type Repository interface {
 
 	CreateEntry(ctx context.Context, entry Entry) error
 	ListEntries(ctx context.Context, accountID string) ([]Entry, error)
+
+	ApplyCredit(ctx context.Context, tx Transaction, reference string) error
 }
