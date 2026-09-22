@@ -282,6 +282,118 @@ This follows the existing IndoChain module and integration boundary.
                          + native dIDR
 ~~~
 
+
+## External Payment Provider Boundary
+
+DesKaCash may integrate with external payment and financial-service providers to provide application-level rails such as:
+
+- top-up
+- bank transfer
+- e-wallet payment
+- QRIS/payment processing
+- disbursement
+- pulsa
+- PPOB
+- other partner-provided financial services
+
+Examples of potential providers include:
+
+- Flip / Flip for Business
+- Midtrans
+- DOKU
+- Ezeelink
+- other providers added by DesKaCash in the future
+
+These providers belong to the **DesKaCash application/financial infrastructure layer**, not to IndoChain core.
+
+The intended boundary is:
+
+~~~text
+DesKaCash Backend
+│
+├── User / Wallet / Ledger
+├── Payment
+├── PPOB
+├── Settlement
+│
+├── Provider Layer
+│   ├── Flip
+│   ├── Midtrans
+│   ├── DOKU
+│   ├── Ezeelink
+│   └── ...
+│
+└── IndoChain Integration
+    └── RPC / documented protocol interface
+~~~
+
+IndoChain MUST NOT depend on, import, or contain business logic for Flip, Midtrans, DOKU, Ezeelink, or other external payment providers.
+
+A provider integration SHOULD be isolated behind an application-level abstraction so DesKaCash can change or add providers without modifying IndoChain protocol code.
+
+Conceptually:
+
+~~~text
+                    DesKaCash
+                        │
+                Provider Abstraction
+                        │
+          ┌─────────────┼─────────────┐
+          ▼             ▼             ▼
+        Flip         Midtrans       DOKU/Ezeelink
+          │             │             │
+          └─────────────┼─────────────┘
+                        ▼
+                DesKaCash Ledger
+                        │
+                  settlement
+                        ▼
+                    IndoChain
+~~~
+
+External provider transaction identifiers SHOULD be treated as integration-layer identifiers rather than IndoChain protocol identifiers. The application should avoid assuming provider IDs fit a small integer type; providers may change identifier formats or lengths.
+
+The general flow is:
+
+~~~text
+User
+ │
+ ▼
+DesKaCash
+ │
+ ▼
+Payment / Provider Layer
+ │
+ ├── external payment rail
+ │
+ ▼
+provider callback / webhook
+ │
+ ▼
+verification + reconciliation
+ │
+ ▼
+DesKaCash Financial Ledger
+ │
+ └── optional settlement
+          ▼
+       IndoChain
+~~~
+
+The important separation is:
+
+~~~text
+External payment rail
+        ≠
+DesKaCash financial ledger
+        ≠
+IndoChain blockchain ledger
+~~~
+
+A successful payment-provider transaction does not automatically mean that an IndoChain transaction must be broadcast immediately. DesKaCash decides when and how application-level funds are reconciled and settled according to its financial and accounting design.
+
+This document records the architectural boundary only. Specific provider contracts, credentials, webhook verification, idempotency, retry policy, reconciliation, settlement timing, and provider failover strategy belong in DesKaCash/provider-specific implementation documentation.
+
 ## Status
 
 This document records the intended architecture for `indochain-v0.1`.
