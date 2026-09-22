@@ -12,10 +12,14 @@ func (r *MemoryRepository) CreatePosting(ctx context.Context, posting Posting) e
 		posting.Asset == "" || posting.Amount.BaseUnits <= 0 {
 		return ErrInvalidPosting
 	}
+	if posting.Type != PostingDebit && posting.Type != PostingCredit {
+		return ErrInvalidPosting
+	}
 	if _, exists := r.postings[posting.ID]; exists {
 		return ErrDuplicatePosting
 	}
 	r.postings[posting.ID] = posting
+	r.postingIDs[posting.TransactionID] = append(r.postingIDs[posting.TransactionID], posting.ID)
 	return nil
 }
 
