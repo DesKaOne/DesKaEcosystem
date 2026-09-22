@@ -64,3 +64,36 @@ func TestMemoryStoreReturnsSnapshots(t *testing.T) {
 		t.Fatal("store state was not isolated from loaded snapshot")
 	}
 }
+
+func TestMemoryStoreMissingBlock(t *testing.T) {
+	store := NewMemoryStore()
+	if _, _, err := store.GetBlock(99); err != ErrBlockNotFound {
+		t.Fatalf("GetBlock error = %v, want %v", err, ErrBlockNotFound)
+	}
+}
+
+func TestMemoryStoreHeadTracksHighestSavedBlock(t *testing.T) {
+	store := NewMemoryStore()
+	first := block.Block{Header: block.Header{Height: 3}}
+	second := block.Block{Header: block.Header{Height: 5}}
+	firstHash := types.Hash{3}
+	secondHash := types.Hash{5}
+
+	if err := store.SaveBlock(first, firstHash); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveBlock(second, secondHash); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveBlock(first, firstHash); err != nil {
+		t.Fatal(err)
+	}
+
+	head, hash, err := store.Head()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if head.Header.Height != 5 || hash != secondHash {
+		t.Fatal("head did not remain at the highest saved block")
+	}
+}
