@@ -36,15 +36,36 @@ func (s *memoryPaymentStore) Save(ctx context.Context, payment Payment) error {
 	return nil
 }
 
-func TestReconcilerUpdatesPaymentStatus(t *testing.T) {
+type memoryLedgerCreditor struct {
+	credits []ledger.Transaction
+}
+
+func (s *memoryLedgerCreditor) ApplyCredit(ctx context.Context, tx ledger.Transaction, reference string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	for _, existing := range s.credits {
+		if existing.ID == tx.ID {
+			return ledger.ErrDuplicateTransaction
+		}
+	}
+	s.credits = append(s.credits, tx)
+	return nil
+}
+
+func newReconciler(payment Payment) (*Reconciler, *memoryLedgerCreditor) {
+	creditor := &memoryLedgerCreditor{}
+	return NewReconciler(newMemoryPaymentStore(payment), NewMemoryWebhookStore(), creditor), creditor
+}
+
+func TestReconcilerUpdatesPaymentStatusAndCreditsLedger(t *testing.T) {
 	payment, err := NewPayment("pay-1", "acct-1", "demo", "idem-1", ledger.FromDIDR(100))
 	if err != nil {
 		t.Fatal(err)
 	}
 	payment.ProviderID = "provider-1"
 
-	store := newMemoryPaymentStore(payment)
-	reconciler := NewReconciler(store, NewMemoryWebhookStore())
+	reconciler, creditor := newReconciler(payment)
 	receivedAt := time.Now().UTC()
 	event := WebhookEvent{
 		ID: "event-1", Provider: "demo", ProviderID: "provider-1",
@@ -62,6 +83,12 @@ func TestReconcilerUpdatesPaymentStatus(t *testing.T) {
 	if !got.UpdatedAt.Equal(receivedAt) {
 		t.Fatalf("expected updated at %v, got %v", receivedAt, got.UpdatedAt)
 	}
+	if len(creditor.credits) != 1 {
+		t.Fatalf("expected one ledger credit, got %d", len(creditor.credits))
+	}
+	if creditor.credits[0].Amount != payment.Amount {
+		t.Fatalf("expected credit amount %v, got %v", payment.Amount, creditor.credits[0].Amount)
+	}
 }
 
 func TestReconcilerRejectsMismatchedWebhook(t *testing.T) {
@@ -71,8 +98,7 @@ func TestReconcilerRejectsMismatchedWebhook(t *testing.T) {
 	}
 	payment.ProviderID = "provider-1"
 
-	store := newMemoryPaymentStore(payment)
-	reconciler := NewReconciler(store, NewMemoryWebhookStore())
+	reconciler, _ := newReconciler(payment)
 	event := WebhookEvent{
 		ID: "event-1", Provider: "other", ProviderID: "provider-1",
 		Status: StatusSucceeded, Amount: payment.Amount.BaseUnits,
@@ -90,8 +116,7 @@ func TestReconcilerRejectsMismatchedAmount(t *testing.T) {
 	}
 	payment.ProviderID = "provider-1"
 
-	store := newMemoryPaymentStore(payment)
-	reconciler := NewReconciler(store, NewMemoryWebhookStore())
+	reconciler, _ := newReconciler(payment)
 	event := WebhookEvent{
 		ID: "event-1", Provider: "demo", ProviderID: "provider-1",
 		Status: StatusSucceeded, Amount: payment.Amount.BaseUnits + 1,
@@ -109,8 +134,7 @@ func TestReconcilerTreatsDuplicateWebhookAsIdempotent(t *testing.T) {
 	}
 	payment.ProviderID = "provider-1"
 
-	store := newMemoryPaymentStore(payment)
-	reconciler := NewReconciler(store, NewMemoryWebhookStore())
+	reconciler, creditor := newReconciler(payment)
 	event := WebhookEvent{
 		ID: "event-1", Provider: "demo", ProviderID: "provider-1",
 		Status: StatusSucceeded, Amount: payment.Amount.BaseUnits,
@@ -121,5 +145,8 @@ func TestReconcilerTreatsDuplicateWebhookAsIdempotent(t *testing.T) {
 	}
 	if _, err := reconciler.ReconcileWebhook(context.Background(), event, payment.ID); err != nil {
 		t.Fatal(err)
+	}
+	if len(creditor.credits) != 1 {
+		t.Fatalf("expected one ledger credit, got %d", len(creditor.credits))
 	}
 }
