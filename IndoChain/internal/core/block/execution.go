@@ -10,12 +10,13 @@ import (
 )
 
 var (
-	ErrNilState        = errors.New("nil execution state")
-	ErrWrongChainID    = errors.New("invalid block chain id")
-	ErrWrongVersion    = errors.New("invalid block protocol version")
-	ErrHeightMismatch  = errors.New("invalid block height")
-	ErrPreviousHash    = errors.New("invalid previous hash")
-	ErrTransactionType = errors.New("invalid block transaction type")
+	ErrNilState          = errors.New("nil execution state")
+	ErrWrongChainID      = errors.New("invalid block chain id")
+	ErrWrongVersion      = errors.New("invalid block protocol version")
+	ErrHeightMismatch    = errors.New("invalid block height")
+	ErrPreviousHash      = errors.New("invalid previous hash")
+	ErrTransactionType   = errors.New("invalid block transaction type")
+	ErrStateRootMismatch = errors.New("state root mismatch")
 )
 
 type ExecutionRules struct {
@@ -57,6 +58,10 @@ func ExecuteBlock(s *state.State, b Block, expectedHeight types.Height, expected
 		if err := state.ApplyTransaction(working, tx, rules.Transaction); err != nil {
 			return fmt.Errorf("transaction %d: %w", index, err)
 		}
+	}
+
+	if b.Header.StateRoot != (types.Hash{}) && b.Header.StateRoot != working.Root() {
+		return ErrStateRootMismatch
 	}
 
 	s.Replace(working)
