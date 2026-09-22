@@ -9,9 +9,9 @@ import (
 )
 
 var (
-	ErrNilSyncReader       = errors.New("nil sync reader")
-	ErrSyncHeightMismatch  = errors.New("sync height mismatch")
-	ErrSyncParentMismatch  = errors.New("sync parent mismatch")
+	ErrNilSyncReader      = errors.New("nil sync reader")
+	ErrSyncHeightMismatch = errors.New("sync height mismatch")
+	ErrSyncParentMismatch = errors.New("sync parent mismatch")
 )
 
 type BlockImporter interface {
@@ -27,8 +27,8 @@ func (c *SyncCoordinator) ApplyResponse(req BlockRequest, resp BlockResponse, ex
 	if c == nil || c.Reader == nil || c.Importer == nil {
 		return ErrNilSyncReader
 	}
-	if err := ValidateBlockRequest(req, uint64(len(resp.Blocks))); err != nil && len(resp.Blocks) > 0 {
-		return fmt.Errorf("%w: %v", ErrSyncHeightMismatch, err)
+	if req.Limit == 0 || uint64(len(resp.Blocks)) > req.Limit {
+		return ErrSyncHeightMismatch
 	}
 	if len(resp.Blocks) == 0 {
 		return nil
@@ -42,7 +42,11 @@ func (c *SyncCoordinator) ApplyResponse(req BlockRequest, resp BlockResponse, ex
 		if i > 0 && b.Header.PreviousHash != parent {
 			return ErrSyncParentMismatch
 		}
-		parent = block.Hash(b)
+		hash, err := block.Hash(b)
+		if err != nil {
+			return err
+		}
+		parent = hash
 		if err := c.Importer.ImportBlock(b); err != nil {
 			return err
 		}
