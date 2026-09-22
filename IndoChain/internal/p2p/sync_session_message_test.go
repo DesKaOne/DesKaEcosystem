@@ -56,7 +56,7 @@ func TestSyncSessionNextRequestMessageRejectsPayloadLimit(t *testing.T) {
 	if err != ErrInvalidMessage {
 		t.Fatalf("expected invalid message error, got %v", err)
 	}
-	if needed != true {
-		t.Fatal("expected request planning to be needed")
+	if needed {
+		t.Fatal("request message should not be marked ready after payload rejection")
 	}
 }
