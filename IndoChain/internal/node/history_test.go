@@ -13,6 +13,17 @@ import (
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/storage"
 )
 
+type missingGenesisStore struct {
+	*storage.MemoryStore
+}
+
+func (s *missingGenesisStore) GetBlock(height types.Height) (block.Block, types.Hash, error) {
+	if height == 0 {
+		return block.Block{}, types.Hash{}, storage.ErrBlockNotFound
+	}
+	return s.MemoryStore.GetBlock(height)
+}
+
 func makeTestBlock(t *testing.T, n *Node, signer *crypto.Ed25519Signer, value uint64, recipient types.Address) block.Block {
 	t.Helper()
 
@@ -76,8 +87,8 @@ func newHistorySigner(t *testing.T) *crypto.Ed25519Signer {
 }
 
 func TestOpenDevnetRejectsMissingHistoricalBlock(t *testing.T) {
-	store := storage.NewMemoryStore()
-	n, err := NewDevnet(store)
+	base := storage.NewMemoryStore()
+	n, err := NewDevnet(base)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,13 +98,8 @@ func TestOpenDevnetRejectsMissingHistoricalBlock(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := store.SaveBlock(b1, n.HeadHash); err != nil {
-		t.Fatal(err)
-	}
-	delete(store.BlocksForTest(), 0)
-
-	_, err = OpenDevnet(store)
-	if !errors.Is(err, ErrHistoryMismatch) {
+	store := &missingGenesisStore{MemoryStore: base}
+	if _, err := OpenDevnet(store); !errors.Is(err, ErrHistoryMismatch) {
 		t.Fatalf("error = %v, want %v", err, ErrHistoryMismatch)
 	}
 }
@@ -120,8 +126,7 @@ func TestOpenDevnetRejectsBrokenHistoricalParentHash(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = OpenDevnet(store)
-	if !errors.Is(err, ErrHistoryMismatch) {
+	if _, err := OpenDevnet(store); !errors.Is(err, ErrHistoryMismatch) {
 		t.Fatalf("error = %v, want %v", err, ErrHistoryMismatch)
 	}
 }
