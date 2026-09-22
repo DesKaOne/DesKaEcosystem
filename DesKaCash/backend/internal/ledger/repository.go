@@ -22,3 +22,10 @@ type Repository interface {
 	ApplyCredit(ctx context.Context, tx Transaction, reference string) error
 	ApplyDebit(ctx context.Context, tx Transaction, reference string) error
 }
+
+// PostingStore persists immutable financial postings.
+// Implementations intentionally expose create/read operations only.
+type PostingStore interface {
+	CreatePosting(ctx context.Context, posting Posting) error
+	ListPostings(ctx context.Context, transactionID string) ([]Posting, error)
+}
