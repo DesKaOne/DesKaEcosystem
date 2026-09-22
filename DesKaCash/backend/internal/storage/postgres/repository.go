@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-var _ ledger.Repository = (*Repository)(nil)
+var (\n\t_ ledger.Repository = (*Repository)(nil)\n\t_ ledger.PostingStore = (*Repository)(nil)\n)
 
 type Repository struct {
 	db *sql.DB
