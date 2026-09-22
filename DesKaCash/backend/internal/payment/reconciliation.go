@@ -49,13 +49,6 @@ func (r *Reconciler) ReconcileWebhook(ctx context.Context, event WebhookEvent, p
 		return Payment{}, ErrWebhookAmountMismatch
 	}
 
-	if err := r.webhooks.Record(ctx, event); err != nil {
-		if errors.Is(err, ErrDuplicateWebhook) {
-			return payment, nil
-		}
-		return Payment{}, err
-	}
-
 	if event.Status == StatusSucceeded {
 		tx, err := ledger.NewTransaction(payment.ID, payment.AccountID, payment.Amount, "payment")
 		if err != nil {
@@ -83,6 +76,13 @@ func (r *Reconciler) ReconcileWebhook(ctx context.Context, event WebhookEvent, p
 		payment.UpdatedAt = event.ReceivedAt
 	}
 	if err := r.payments.Save(ctx, payment); err != nil {
+		return Payment{}, err
+	}
+
+	if err := r.webhooks.Record(ctx, event); err != nil {
+		if errors.Is(err, ErrDuplicateWebhook) {
+			return payment, nil
+		}
 		return Payment{}, err
 	}
 
