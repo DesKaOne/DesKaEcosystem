@@ -139,3 +139,63 @@ func migrationPath(t *testing.T) string {
 
 	return filepath.Join(filepath.Dir(file), "../../../migrations/001_init_ledger.sql")
 }
+
+
+func TestRepositoryStoresImmutablePostingsWithPostgres(t *testing.T) {
+	dsn := os.Getenv("DESKACASH_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("DESKACASH_TEST_DATABASE_URL is not set")
+	}
+
+	db, err := Open(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := db.PingContext(ctx); err != nil {
+		t.Fatal(err)
+	}
+	resetSchema(t, ctx, db)
+
+	repo := NewRepository(db)
+	account, err := ledger.NewAccount("posting-account-1", "posting-user-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.CreateAccount(ctx, account); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := ledger.NewTransaction("posting-tx-1", account.ID, ledger.Money{BaseUnits: 1000}, "transfer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.CreateTransaction(ctx, tx); err != nil {
+		t.Fatal(err)
+	}
+
+	credit, err := ledger.NewPosting("posting-credit-1", tx.ID, account.ID, ledger.AssetDIDR, ledger.PostingCredit, ledger.Money{BaseUnits: 1000}, "transfer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.CreatePosting(ctx, credit); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.CreatePosting(ctx, credit); !errors.Is(err, ledger.ErrDuplicatePosting) {
+		t.Fatalf("expected duplicate posting error, got %v", err)
+	}
+
+	postings, err := repo.ListPostings(ctx, tx.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(postings) != 1 {
+		t.Fatalf("expected 1 posting, got %d", len(postings))
+	}
+	if postings[0].ID != credit.ID || postings[0].Amount.BaseUnits != 1000 {
+		t.Fatalf("unexpected posting: %#v", postings[0])
+	}
+}
