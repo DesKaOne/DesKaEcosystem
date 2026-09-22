@@ -122,3 +122,25 @@ func (s *State) Replace(snapshot *State) {
 		s.accounts[address] = account
 	}
 }
+
+// Accounts returns a deterministic-independent copy of all account data for storage adapters.
+// The map key is the raw address bytes represented as a string.
+func (s *State) Accounts() map[string]Account {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	out := make(map[string]Account, len(s.accounts))
+	for address, account := range s.accounts {
+		out[address] = account
+	}
+	return out
+}
+
+// FromAccounts constructs state from a copied account map.
+func FromAccounts(accounts map[string]Account) *State {
+	out := New()
+	for address, account := range accounts {
+		out.accounts[address] = account
+	}
+	return out
+}
