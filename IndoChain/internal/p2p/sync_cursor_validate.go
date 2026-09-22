@@ -2,8 +2,6 @@ package p2p
 
 import (
 	"errors"
-
-	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/types"
 )
 
 var ErrSyncCursorParentMismatch = errors.New("sync cursor parent mismatch")
@@ -19,7 +17,5 @@ func ValidateSyncCursorParent(cursor SyncCursor, req BlockRequest, resp BlockRes
 	}
 	if resp.Blocks[0].Header.PreviousHash != cursor.BlockHash {
 		return ErrSyncCursorParentMismatch
-	}
-	_ = types.Hash{}
-	return nil
+	}	return nil
 }
