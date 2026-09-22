@@ -3,6 +3,8 @@ package p2p
 import (
 	"encoding/binary"
 	"errors"
+
+	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/types"
 )
 
 var ErrInvalidSyncPayload = errors.New("invalid sync payload")
