@@ -17,5 +17,6 @@ func ValidateSyncCursorParent(cursor SyncCursor, req BlockRequest, resp BlockRes
 	}
 	if resp.Blocks[0].Header.PreviousHash != cursor.BlockHash {
 		return ErrSyncCursorParentMismatch
-	}	return nil
+	}
+	return nil
 }
