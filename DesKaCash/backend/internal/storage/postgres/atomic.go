@@ -8,12 +8,12 @@ import (
 	"github.com/DesKaOne/DesKaEcosystem/DesKaCash/backend/internal/ledger"
 )
 
-// Credit atomically applies a successful credit to an account.
+// ApplyCredit atomically applies a successful credit to an account.
 //
 // The account row is locked for the duration of the transaction. The
 // transaction ID is inserted before the balance mutation, while the unique
 // constraints in PostgreSQL protect against duplicate application.
-func (r *Repository) Credit(ctx context.Context, tx ledger.Transaction, reference string) error {
+func (r *Repository) ApplyCredit(ctx context.Context, tx ledger.Transaction, reference string) error {
 	dbtx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -26,7 +26,7 @@ func (r *Repository) Credit(ctx context.Context, tx ledger.Transaction, referenc
 		FROM accounts
 		WHERE id = $1
 		FOR UPDATE
-	`, tx.AccountID).Scan(
+	`).Scan(
 		&account.ID,
 		&account.UserID,
 		&account.Asset,
@@ -46,10 +46,10 @@ func (r *Repository) Credit(ctx context.Context, tx ledger.Transaction, referenc
 
 	_, err = dbtx.ExecContext(ctx, `
 		INSERT INTO transactions
-			(id, account_id, asset, amount_base_units, type, status, reference, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''), $8)
+			(id, account_id, asset, amount_base_units, type, status, provider_id, reference, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''), NULLIF($8, ''), $9)
 	`, tx.ID, tx.AccountID, tx.Asset, tx.Amount.BaseUnits,
-		tx.Type, ledger.StatusSucceeded, reference, tx.CreatedAt)
+		tx.Type, ledger.StatusSucceeded, tx.ProviderID, reference, tx.CreatedAt)
 	if err != nil {
 		return mapDBError(err)
 	}
