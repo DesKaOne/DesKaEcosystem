@@ -55,6 +55,8 @@ func TestImportBlockCommitsExecutedState(t *testing.T) {
 	if err != nil { t.Fatal(err) }
 	tx.Signature = sig
 
+	rules, err := n.Config.BlockRules(signer.PublicKey())
+	if err != nil { t.Fatal(err) }
 	working := n.State.Snapshot()
 	if err := state.ApplyTransaction(working, tx, rules.Transaction); err != nil { t.Fatal(err) }
 	next := block.Block{
