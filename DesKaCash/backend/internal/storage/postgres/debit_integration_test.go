@@ -29,13 +29,7 @@ func TestRepositoryApplyDebitWithPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	schema, err := os.ReadFile(migrationPath(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.ExecContext(ctx, string(schema)); err != nil {
-		t.Fatal(err)
-	}
+	resetSchema(t, ctx, db)
 
 	repo := NewRepository(db)
 	account, err := ledger.NewAccount("acc-debit-integration-1", "user-debit-integration-1")
@@ -130,13 +124,7 @@ func TestRepositoryApplyDebitInsufficientFundsRollsBack(t *testing.T) {
 	if err := db.PingContext(ctx); err != nil {
 		t.Fatal(err)
 	}
-	schema, err := os.ReadFile(migrationPath(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.ExecContext(ctx, string(schema)); err != nil {
-		t.Fatal(err)
-	}
+	resetSchema(t, ctx, db)
 
 	repo := NewRepository(db)
 	account, err := ledger.NewAccount("acc-debit-integration-2", "user-debit-integration-2")
