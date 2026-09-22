@@ -3,13 +3,11 @@ package payment
 import (
 	"context"
 	"errors"
-
-	"github.com/DesKaOne/DesKaEcosystem/DesKaCash/backend/internal/ledger"
 )
 
 var (
-	ErrPaymentNotFound       = errors.New("payment not found")
-	ErrWebhookAmountMismatch = errors.New("webhook amount mismatch")
+	ErrPaymentNotFound        = errors.New("payment not found")
+	ErrWebhookAmountMismatch  = errors.New("webhook amount mismatch")
 	ErrWebhookPaymentMismatch = errors.New("webhook payment mismatch")
 )
 
@@ -69,6 +67,5 @@ func (r *Reconciler) ReconcileWebhook(ctx context.Context, event WebhookEvent, p
 		return Payment{}, err
 	}
 
-	_ = ledger.AssetDIDR
 	return payment, nil
 }
