@@ -30,7 +30,11 @@ func TestSyncCoordinatorAppliesOrderedBlocks(t *testing.T) {
 	b1 := block.Block{Header: block.Header{Height: 1}}
 	b1.Header.PreviousHash = types.Hash{1}
 	b2 := block.Block{Header: block.Header{Height: 2}}
-	b2.Header.PreviousHash = block.Hash(b1)
+	b1Hash, err := block.Hash(b1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b2.Header.PreviousHash = b1Hash
 
 	importer := &fakeImporter{}
 	c := &SyncCoordinator{Reader: fakeReader{}, Importer: importer}
