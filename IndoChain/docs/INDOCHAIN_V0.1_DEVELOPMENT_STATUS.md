@@ -225,6 +225,16 @@ The implementation enforces monotonic phase, round, and height transitions. Incr
 
 This remains a development abstraction. It does not yet implement proposer selection, validator sets, voting power, quorum, timeouts, vote aggregation, evidence, finality certificates, or persistence.
 
+### 4.11 Consensus Message ↔ Round State Context Boundary
+
+The consensus message and round-state foundations are now connected by `IndoChain/internal/consensus/state_message.go`.
+
+`ValidateMessageAgainstState` requires exact equality for protocol version, chain ID, epoch, height, and round before a message is considered to belong to the current consensus context.
+
+The boundary validates the round state first and rejects context mismatches without mutating either value. This provides the next deterministic guard before message-type semantics, validator authority, voting power, quorum, and finality are introduced.
+
+This remains a development abstraction. It does not yet validate proposer eligibility, validator membership, vote power, quorum, timeout behavior, evidence, finality certificates, or validator-set transitions.
+
 ---
 
 ## 5. Protocol Documentation Progress
@@ -468,7 +478,8 @@ Meaning:
 - storage/recovery: implemented foundation
 - mempool/P2P/sync: substantial foundation
 - consensus message boundary: implemented foundation
-- consensus round-state boundary: implemented foundation; proposer/quorum/finality engine remains next
+- consensus round-state boundary: implemented foundation
+- consensus message ↔ round-state context boundary: implemented foundation; proposer/quorum/finality engine remains next
 - EVM: future execution milestone
 - production network: not yet
 
@@ -519,8 +530,9 @@ When there is a conflict, the implementation and dedicated protocol specificatio
 ## Status
 
 **Snapshot date:** 2026-09-23  
-**Latest verified green CI:** `15387e0a6e025259d193bee68b13aaa4a15903ff` (IndoChain CI run 517)
-**Latest consensus round-state implementation:** `de59cb9d6485165613c5e7111521e27a639f69f6`  
+**Latest verified green CI:** `15387e0a6e025259d193bee68b13aaa4a15903ff` (IndoChain CI run 517; newer development commits are awaiting CI verification)
+**Latest consensus round-state implementation:** `de59cb9d6485165613c5e7111521e27a639f69f6`
+**Latest consensus message ↔ round-state context implementation:** `fbd3e3a7f88cc0fc16e6a73671bb1a02a6454041`  
 **Branch:** `dev/indochain-v0.1`  
 **Stage:** Core Protocol Implementation / Pre-Consensus Integration  
-**Next major boundary:** Consensus Engine (proposer/quorum/voting/finality) + Validator Runtime + Multi-node Devnet  
+**Next major boundary:** Consensus Engine context/message semantics + proposer/quorum/voting/finality + Validator Runtime  
