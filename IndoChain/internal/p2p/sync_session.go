@@ -28,8 +28,16 @@ func (s *SyncSession) NextRequest(remoteHeight types.Height) (BlockRequest, bool
 // ApplyResponse validates and applies one planned response, then advances the
 // session cursor only after the response has been imported successfully.
 func (s *SyncSession) ApplyResponse(remoteHeight types.Height, resp BlockResponse) (bool, error) {
-	if s == nil || s.Coordinator == nil {
+	if s == nil {
 		return false, ErrNilSyncSession
+	}
+	if s.Coordinator == nil {
+		return false, ErrNilSyncSession
+	}
+	if _, needed, err := s.NextRequest(remoteHeight); err != nil {
+		return false, err
+	} else if !needed {
+		return false, nil
 	}
 	next, advanced, err := ApplyPlannedResponse(
 		s.Coordinator,
