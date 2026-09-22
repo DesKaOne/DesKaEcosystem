@@ -12,8 +12,8 @@ import (
 )
 
 var (
-	ErrInvalidBlockTransaction = errors.New("invalid block transaction")
-	ErrTransactionsRootMismatch = errors.New("transactions root mismatch")
+	ErrInvalidBlockTransaction   = errors.New("invalid block transaction")
+	ErrTransactionsRootMismatch  = errors.New("transactions root mismatch")
 )
 
 // TransactionsRoot returns a deterministic development commitment over the
@@ -42,7 +42,8 @@ func TransactionsRoot(txs []any) (types.Hash, error) {
 }
 
 // ValidateTransactionsRoot checks the block header commitment against the
-// development transaction commitment.
+// development transaction commitment. A zero header root remains accepted
+// while the protocol is still in development.
 func ValidateTransactionsRoot(b Block) error {
 	root, err := TransactionsRoot(b.Transactions)
 	if err != nil {
