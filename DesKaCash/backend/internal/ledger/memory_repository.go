@@ -34,7 +34,7 @@ func (r *MemoryRepository) CreateAccount(ctx context.Context, account Account) e
 		return err
 	}
 	if _, exists := r.accounts[account.ID]; exists {
-		return ErrInvalidAccount
+		return ErrDuplicateAccount
 	}
 	r.accounts[account.ID] = account
 	return nil
