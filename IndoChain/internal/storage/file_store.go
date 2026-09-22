@@ -14,7 +14,7 @@ import (
 )
 
 type fileSnapshot struct {
-	Blocks  map[types.Height]storedBlock
+	Blocks  map[types.Height]StoredBlock
 	State   map[string]state.Account
 	Head    types.Height
 	HasHead bool
@@ -23,9 +23,9 @@ type fileSnapshot struct {
 // FileStore is a development persistent ChainStore backed by one atomically replaced file.
 // Its gob representation is an implementation format and is not canonical protocol encoding.
 type FileStore struct {
-	mu    sync.RWMutex
-	path  string
-	data  fileSnapshot
+	mu   sync.RWMutex
+	path string
+	data fileSnapshot
 }
 
 func NewFileStore(path string) (*FileStore, error) {
@@ -35,7 +35,7 @@ func NewFileStore(path string) (*FileStore, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, err
 	}
-	fs := &FileStore{path: path, data: fileSnapshot{Blocks: make(map[types.Height]storedBlock)}}
+	fs := &FileStore{path: path, data: fileSnapshot{Blocks: make(map[types.Height]StoredBlock)}}
 	if err := fs.load(); err != nil {
 		return nil, err
 	}
@@ -58,7 +58,7 @@ func (s *FileStore) load() error {
 		return err
 	}
 	if data.Blocks == nil {
-		data.Blocks = make(map[types.Height]storedBlock)
+		data.Blocks = make(map[types.Height]StoredBlock)
 	}
 	s.data = data
 	return nil
@@ -70,12 +70,9 @@ func (s *FileStore) SaveBlock(b block.Block, hash types.Hash) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.data.Blocks[b.Header.Height] = storedBlock{block: b, hash: hash}
-	if !s.data.HasHead || b.Header.Height >= s.data.Head {
-		s.data.Head = b.Header.Height
-		s.data.HasHead = true
-	}
-	return s.persistLocked()
+
+	candidate := s.snapshotWithBlock(b, hash)
+	return s.persistSnapshotLocked(candidate)
 }
 
 func (s *FileStore) GetBlock(height types.Height) (block.Block, types.Hash, error) {
@@ -88,7 +85,7 @@ func (s *FileStore) GetBlock(height types.Height) (block.Block, types.Hash, erro
 	if !ok {
 		return block.Block{}, types.Hash{}, ErrBlockNotFound
 	}
-	return stored.block, stored.hash, nil
+	return stored.Block, stored.Hash, nil
 }
 
 func (s *FileStore) SaveState(st *state.State) error {
@@ -100,8 +97,10 @@ func (s *FileStore) SaveState(st *state.State) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.data.State = st.Accounts()
-	return s.persistLocked()
+
+	candidate := s.data
+	candidate.State = st.Accounts()
+	return s.persistSnapshotLocked(candidate)
 }
 
 func (s *FileStore) LoadState() (*state.State, error) {
@@ -129,7 +128,7 @@ func (s *FileStore) Head() (block.Block, types.Hash, error) {
 	if !ok {
 		return block.Block{}, types.Hash{}, ErrBlockNotFound
 	}
-	return stored.block, stored.hash, nil
+	return stored.Block, stored.Hash, nil
 }
 
 // CommitBlockState atomically replaces the on-disk snapshot after block/state validation
@@ -145,20 +144,34 @@ func (s *FileStore) CommitBlockState(b block.Block, hash types.Hash, st *state.S
 	defer s.mu.Unlock()
 
 	candidate := fileSnapshot{
-		Blocks: make(map[types.Height]storedBlock, len(s.data.Blocks)+1),
-		State: st.Accounts(),
-		Head: b.Header.Height,
+		Blocks:  make(map[types.Height]StoredBlock, len(s.data.Blocks)+1),
+		State:   st.Accounts(),
+		Head:    b.Header.Height,
 		HasHead: true,
 	}
 	for height, stored := range s.data.Blocks {
 		candidate.Blocks[height] = stored
 	}
-	candidate.Blocks[b.Header.Height] = storedBlock{block: b, hash: hash}
+	candidate.Blocks[b.Header.Height] = StoredBlock{Block: b, Hash: hash}
 	return s.persistSnapshotLocked(candidate)
 }
 
-func (s *FileStore) persistLocked() error {
-	return s.persistSnapshotLocked(s.data)
+func (s *FileStore) snapshotWithBlock(b block.Block, hash types.Hash) fileSnapshot {
+	candidate := fileSnapshot{
+		Blocks:  make(map[types.Height]StoredBlock, len(s.data.Blocks)+1),
+		State:   s.data.State,
+		Head:    s.data.Head,
+		HasHead: s.data.HasHead,
+	}
+	for height, stored := range s.data.Blocks {
+		candidate.Blocks[height] = stored
+	}
+	candidate.Blocks[b.Header.Height] = StoredBlock{Block: b, Hash: hash}
+	if !candidate.HasHead || b.Header.Height >= candidate.Head {
+		candidate.Head = b.Header.Height
+		candidate.HasHead = true
+	}
+	return candidate
 }
 
 func (s *FileStore) persistSnapshotLocked(data fileSnapshot) error {
