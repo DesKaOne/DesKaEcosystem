@@ -33,6 +33,9 @@ jobs:
           cache: true
           cache-dependency-path: DesKaCash/backend/go.mod
 
+      - name: Tidy
+          run: go mod tidy
+
       - name: Test
         run: go test ./...
 
