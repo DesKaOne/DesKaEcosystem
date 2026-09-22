@@ -16,9 +16,10 @@ func (fakeProvider) Name() string {
 
 func (fakeProvider) CreatePayment(context.Context, Payment) (ProviderPayment, error) {
 	return ProviderPayment{
-		ID:     "provider-1",
-		Status: StatusPending,
-		Amount: ledger.Money{BaseUnits: 100_000},
+		ID:        "provider-1",
+		Status:    StatusPending,
+		Amount:    ledger.Money{BaseUnits: 100_000},
+		Reference: "ref-1",
 	}, nil
 }
 
@@ -46,5 +47,8 @@ func TestFakeProviderSatisfiesProvider(t *testing.T) {
 	}
 	if got.Status != StatusPending {
 		t.Fatalf("expected pending status, got %s", got.Status)
+	}
+	if got.Reference != "ref-1" {
+		t.Fatalf("expected reference ref-1, got %q", got.Reference)
 	}
 }
