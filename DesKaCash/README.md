@@ -712,3 +712,16 @@ Komponen utama yang menjadi bagian dari ekosistem ini antara lain:
 ## License
 
 License proyek akan ditentukan sesuai kebijakan dan tahap pengembangan DesKaEcosystem.
+
+---
+
+## v0.1 Development Branch
+
+This branch is the dedicated development track for the DesKaCash v0.1 implementation.
+
+- Backend: Go
+- Frontend: Flutter / Dart
+- Integration boundary: IndoChain RPC/API
+- External payment providers: application-layer integrations
+
+DesKaCash remains independently developed from IndoChain. IndoChain source code is not a dependency of this project; integration occurs through defined RPC/API contracts.
