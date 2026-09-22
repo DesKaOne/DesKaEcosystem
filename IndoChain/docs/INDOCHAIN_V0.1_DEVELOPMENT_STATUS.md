@@ -1,0 +1,501 @@
+# IndoChain v0.1 — Development Status Summary
+
+> Snapshot: 2026-09-23  
+> Branch: `dev/indochain-v0.1`  
+> Repository: `DesKaOne/DesKaEcosystem`  
+> Purpose: handover / continuity document for future development chats.
+
+## 1. Executive Summary
+
+IndoChain v0.1 sudah melewati tahap architecture-only dan telah masuk ke **core protocol implementation / pre-consensus integration**.
+
+Fondasi deterministic blockchain mulai tersedia: transaction, cryptography, state transition, block execution, genesis/devnet, storage, node recovery, mempool, P2P dan sync foundation. Dokumentasi protocol juga sudah bergerak menuju freeze/test-vector driven development.
+
+Namun IndoChain **belum merupakan blockchain production-ready**. Pekerjaan besar berikutnya adalah consensus engine yang operasional, validator/block production runtime, native fee/gas integration, multi-node devnet/testnet validation, lalu EVM execution layer.
+
+> Catatan: status di dokumen ini adalah ringkasan hasil review branch pada 2026-09-23. Status CI run tertentu harus diverifikasi terhadap commit HEAD saat akan digunakan sebagai release gate.
+
+---
+
+## 2. Status Area
+
+| Area | Status | Catatan |
+|---|---|---|
+| Go project / module structure | 🟢 | Core implementation tersedia |
+| Block model | 🟢 | Block/hash/header/state-root related components tersedia |
+| Transaction model | 🟢 | Transaction validation, encoding/hash/signing tersedia |
+| Cryptography | 🟢 | Ed25519/address/hash components + tests |
+| Account state | 🟢 | Account/balance/nonce state model |
+| State transition | 🟢 | Deterministic transfer execution + snapshot/atomic replacement |
+| State root | 🟢 | State root calculation/verification |
+| Transactions root | 🟢 | Root validation/execution boundary |
+| Genesis / devnet | 🟢 | Genesis/devnet creation and tests |
+| Persistent storage | 🟢 | Chain/state storage abstractions and file-backed implementation |
+| Node open/recovery | 🟢 | Stored history/state integrity validation |
+| Mempool | 🟢 | Development implementation + node integration |
+| P2P | 🟢 | Handshake, messages, gossip/propagation, peer controls |
+| Block sync | 🟢 | Sync protocol components and coordinator/session machinery |
+| Read RPC | 🟢 | Native read-side endpoints/components |
+| CI | 🟢 | Go test/vet workflow exists; latest run must be checked separately |
+| PoS | 🟡 | Protocol/design direction; runtime not yet complete |
+| BFT consensus | 🟡 | Protocol/design direction; operational engine not yet complete |
+| Validator runtime | 🟡 | Design/components exist, full consensus loop not yet complete |
+| Block production | 🟡 | Not yet a complete production loop |
+| Native gas/fee | 🟡 | Design direction exists; execution integration remains |
+| EVM | 🔴 | Not yet implemented as execution runtime |
+| EVM JSON-RPC | 🔴 | Target only; not yet Ethereum-compatible runtime |
+| Smart contracts | 🔴 | Depends on EVM execution |
+| Fee sponsorship | 🔴 | Protocol design direction only |
+| Token/NFT layer | 🔴 | Ecosystem roadmap |
+| Explorer | 🔴 | Roadmap |
+| Wallet | 🔴 | Roadmap |
+| Mainnet | 🔴 | Far future; security/testnet gates required |
+
+Legend:
+- 🟢 implemented/foundation available
+- 🟡 design or partial implementation / integration pending
+- 🔴 roadmap or not yet implemented
+
+---
+
+## 3. Current Core Pipeline
+
+The current architecture is moving toward:
+
+```text
+Transaction
+    ↓
+Validate
+    ↓
+Verify Signature
+    ↓
+State Snapshot
+    ↓
+Apply State Transition
+    ↓
+Calculate State Root
+    ↓
+Block Execution
+    ↓
+Commit Canonical State
+```
+
+Node-level direction:
+
+```text
+Client / RPC
+    ↓
+Transaction
+    ↓
+Mempool
+    ↓
+Block Production
+    ↓
+Consensus
+    ↓
+Block
+    ↓
+Execute Block
+    ↓
+State + Block Store
+    ↓
+P2P / Sync
+```
+
+The first pipeline is substantially implemented. The consensus/block-production part is the major missing integration.
+
+---
+
+## 4. Implemented Foundations
+
+### 4.1 Transaction and cryptography
+
+Transaction handling already has implementation around:
+
+- encoding/serialization
+- hashing
+- validation
+- signing
+- signature verification
+- nonce/value/sender/recipient related checks
+
+Cryptographic components include Ed25519, address encoding/Base58 and hashing.
+
+A recent implementation commit added a development Ed25519 signer.
+
+### 4.2 State
+
+The state model is account-based.
+
+Conceptually:
+
+```text
+Account
+├── Balance
+└── Nonce
+```
+
+State transition uses validation and snapshot-style application so failed execution does not partially mutate canonical state.
+
+### 4.3 Block execution
+
+Block execution validates block-related roots, executes transactions, calculates the resulting state root, and verifies the resulting state before canonical commit.
+
+This is a critical boundary and should remain deterministic across all nodes.
+
+### 4.4 Genesis and devnet
+
+Genesis/devnet creation and tests exist.
+
+Node opening/recovery also validates stored chain/state history instead of blindly trusting persisted data.
+
+### 4.5 Storage
+
+Storage is abstracted behind chain/state store interfaces, with memory and file-backed implementations.
+
+Principle:
+
+```text
+Node
+ ↓
+ChainStore
+ ├── MemoryStore
+ └── FileStore
+```
+
+The node's canonical state should remain in node storage. PostgreSQL is intended for external/indexing/service layers, not canonical blockchain state by default.
+
+### 4.6 Mempool
+
+Mempool components and node integration exist.
+
+Target flow:
+
+```text
+Wallet / RPC
+    ↓
+Mempool
+    ↓
+Validator / Block Producer
+    ↓
+Block
+```
+
+### 4.7 P2P and synchronization
+
+P2P development has gone beyond a basic networking skeleton. Components cover areas such as:
+
+- peer handling
+- handshake
+- message protocol
+- gossip/propagation
+- rate limiting / peer controls
+- synchronization
+- sync coordination
+- sync sessions/cursors/ranges
+- request/response handling
+
+This is a foundation, not yet proof of a production-ready multi-node network.
+
+### 4.8 Native read RPC
+
+Native read-side RPC functionality exists for chain/head/block/transaction-oriented queries.
+
+EVM `eth_*` compatibility is still future work.
+
+---
+
+## 5. Protocol Documentation Progress
+
+Documentation has advanced into more formal protocol specification work, including:
+
+- consensus design
+- validator design
+- P2P design
+- mempool design
+- storage design
+- genesis design
+- sync design
+- mining/production design
+- faucet design
+- RPC design
+- WebSocket design
+- VM design
+- gas design
+- token design
+- economics specification
+- governance specification
+- security specification
+- wallet architecture
+- explorer design
+- SDK design
+- indexer design
+- oracle design
+- DEX design
+- DeFi design
+- bridge design
+- README specification
+
+Recent protocol-documentation milestones include a **protocol freeze v0.1 candidate** and a **protocol test vector specification**.
+
+The purpose of test vectors is to make protocol behavior deterministic and independently verifiable.
+
+---
+
+## 6. Current Architecture Decision: Native Blockchain + EVM
+
+The latest architecture direction is:
+
+```text
+                    IndoChain
+                        │
+        ┌───────────────┼────────────────┐
+        │               │                │
+   Consensus Layer  Native Asset     EVM Layer
+        │               │                │
+      PoS+BFT           dIDR         Solidity
+      Validator         Native       Smart Contract
+      P2P/Block         Asset         ABI
+                                      JSON-RPC
+                                      Tooling
+                        │                │
+                        └───────┬────────┘
+                                │
+                         Fee Sponsorship
+```
+
+IndoChain is a **native blockchain**, not an Ethereum clone.
+
+EVM is the planned **execution layer / developer compatibility boundary**.
+
+Target developer flow:
+
+```text
+Solidity
+   ↓
+Hardhat / Foundry / Remix
+   ↓
+IndoChain JSON-RPC
+   ↓
+EVM Execution
+   ↓
+IndoChain State
+```
+
+The native protocol remains independent from EVM tooling.
+
+---
+
+## 7. Native Asset: dIDR
+
+`dIDR` is the planned native asset of IndoChain.
+
+Potential protocol uses:
+
+- transaction fee
+- staking
+- validator reward
+- governance
+- smart contract execution
+- resource/storage fee
+
+Final tokenomics, supply, emission, monetary policy and genesis allocation are not considered production-final until their dedicated specifications are finalized.
+
+---
+
+## 8. Fee Sponsorship Direction
+
+Fee sponsorship is planned as a **native IndoChain protocol feature**, not assumed to be ERC-4337/Paymaster.
+
+Conceptual transaction:
+
+```text
+Transaction
+├── from
+├── to
+├── amount
+├── nonce
+├── fee
+├── signature
+└── optional fee_payer / sponsor
+```
+
+The exact authorization, signatures, limits, replay protection, refund behavior and anti-abuse rules still require a dedicated technical specification and implementation.
+
+---
+
+## 9. Native Account vs EVM Account
+
+The conceptual wallet model is:
+
+```text
+IndoChain User
+│
+├── Native Account
+│      └── native dIDR balance
+│
+└── EVM Account
+       └── smart contract / token interaction
+```
+
+The exact account/address binding and final address specification remain open technical work.
+
+---
+
+## 10. DesKaCash Boundary
+
+DesKaCash and IndoChain must keep separate sources of truth.
+
+```text
+DesKaCash
+└── PostgreSQL
+    └── Fiat IDR Ledger
+
+IndoChain
+└── Blockchain State
+    └── Native dIDR / EVM State
+```
+
+DesKaCash can store integration mapping such as:
+
+- `user_id`
+- `blockchain_address`
+- `chain_id`
+- wallet/account type
+- integration status
+
+DesKaCash must not become the canonical database for on-chain balance.
+
+IDR ↔ dIDR conversion is a separate settlement/conversion process.
+
+---
+
+## 11. Recommended Next Development Sequence
+
+The next work should follow the dependency order rather than jumping directly into DEX/DeFi/bridge:
+
+```text
+1. Lock core protocol invariants
+        ↓
+2. Complete consensus engine
+        ↓
+3. Validator runtime
+        ↓
+4. Block production
+        ↓
+5. Finality
+        ↓
+6. Multi-node devnet
+        ↓
+7. Native gas/fee integration
+        ↓
+8. Protocol test vectors + cross-node tests
+        ↓
+9. EVM execution layer
+        ↓
+10. EVM JSON-RPC compatibility
+        ↓
+11. Contract deployment/execution tests
+        ↓
+12. SDK / explorer / wallet integration
+        ↓
+13. Testnet hardening
+        ↓
+14. Security review / audit
+        ↓
+15. Mainnet preparation
+```
+
+Do not treat DEX, DeFi, bridge, oracle, NFT or advanced ecosystem features as blockers for the core protocol.
+
+---
+
+## 12. Architecture Guardrails for Future Chats
+
+Future implementation chats should preserve these rules:
+
+1. IndoChain is a native blockchain.
+2. Go is the primary protocol/node language.
+3. dIDR is the planned native asset.
+4. EVM is an execution layer, not the base blockchain.
+5. Consensus, P2P, state, storage and block logic must not depend on wallet/UI services.
+6. Canonical blockchain state belongs to the node state/storage layer.
+7. PostgreSQL is for indexer/service layers where appropriate.
+8. Protocol-critical behavior must be deterministic.
+9. Failed execution must not partially mutate canonical state.
+10. Protocol changes should be accompanied by tests/test vectors where applicable.
+11. Do not silently treat roadmap documentation as implemented functionality.
+12. Do not claim EVM compatibility until an actual EVM execution/runtime and compatibility tests exist.
+13. Do not claim production/mainnet readiness before multi-node testing, observability, backup/sync strategy and security review are complete.
+14. Fee sponsorship must be specified at protocol level before implementation.
+15. Keep native and EVM account/address responsibilities explicit.
+
+---
+
+## 13. Current Development Classification
+
+**Current stage:**
+
+> **Core Protocol Implementation / Pre-Consensus Integration**
+
+Meaning:
+
+- architecture: established
+- protocol specification: substantially documented and moving toward freeze
+- deterministic state/block foundation: implemented
+- storage/recovery: implemented foundation
+- mempool/P2P/sync: substantial foundation
+- consensus: next major implementation boundary
+- EVM: future execution milestone
+- production network: not yet
+
+This classification should be updated whenever a major milestone is completed.
+
+---
+
+## 14. Handover Checklist for a New Chat
+
+When a future chat is opened because the previous development chat is full, start by reading:
+
+```text
+IndoChain/docs/INDOCHAIN_V0.1_DEVELOPMENT_STATUS.md
+```
+
+Then inspect the current branch:
+
+```text
+dev/indochain-v0.1
+```
+
+After reading this document, the new chat should:
+
+1. verify the current branch HEAD;
+2. inspect recent commits;
+3. verify which items above are still current;
+4. check current CI status when relevant;
+5. inspect the relevant implementation before proposing code changes;
+6. preserve the architecture guardrails above;
+7. update this status document after a major milestone.
+
+---
+
+## 15. Reference Documentation
+
+Primary architecture document:
+
+```text
+IndoChain/docs/indochain.md
+```
+
+This status document is a **development snapshot**, not a replacement for detailed protocol specifications.
+
+When there is a conflict, the implementation and dedicated protocol specification for the affected component must be reviewed before changing architecture.
+
+---
+
+## Status
+
+**Snapshot date:** 2026-09-23  
+**Branch:** `dev/indochain-v0.1`  
+**Stage:** Core Protocol Implementation / Pre-Consensus Integration  
+**Next major boundary:** Consensus + Validator Runtime + Multi-node Devnet  
