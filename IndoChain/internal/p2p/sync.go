@@ -3,13 +3,13 @@ package p2p
 import (
 	"errors"
 
+	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/block"
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/types"
-	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/node"
 )
 
 var (
 	ErrInvalidSyncRequest = errors.New("invalid sync request")
-	ErrSyncReadFailure = errors.New("sync read failure")
+	ErrSyncReadFailure    = errors.New("sync read failure")
 )
 
 type BlockRequest struct {
@@ -18,11 +18,11 @@ type BlockRequest struct {
 }
 
 type BlockResponse struct {
-	Blocks []node.ChainBlock
+	Blocks []block.Block
 }
 
 type SyncReader interface {
-	BlocksByRange(from types.Height, limit uint64) ([]node.ChainBlock, error)
+	BlockByHeight(height types.Height) (block.Block, types.Hash, error)
 }
 
 func ValidateBlockRequest(req BlockRequest, maxLimit uint64) error {
