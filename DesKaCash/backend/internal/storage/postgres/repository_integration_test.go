@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"testing"
 	"time"
+	"database/sql"
 
 	"github.com/DesKaOne/DesKaEcosystem/DesKaCash/backend/internal/ledger"
 )
@@ -31,14 +32,7 @@ func TestRepositoryApplyCreditWithPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	schemaPath := migrationPath(t)
-	schema, err := os.ReadFile(schemaPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.ExecContext(ctx, string(schema)); err != nil {
-		t.Fatal(err)
-	}
+	resetSchema(t, ctx, db)
 
 	repo := NewRepository(db)
 
@@ -116,6 +110,22 @@ func TestRepositoryApplyCreditWithPostgres(t *testing.T) {
 	}
 	if len(entries) != 1 {
 		t.Fatalf("expected 1 ledger entry after duplicate credit, got %d", len(entries))
+	}
+}
+
+func resetSchema(t *testing.T, ctx context.Context, db *sql.DB) {
+	t.Helper()
+
+	if _, err := db.ExecContext(ctx, "DROP TABLE IF EXISTS ledger_entries, transactions, accounts CASCADE"); err != nil {
+		t.Fatal(err)
+	}
+
+	schema, err := os.ReadFile(migrationPath(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, string(schema)); err != nil {
+		t.Fatal(err)
 	}
 }
 
