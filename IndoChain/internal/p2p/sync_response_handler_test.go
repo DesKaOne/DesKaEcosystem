@@ -52,6 +52,45 @@ func TestSyncResponseHandlerPropagatesDecodeError(t *testing.T) {
 	}
 }
 
+
+func TestSyncResponseHandlerAdvancesSession(t *testing.T) {
+	genesis := types.Hash{7}
+	b1 := block.Block{Header: block.Header{Height: 1, PreviousHash: genesis}}
+	h1, err := block.Hash(b1)
+	if err != nil {
+		t.Fatalf("hash b1: %v", err)
+	}
+
+	h := &SyncResponseHandler{
+		Session: &SyncSession{
+			Planner: SyncPlanner{MaxBatch: 1},
+			Coordinator: &SyncCoordinator{
+				Reader:   &cursorApplyReader{},
+				Importer: &plannedResponseImporter{},
+			},
+			Cursor: SyncCursor{Height: 0, BlockHash: genesis},
+		},
+		Decoder: testSyncResponseDecoder{
+			response: BlockResponse{Blocks: []block.Block{b1}},
+		},
+		MaxPayload: 16,
+	}
+
+	advanced, err := h.Handle(1, Message{
+		Type:    MessageTypeBlockResponse,
+		Payload: []byte{1},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !advanced {
+		t.Fatal("expected session to advance")
+	}
+	if h.Session.Cursor.Height != 1 || h.Session.Cursor.BlockHash != h1 {
+		t.Fatalf("unexpected cursor: %+v", h.Session.Cursor)
+	}
+}
+
 func TestSyncResponseHandlerValidatesEnvelope(t *testing.T) {
 	h := &SyncResponseHandler{
 		Session: &SyncSession{},
