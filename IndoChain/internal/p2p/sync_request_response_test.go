@@ -24,9 +24,7 @@ func TestSyncRequestServiceHandleMessage(t *testing.T) {
 	service := &SyncRequestService{
 		Handler: &SyncMessageHandler{
 			Service: &SyncService{
-				Reader: rangeReader{blocks: map[types.Height]block.Block{
-					1: {Header: block.Header{Height: 1}},
-				}},
+				Reader: rangeReader{blocks: map[types.Height]block.Block{1: {Header: block.Header{Height: 1}}}},
 				MaxLimit: 2,
 			},
 			MaxPayload: 16,
@@ -37,11 +35,7 @@ func TestSyncRequestServiceHandleMessage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("encode request: %v", err)
 	}
-	msg, err := service.HandleMessage(
-		Message{Type: MessageTypeBlockRequest, Payload: payload},
-		testBlockResponseEncoder{payload: []byte{9, 8, 7}},
-		16,
-	)
+	msg, err := service.HandleMessage(Message{Type: MessageTypeBlockRequest, Payload: payload}, testBlockResponseEncoder{payload: []byte{9, 8, 7}}, 16)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -75,7 +69,11 @@ func TestSyncRequestServiceHandleMessagePreservesRequestError(t *testing.T) {
 		MaxPayload: 16,
 		MaxLimit: 2,
 	}}
-	_, err := service.HandleMessage(Message{Type: MessageTypeBlockRequest, Payload: make([]byte, 16)}, testBlockResponseEncoder{payload: []byte{1}}, 16)
+	payload, err := EncodeBlockRequest(BlockRequest{FromHeight: 1, Limit: 1}, 2)
+	if err != nil {
+		t.Fatalf("encode request: %v", err)
+	}
+	_, err = service.HandleMessage(Message{Type: MessageTypeBlockRequest, Payload: payload}, testBlockResponseEncoder{payload: []byte{1}}, 16)
 	if !errors.Is(err, ErrSyncReadFailure) {
 		t.Fatalf("expected sync read failure, got %v", err)
 	}
