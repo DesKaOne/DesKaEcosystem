@@ -96,3 +96,27 @@ func TestSyncSessionDoesNotAdvanceOnRejectedResponse(t *testing.T) {
 		t.Fatalf("cursor advanced after rejected response: %+v", session.Cursor)
 	}
 }
+
+
+func TestSyncSessionApplyWhenCaughtUpIsNoOp(t *testing.T) {
+	genesis := types.Hash{4}
+	session := &SyncSession{
+		Planner: SyncPlanner{MaxBatch: 2},
+		Coordinator: &SyncCoordinator{
+			Reader:   &cursorApplyReader{},
+			Importer: &plannedResponseImporter{},
+		},
+		Cursor: SyncCursor{Height: 2, BlockHash: genesis},
+	}
+	advanced, err := session.ApplyResponse(2, BlockResponse{})
+	if err != nil {
+		t.Fatalf("expected caught-up no-op, got %v", err)
+	}
+	if advanced {
+		t.Fatal("caught-up session unexpectedly advanced")
+	}
+	if session.Cursor.Height != 2 || session.Cursor.BlockHash != genesis {
+		t.Fatalf("cursor changed while caught up: %+v", session.Cursor)
+	}
+}
+
