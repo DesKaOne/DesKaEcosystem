@@ -20,5 +20,4 @@ type Repository interface {
 	ListEntries(ctx context.Context, accountID string) ([]Entry, error)
 
 	ApplyCredit(ctx context.Context, tx Transaction, reference string) error
-	ApplyDebit(ctx context.Context, tx Transaction, reference string) error
 }
