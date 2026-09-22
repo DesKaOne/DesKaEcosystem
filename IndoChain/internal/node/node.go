@@ -17,6 +17,7 @@ var (
 	ErrGenesisMismatch   = errors.New("genesis identity mismatch")
 	ErrStateRootMismatch = errors.New("genesis state root mismatch")
 	ErrBlockHashMismatch = errors.New("block hash mismatch")
+	ErrStoreCorrupt      = errors.New("chain store consistency check failed")
 )
 
 type Node struct {
@@ -28,17 +29,25 @@ type Node struct {
 	HeadHash types.Hash
 }
 
+func devnetConfigAndGenesis() (config.ChainConfig, devnet.Genesis, error) {
+	chainConfig := config.Devnet()
+	if err := chainConfig.Validate(); err != nil {
+		return config.ChainConfig{}, devnet.Genesis{}, err
+	}
+	genesis := devnet.Default()
+	if chainConfig.NetworkProfile != genesis.NetworkProfile || chainConfig.ChainID != genesis.ChainID || chainConfig.ProtocolVersion != genesis.ProtocolVersion {
+		return config.ChainConfig{}, devnet.Genesis{}, ErrGenesisMismatch
+	}
+	return chainConfig, genesis, nil
+}
+
 func NewDevnet(store storage.ChainStore) (*Node, error) {
 	if store == nil {
 		return nil, ErrNilStore
 	}
-	chainConfig := config.Devnet()
-	if err := chainConfig.Validate(); err != nil {
+	chainConfig, genesis, err := devnetConfigAndGenesis()
+	if err != nil {
 		return nil, err
-	}
-	genesis := devnet.Default()
-	if chainConfig.NetworkProfile != genesis.NetworkProfile || chainConfig.ChainID != genesis.ChainID || chainConfig.ProtocolVersion != genesis.ProtocolVersion {
-		return nil, ErrGenesisMismatch
 	}
 	genesisBlock, err := genesis.Block()
 	if err != nil {
@@ -58,6 +67,65 @@ func NewDevnet(store storage.ChainStore) (*Node, error) {
 	return &Node{
 		Config: chainConfig, Genesis: genesis, Store: store, State: initialState.Snapshot(),
 		Head: genesisBlock, HeadHash: genesisHash,
+	}, nil
+}
+
+// OpenDevnet opens an existing Devnet store, or initializes an empty store with
+// the canonical Devnet genesis. Existing state is validated before the node is
+// returned so recovery never silently starts from a fresh genesis.
+func OpenDevnet(store storage.ChainStore) (*Node, error) {
+	if store == nil {
+		return nil, ErrNilStore
+	}
+	chainConfig, genesis, err := devnetConfigAndGenesis()
+	if err != nil {
+		return nil, err
+	}
+
+	head, storedHash, err := store.Head()
+	if errors.Is(err, storage.ErrEmptyStore) {
+		return NewDevnet(store)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	stateSnapshot, err := store.LoadState()
+	if err != nil {
+		return nil, fmt.Errorf("%w: load state: %v", ErrStoreCorrupt, err)
+	}
+	if stateSnapshot == nil {
+		return nil, fmt.Errorf("%w: nil state", ErrStoreCorrupt)
+	}
+	if head.Header.ChainID != chainConfig.ChainID || head.Header.Version != chainConfig.ProtocolVersion {
+		return nil, ErrGenesisMismatch
+	}
+	computedHash, err := block.Hash(head)
+	if err != nil {
+		return nil, fmt.Errorf("%w: hash head: %v", ErrStoreCorrupt, err)
+	}
+	if storedHash != computedHash || storedHash == (types.Hash{}) {
+		return nil, ErrBlockHashMismatch
+	}
+	if head.Header.StateRoot != (types.Hash{}) && head.Header.StateRoot != stateSnapshot.Root() {
+		return nil, ErrStateRootMismatch
+	}
+
+	genesisBlock, err := genesis.Block()
+	if err != nil {
+		return nil, err
+	}
+	genesisHash, err := block.Hash(genesisBlock)
+	if err != nil {
+		return nil, err
+	}
+	if head.Header.Height == 0 && storedHash != genesisHash {
+		return nil, ErrGenesisMismatch
+	}
+
+	return &Node{
+		Config: chainConfig, Genesis: genesis, Store: store,
+		State: stateSnapshot.Snapshot(), Head: head, HeadHash: storedHash,
 	}, nil
 }
 
