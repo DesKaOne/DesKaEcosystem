@@ -3,6 +3,9 @@ package p2p
 import (
 	"errors"
 	"testing"
+
+	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/block"
+	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/types"
 )
 
 func TestSyncRequestServiceRejectsNilHandler(t *testing.T) {
@@ -17,7 +20,7 @@ func TestSyncRequestServiceDelegatesToHandler(t *testing.T) {
 	service := &SyncRequestService{
 		Handler: &SyncMessageHandler{
 			Service: &SyncService{
-				Reader: rangeReader{},
+				Reader: rangeReader{blocks: map[types.Height]block.Block{1: {Header: block.Header{Height: 1}}}},
 				MaxLimit: 2,
 			},
 			MaxPayload: 16,
