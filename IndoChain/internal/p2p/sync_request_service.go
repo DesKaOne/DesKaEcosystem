@@ -1,10 +1,6 @@
 package p2p
 
-import (
-	"errors"
-
-	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/types"
-)
+import "errors"
 
 var ErrNilSyncRequestService = errors.New("nil sync request service")
 
@@ -22,7 +18,3 @@ func (s *SyncRequestService) Handle(msg Message) (BlockResponse, error) {
 	}
 	return s.Handler.Handle(msg)
 }
-
-// _ keeps the protocol type dependency explicit for future request metadata
-// extensions without coupling this service to a concrete transport.
-var _ types.Height
