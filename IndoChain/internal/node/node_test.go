@@ -83,7 +83,9 @@ func TestOpenDevnetRejectsCorruptStateRoot(t *testing.T) {
 	b, hash, err := store.Head()
 	if err != nil { t.Fatal(err) }
 	b.Header.StateRoot = types.Hash{8}
-	if err := store.SaveBlock(b, hash); err != nil { t.Fatal(err) }
+	corruptHash, err := block.Hash(b)
+	if err != nil { t.Fatal(err) }
+	if err := store.SaveBlock(b, corruptHash); err != nil { t.Fatal(err) }
 
 	if _, err := OpenDevnet(store); err != ErrStateRootMismatch {
 		t.Fatalf("error = %v, want %v", err, ErrStateRootMismatch)
