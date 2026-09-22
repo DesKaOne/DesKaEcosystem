@@ -24,9 +24,13 @@ func TestSyncRequestServiceDelegatesToHandler(t *testing.T) {
 			MaxLimit:   2,
 		},
 	}
+	payload, err := EncodeBlockRequest(BlockRequest{FromHeight: 1, Limit: 1}, 2)
+	if err != nil {
+		t.Fatalf("encode request: %v", err)
+	}
 	resp, err := service.Handle(Message{
 		Type:    MessageTypeBlockRequest,
-		Payload: make([]byte, 16),
+		Payload: payload,
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
