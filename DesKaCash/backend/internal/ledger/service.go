@@ -41,6 +41,16 @@ func (s *Service) ApplyCredit(ctx context.Context, tx Transaction, reference str
 	return s.repo.ApplyCredit(ctx, tx, reference)
 }
 
+func (s *Service) ApplyDebit(ctx context.Context, tx Transaction, reference string) error {
+	if tx.Amount.BaseUnits <= 0 {
+		return ErrInvalidAmount
+	}
+	if tx.Asset != AssetDIDR {
+		tx.Asset = AssetDIDR
+	}
+	return s.repo.ApplyDebit(ctx, tx, reference)
+}
+
 func (s *Service) Entries(ctx context.Context, accountID string) ([]Entry, error) {
 	return s.repo.ListEntries(ctx, accountID)
 }
