@@ -44,3 +44,8 @@ A production backend must provide durable atomic commit semantics across block m
 ## Consensus Boundary
 
 Consensus should call Node.ImportBlock rather than mutate canonical state directly. Consensus determines proposal/finality; chain execution determines whether block contents are valid and what state transition they produce.
+
+
+## Configuration boundary
+
+Node block import derives block execution rules from its ChainConfig rather than accepting a caller-supplied chain ID or protocol version. The caller supplies only the public key required by the current development transaction verification path. This reduces accidental chain-rule mismatches while the transaction public-key field remains unfrozen.

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/genesis/devnet"
+	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/config"
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/block"
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/state"
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/types"
@@ -19,6 +20,7 @@ var (
 )
 
 type Node struct {
+	Config   config.ChainConfig
 	Genesis  devnet.Genesis
 	Store    storage.ChainStore
 	State    *state.State
@@ -30,7 +32,14 @@ func NewDevnet(store storage.ChainStore) (*Node, error) {
 	if store == nil {
 		return nil, ErrNilStore
 	}
+	chainConfig := config.Devnet()
+	if err := chainConfig.Validate(); err != nil {
+		return nil, err
+	}
 	genesis := devnet.Default()
+	if chainConfig.NetworkProfile != genesis.NetworkProfile || chainConfig.ChainID != genesis.ChainID || chainConfig.ProtocolVersion != genesis.ProtocolVersion {
+		return nil, ErrGenesisMismatch
+	}
 	genesisBlock, err := genesis.Block()
 	if err != nil {
 		return nil, err
@@ -47,16 +56,20 @@ func NewDevnet(store storage.ChainStore) (*Node, error) {
 		return nil, err
 	}
 	return &Node{
-		Genesis: genesis, Store: store, State: initialState.Snapshot(),
+		Config: chainConfig, Genesis: genesis, Store: store, State: initialState.Snapshot(),
 		Head: genesisBlock, HeadHash: genesisHash,
 	}, nil
 }
 
 // ImportBlock validates and executes the next block against canonical state,
 // then commits the resulting block and state before advancing the node head.
-func (n *Node) ImportBlock(b block.Block, rules block.ExecutionRules) error {
+func (n *Node) ImportBlock(b block.Block, publicKey []byte) error {
 	if n == nil || n.Store == nil || n.State == nil {
 		return ErrNilStore
+	}
+	rules, err := n.Config.BlockRules(publicKey)
+	if err != nil {
+		return err
 	}
 	expectedHeight := n.Head.Header.Height + 1
 	if err := block.ValidateHeader(b, expectedHeight, n.HeadHash, rules); err != nil {
