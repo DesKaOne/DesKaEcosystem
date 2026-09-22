@@ -46,6 +46,8 @@ validated block + executed state
 
 The previous file remains intact if encoding, sync, close, or rename fails before replacement.
 
+SaveBlock and SaveState use the same candidate-snapshot discipline: a failed persistence operation does not publish the candidate in-memory snapshot.
+
 This gives the development implementation a single-file atomic replacement boundary.
 
 ## Recovery
@@ -54,11 +56,15 @@ NewFileStore(path) opens the existing file when present.
 
 An empty or nonexistent path starts with an empty store. The node's OpenDevnet lifecycle then decides whether to initialize Devnet genesis.
 
-This preserves the distinction between:
+A present but malformed storage file fails closed:
 
-- empty storage;
-- existing storage;
-- existing but inconsistent chain data.
+- corrupted or truncated gob data returns an error;
+- the store does not silently replace the malformed file with a fresh empty snapshot;
+- the node therefore cannot silently start a new chain from corrupted persistent data.
+
+Temporary files created during writes are not treated as canonical storage. Only the configured target path is loaded, so an orphaned temporary file does not become the active chain store.
+
+After the store opens, OpenDevnet performs higher-level consistency checks for the stored head and state, including block-hash and state-root validation.
 
 ## State Boundary
 
@@ -68,11 +74,27 @@ Storage does not retain a mutable reference to the node's State object.
 
 Loaded state is reconstructed into a new State instance before being returned to the node.
 
+## Crash Boundary
+
+The development implementation syncs the temporary file before replacing the target path.
+
+This establishes a clear file replacement boundary, but it does not claim full production-grade crash durability. Filesystem-specific directory metadata guarantees and broader recovery semantics remain outside the v0.1 freeze.
+
+A production storage implementation must define:
+
+- durable commit semantics;
+- crash recovery behavior;
+- atomic block/state/head visibility;
+- corruption detection;
+- locking/concurrency;
+- backup and restore;
+- snapshot handling.
+
 ## Limitations
 
 FileStore is not a production database implementation.
 
-It does not yet provide:
+It intentionally rewrites the complete snapshot for persistence operations and does not yet provide:
 
 - multi-process locking;
 - incremental writes;
@@ -107,4 +129,21 @@ Financial application data remains in its application storage. IndoChain persist
 
 ## Status
 
-This document defines the first persistent storage implementation boundary for indochain-v0.1.
+Implemented for v0.1 development:
+
+- persistent FileStore;
+- atomic candidate snapshot replacement;
+- state snapshot serialization boundary;
+- committed head/state recovery;
+- corrupted-file fail-closed behavior;
+- orphan temporary-file isolation;
+- node-level head/state consistency validation.
+
+Still not frozen:
+
+- production database engine;
+- production storage schema;
+- canonical on-disk format;
+- snapshot sync format;
+- pruning strategy;
+- backup/restore protocol.
