@@ -36,11 +36,12 @@ func (s *memoryPaymentStore) Save(ctx context.Context, payment Payment) error {
 	return nil
 }
 
-type memoryLedgerCreditor struct {
+type memoryLedgerReconciler struct {
 	credits []ledger.Transaction
+	debits  []ledger.Transaction
 }
 
-func (s *memoryLedgerCreditor) ApplyCredit(ctx context.Context, tx ledger.Transaction, reference string) error {
+func (s *memoryLedgerReconciler) ApplyCredit(ctx context.Context, tx ledger.Transaction, reference string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -53,9 +54,22 @@ func (s *memoryLedgerCreditor) ApplyCredit(ctx context.Context, tx ledger.Transa
 	return nil
 }
 
-func newReconciler(payment Payment) (*Reconciler, *memoryLedgerCreditor) {
-	creditor := &memoryLedgerCreditor{}
-	return NewReconciler(newMemoryPaymentStore(payment), NewMemoryWebhookStore(), creditor), creditor
+func (s *memoryLedgerReconciler) ApplyDebit(ctx context.Context, tx ledger.Transaction, reference string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	for _, existing := range s.debits {
+		if existing.ID == tx.ID {
+			return ledger.ErrDuplicateTransaction
+		}
+	}
+	s.debits = append(s.debits, tx)
+	return nil
+}
+
+func newReconciler(payment Payment) (*Reconciler, *memoryLedgerReconciler) {
+	ledgerStore := &memoryLedgerReconciler{}
+	return NewReconciler(newMemoryPaymentStore(payment), NewMemoryWebhookStore(), ledgerStore), ledgerStore
 }
 
 func TestReconcilerUpdatesPaymentStatusAndCreditsLedger(t *testing.T) {
@@ -220,5 +234,64 @@ func TestReconcilerRejectsInvalidWebhookStatus(t *testing.T) {
 	}
 	if len(creditor.credits) != 0 {
 		t.Fatalf("expected no ledger credit, got %d", len(creditor.credits))
+	}
+}
+
+
+func TestReconcilerReversesSucceededPaymentWithLedgerDebit(t *testing.T) {
+	payment, err := NewPayment("pay-1", "acct-1", "demo", "idem-1", ledger.FromDIDR(100))
+	if err != nil {
+		t.Fatal(err)
+	}
+	payment.ProviderID = "provider-1"
+	payment.Status = StatusSucceeded
+
+	reconciler, ledgerStore := newReconciler(payment)
+	event := WebhookEvent{
+		ID: "event-reversal", Provider: "demo", ProviderID: "provider-1",
+		Status: StatusReversed, Amount: payment.Amount.BaseUnits,
+	}
+
+	got, err := reconciler.ReconcileWebhook(context.Background(), event, payment.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != StatusReversed {
+		t.Fatalf("expected reversed status, got %q", got.Status)
+	}
+	if len(ledgerStore.debits) != 1 {
+		t.Fatalf("expected one ledger debit, got %d", len(ledgerStore.debits))
+	}
+	if ledgerStore.debits[0].ID != "pay-1:reversed" {
+		t.Fatalf("unexpected debit transaction id %q", ledgerStore.debits[0].ID)
+	}
+}
+
+func TestReconcilerRefundsSucceededPaymentWithLedgerDebit(t *testing.T) {
+	payment, err := NewPayment("pay-1", "acct-1", "demo", "idem-1", ledger.FromDIDR(100))
+	if err != nil {
+		t.Fatal(err)
+	}
+	payment.ProviderID = "provider-1"
+	payment.Status = StatusSucceeded
+
+	reconciler, ledgerStore := newReconciler(payment)
+	event := WebhookEvent{
+		ID: "event-refund", Provider: "demo", ProviderID: "provider-1",
+		Status: StatusRefunded, Amount: payment.Amount.BaseUnits,
+	}
+
+	got, err := reconciler.ReconcileWebhook(context.Background(), event, payment.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != StatusRefunded {
+		t.Fatalf("expected refunded status, got %q", got.Status)
+	}
+	if len(ledgerStore.debits) != 1 {
+		t.Fatalf("expected one ledger debit, got %d", len(ledgerStore.debits))
+	}
+	if ledgerStore.debits[0].ID != "pay-1:refunded" {
+		t.Fatalf("unexpected debit transaction id %q", ledgerStore.debits[0].ID)
 	}
 }
