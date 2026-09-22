@@ -101,11 +101,18 @@ func OpenDevnet(store storage.ChainStore) (*Node, error) {
 	if head.Header.ChainID != chainConfig.ChainID || head.Header.Version != chainConfig.ProtocolVersion {
 		return nil, ErrGenesisMismatch
 	}
-	if err := validateStoredHistory(store, head, storedHash, genesis, chainConfig); err != nil {
-		return nil, err
+	computedHeadHash, err := block.Hash(head)
+	if err != nil {
+		return nil, fmt.Errorf("%w: compute head hash: %v", ErrStoreCorrupt, err)
+	}
+	if storedHash == (types.Hash{}) || storedHash != computedHeadHash {
+		return nil, ErrBlockHashMismatch
 	}
 	if head.Header.StateRoot != (types.Hash{}) && head.Header.StateRoot != stateSnapshot.Root() {
 		return nil, ErrStateRootMismatch
+	}
+	if err := validateStoredHistory(store, head, storedHash, genesis, chainConfig); err != nil {
+		return nil, err
 	}
 
 	return &Node{
