@@ -150,3 +150,26 @@ func TestReconcilerTreatsDuplicateWebhookAsIdempotent(t *testing.T) {
 		t.Fatalf("expected one ledger credit, got %d", len(creditor.credits))
 	}
 }
+
+func TestReconcilerRejectsTerminalStatusRegression(t *testing.T) {
+	payment, err := NewPayment("pay-1", "acct-1", "demo", "idem-1", ledger.FromDIDR(100))
+	if err != nil {
+		t.Fatal(err)
+	}
+	payment.ProviderID = "provider-1"
+	payment.Status = StatusSucceeded
+
+	reconciler, creditor := newReconciler(payment)
+	event := WebhookEvent{
+		ID: "event-1", Provider: "demo", ProviderID: "provider-1",
+		Status: StatusFailed, Amount: payment.Amount.BaseUnits,
+	}
+
+	_, err = reconciler.ReconcileWebhook(context.Background(), event, payment.ID)
+	if !errors.Is(err, ErrInvalidPaymentStatus) {
+		t.Fatalf("expected invalid payment status, got %v", err)
+	}
+	if len(creditor.credits) != 0 {
+		t.Fatalf("expected no ledger credit, got %d", len(creditor.credits))
+	}
+}
