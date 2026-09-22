@@ -19,14 +19,15 @@ type PaymentStore interface {
 	Save(ctx context.Context, payment Payment) error
 }
 
-type LedgerCreditor interface {
+type LedgerReconciler interface {
 	ApplyCredit(ctx context.Context, tx ledger.Transaction, reference string) error
+	ApplyDebit(ctx context.Context, tx ledger.Transaction, reference string) error
 }
 
 type Reconciler struct {
 	payments PaymentStore
 	webhooks WebhookStore
-	ledger   LedgerCreditor
+	ledger   LedgerReconciler
 }
 
 func NewReconciler(payments PaymentStore, webhooks WebhookStore, ledger LedgerCreditor) *Reconciler {
@@ -99,6 +100,17 @@ func (r *Reconciler) ReconcileWebhook(ctx context.Context, event WebhookEvent, p
 			return Payment{}, err
 		}
 		if err := r.ledger.ApplyCredit(ctx, tx, payment.Reference); err != nil {
+			if !errors.Is(err, ledger.ErrDuplicateTransaction) {
+				return Payment{}, err
+			}
+		}
+	} else if nextStatus == StatusReversed || nextStatus == StatusRefunded {
+		txID := payment.ID + ":" + string(nextStatus)
+		tx, err := ledger.NewTransaction(txID, payment.AccountID, payment.Amount, "payment_"+string(nextStatus))
+		if err != nil {
+			return Payment{}, err
+		}
+		if err := r.ledger.ApplyDebit(ctx, tx, payment.Reference); err != nil {
 			if !errors.Is(err, ledger.ErrDuplicateTransaction) {
 				return Payment{}, err
 			}
