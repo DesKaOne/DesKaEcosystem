@@ -2,6 +2,7 @@ package node
 
 import (
 	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/genesis/devnet"
@@ -445,7 +446,7 @@ func TestImportBlockCommitFailureWithoutMutation(t *testing.T) {
 		t.Fatalf("error = %v, want %v", err, errCommitFailed)
 	}
 
-	if n.Head != beforeHead || n.HeadHash != beforeHash || n.State.Root() != beforeStateRoot {
+	if !reflect.DeepEqual(n.Head, beforeHead) || n.HeadHash != beforeHash || n.State.Root() != beforeStateRoot {
 		t.Fatal("node mutated after failed block commit")
 	}
 	storedAfterHead, storedAfterHash, err := store.Head()
@@ -456,7 +457,7 @@ func TestImportBlockCommitFailureWithoutMutation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if storedAfterHead != storedBeforeHead || storedAfterHash != storedBeforeHash {
+	if !reflect.DeepEqual(storedAfterHead, storedBeforeHead) || storedAfterHash != storedBeforeHash {
 		t.Fatal("store head mutated after failed block commit")
 	}
 	if storedAfterState.Root() != storedBeforeState.Root() {
