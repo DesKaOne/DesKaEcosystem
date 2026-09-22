@@ -38,3 +38,9 @@ It is an orchestration boundary above the existing planner, cursor validation, a
 ## v0.1 status
 
 This session model supports repeated bounded sync rounds. Network transport and canonical protocol message serialization remain separate concerns.
+
+## Request message integration
+
+`NextRequestMessage(remoteHeight, maxLimit, maxPayload)` composes the session planner with `BuildBlockRequestMessage`. It returns no message when the cursor is already caught up, and otherwise returns a development `MessageTypeBlockRequest` envelope.
+
+This helper still does not perform network I/O or define canonical wire serialization.
