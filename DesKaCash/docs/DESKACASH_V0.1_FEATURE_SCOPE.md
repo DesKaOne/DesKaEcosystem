@@ -399,3 +399,154 @@ BANK / E-WALLET / QRIS MERCHANT
 ```
 
 Dengan pendekatan ini, provider dapat diganti/ditambah tanpa mengubah core ledger DesKaCash.
+
+## 15. IndoChain & dIDR Integration Direction
+
+DesKaCash dirancang agar pada tahap lanjutan dapat menggunakan **IndoChain** sebagai blockchain layer untuk aset on-chain **dIDR**. Integrasi ini tidak menggantikan ledger fiat DesKaCash pada v0.1.
+
+### Pemisahan Source of Truth
+
+`text
+                    DesKaEcosystem
+                           │
+             ┌─────────────┴─────────────┐
+             │                           │
+        DesKaCash                    IndoChain
+       Fiat Ledger                 Blockchain State
+             │                           │
+          IDR Fiat                      dIDR
+             │                           │
+             └────────── Conversion ─────┘
+`
+
+Prinsipnya:
+- PostgreSQL double-entry ledger tetap menjadi source of truth untuk saldo fiat IDR DesKaCash.
+- IndoChain menjadi source of truth untuk saldo dan state dIDR on-chain.
+- DesKaCash tidak perlu menduplikasi saldo blockchain sebagai canonical balance.
+- Database DesKaCash cukup menyimpan mapping seperti `user_id`, `blockchain_address`, `chain_id`, wallet type, dan status.
+- Perubahan saldo blockchain harus berasal dari state/transaction IndoChain yang dapat diverifikasi.
+- Konversi IDR ↔ dIDR merupakan proses settlement/conversion tersendiri.
+
+### User Wallet Mapping
+
+`text
+DesKaCash User
+│
+├── user_id
+├── fiat wallet/account
+│      └── IDR ledger balance
+│
+└── IndoChain wallet
+       ├── native account
+       ├── EVM account (future)
+       └── dIDR balance
+`
+
+Detail address/account binding mengikuti spesifikasi IndoChain. DesKaCash tidak menentukan format address protocol secara mandiri.
+
+### dIDR sebagai Native Asset IndoChain
+
+`dIDR` adalah native asset IndoChain. Pada tahap integrasi blockchain, DesKaCash dapat menggunakan dIDR untuk transfer on-chain, settlement berbasis blockchain, integrasi smart contract, dan kebutuhan ecosystem IndoChain.
+
+DesKaCash harus membedakan dengan tegas antara **IDR fiat** dan **dIDR on-chain**, walaupun keduanya memiliki hubungan denominasi/konversi yang ditentukan oleh desain ekonomi IndoChain.
+
+### EVM Smart Contract Integration
+
+`text
+DesKaCash Service
+      │
+      ├── Native IndoChain RPC
+      │
+      └── EVM JSON-RPC
+               │
+               ↓
+          IndoChain EVM
+               │
+        Smart Contracts
+`
+
+Target developer workflow:
+
+`text
+Solidity
+   ↓
+Hardhat / Foundry / Remix
+   ↓
+IndoChain JSON-RPC
+   ↓
+Deploy / Call / Transaction
+`
+
+EVM merupakan execution layer IndoChain; DesKaCash tidak menjadi execution environment smart contract.
+
+### Fee Sponsorship
+
+IndoChain dirancang memiliki native **Fee Sponsorship** sehingga aplikasi seperti DesKaCash secara konseptual dapat mensponsori fee transaksi user apabila protocol dan policy ecosystem mengizinkannya.
+
+`text
+DesKaCash User
+      │
+      │ signed transaction
+      ↓
+IndoChain
+      │
+      ├── User authorization
+      ├── Fee calculation
+      └── Fee Sponsor
+              ↓
+          Transaction fee
+`
+
+Implementasi final fee payer/sponsor, authorization, limits, replay protection, dan settlement fee mengikuti spesifikasi protocol IndoChain. DesKaCash tidak boleh mengasumsikan mekanisme ERC-4337/Paymaster tertentu.
+
+### Boundary DesKaCash ↔ IndoChain
+
+`text
+DesKaCash
+├── Fiat ledger
+├── Top up
+├── P2P internal
+├── PPOB
+├── Provider integration
+└── Blockchain integration service
+             │
+             ├── Read on-chain balance
+             ├── Submit/track transaction
+             ├── Verify transaction/finality
+             └── IDR ↔ dIDR conversion
+                          │
+                          ↓
+                      IndoChain
+                      ├── Native state
+                      ├── dIDR
+                      ├── Consensus
+                      ├── EVM
+                      └── Smart contracts
+`
+
+Integrasi blockchain tidak boleh membuat provider payment, PPOB, atau database DesKaCash menjadi sumber kebenaran untuk state IndoChain.
+
+### Roadmap Integrasi
+
+#### v0.1 — Fiat Wallet
+- IDR wallet ledger.
+- Top up.
+- P2P internal.
+- PPOB.
+- Provider abstraction.
+
+#### v0.x — IndoChain Connectivity
+- Blockchain address mapping.
+- Native RPC client.
+- Read dIDR balance langsung dari IndoChain.
+- Transaction submission/tracking.
+- Confirmation/finality verification.
+
+#### v1.x — dIDR & EVM Ecosystem
+- IDR ↔ dIDR conversion/settlement.
+- dIDR transfer.
+- EVM smart contract interaction.
+- Developer/API integration.
+- Native IndoChain fee sponsorship integration.
+
+Fitur blockchain tetap dipisahkan dari MVP fiat wallet sampai interface protocol IndoChain cukup stabil untuk digunakan secara aman.
