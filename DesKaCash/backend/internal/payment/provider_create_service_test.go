@@ -2,6 +2,7 @@ package payment
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/DesKaOne/DesKaEcosystem/DesKaCash/backend/internal/ledger"
@@ -46,6 +47,17 @@ func TestProviderCreateServicePropagatesProviderError(t *testing.T) {
 	}
 }
 
+func TestProviderCreateServiceRejectsAmountMismatch(t *testing.T) {
+	store := NewMemoryPaymentStore()
+	provider := &mismatchProvider{}
+	service := NewProviderCreateService(store, provider)
+
+	_, err := service.Create(context.Background(), "pay-1", "acct-1", "fake", "idem-1", ledger.FromDIDR(100))
+	if !errors.Is(err, ErrProviderAmountMismatch) {
+		t.Fatalf("expected amount mismatch, got %v", err)
+	}
+}
+
 type failingProvider struct{}
 
 func (f *failingProvider) Name() string {
@@ -57,5 +69,23 @@ func (f *failingProvider) CreatePayment(context.Context, Payment) (ProviderPayme
 }
 
 func (f *failingProvider) GetPayment(context.Context, string) (ProviderPayment, error) {
+	return ProviderPayment{}, context.DeadlineExceeded
+}
+
+type mismatchProvider struct{}
+
+func (mismatchProvider) Name() string {
+	return "fake"
+}
+
+func (mismatchProvider) CreatePayment(context.Context, Payment) (ProviderPayment, error) {
+	return ProviderPayment{
+		ID:     "provider-1",
+		Status: StatusPending,
+		Amount: ledger.FromDIDR(99),
+	}, nil
+}
+
+func (mismatchProvider) GetPayment(context.Context, string) (ProviderPayment, error) {
 	return ProviderPayment{}, context.DeadlineExceeded
 }
