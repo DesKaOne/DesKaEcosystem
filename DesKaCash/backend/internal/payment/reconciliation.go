@@ -48,9 +48,22 @@ func validPaymentTransition(current, next Status) bool {
 	}
 }
 
+func validWebhookStatus(status Status) bool {
+	switch status {
+	case StatusSucceeded, StatusFailed, StatusExpired, StatusReversed, StatusRefunded:
+		return true
+	default:
+		return false
+	}
+}
+
 func (r *Reconciler) ReconcileWebhook(ctx context.Context, event WebhookEvent, paymentID string) (Payment, error) {
 	if err := ctx.Err(); err != nil {
 		return Payment{}, err
+	}
+
+	if event.ID == "" || event.Provider == "" || event.ProviderID == "" || event.Amount <= 0 || !validWebhookStatus(event.Status) {
+		return Payment{}, ErrInvalidWebhookEvent
 	}
 
 	payment, err := r.payments.Get(ctx, paymentID)
@@ -76,12 +89,6 @@ func (r *Reconciler) ReconcileWebhook(ctx context.Context, event WebhookEvent, p
 	}
 
 	nextStatus := event.Status
-	switch event.Status {
-	case StatusSucceeded, StatusFailed, StatusExpired, StatusReversed, StatusRefunded:
-	default:
-		nextStatus = StatusPending
-	}
-
 	if !validPaymentTransition(payment.Status, nextStatus) {
 		return Payment{}, ErrInvalidPaymentStatus
 	}
