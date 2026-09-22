@@ -5,7 +5,10 @@ import (
 	"errors"
 )
 
-var ErrNotFound = errors.New("ledger record not found")
+var (
+	ErrNotFound = errors.New("ledger record not found")
+	ErrDuplicatePosting = errors.New("duplicate ledger posting")
+)
 
 // Repository abstracts ledger persistence from the business service.
 type Repository interface {
