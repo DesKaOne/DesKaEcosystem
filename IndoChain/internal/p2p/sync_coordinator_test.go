@@ -9,7 +9,7 @@ import (
 
 type fakeImporter struct {
 	blocks []block.Block
-	err error
+	err    error
 }
 
 func (f *fakeImporter) ImportBlock(b block.Block) error {
@@ -59,6 +59,15 @@ func TestSyncCoordinatorRejectsParentMismatch(t *testing.T) {
 	b2 := block.Block{Header: block.Header{Height: 2, PreviousHash: types.Hash{9}}}
 	c := &SyncCoordinator{Reader: fakeReader{}, Importer: &fakeImporter{}}
 	err := c.ApplyResponse(BlockRequest{FromHeight: 1, Limit: 2}, BlockResponse{Blocks: []block.Block{b1, b2}}, types.Hash{})
+	if err != ErrSyncParentMismatch {
+		t.Fatalf("error = %v, want %v", err, ErrSyncParentMismatch)
+	}
+}
+
+func TestSyncCoordinatorRejectsFirstParentMismatch(t *testing.T) {
+	b1 := block.Block{Header: block.Header{Height: 1, PreviousHash: types.Hash{7}}}
+	c := &SyncCoordinator{Reader: fakeReader{}, Importer: &fakeImporter{}}
+	err := c.ApplyResponse(BlockRequest{FromHeight: 1, Limit: 1}, BlockResponse{Blocks: []block.Block{b1}}, types.Hash{})
 	if err != ErrSyncParentMismatch {
 		t.Fatalf("error = %v, want %v", err, ErrSyncParentMismatch)
 	}
