@@ -1,6 +1,7 @@
 package crypto
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
 	"errors"
@@ -47,6 +48,10 @@ func NewEd25519Signer(privateKey []byte) (*Ed25519Signer, error) {
 	}
 	key := make([]byte, len(privateKey))
 	copy(key, privateKey)
+	derivedPublicKey := ed25519.NewKeyFromSeed(key[:ed25519.SeedSize]).Public().(ed25519.PublicKey)
+	if !bytes.Equal(key[ed25519.SeedSize:], derivedPublicKey) {
+		return nil, ErrInvalidPrivateKey
+	}
 	return &Ed25519Signer{privateKey: ed25519.PrivateKey(key)}, nil
 }
 
