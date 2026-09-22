@@ -3,6 +3,8 @@ package payment
 import (
 	"context"
 	"errors"
+
+	"github.com/DesKaOne/DesKaEcosystem/DesKaCash/backend/internal/ledger"
 )
 
 var (
@@ -16,13 +18,18 @@ type PaymentStore interface {
 	Save(ctx context.Context, payment Payment) error
 }
 
+type LedgerCreditor interface {
+	ApplyCredit(ctx context.Context, tx ledger.Transaction, reference string) error
+}
+
 type Reconciler struct {
 	payments PaymentStore
 	webhooks WebhookStore
+	ledger   LedgerCreditor
 }
 
-func NewReconciler(payments PaymentStore, webhooks WebhookStore) *Reconciler {
-	return &Reconciler{payments: payments, webhooks: webhooks}
+func NewReconciler(payments PaymentStore, webhooks WebhookStore, ledger LedgerCreditor) *Reconciler {
+	return &Reconciler{payments: payments, webhooks: webhooks, ledger: ledger}
 }
 
 func (r *Reconciler) ReconcileWebhook(ctx context.Context, event WebhookEvent, paymentID string) (Payment, error) {
@@ -47,6 +54,18 @@ func (r *Reconciler) ReconcileWebhook(ctx context.Context, event WebhookEvent, p
 			return payment, nil
 		}
 		return Payment{}, err
+	}
+
+	if event.Status == StatusSucceeded {
+		tx, err := ledger.NewTransaction(payment.ID, payment.AccountID, payment.Amount, "payment")
+		if err != nil {
+			return Payment{}, err
+		}
+		if err := r.ledger.ApplyCredit(ctx, tx, payment.Reference); err != nil {
+			if !errors.Is(err, ledger.ErrDuplicateTransaction) {
+				return Payment{}, err
+			}
+		}
 	}
 
 	switch event.Status {
