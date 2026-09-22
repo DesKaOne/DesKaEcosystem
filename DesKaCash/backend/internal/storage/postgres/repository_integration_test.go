@@ -49,6 +49,9 @@ func TestRepositoryApplyCreditWithPostgres(t *testing.T) {
 	if err := repo.CreateAccount(ctx, account); err != nil {
 		t.Fatal(err)
 	}
+	if err := repo.CreateAccount(ctx, account); !errors.Is(err, ledger.ErrDuplicateAccount) {
+		t.Fatalf("expected duplicate account error, got %v", err)
+	}
 
 	tx, err := ledger.NewTransaction(
 		"tx-integration-1",
