@@ -50,3 +50,13 @@ This composes the existing planner, coordinator, progress, and cursor boundaries
 `PlanNextSync` is the small composition boundary for the next synchronization step. It uses the current cursor height and the planner's configured batch size to derive the next request toward the remote height.
 
 It does not perform transport, peer selection, block validation, or import work.
+
+
+## Cursor parent validation
+
+Before applying a non-empty batch, the cursor boundary requires:
+
+- the request starts at `cursor.Height + 1`;
+- the first block's `PreviousHash` equals `cursor.BlockHash`.
+
+An empty response is allowed and does not advance the cursor. This validation prevents a sync driver from applying a batch against a different local tip.
