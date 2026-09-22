@@ -14,6 +14,7 @@ The development node implements node.ChainReader:
 
 - HeadBlock() returns the canonical head block and stored hash.
 - BlockByHeight(height) returns a block and stored hash for a canonical height.
+- TransactionByHash(hash) returns the canonical transaction plus containing block metadata.
 - StateSnapshot() returns an isolated state snapshot.
 
 ## Read-only guarantees
@@ -37,6 +38,10 @@ storage.ErrBlockNotFound.
 The underlying storage remains the source of truth for persisted block
 retrieval. The query boundary does not invent historical blocks.
 
+Transaction lookup returns ErrTransactionNotFound when no canonical transaction
+matches the requested hash. The initial implementation scans canonical blocks
+linearly; a future index may optimize lookup without changing the interface.
+
 ## Adapter boundary
 
 Future JSON-RPC, WebSocket, explorer, indexer, and DesKaCash integration
@@ -49,5 +54,5 @@ This keeps application/service concerns outside canonical node state.
 ## Scope
 
 This is a v0.1 implementation boundary, not a final RPC specification.
-Method names, response schemas, pagination, transaction lookup, event lookup,
-and proof-oriented queries remain subject to later protocol/API design.
+Method names, response schemas, pagination, event lookup, and proof-oriented
+queries remain subject to later protocol/API design.
