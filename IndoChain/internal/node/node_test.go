@@ -33,6 +33,63 @@ func TestNewDevnetRejectsNilStore(t *testing.T) {
 	if _, err := NewDevnet(nil); err != ErrNilStore { t.Fatalf("error = %v, want %v", err, ErrNilStore) }
 }
 
+func TestOpenDevnetInitializesEmptyStore(t *testing.T) {
+	store := storage.NewMemoryStore()
+	n, err := OpenDevnet(store)
+	if err != nil { t.Fatal(err) }
+	if n.Head.Header.Height != 0 || n.HeadHash == (types.Hash{}) {
+		t.Fatal("empty store was not initialized from genesis")
+	}
+}
+
+func TestOpenDevnetRecoversExistingState(t *testing.T) {
+	store := storage.NewMemoryStore()
+	original, err := NewDevnet(store)
+	if err != nil { t.Fatal(err) }
+
+	recovered, err := OpenDevnet(store)
+	if err != nil { t.Fatal(err) }
+	if recovered.Head.Header.Height != original.Head.Header.Height || recovered.HeadHash != original.HeadHash {
+		t.Fatal("recovered head does not match stored head")
+	}
+	if recovered.State.Root() != original.State.Root() {
+		t.Fatal("recovered state does not match stored state")
+	}
+	if recovered.Config != original.Config {
+		t.Fatal("recovered config does not match original config")
+	}
+}
+
+func TestOpenDevnetRejectsCorruptHeadHash(t *testing.T) {
+	store := storage.NewMemoryStore()
+	n, err := NewDevnet(store)
+	if err != nil { t.Fatal(err) }
+
+	blockAtHead, _, err := store.Head()
+	if err != nil { t.Fatal(err) }
+	if err := store.SaveBlock(blockAtHead, types.Hash{9}); err != nil { t.Fatal(err) }
+
+	if _, err := OpenDevnet(store); err != ErrBlockHashMismatch {
+		t.Fatalf("error = %v, want %v", err, ErrBlockHashMismatch)
+	}
+	if n.HeadHash == (types.Hash{}) { t.Fatal("test setup produced invalid node hash") }
+}
+
+func TestOpenDevnetRejectsCorruptStateRoot(t *testing.T) {
+	store := storage.NewMemoryStore()
+	_, err := NewDevnet(store)
+	if err != nil { t.Fatal(err) }
+
+	b, hash, err := store.Head()
+	if err != nil { t.Fatal(err) }
+	b.Header.StateRoot = types.Hash{8}
+	if err := store.SaveBlock(b, hash); err != nil { t.Fatal(err) }
+
+	if _, err := OpenDevnet(store); err != ErrStateRootMismatch {
+		t.Fatalf("error = %v, want %v", err, ErrStateRootMismatch)
+	}
+}
+
 func TestImportBlockCommitsExecutedState(t *testing.T) {
 	store := storage.NewMemoryStore()
 	n, err := NewDevnet(store)
