@@ -36,3 +36,10 @@ This remains a coordination boundary. The existing generic `BlockImporter` does 
 `SyncPlanFromCursor` connects the cursor boundary to `SyncPlanner`. It starts the next request at `cursor.Height + 1` and applies the planner's existing batch limit. When the cursor is already at the remote height, it produces no request.
 
 This helper is only composition logic; it does not perform network I/O or import blocks.
+
+
+## Cursor-bound batch application
+
+`SyncCoordinator.ApplyResponseFromCursor` binds a synchronization batch to the cursor's known parent hash. On success it returns an advanced cursor; on failure it returns the original cursor unchanged.
+
+This composes the existing planner, coordinator, progress, and cursor boundaries without introducing network I/O or bypassing canonical block import validation.
