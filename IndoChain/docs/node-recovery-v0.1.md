@@ -31,6 +31,39 @@ OpenDevnet validates:
 
 If any consistency check fails, recovery returns an error instead of creating a fresh chain.
 
+## Persistent Recovery Integration Test
+
+The node test suite now exercises the recovery boundary against the development FileStore implementation.
+
+The integration path is:
+
+~~~text
+FileStore(path)
+    │
+    ▼
+NewDevnet()
+    │
+    ▼
+persist genesis block + state
+    │
+    ▼
+new FileStore(path)
+    │
+    ▼
+OpenDevnet()
+    │
+    ├── recover head
+    └── recover state
+~~~
+
+The test verifies that the reopened node preserves:
+
+- head height;
+- head hash;
+- state root.
+
+This test is intentionally focused on the storage-to-node lifecycle. It does not freeze the FileStore format as a protocol format.
+
 ## State Isolation
 
 The recovered state is returned as a snapshot from storage.
