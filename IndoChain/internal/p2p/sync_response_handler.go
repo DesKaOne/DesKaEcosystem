@@ -1,6 +1,10 @@
 package p2p
 
-import "errors"
+import (
+	"errors"
+
+	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/types"
+)
 
 var (
 	ErrNilSyncResponseDecoder = errors.New("nil sync response decoder")
