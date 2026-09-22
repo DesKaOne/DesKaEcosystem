@@ -94,8 +94,8 @@ func TestApplyResponseFromCursorKeepsCursorOnFailure(t *testing.T) {
 			},
 		}}},
 	)
-	if err != ErrSyncParentMismatch {
-		t.Fatalf("error = %v, want %v", err, ErrSyncParentMismatch)
+	if err != ErrSyncCursorParentMismatch {
+		t.Fatalf("error = %v, want %v", err, ErrSyncCursorParentMismatch)
 	}
 	if len(importer.imported) != 0 {
 		t.Fatalf("imported = %d, want 0", len(importer.imported))
