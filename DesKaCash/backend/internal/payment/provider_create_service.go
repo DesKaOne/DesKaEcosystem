@@ -57,7 +57,7 @@ func (s *ProviderCreateService) Create(ctx context.Context, id, accountID, provi
 	payment.Status = providerPayment.Status
 
 	if err := s.store.Save(ctx, payment); err != nil {
-		return Payment{}, err
+		return payment, err
 	}
 
 	return payment, nil
