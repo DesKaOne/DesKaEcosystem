@@ -18,6 +18,7 @@ var (
 	ErrStateRootMismatch = errors.New("genesis state root mismatch")
 	ErrBlockHashMismatch = errors.New("block hash mismatch")
 	ErrStoreCorrupt      = errors.New("chain store consistency check failed")
+	ErrHistoryMismatch   = errors.New("chain history consistency check failed")
 )
 
 type Node struct {
@@ -100,33 +101,65 @@ func OpenDevnet(store storage.ChainStore) (*Node, error) {
 	if head.Header.ChainID != chainConfig.ChainID || head.Header.Version != chainConfig.ProtocolVersion {
 		return nil, ErrGenesisMismatch
 	}
-	computedHash, err := block.Hash(head)
-	if err != nil {
-		return nil, fmt.Errorf("%w: hash head: %v", ErrStoreCorrupt, err)
-	}
-	if storedHash != computedHash || storedHash == (types.Hash{}) {
-		return nil, ErrBlockHashMismatch
+	if err := validateStoredHistory(store, head, storedHash, genesis, chainConfig); err != nil {
+		return nil, err
 	}
 	if head.Header.StateRoot != (types.Hash{}) && head.Header.StateRoot != stateSnapshot.Root() {
 		return nil, ErrStateRootMismatch
-	}
-
-	genesisBlock, err := genesis.Block()
-	if err != nil {
-		return nil, err
-	}
-	genesisHash, err := block.Hash(genesisBlock)
-	if err != nil {
-		return nil, err
-	}
-	if head.Header.Height == 0 && storedHash != genesisHash {
-		return nil, ErrGenesisMismatch
 	}
 
 	return &Node{
 		Config: chainConfig, Genesis: genesis, Store: store,
 		State: stateSnapshot.Snapshot(), Head: head, HeadHash: storedHash,
 	}, nil
+}
+
+func validateStoredHistory(store storage.ChainStore, head block.Block, storedHeadHash types.Hash, genesis devnet.Genesis, chainConfig config.ChainConfig) error {
+	genesisBlock, err := genesis.Block()
+	if err != nil {
+		return err
+	}
+	genesisHash, err := block.Hash(genesisBlock)
+	if err != nil {
+		return err
+	}
+
+	var previousHash types.Hash
+	for height := types.Height(0); height <= head.Header.Height; height++ {
+		storedBlock, storedHash, err := store.GetBlock(height)
+		if err != nil {
+			return fmt.Errorf("%w: missing block %d: %v", ErrHistoryMismatch, height, err)
+		}
+		if storedBlock.Header.Height != height {
+			return fmt.Errorf("%w: block %d has header height %d", ErrHistoryMismatch, height, storedBlock.Header.Height)
+		}
+		if storedBlock.Header.ChainID != chainConfig.ChainID || storedBlock.Header.Version != chainConfig.ProtocolVersion {
+			return fmt.Errorf("%w: block %d has incompatible chain metadata", ErrHistoryMismatch, height)
+		}
+		computedHash, err := block.Hash(storedBlock)
+		if err != nil {
+			return fmt.Errorf("%w: hash block %d: %v", ErrHistoryMismatch, height, err)
+		}
+		if storedHash == (types.Hash{}) || storedHash != computedHash {
+			return fmt.Errorf("%w: block %d hash mismatch", ErrHistoryMismatch, height)
+		}
+		if height == 0 {
+			if storedHash != genesisHash {
+				return ErrGenesisMismatch
+			}
+			previousHash = storedHash
+			continue
+		}
+		if storedBlock.Header.PreviousHash != previousHash {
+			return fmt.Errorf("%w: block %d previous hash mismatch", ErrHistoryMismatch, height)
+		}
+		previousHash = storedHash
+	}
+
+	if storedHeadHash != previousHash {
+		return fmt.Errorf("%w: stored head hash mismatch", ErrHistoryMismatch)
+	}
+	return nil
 }
 
 // ImportBlock validates and executes the next block against canonical state,
