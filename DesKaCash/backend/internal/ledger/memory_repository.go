@@ -1,5 +1,7 @@
 package ledger
 
+import "context"
+
 // MemoryRepository is a test/development repository implementation.
 // Production persistence will be provided by PostgreSQL.
 type MemoryRepository struct {
@@ -16,7 +18,10 @@ func NewMemoryRepository() *MemoryRepository {
 	}
 }
 
-func (r *MemoryRepository) GetAccount(id string) (Account, error) {
+func (r *MemoryRepository) GetAccount(ctx context.Context, id string) (Account, error) {
+	if err := ctx.Err(); err != nil {
+		return Account{}, err
+	}
 	account, ok := r.accounts[id]
 	if !ok {
 		return Account{}, ErrNotFound
@@ -24,12 +29,18 @@ func (r *MemoryRepository) GetAccount(id string) (Account, error) {
 	return account, nil
 }
 
-func (r *MemoryRepository) SaveAccount(account Account) error {
+func (r *MemoryRepository) SaveAccount(ctx context.Context, account Account) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	r.accounts[account.ID] = account
 	return nil
 }
 
-func (r *MemoryRepository) GetTransaction(id string) (Transaction, error) {
+func (r *MemoryRepository) GetTransaction(ctx context.Context, id string) (Transaction, error) {
+	if err := ctx.Err(); err != nil {
+		return Transaction{}, err
+	}
 	tx, ok := r.transactions[id]
 	if !ok {
 		return Transaction{}, ErrNotFound
@@ -37,7 +48,10 @@ func (r *MemoryRepository) GetTransaction(id string) (Transaction, error) {
 	return tx, nil
 }
 
-func (r *MemoryRepository) CreateTransaction(tx Transaction) error {
+func (r *MemoryRepository) CreateTransaction(ctx context.Context, tx Transaction) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if _, exists := r.transactions[tx.ID]; exists {
 		return ErrDuplicateTransaction
 	}
@@ -45,12 +59,18 @@ func (r *MemoryRepository) CreateTransaction(tx Transaction) error {
 	return nil
 }
 
-func (r *MemoryRepository) CreateEntry(entry Entry) error {
+func (r *MemoryRepository) CreateEntry(ctx context.Context, entry Entry) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	r.entries[entry.AccountID] = append(r.entries[entry.AccountID], entry)
 	return nil
 }
 
-func (r *MemoryRepository) ListEntries(accountID string) ([]Entry, error) {
+func (r *MemoryRepository) ListEntries(ctx context.Context, accountID string) ([]Entry, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	entries := r.entries[accountID]
 	result := make([]Entry, len(entries))
 	copy(result, entries)
