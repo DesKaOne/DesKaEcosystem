@@ -1,6 +1,6 @@
 # DesKaCash v0.1 — Development Status / Handover
 
-Status: **Development / Core backend prototype**  
+Status: **Development / Core backend prototype — immutable posting model introduced**  
 Branch: `dev/deskacash-v0.1`  
 Repository: `DesKaOne/DesKaEcosystem`  
 Last reviewed: 2026-09-23
@@ -9,7 +9,7 @@ Last reviewed: 2026-09-23
 
 ## 1. Executive Summary
 
-Per 2026-09-23, DesKaCash sudah melewati tahap skeleton dan sudah memiliki core backend Go yang dapat dikembangkan sebagai prototype financial transaction service.
+Per 2026-09-23, DesKaCash sudah melewati tahap skeleton dan memiliki core backend Go untuk prototype financial transaction service.
 
 Yang sudah nyata di branch:
 - Go backend module.
@@ -24,19 +24,21 @@ Yang sudah nyata di branch:
 - Payment reconciliation/state transition logic.
 - Provider amount/status validation.
 - PostgreSQL integration tests untuk ledger/debit path.
+- Reconciliation tests yang menggunakan memory ledger nyata untuk reversal/refund.
+- Immutable posting domain model awal dengan validasi debit/credit.
 - GitHub Actions CI dengan PostgreSQL service, `go test ./...`, dan `go vet ./...`.
 - Feature-scope document untuk arah v0.1.
 - Arah integrasi IndoChain/dIDR sudah terdokumentasi.
 
-Belum production-ready sebagai e-wallet. Belum terlihat implementasi lengkap untuk authentication/user service, wallet business API, real Midtrans adapter, PPOB adapter, payout/withdrawal, persistent webhook store PostgreSQL, complete double-entry ledger, reservation/hold, real IndoChain RPC integration, Flutter frontend, dan production deployment.
+Belum production-ready sebagai e-wallet. Belum tersedia implementasi lengkap untuk authentication/user service, wallet business API, real Midtrans adapter, PPOB adapter, payout/withdrawal, persistent webhook store PostgreSQL, complete double-entry ledger, reservation/hold, real IndoChain RPC integration, Flutter frontend, dan production deployment.
 
 ## 2. Current Development Classification
 
 Posisi saat ini:
 
-Architecture / Scope → Domain Prototype → Ledger Prototype → Payment/Reconciliation Core → Real Provider Adapter → Wallet API → PPOB / External Money Movement → IndoChain Integration → Hardening → Production
+Architecture / Scope → Domain Prototype → Ledger Prototype → Payment/Reconciliation Core → **Ledger Hardening** → Real Provider Adapter → Wallet API → PPOB / External Money Movement → IndoChain Integration → Production Hardening
 
-Jadi DesKaCash sekarang paling tepat disebut **Core financial backend prototype — ledger + payment lifecycle foundation**.
+DesKaCash sekarang paling tepat disebut **Core financial backend prototype — ledger + payment lifecycle foundation**.
 
 ## 3. Repository Structure
 
@@ -49,6 +51,8 @@ DesKaCash/
     internal/config/
     internal/httpapi/
     internal/ledger/
+      posting.go
+      posting_test.go
     internal/payment/
     internal/storage/postgres/
     migrations/001_init_ledger.sql
@@ -58,27 +62,45 @@ DesKaCash/
 
 ## 4. Ledger Core
 
-Package `internal/ledger` sudah memiliki Account, Money, Entry, Transaction, Repository, Service, memory repository, dan tests.
+Package `internal/ledger` memiliki Account, Money, Entry, Transaction, Posting, Repository, Service, memory repository, dan tests.
 
 Account memiliki account ID, user ID, asset, balance dalam base units, dan version.
 
-Current code menggunakan `AssetDIDR = "dIDR"`.
+Current code masih menggunakan `AssetDIDR = "dIDR"` pada application ledger.
 
 Account sengaja dipisahkan dari alamat IndoChain.
 
+### Immutable Posting Model — current progress
+
+Model `Posting` sudah diperkenalkan sebagai langkah awal menuju immutable double-entry ledger.
+
+Posting memiliki:
+- posting ID;
+- transaction ID;
+- account ID;
+- asset;
+- debit/credit type;
+- positive amount;
+- reference.
+
+Validasi posting menolak identifier kosong, asset kosong, amount non-positive, dan posting type yang tidak dikenal.
+
+Model ini **belum menjadi source of truth repository** dan belum menggantikan `ledger_entries`/account balance.
+
 ### Important architecture gap
 
-Feature scope menetapkan PostgreSQL double-entry ledger sebagai source of truth. Namun implementation saat ini masih menggunakan model account balance + ledger_entries + transactions, dan operasi credit/debit masih meng-update balance account secara langsung di dalam database transaction.
+Feature scope menetapkan PostgreSQL double-entry ledger sebagai source of truth. Implementation saat ini masih menggunakan model account balance + ledger_entries + transactions, dan operasi credit/debit masih meng-update balance account secara langsung di dalam database transaction.
 
 Jadi **double-entry immutable ledger penuh belum selesai di code**.
 
 Target berikutnya:
-- immutable postings;
 - debit/credit pair;
-- balanced transaction;
+- balanced transaction validation;
+- posting persistence;
 - account normal balance;
 - reversal sebagai transaction baru;
-- balance projection dari postings.
+- balance projection dari postings;
+- concurrency/invariant tests.
 
 ## 5. PostgreSQL
 
@@ -97,6 +119,8 @@ Constraint saat ini:
 
 Repository PostgreSQL sudah memiliki create/get account, save account, create/get transaction, create ledger entry, list ledger entries, dan duplicate error mapping.
 
+Immutable `Posting` saat ini baru berada di domain layer; migration dan repository posting belum diubah.
+
 ## 6. Atomic Credit / Debit
 
 `internal/storage/postgres/atomic.go` melakukan:
@@ -110,6 +134,8 @@ Repository PostgreSQL sudah memiliki create/get account, save account, create/ge
 8. commit.
 
 Integration tests PostgreSQL untuk path debit/ledger juga sudah tersedia.
+
+Reconciliation tests sekarang juga memverifikasi reversal/refund terhadap memory ledger nyata, termasuk actual balance mutation dan insufficient-funds behavior.
 
 ## 7. Payment Core
 
@@ -136,9 +162,11 @@ Webhook status divalidasi agar status yang tidak dikenal tidak langsung mempenga
 
 ## 9. Webhook Idempotency / Validation
 
-Reconciliation sudah melakukan validasi event ID, provider, provider transaction ID, status, amount, payment/provider matching, amount matching, valid state transition, dan duplicate webhook detection.
+Reconciliation sudah melakukan validasi event ID, provider, provider transaction ID, status, payment/provider matching, amount matching, valid state transition, dan duplicate webhook detection.
 
 Duplicate event yang konsisten diperlakukan sebagai idempotent. Event dengan metadata penting berbeda ditolak.
+
+Untuk reversal/refund, ledger effect menggunakan transaction ID turunan yang deterministik sehingga retry tidak menggandakan financial effect.
 
 ## 10. Provider Boundary
 
@@ -166,6 +194,11 @@ Untuk `succeeded`, reconciliation melakukan credit ledger.
 
 Untuk `reversed/refunded`, reconciliation membuat transaction baru untuk debit.
 
+Current tests juga mencakup:
+- reversal terhadap memory ledger nyata;
+- refund terhadap memory ledger nyata;
+- insufficient funds tidak mengubah status payment dan tidak membuat ledger entry.
+
 ## 13. HTTP/API Status
 
 HTTP server sudah tersedia, tetapi endpoint bisnis belum.
@@ -188,11 +221,9 @@ Feature scope sudah menetapkan boundary DesKaCash ↔ IndoChain:
 
 Target blockchain integration mencakup address mapping, native RPC client, read balance, transaction submission/tracking, finality verification, dan IDR ↔ dIDR conversion.
 
-**Namun current code sudah menggunakan `dIDR` sebagai asset pada PostgreSQL application ledger.**
+**Namun current code masih menggunakan `dIDR` sebagai asset pada PostgreSQL application ledger.**
 
-Ini perlu diperjelas pada fase berikutnya karena feature scope juga mendefinisikan v0.1 sebagai fiat IDR wallet dan memisahkan IDR dari dIDR.
-
-Jangan menganggap penggunaan string `dIDR` pada current ledger sebagai bukti bahwa on-chain dIDR integration sudah selesai. RPC client, transaction submission, finality verification, dan conversion service belum terlihat.
+Ini perlu diperjelas pada fase berikutnya karena feature scope mendefinisikan v0.1 sebagai fiat IDR wallet dan memisahkan IDR dari dIDR.
 
 ## 15. PPOB
 
@@ -218,38 +249,43 @@ Workflow `.github/workflows/deskaone.yml` mendefinisikan PostgreSQL 16 service, 
 
 CI berjalan pada `main`, `dev/**`, dan pull request yang menyentuh DesKaCash/workflow.
 
-Status pass/fail run individual tidak diasumsikan dalam dokumen ini; cek run terbaru saat melanjutkan development.
+Setelah perubahan posting model, CI harus dicek berdasarkan SHA branch terbaru sebelum melanjutkan perubahan berikutnya.
 
 ## 18. Branch Position
 
-GitHub comparison saat review menunjukkan `dev/deskacash-v0.1` berada 106 commits ahead dan 3 commits behind terhadap `main`.
+Branch aktif: `dev/deskacash-v0.1`.
 
-Angka ini adalah snapshot saat review dan dapat berubah setelah commit baru.
+Snapshot commit terbaru saat update dokumen ini: `c1137a83e2374986090ed4ba23dcb1d9724875ce`.
+
+Angka comparison terhadap `main` dapat berubah setelah commit baru.
 
 ## 19. Important Architecture Gaps
 
 ### A. Double-entry ledger belum final
 Current implementation masih memiliki `account.balance_base_units` dan satu ledger entry per transaction. Target membutuhkan immutable postings, debit/credit pair, balanced transaction, account normal balance, reversal transaction, dan balance projection.
 
-### B. Transaction state machine belum lengkap
+### B. IDR vs dIDR boundary belum final
+Feature scope menetapkan IDR fiat sebagai wallet v0.1 dan dIDR sebagai native asset IndoChain. Current ledger masih memakai `AssetDIDR`. Perubahan asset model dan migration harus dilakukan secara eksplisit, bukan diasumsikan selesai dari domain model saja.
+
+### C. Transaction state machine belum lengkap
 Payment reconciliation memiliki transition rules, tetapi ledger transaction belum menjadi state machine lengkap dengan seluruh invariant target.
 
-### C. Reservation / hold belum ada
+### D. Reservation / hold belum ada
 PPOB membutuhkan available balance → reserve → provider processing → commit atau release.
 
-### D. Persistent webhook store belum lengkap
+### E. Persistent webhook store belum lengkap
 Webhook store yang terlihat masih memory implementation. Production membutuhkan persistent idempotent storage.
 
-### E. Real provider adapter belum ada
+### F. Real provider adapter belum ada
 Provider interface sudah ada, tetapi adapter production Midtrans/PPOB belum terlihat.
 
-### F. User/auth layer belum ada
+### G. User/auth layer belum ada
 Belum terlihat registration, login, authentication, authorization, KYC/KYB boundary, session/token management.
 
-### G. HTTP API belum menjadi business API
+### H. HTTP API belum menjadi business API
 Saat ini baru `/health`.
 
-### H. IndoChain integration belum diimplementasikan
+### I. IndoChain integration belum diimplementasikan
 Dokumentasi architecture sudah ada, tetapi RPC client, transaction submission, finality verification, dan dIDR conversion belum menjadi service nyata pada DesKaCash.
 
 ## 20. Recommended Development Order
@@ -257,7 +293,7 @@ Dokumentasi architecture sudah ada, tetapi RPC client, transaction submission, f
 ### Phase 1 — Ledger Hardening
 1. Finalize account model.
 2. Pisahkan IDR vs dIDR secara eksplisit.
-3. Implement immutable postings.
+3. Implement immutable postings. **Domain model awal sudah ada; persistence dan balancing belum.**
 4. Implement debit/credit balancing.
 5. Add transaction status machine.
 6. Add reversal transaction relation.
@@ -349,9 +385,9 @@ Jika chat sebelumnya penuh, chat baru cukup diberi instruksi:
 
 > Baca `DesKaCash/docs/DESKACASH_V0.1_DEVELOPMENT_STATUS.md` pada branch `dev/deskacash-v0.1`, lalu lanjutkan development DesKaCash dari status terakhir. Sebelum coding, cek kondisi branch dan file yang disebut dalam handover.
 
-Prioritas awal:
+Prioritas saat ini:
 
-Ledger Hardening → IDR vs dIDR boundary → Double-entry immutable postings → Transaction state machine → Wallet API → Provider integration
+**Ledger Hardening → IDR vs dIDR boundary → immutable posting persistence → debit/credit balancing → transaction state machine → Wallet API → Provider integration**
 
 ## 23. Related Documentation
 
