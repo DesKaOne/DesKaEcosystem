@@ -1,17 +1,20 @@
 package ledger
 
-import "errors"
+import (
+	"context"
+	"errors"
+)
 
 var ErrNotFound = errors.New("ledger record not found")
 
 // Repository abstracts ledger persistence from the business service.
 type Repository interface {
-	GetAccount(id string) (Account, error)
-	SaveAccount(account Account) error
+	GetAccount(ctx context.Context, id string) (Account, error)
+	SaveAccount(ctx context.Context, account Account) error
 
-	GetTransaction(id string) (Transaction, error)
-	CreateTransaction(tx Transaction) error
+	GetTransaction(ctx context.Context, id string) (Transaction, error)
+	CreateTransaction(ctx context.Context, tx Transaction) error
 
-	CreateEntry(entry Entry) error
-	ListEntries(accountID string) ([]Entry, error)
+	CreateEntry(ctx context.Context, entry Entry) error
+	ListEntries(ctx context.Context, accountID string) ([]Entry, error)
 }
