@@ -29,7 +29,7 @@ func TestPoolAddDuplicateAndRemove(t *testing.T) {
 
     hash := transaction.Hash(tx).String()
     if !p.Remove(hash) { t.Fatal("expected removal") }
-    if p.Len() != 0 { t.Fatal("expected empty pool") }
+    if p.Len() != 0 { t.Fatalf("expected empty pool") }
 }
 
 func TestPoolCapacity(t *testing.T) {
