@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"time"
+	"fmt"
 
 	"github.com/DesKaOne/DesKaEcosystem/DesKaCash/backend/internal/ledger"
 )
@@ -25,11 +25,8 @@ func (r *Repository) GetAccount(ctx context.Context, id string) (ledger.Account,
 
 	var account ledger.Account
 	err := r.db.QueryRowContext(ctx, query, id).Scan(
-		&account.ID,
-		&account.UserID,
-		&account.Asset,
-		&account.Balance.BaseUnits,
-		&account.Version,
+		&account.ID, &account.UserID, &account.Asset,
+		&account.Balance.BaseUnits, &account.Version,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ledger.Account{}, ledger.ErrNotFound
@@ -43,9 +40,7 @@ func (r *Repository) SaveAccount(ctx context.Context, account ledger.Account) er
 		WHERE id = $1`
 
 	result, err := r.db.ExecContext(ctx, query,
-		account.ID,
-		account.Balance.BaseUnits,
-		account.Version,
+		account.ID, account.Balance.BaseUnits, account.Version,
 	)
 	if err != nil {
 		return err
@@ -68,15 +63,8 @@ func (r *Repository) GetTransaction(ctx context.Context, id string) (ledger.Tran
 
 	var tx ledger.Transaction
 	err := r.db.QueryRowContext(ctx, query, id).Scan(
-		&tx.ID,
-		&tx.AccountID,
-		&tx.Asset,
-		&tx.Amount.BaseUnits,
-		&tx.Type,
-		&tx.Status,
-		&tx.ProviderID,
-		&tx.Reference,
-		&tx.CreatedAt,
+		&tx.ID, &tx.AccountID, &tx.Asset, &tx.Amount.BaseUnits,
+		&tx.Type, &tx.Status, &tx.ProviderID, &tx.Reference, &tx.CreatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ledger.Transaction{}, ledger.ErrNotFound
@@ -90,23 +78,10 @@ func (r *Repository) CreateTransaction(ctx context.Context, tx ledger.Transactio
 		VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''), NULLIF($8, ''), $9)`
 
 	_, err := r.db.ExecContext(ctx, query,
-		tx.ID,
-		tx.AccountID,
-		tx.Asset,
-		tx.Amount.BaseUnits,
-		tx.Type,
-		tx.Status,
-		tx.ProviderID,
-		tx.Reference,
-		tx.CreatedAt,
+		tx.ID, tx.AccountID, tx.Asset, tx.Amount.BaseUnits,
+		tx.Type, tx.Status, tx.ProviderID, tx.Reference, tx.CreatedAt,
 	)
-	if err != nil {
-		if isUniqueViolation(err) {
-			return ErrDuplicate
-		}
-		return err
-	}
-	return nil
+	return mapDBError(err)
 }
 
 func (r *Repository) CreateEntry(ctx context.Context, entry ledger.Entry) error {
@@ -115,22 +90,10 @@ func (r *Repository) CreateEntry(ctx context.Context, entry ledger.Entry) error 
 		VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''), $8)`
 
 	_, err := r.db.ExecContext(ctx, query,
-		entry.ID,
-		entry.AccountID,
-		entry.TransactionID,
-		entry.Type,
-		entry.Asset,
-		entry.Amount.BaseUnits,
-		entry.Reference,
-		entry.CreatedAt,
+		entry.ID, entry.AccountID, entry.TransactionID, entry.Type,
+		entry.Asset, entry.Amount.BaseUnits, entry.Reference, entry.CreatedAt,
 	)
-	if err != nil {
-		if isUniqueViolation(err) {
-			return ErrDuplicate
-		}
-		return err
-	}
-	return nil
+	return mapDBError(err)
 }
 
 func (r *Repository) ListEntries(ctx context.Context, accountID string) ([]ledger.Entry, error) {
@@ -150,14 +113,8 @@ func (r *Repository) ListEntries(ctx context.Context, accountID string) ([]ledge
 	for rows.Next() {
 		var entry ledger.Entry
 		if err := rows.Scan(
-			&entry.ID,
-			&entry.AccountID,
-			&entry.TransactionID,
-			&entry.Type,
-			&entry.Asset,
-			&entry.Amount.BaseUnits,
-			&entry.Reference,
-			&entry.CreatedAt,
+			&entry.ID, &entry.AccountID, &entry.TransactionID, &entry.Type,
+			&entry.Asset, &entry.Amount.BaseUnits, &entry.Reference, &entry.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -169,8 +126,11 @@ func (r *Repository) ListEntries(ctx context.Context, accountID string) ([]ledge
 	return entries, nil
 }
 
-func isUniqueViolation(err error) bool {
-	// PostgreSQL driver-specific error inspection will be added when the
-	// database driver is wired into the module.
-	return err != nil && errors.Is(err, context.Canceled) && time.Time{}.IsZero()
+func mapDBError(err error) error {
+	if err == nil {
+		return nil
+	}
+	// Driver-specific SQLSTATE mapping will be added with the PostgreSQL
+	// driver dependency. Keep the repository API independent of the driver.
+	return fmt.Errorf("postgres: %w", err)
 }
