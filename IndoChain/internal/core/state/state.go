@@ -2,6 +2,7 @@ package state
 
 import (
 	"errors"
+	"math"
 	"sync"
 
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/types"
@@ -12,6 +13,7 @@ var (
 	ErrInsufficientBalance = errors.New("insufficient balance")
 	ErrInvalidAmount       = errors.New("invalid transfer amount")
 	ErrNonceMismatch       = errors.New("nonce mismatch")
+	ErrBalanceOverflow     = errors.New("balance overflow")
 )
 
 type Account struct {
@@ -57,7 +59,10 @@ func (s *State) Transfer(sender, recipient types.Address, amount uint64, expecte
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	from, ok := s.accounts[string(sender)]
+	senderKey := string(sender)
+	recipientKey := string(recipient)
+
+	from, ok := s.accounts[senderKey]
 	if !ok {
 		return ErrAccountNotFound
 	}
@@ -68,13 +73,23 @@ func (s *State) Transfer(sender, recipient types.Address, amount uint64, expecte
 		return ErrInsufficientBalance
 	}
 
-	to := s.accounts[string(recipient)]
+	if senderKey == recipientKey {
+		from.Nonce++
+		s.accounts[senderKey] = from
+		return nil
+	}
+
+	to := s.accounts[recipientKey]
+	if amount > math.MaxUint64-to.Balance {
+		return ErrBalanceOverflow
+	}
+
 	from.Balance -= amount
 	from.Nonce++
 	to.Balance += amount
 
-	s.accounts[string(sender)] = from
-	s.accounts[string(recipient)] = to
+	s.accounts[senderKey] = from
+	s.accounts[recipientKey] = to
 	return nil
 }
 
@@ -92,7 +107,7 @@ func (s *State) Snapshot() *State {
 
 // Replace replaces the current state with a snapshot.
 func (s *State) Replace(snapshot *State) {
-	if snapshot == nil {
+	if snapshot == nil || snapshot == s {
 		return
 	}
 
