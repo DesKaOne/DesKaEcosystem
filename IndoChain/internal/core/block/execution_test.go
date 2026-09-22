@@ -1,0 +1,95 @@
+package block
+
+import (
+	"bytes"
+	"crypto/ed25519"
+	"testing"
+
+	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/state"
+	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/transaction"
+	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/types"
+	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/crypto"
+)
+
+func blockRules(pub []byte) ExecutionRules {
+	return ExecutionRules{
+		ChainID:         1001,
+		ProtocolVersion: 1,
+		Transaction: state.ExecutionRules{
+			Validation: transaction.ValidationRules{
+				ProtocolVersion: 1, ChainID: 1001,
+				RequireSender: true, RequireRecipient: true, RequireSignature: true,
+				MinGasLimit: 21000, MaxDataSize: 1024,
+			},
+			PublicKey: pub,
+		},
+	}
+}
+
+func blockTx(t *testing.T, signer *crypto.Ed25519Signer, nonce types.Nonce, value uint64) transaction.Transaction {
+	t.Helper()
+	tx := transaction.Transaction{
+		Version: 1, ChainID: 1001, Nonce: nonce,
+		Sender: types.Address{1}, Recipient: types.Address{2},
+		Value: value, GasLimit: 21000,
+	}
+	sig, err := transaction.Sign(tx, signer)
+	if err != nil { t.Fatal(err) }
+	tx.Signature = sig
+	return tx
+}
+
+func TestExecuteBlockCommitsAllTransactions(t *testing.T) {
+	seed := bytes.Repeat([]byte{0x42}, ed25519.SeedSize)
+	signer, err := crypto.NewEd25519Signer(ed25519.NewKeyFromSeed(seed))
+	if err != nil { t.Fatal(err) }
+
+	s := state.New()
+	s.Set(types.Address{1}, state.Account{Balance: 100, Nonce: 0})
+	b := Block{
+		Header: Header{Version: 1, ChainID: 1001, Height: 1},
+		Transactions: []any{
+			blockTx(t, signer, 0, 30),
+			blockTx(t, signer, 1, 20),
+		},
+	}
+	if err := ExecuteBlock(s, b, 1, types.Hash{}, blockRules(signer.PublicKey())); err != nil {
+		t.Fatal(err)
+	}
+	sender, _ := s.Get(types.Address{1})
+	recipient, _ := s.Get(types.Address{2})
+	if sender.Balance != 50 || sender.Nonce != 2 { t.Fatalf("unexpected sender: %+v", sender) }
+	if recipient.Balance != 50 { t.Fatalf("unexpected recipient: %+v", recipient) }
+}
+
+func TestExecuteBlockRollsBackOnTransactionFailure(t *testing.T) {
+	seed := bytes.Repeat([]byte{0x42}, ed25519.SeedSize)
+	signer, err := crypto.NewEd25519Signer(ed25519.NewKeyFromSeed(seed))
+	if err != nil { t.Fatal(err) }
+
+	s := state.New()
+	s.Set(types.Address{1}, state.Account{Balance: 40, Nonce: 0})
+	b := Block{
+		Header: Header{Version: 1, ChainID: 1001, Height: 1},
+		Transactions: []any{
+			blockTx(t, signer, 0, 30),
+			blockTx(t, signer, 1, 30),
+		},
+	}
+	if err := ExecuteBlock(s, b, 1, types.Hash{}, blockRules(signer.PublicKey())); err == nil {
+		t.Fatal("expected block execution failure")
+	}
+	sender, _ := s.Get(types.Address{1})
+	if sender.Balance != 40 || sender.Nonce != 0 { t.Fatalf("block partially committed: %+v", sender) }
+	if _, ok := s.Get(types.Address{2}); ok { t.Fatal("recipient created after rollback") }
+}
+
+func TestExecuteBlockRejectsBadParent(t *testing.T) {
+	s := state.New()
+	b := Block{Header: Header{Version: 1, ChainID: 1001, Height: 2}}
+	var parent types.Hash
+	parent[0] = 1
+	if err := ExecuteBlock(s, b, 2, parent, blockRules(nil)); err != ErrPreviousHash {
+		t.Fatalf("expected previous hash error, got %v", err)
+	}
+}
