@@ -30,7 +30,7 @@ type Reconciler struct {
 	ledger   LedgerReconciler
 }
 
-func NewReconciler(payments PaymentStore, webhooks WebhookStore, ledger LedgerCreditor) *Reconciler {
+func NewReconciler(payments PaymentStore, webhooks WebhookStore, ledger LedgerReconciler) *Reconciler {
 	return &Reconciler{payments: payments, webhooks: webhooks, ledger: ledger}
 }
 
