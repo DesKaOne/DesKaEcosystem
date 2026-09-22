@@ -1,7 +1,6 @@
 package storage
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -127,8 +126,7 @@ func TestFileStoreFailedPersistenceLeavesMemoryUnchanged(t *testing.T) {
 	candidateBlock := block.Block{Header: block.Header{Height: 1, StateRoot: candidateState.Root()}}
 	candidateHash := types.Hash{2}
 
-	err = store.CommitBlockState(candidateBlock, candidateHash, candidateState)
-	if err == nil {
+	if err := store.CommitBlockState(candidateBlock, candidateHash, candidateState); err == nil {
 		t.Fatal("expected persistence failure")
 	}
 
@@ -151,10 +149,7 @@ func TestFileStoreFailedPersistenceLeavesMemoryUnchanged(t *testing.T) {
 	if _, ok := afterState.Get(types.Address("bob")); ok {
 		t.Fatal("failed persistence exposed candidate state")
 	}
-	if _, err := os.Stat(path); err != nil {
-		t.Fatal(err)
-	}
-	if !errors.Is(err, nil) {
-		t.Fatal("unreachable")
+	if info, err := os.Stat(path); err != nil || !info.IsDir() {
+		t.Fatal("expected failed target path to remain a directory")
 	}
 }
