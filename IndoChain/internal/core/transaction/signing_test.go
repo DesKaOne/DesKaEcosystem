@@ -2,6 +2,7 @@ package transaction
 
 import (
 	"bytes"
+	"crypto/ed25519"
 	"testing"
 
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/types"
@@ -9,7 +10,8 @@ import (
 )
 
 func TestTransactionSignVerify(t *testing.T) {
-	signer, err := crypto.NewEd25519Signer(bytes.Repeat([]byte{0x42}, 64))
+	seed := bytes.Repeat([]byte{0x42}, ed25519.SeedSize)
+	signer, err := crypto.NewEd25519Signer(ed25519.NewKeyFromSeed(seed))
 	if err != nil {
 		t.Fatal(err)
 	}
