@@ -68,6 +68,10 @@ func TestSyncResponseHandlerAppliesSession(t *testing.T) {
 	h := &SyncResponseHandler{
 		Session: &SyncSession{
 			Planner: SyncPlanner{MaxBatch: 2},
+			Coordinator: &SyncCoordinator{
+				Reader:   &cursorApplyReader{},
+				Importer: &plannedResponseImporter{},
+			},
 			Cursor: SyncCursor{Height: 0},
 		},
 		Decoder: testSyncResponseDecoder{
