@@ -7,7 +7,7 @@ import (
 	"fmt"
 
 	"github.com/DesKaOne/DesKaEcosystem/DesKaCash/backend/internal/ledger"
-	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 type Repository struct {
@@ -142,7 +142,7 @@ func mapDBError(err error) error {
 		return nil
 	}
 
-	var pgErr *pgx.PgError
+	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
 		switch pgErr.Code {
 		case "23505":
