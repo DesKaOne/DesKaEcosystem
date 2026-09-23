@@ -11,6 +11,7 @@ func TestFromIDR(t *testing.T) {
 
 	if m.IDR() != 100_000 {
 		t.Fatalf("expected 100000 IDR, got %d", m.IDR())
+	}
 }
 
 func TestFromDIDR(t *testing.T) {
