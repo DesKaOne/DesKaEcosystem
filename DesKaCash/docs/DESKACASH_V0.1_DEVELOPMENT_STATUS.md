@@ -369,6 +369,117 @@ Dokumentasi architecture sudah ada, tetapi RPC client, transaction submission, f
 11. Deployment.
 12. Production runbook.
 
+## 20A. Provider Gateway Architecture Direction
+
+### Status
+
+**PLANNED — architecture direction, not yet implemented as a separate service.**
+
+DesKaCash akan diarahkan untuk menggunakan **DesKaProvider** sebagai service/gateway terpisah untuk integrasi provider eksternal. Tujuannya adalah menjaga core business logic DesKaCash tetap provider-agnostic dan memungkinkan provider diganti, ditambah, atau di-routing tanpa mengubah ledger dan wallet domain.
+
+Target boundary:
+
+```
+DesKaCash
+    |
+    | API / service boundary
+    v
+DesKaProvider
+    |
+    +-- Payment adapters
+    +-- PPOB adapters
+    +-- Payout adapters
+    +-- Wallet adapters
+    |
+    +-- External providers
+```
+
+Initial provider categories yang direncanakan:
+- Payment / collection.
+- PPOB / digital products.
+- Payout / external money movement.
+- Wallet / platform capabilities jika provider mendukung use case tersebut.
+
+Candidate providers yang sudah masuk research/project direction mencakup Midtrans, DOKU, Xendit, RCB, XP SINDONESIA, dan Digiflazz. Capability aktual setiap provider tetap harus diverifikasi sebelum digunakan untuk production.
+
+### Responsibility Boundary
+
+**DesKaCash tetap bertanggung jawab atas:**
+- wallet/account domain;
+- ledger dan balance sebagai source of truth application/fiat;
+- transaction lifecycle;
+- P2P internal;
+- reservation/atomicity;
+- business rules;
+- reconciliation effect terhadap ledger.
+
+**DesKaProvider direncanakan bertanggung jawab atas:**
+- provider API integration;
+- authentication/credential handling provider;
+- request/response mapping;
+- provider-specific status mapping;
+- provider transaction ID/reference;
+- webhook normalization dan signature verification;
+- provider-specific error handling;
+- provider routing/failover bila nantinya diperlukan.
+
+Provider eksternal **bukan** source of truth saldo DesKaCash.
+
+### Provider Abstraction Rule
+
+Business service DesKaCash tidak boleh bergantung langsung pada API atau format spesifik Midtrans, DOKU, Xendit, RCB, Digiflazz, XP SINDONESIA, atau provider lainnya.
+
+Target dependency:
+
+```
+DesKaCash -> DesKaProvider -> External Provider
+```
+
+Bukan:
+
+```
+DesKaCash -> Midtrans API
+DesKaCash -> RCB API
+DesKaCash -> Digiflazz API
+```
+
+Provider-specific implementation harus dapat diganti tanpa mengubah contract business domain DesKaCash.
+
+### Future Open API Direction
+
+DesKaProvider juga direncanakan dapat menjadi **Open API platform** untuk developer eksternal setelah internal contract, security, compliance, sandbox, dan operational model cukup matang.
+
+Target konseptual:
+
+```
+Developer / DesKaCash
+        |
+        v
+DesKaProvider API v1
+        |
+        +-- Payment
+        +-- PPOB
+        +-- Payout
+        +-- Future wallet capabilities
+        |
+        v
+External Providers / DesKa Infrastructure
+```
+
+Jika arah ini direalisasikan, DesKaCash sendiri akan menjadi salah satu consumer pertama dari API tersebut. Open API tidak menjadi scope implementation saat ini dan tidak boleh dianggap tersedia hanya karena architecture direction ini sudah terdokumentasi.
+
+### Future Provider Independence
+
+Dengan boundary ini, DesKaCash secara konseptual dapat tetap berjalan ketika:
+- provider eksternal diganti;
+- provider baru ditambahkan;
+- routing provider berubah;
+- DesKaProvider menggunakan lebih dari satu provider untuk capability yang sama; atau
+- pada tahap lebih lanjut, capability tertentu disediakan oleh infrastructure DesKa Ecosystem sendiri tanpa provider eksternal.
+
+Perubahan provider seharusnya tidak mengubah ledger contract, wallet balance model, atau business transaction semantics DesKaCash.
+
+
 ## 21. Architecture Guardrails
 
 1. Ledger adalah source of truth untuk saldo application/fiat yang memang dikelola DesKaCash.
