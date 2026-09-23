@@ -11,7 +11,7 @@ func TestNewTransaction(t *testing.T) {
 	if tx.Status != StatusPending {
 		t.Fatalf("expected pending status, got %s", tx.Status)
 	}
-	if tx.Asset != AssetDIDR {
-		t.Fatalf("expected dIDR asset, got %s", tx.Asset)
+	if tx.Asset != AssetIDR {
+		t.Fatalf("expected IDR asset, got %s", tx.Asset)
 	}
 }
