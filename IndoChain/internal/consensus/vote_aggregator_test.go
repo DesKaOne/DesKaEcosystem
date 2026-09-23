@@ -72,7 +72,7 @@ func TestVoteAggregatorCalculatesPayloadPowerAndQuorum(t *testing.T) {
 	if err != nil { t.Fatal(err) }
 	if !reached { t.Fatal("expected quorum") }
 
-	reached, err = agg.QuorumForPayload([]byte("block-B"), QuorumThreshold{Numerator: 1, Denominator: 2})
+	reached, err = agg.QuorumForPayload([]byte("block-B"), QuorumThreshold{Numerator: 3, Denominator: 5})
 	if err != nil { t.Fatal(err) }
 	if reached { t.Fatal("did not expect quorum") }
 }
