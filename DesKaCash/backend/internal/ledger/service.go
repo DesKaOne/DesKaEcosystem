@@ -21,7 +21,7 @@ func NewService(repo Repository) *Service {
 }
 
 func (s *Service) RegisterAccount(ctx context.Context, account Account) error {
-	if account.ID == "" || account.UserID == "" || account.Asset != AssetDIDR {
+	if account.ID == "" || account.UserID == "" || !IsSupportedAsset(account.Asset) {
 		return ErrInvalidAccount
 	}
 	return s.repo.CreateAccount(ctx, account)
@@ -35,8 +35,8 @@ func (s *Service) ApplyCredit(ctx context.Context, tx Transaction, reference str
 	if tx.Amount.BaseUnits <= 0 {
 		return ErrInvalidAmount
 	}
-	if tx.Asset != AssetDIDR {
-		tx.Asset = AssetDIDR
+	if !IsSupportedAsset(tx.Asset) {
+		return ErrInvalidAsset
 	}
 	return s.repo.ApplyCredit(ctx, tx, reference)
 }
@@ -45,8 +45,8 @@ func (s *Service) ApplyDebit(ctx context.Context, tx Transaction, reference stri
 	if tx.Amount.BaseUnits <= 0 {
 		return ErrInvalidAmount
 	}
-	if tx.Asset != AssetDIDR {
-		tx.Asset = AssetDIDR
+	if !IsSupportedAsset(tx.Asset) {
+		return ErrInvalidAsset
 	}
 	return s.repo.ApplyDebit(ctx, tx, reference)
 }
