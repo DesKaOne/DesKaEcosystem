@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/types"
 )
 
 var (
@@ -194,4 +193,3 @@ func cloneVotingPowerSet(set VotingPowerSet) VotingPowerSet {
 	return cloned
 }
 
-var _ = types.Height(0)
