@@ -116,7 +116,7 @@ func TestRepositoryApplyCreditWithPostgres(t *testing.T) {
 func resetSchema(t *testing.T, ctx context.Context, db *sql.DB) {
 	t.Helper()
 
-	if _, err := db.ExecContext(ctx, "DROP TABLE IF EXISTS ledger_entries, transactions, accounts CASCADE"); err != nil {
+	if _, err := db.ExecContext(ctx, "DROP TABLE IF EXISTS ledger_postings, ledger_entries, transactions, accounts CASCADE"); err != nil {
 		t.Fatal(err)
 	}
 
