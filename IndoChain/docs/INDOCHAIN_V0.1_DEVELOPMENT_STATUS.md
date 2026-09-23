@@ -235,6 +235,18 @@ The boundary validates the round state first and rejects context mismatches with
 
 This remains a development abstraction. It does not yet validate proposer eligibility, validator membership, vote power, quorum, timeout behavior, evidence, finality certificates, or validator-set transitions.
 
+### 4.13 Consensus Message Validation Pipeline Boundary
+
+A composed consensus-message validation pipeline is now implemented under `IndoChain/internal/consensus/message_pipeline.go`.
+
+`ValidateConsensusMessage` applies the existing boundaries in dependency order: message structure/protocol validation, exact round-state context validation, then validator membership/sender authorization.
+
+The pipeline is intentionally limited to existing invariants. Cryptographic signature verification remains a separate boundary through `VerifyMessageSignature`, because the current membership model does not define a public-key-to-validator authority mapping beyond the supplied validator identifier.
+
+Tests cover valid messages, context mismatch, unauthorized sender, input purity, and follow-on signature verification. Detailed scope is documented in `IndoChain/docs/consensus-message-validation-pipeline-v0.1.md`.
+
+This milestone does not define proposer selection, voting power, quorum, vote aggregation, locking, timeouts, finality certificates, validator-set transitions, staking, rewards, or slashing.
+
 ---
 
 ## 5. Protocol Documentation Progress
@@ -536,7 +548,7 @@ When there is a conflict, the implementation and dedicated protocol specificatio
 **Latest consensus round-state implementation:** `de59cb9d6485165613c5e7111521e27a639f69f6`
 **Latest consensus message ↔ round-state context implementation:** `fbd3e3a7f88cc0fc16e6a73671bb1a02a6454041`
 **Latest consensus validator membership implementation:** `f49385037bf7e22a816eab29a1ceacb49e0a9b4b`  
-**Latest consensus message validation pipeline implementation:** `374f79d10a9b2bb685af153074dd6c459276eeac`  
+**Latest consensus message validation pipeline implementation:** `b3775b69552576777ba14c2c441d3e7fc2251c9a`  
 **Branch:** `dev/indochain-v0.1`  
 **Stage:** Core Protocol Implementation / Pre-Consensus Integration  
 **Next major boundary:** Consensus Engine proposer selection + voting power/quorum + finality + Validator Runtime  
