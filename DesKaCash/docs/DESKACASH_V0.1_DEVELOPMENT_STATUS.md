@@ -425,3 +425,10 @@ Fix final dibuat sebagai `f8314cfd95d4322c42d149d614d60d547a033b04` dengan menut
 CI pada commit `aba36585b920e17d3cd90fa5553c0f5a9a484c34` kembali gagal pada `go test ./...`. Parser kini melewati `TestFromIDR`, tetapi menemukan fungsi `TestFromDIDR` juga belum memiliki penutup fungsi.
 
 Fix dibuat sebagai `d7f4f10e03f86b81ff847b1cf0068ab699e635c7` dengan menutup blok `if` dan fungsi `TestFromDIDR`. PostgreSQL integration test tetap berjalan sampai selesai; kegagalan murni berada pada syntax test `money_test.go`.
+
+
+### CI follow-up — 2026-09-23 (fourth pass)
+
+CI pada commit `d7f4f10e03f86b81ff847b1cf0068ab699e635c7` gagal pada `go test ./...` karena `asset_test.go` menggunakan nilai bertipe `Asset`, sementara helper `IsSupportedAsset` menerima `string`. Production code dan integration tests lain tidak menunjukkan kegagalan terkait.
+
+Fix dibuat sebagai `c16e1ed2f76088d3703ef2e22bc8c8891b37ac7a` dengan menjadikan `Asset` sebagai alias `string`, sehingga domain tetap dapat menggunakan nama `Asset` tanpa memutus kompatibilitas field dan helper yang saat ini berbasis string.
