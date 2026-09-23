@@ -363,6 +363,18 @@ Fix commit: `ac27d456622a6d8b3751832e7a73715b3c807adf`.
 
 This is a compile-level CI fix only; no production BFT semantics are introduced.
 
+### 4.22 Block Candidate Native Transaction Execution Coverage
+
+The block-candidate construction boundary has now been exercised with a real development Ed25519-signed native transaction, not only an empty-block case.
+
+The new test builds a signed transaction, seeds the sender account, runs `BuildBlockCandidate`, verifies the canonical state remains unchanged, and independently confirms that the candidate state root matches the deterministic state produced by applying the same transaction to a snapshot.
+
+This strengthens the existing boundary without introducing a sender-to-public-key registry: the v0.1 execution rule still receives one explicit public key, so this test intentionally covers the supported single-signer execution path only.
+
+The block-candidate documentation has been updated to record this coverage in `IndoChain/docs/consensus-block-candidate-construction-boundary-v0.1.md`.
+
+This milestone does not freeze multi-sender key resolution, canonical transaction/block serialization, fee/gas policy, block limits, or production consensus semantics.
+
 ## 5. Protocol Documentation Progress
 
 Documentation has advanced into more formal protocol specification work, including:
@@ -680,13 +692,16 @@ When there is a conflict, the implementation and dedicated protocol specificatio
 **Latest validator runtime tests:** `810bbaab2b009ab7ba5bcc5f87cd9f8c18291385`  
 **Validator runtime boundary documentation:** `523af557240c5e81c9b54249ccf9f3432c97c010`  
 **Consensus finality boundary documentation:** `72bb276ca17848129d0f9bec0c66554aa604a6b`  
-**Latest status-document update:** `756ae113690d4e8210a52573460fc1e3eedba8c3`    
+**Latest status-document update:** `fb63fba4e81ca6e9b822f52b90116694a222fb72`    
 **Current branch CI after vote aggregation:** previous CI run `584` failed in `TestVoteAggregatorCalculatesPayloadPowerAndQuorum`; the test assertion has been corrected in `705a2cbb5c31c78fa43e5c8362978e4094b469de`.  
 **Current branch CI after finality boundary:** no pull-request workflow run was associated with HEAD `146c2225be2dcaf787bc3f724b50d70e214dfcfc`.  
 **Current branch CI after validator runtime:** IndoChain CI run `610` failed on the pull-request merge ref because `ValidatorRuntime` assigned a `VoteAggregator` value to a `*VoteAggregator` field. The runtime fix is `ac27d456622a6d8b3751832e7a73715b3c807adf`; the resulting branch HEAD later passed IndoChain CI run `622`.  
 **Branch:** `dev/indochain-v0.1`  
 **Stage:** Core Protocol Implementation / Pre-Consensus Integration  
-**Next major boundary:** Production consensus state machine + block-production interface  
+**Latest block-candidate construction implementation:** `5d57d41ec1a2b901cdb63b38aa8171f07b27e754`  
+**Latest block-candidate execution coverage:** `29de6a6fa35d791bbc6ae6cb3d812b421a7dd553`  
+**Latest block-candidate documentation:** `239796fd04ba50378572b81a48faa07e63043f16`  
+**Next major boundary:** Consensus proposal ↔ block-candidate integration  
 
 ### 4.12 Consensus Validator Membership Boundary
 
