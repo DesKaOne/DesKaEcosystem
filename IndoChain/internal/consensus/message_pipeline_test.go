@@ -90,6 +90,7 @@ func TestValidateConsensusMessageRejectsUnauthorizedSender(t *testing.T) {
 	msg := Message{
 		ProtocolVersion: 1,
 		ChainID:        1001,
+		Height:         1,
 		Sender:         []byte("validator-x"),
 		Type:           MessageTypeVote,
 		Signature:      []byte("sig"),
@@ -118,6 +119,7 @@ func TestValidateConsensusMessagePreservesInput(t *testing.T) {
 	msg := Message{
 		ProtocolVersion: 1,
 		ChainID:        1001,
+		Height:         1,
 		Sender:         append([]byte(nil), originalSender...),
 		Type:           MessageTypeVote,
 		Signature:      []byte("sig"),
@@ -160,6 +162,7 @@ func TestValidateConsensusMessageCanFollowWithSignatureVerification(t *testing.T
 	msg := Message{
 		ProtocolVersion: 1,
 		ChainID:        1001,
+		Height:         1,
 		Sender:         append([]byte(nil), keyPair.PublicKey...),
 		Type:           MessageTypeProposal,
 		Payload:        []byte("proposal"),
