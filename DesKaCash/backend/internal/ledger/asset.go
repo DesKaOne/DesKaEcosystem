@@ -5,7 +5,7 @@ import "errors"
 // Asset identifies the denomination carried by an application ledger balance.
 // IDR is the fiat wallet asset used by DesKaCash v0.1.
 // dIDR is the native on-chain asset of IndoChain and remains a separate asset.
-type Asset string
+type Asset = string
 
 const (
 	AssetIDR  = "IDR"
