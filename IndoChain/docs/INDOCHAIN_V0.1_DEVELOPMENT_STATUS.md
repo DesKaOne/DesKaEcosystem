@@ -631,9 +631,10 @@ When there is a conflict, the implementation and dedicated protocol specificatio
 **Latest validator runtime tests:** `810bbaab2b009ab7ba5bcc5f87cd9f8c18291385`  
 **Validator runtime boundary documentation:** `523af557240c5e81c9b54249ccf9f3432c97c010`  
 **Consensus finality boundary documentation:** `72bb276ca17848129d0f9bec0c66554aa604a6b`  
-**Latest status-document update:** pending after this milestone  
+**Latest status-document update:** `4e1035aa3bb9f3768d563c68f19de85eea2e2974`    
 **Current branch CI after vote aggregation:** previous CI run `584` failed in `TestVoteAggregatorCalculatesPayloadPowerAndQuorum`; the test assertion has been corrected in `705a2cbb5c31c78fa43e5c8362978e4094b469de`.  
-**Current branch CI after finality boundary:** no pull-request workflow run is associated with HEAD `146c2225be2dcaf787bc3f724b50d70e214dfcfc` yet; do not treat the finality milestone as a green CI gate.  
+**Current branch CI after finality boundary:** no pull-request workflow run was associated with HEAD `146c2225be2dcaf787bc3f724b50d70e214dfcfc`.  
+**Current branch CI after validator runtime:** no pull-request workflow run is associated with HEAD `4e1035aa3bb9f3768d563c68f19de85eea2e2974` yet; do not treat the validator-runtime milestone as a green CI gate.  
 **Branch:** `dev/indochain-v0.1`  
 **Stage:** Core Protocol Implementation / Pre-Consensus Integration  
 **Next major boundary:** Production consensus state machine + block-production interface  
