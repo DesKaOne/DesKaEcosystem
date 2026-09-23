@@ -313,6 +313,62 @@ Capability tersebut harus diverifikasi dari produk/provider yang memang mendukun
 
 `*` Target capability; produk/channel aktual wajib diverifikasi pada provider sebelum diaktifkan.
 
+## 11A. Provider Gateway Boundary
+
+DesKaCash v0.1 menetapkan arah arsitektur provider sebagai **separate service boundary** melalui `DesKaProvider`. Implementasi service terpisah belum termasuk pada tahap saat ini, tetapi business logic DesKaCash harus tetap provider-agnostic agar integrasi provider dapat dipindahkan ke gateway tersebut tanpa mengubah core wallet/ledger.
+
+Target architecture:
+
+```
+DesKaCash
+    |
+    v
+DesKaProvider
+    |
+    +-- Payment adapters
+    +-- PPOB adapters
+    +-- Payout adapters
+    +-- Wallet adapters
+    |
+    +-- External providers
+```
+
+Provider-specific concerns seperti authentication, request/response mapping, provider status, provider transaction ID, webhook normalization, signature verification, dan provider-specific errors berada pada adapter/gateway layer.
+
+DesKaCash tetap menjadi pemilik business semantics dan ledger source of truth. Provider eksternal tidak boleh dianggap sebagai canonical balance source.
+
+### Planned Provider Categories
+
+- Payment / collection: Midtrans, DOKU, Xendit, RCB, dan provider lain yang telah diverifikasi.
+- PPOB: XP SINDONESIA, Digiflazz, RCB, dan provider lain yang telah diverifikasi.
+- Payout / external money movement: provider yang memang mendukung capability tersebut.
+- Wallet / platform: hanya jika capability provider sesuai dengan use case dan hasil verifikasi.
+
+Daftar tersebut adalah candidate/provider direction, bukan klaim bahwa seluruh capability sudah aktif atau tersedia pada DesKaCash v0.1.
+
+### Future Open API Direction
+
+Setelah internal provider contract, security, compliance, sandbox, dan operational model matang, DesKaProvider dapat dikembangkan menjadi Open API untuk developer eksternal.
+
+Target konseptual:
+
+```
+Developer / DesKaCash
+        |
+        v
+DesKaProvider API v1
+        |
+        +-- Payment
+        +-- PPOB
+        +-- Payout
+        +-- Future wallet capabilities
+        |
+        v
+External Providers / DesKa Infrastructure
+```
+
+Open API merupakan **future direction**, bukan fitur v0.1 yang sudah tersedia.
+
 ## 12. Prinsip Implementasi
 
 1. Ledger DesKaCash adalah source of truth saldo.
