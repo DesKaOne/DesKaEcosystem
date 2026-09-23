@@ -38,7 +38,7 @@ Namun IndoChain **belum merupakan blockchain production-ready**. Pekerjaan besar
 | Read RPC | 🟢 | Native read-side endpoints/components |
 | CI | 🟢 | Go test/vet workflow exists; latest run must be checked separately |
 | PoS | 🟡 | Protocol/design direction; runtime not yet complete |
-| BFT consensus | 🟡 | Message and round-state boundaries implemented; algorithm/quorum/finality still pending |
+| BFT consensus | 🟡 | Message/round-state, validator, voting-power, proposer, vote-aggregation, and finality boundaries implemented; production algorithm still pending |
 | Validator runtime | 🟡 | Design/components exist, full consensus loop not yet complete |
 | Block production | 🟡 | Not yet a complete production loop |
 | Native gas/fee | 🟡 | Design direction exists; execution integration remains |
@@ -284,6 +284,20 @@ A deterministic proposer-selection boundary is now implemented under `IndoChain/
 `ProposerSelector` defines the abstraction, while `RoundRobinProposer` provides a development-only deterministic selector. It validates round state and validator membership, rejects an empty validator set, uses the canonical byte-sorted validator order, selects `round mod validator_count`, and returns a cloned validator identifier.
 
 This selector intentionally does not model stake, voting power, proposer priority, randomness/VRF, validator performance, rewards, or slashing. It therefore does not freeze the production PoS proposer algorithm. Detailed scope is documented in `IndoChain/docs/consensus-proposer-selection-boundary-v0.1.md`.
+
+### 4.17 Consensus Finality Certificate Boundary
+
+A development-only finality certificate boundary is now implemented under `IndoChain/internal/consensus/finality.go`.
+
+`FinalityCertificate` binds one exact protocol/chain/epoch/height/round context to an opaque payload, a caller-supplied quorum threshold, and unique validator votes. `NewFinalityCertificate` reuses the existing consensus message validation, validator membership, voting-power, quorum, and vote-aggregation boundaries and refuses to create a certificate unless the supplied votes reach quorum.
+
+`ValidateFinalityCertificate` independently reconstructs the aggregation context and validates context equality, threshold, validator authorization, voting-power membership, duplicate-vote rejection, payload-specific voting power, and quorum. Validation is non-mutating and does not advance `RoundState`.
+
+Tests cover quorum failure, input cloning, context mismatch, mixed-payload evidence, duplicate senders, and non-mutating validation. Detailed scope is documented in `IndoChain/docs/consensus-finality-boundary-v0.1.md`.
+
+This milestone intentionally does not define the production BFT algorithm, prevote/precommit semantics, locking, timeouts, proposer priority/randomness, validator-set transitions, canonical certificate encoding, signature authority registry, P2P finality transport, block-production integration, or multi-height finality gadget.
+
+---
 
 ## 5. Protocol Documentation Progress
 
@@ -531,7 +545,9 @@ Meaning:
 - consensus validator membership boundary: implemented foundation
 - consensus message validation pipeline: implemented foundation
 - consensus voting-power/quorum boundary: implemented foundation
-- consensus proposer-selection boundary: implemented development foundation; production proposer policy, algorithm-specific quorum/finality semantics remain next
+- consensus proposer-selection boundary: implemented development foundation; production proposer policy remains open
+- consensus vote aggregation boundary: implemented development foundation
+- consensus finality certificate boundary: implemented development foundation; production finality semantics remain open
 - EVM: future execution milestone
 - production network: not yet
 
@@ -590,10 +606,14 @@ When there is a conflict, the implementation and dedicated protocol specificatio
 **Latest consensus voting power/quorum boundary implementation:** `9e59a2286ed936e823d8b04d3a71dc78c4d987a9`  
 **Latest consensus proposer-selection boundary implementation:** `4564272ddd061a80daf08dce0f2f0b6e726d58ca`  
 **Latest consensus vote aggregation boundary implementation:** `631dfe9b4f66b557e6fe0c5d95d51e0773da1489`  
+**Latest consensus vote aggregation CI fix:** `705a2cbb5c31c78fa43e5c8362978e4094b469de`  
+**Latest consensus finality certificate implementation:** `2764fc835db1c396f102e3e88a550e85c8850e38`  
+**Latest consensus finality certificate tests:** `816b9549175d20a5da2731beb1aea9434b3b1858`  
+**Consensus finality boundary documentation:** `72bb276ca17848129d0f9bec0c66554aa604a6b`  
 **Current branch CI after vote aggregation:** previous CI run `584` failed in `TestVoteAggregatorCalculatesPayloadPowerAndQuorum`; the test assertion has been corrected in `705a2cbb5c31c78fa43e5c8362978e4094b469de`. CI must be re-verified on the resulting HEAD.  
 **Branch:** `dev/indochain-v0.1`  
 **Stage:** Core Protocol Implementation / Pre-Consensus Integration  
-**Next major boundary:** Consensus finality semantics + Validator Runtime  
+**Next major boundary:** Validator Runtime + production consensus loop  
 
 ### 4.12 Consensus Validator Membership Boundary
 
