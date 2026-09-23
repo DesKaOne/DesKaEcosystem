@@ -432,3 +432,21 @@ Fix dibuat sebagai `d7f4f10e03f86b81ff847b1cf0068ab699e635c7` dengan menutup blo
 CI pada commit `d7f4f10e03f86b81ff847b1cf0068ab699e635c7` gagal pada `go test ./...` karena `asset_test.go` menggunakan nilai bertipe `Asset`, sementara helper `IsSupportedAsset` menerima `string`. Production code dan integration tests lain tidak menunjukkan kegagalan terkait.
 
 Fix dibuat sebagai `c16e1ed2f76088d3703ef2e22bc8c8891b37ac7a` dengan menjadikan `Asset` sebagai alias `string`, sehingga domain tetap dapat menggunakan nama `Asset` tanpa memutus kompatibilitas field dan helper yang saat ini berbasis string.
+
+
+### Ledger hardening progress — 2026-09-23
+
+Setelah CI kembali hijau pada commit `028a8bfbef2a0115e6e7b4e45b25986970558a74`, development dilanjutkan ke tahap **debit/credit balancing**.
+
+- `Posting` sekarang memiliki validator `ValidateBalancedPostings`.
+- Validator mewajibkan minimal satu debit dan satu credit.
+- Total debit dan credit harus sama.
+- Semua posting dalam satu set harus memakai `transaction_id` dan asset yang sama.
+- Amount harus positif dan posting type harus valid.
+- Penjumlahan dilindungi dari overflow `int64`.
+- Unit tests ditambahkan untuk balanced set, missing side, unequal totals, mixed asset/transaction, dan invalid amount.
+
+Commit implementasi: `1a991d8699333248a7220f7ce3b5b679a2360189`.
+Commit tests: `bca6858a1efbc31a5fc9c489f64d7f8e199559c5`.
+
+Catatan: validator ini baru merupakan domain invariant. Persistence transaction yang atomically menulis pasangan posting dan balance projection belum diubah pada tahap ini.
