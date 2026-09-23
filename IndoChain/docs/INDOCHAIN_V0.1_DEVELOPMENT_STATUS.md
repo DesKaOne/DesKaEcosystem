@@ -249,6 +249,19 @@ This milestone does not define proposer selection, voting power, quorum, vote ag
 
 ---
 
+
+### 4.14 Consensus Voting Power & Quorum Boundary
+
+A deterministic voting-power boundary is now implemented under `IndoChain/internal/consensus/voting_power.go`.
+
+`VotingPowerSet` binds validator identifiers to externally supplied positive `uint64` voting power, clones identifiers, sorts them deterministically, rejects duplicates/invalid entries, supports lookup, and calculates checked total voting power.
+
+A generic `QuorumThreshold` and `QuorumReached` helper are also implemented. The threshold is caller-supplied as numerator/denominator, so this milestone does not freeze a production quorum fraction. Quorum comparison uses arbitrary-precision arithmetic to avoid `uint64` multiplication overflow.
+
+Tests cover deterministic ordering/cloning, invalid and duplicate entries, lookup/total power, threshold validation, and below/exact/above quorum cases.
+
+This milestone intentionally does not define how stake maps to voting power, delegation, validator activation, proposer selection, vote aggregation, locking, timeouts, finality certificates, rewards, slashing, or validator-set transitions. Detailed scope is documented in `IndoChain/docs/consensus-voting-power-quorum-boundary-v0.1.md`.
+
 ## 5. Protocol Documentation Progress
 
 Documentation has advanced into more formal protocol specification work, including:
@@ -493,7 +506,8 @@ Meaning:
 - consensus round-state boundary: implemented foundation
 - consensus message ↔ round-state context boundary: implemented foundation
 - consensus validator membership boundary: implemented foundation
-- consensus message validation pipeline: implemented foundation; proposer/voting-power/quorum/finality semantics remain next
+- consensus message validation pipeline: implemented foundation
+- consensus voting-power/quorum boundary: implemented foundation; proposer selection, algorithm-specific quorum/finality semantics remain next
 - EVM: future execution milestone
 - production network: not yet
 
@@ -544,14 +558,15 @@ When there is a conflict, the implementation and dedicated protocol specificatio
 ## Status
 
 **Snapshot date:** 2026-09-23  
-**Latest verified green CI:** `15387e0a6e025259d193bee68b13aaa4a15903ff` (IndoChain CI run 517; newer development commits are awaiting CI verification)
+**Latest verified green CI:** `21e43032f7ed22dc07216f73b173166470c48f08` (IndoChain CI run 556)
 **Latest consensus round-state implementation:** `de59cb9d6485165613c5e7111521e27a639f69f6`
 **Latest consensus message ↔ round-state context implementation:** `fbd3e3a7f88cc0fc16e6a73671bb1a02a6454041`
 **Latest consensus validator membership implementation:** `f49385037bf7e22a816eab29a1ceacb49e0a9b4b`  
 **Latest consensus message validation pipeline implementation:** `b3775b69552576777ba14c2c441d3e7fc2251c9a`  
+**Latest consensus voting power/quorum boundary implementation:** `9e59a2286ed936e823d8b04d3a71dc78c4d987a9`  
 **Branch:** `dev/indochain-v0.1`  
 **Stage:** Core Protocol Implementation / Pre-Consensus Integration  
-**Next major boundary:** Consensus Engine proposer selection + voting power/quorum + finality + Validator Runtime  
+**Next major boundary:** Consensus Engine proposer selection + algorithm-specific quorum/finality + Validator Runtime  
 
 ### 4.12 Consensus Validator Membership Boundary
 
