@@ -318,6 +318,18 @@ This milestone intentionally does not define the production BFT algorithm, timeo
 ---
 
 
+### 4.19 Consensus ↔ Block Production Boundary
+
+A development block-production interface is now implemented under `IndoChain/internal/consensus/block_production.go`.
+
+`BlockProductionContext` supplies the current `RoundState`, previous block hash, and proposer identifier. `BlockProducer` defines the integration point for constructing the next candidate block without prescribing transaction selection or fee policy.
+
+`ValidateProducedBlock` verifies protocol/chain context, next height, previous hash, proposer identity, and the existing development transactions-root commitment. It returns the deterministic development block hash as the opaque proposal payload that can be carried by the existing consensus proposal/vote boundaries.
+
+Tests cover deterministic proposal payload generation and rejection of height/proposer context mismatches. Detailed scope is documented in `IndoChain/docs/consensus-block-production-boundary-v0.1.md`.
+
+This milestone intentionally does not implement transaction selection, fee/gas accounting, state execution, persistence, canonical serialization, P2P proposal transport, timeout/round-change behavior, or production BFT semantics.
+
 ### 4.18.1 CI Fix — Validator Runtime Aggregator Ownership
 
 IndoChain CI run `610` failed during compilation in `internal/consensus/runtime.go:79`: `NewVoteAggregator` returns a `VoteAggregator` value, while `ValidatorRuntime.votes` is a `*VoteAggregator`. The runtime constructor now stores `&aggregator` so the field type and assignment agree. The proposer comparison was also normalized to `bytes.Equal` for explicit byte-slice equality.
