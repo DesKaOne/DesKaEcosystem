@@ -404,3 +404,10 @@ Prioritas saat ini:
 ---
 
 **Latest progression:** CI pada `e538eb7f7b1e99c16e39a212bc7bcb115b76628e` sudah hijau. Setelah itu boundary `IDR` vs `dIDR` diperjelas pada domain `Asset`, `Money`, default account/transaction, dan PostgreSQL schema; immutable postings masih belum menjadi financial source of truth dan belum dipaksa balanced.\n\n**Handover principle:** Jangan menebak status dari chat lama. Gunakan branch `dev/deskacash-v0.1` sebagai kondisi aktual dan dokumen ini sebagai peta handover. Jika code dan dokumen berbeda, verifikasi code terlebih dahulu lalu update dokumentasi.
+
+
+### CI follow-up — 2026-09-23
+
+CI pada commit `f5187511163d5408e7b9b1b0b4202b554b20b8f2` gagal di step `go test ./...`. Root cause ditemukan sebagai syntax error pada `money_test.go`: fungsi `TestFromIDR` belum ditutup sebelum deklarasi `TestFromDIDR`.
+
+Fix committed sebagai `a5629b2d4fc34968aca407e129b64d2ec2f7706b` dengan perubahan hanya pada penutupan fungsi test tersebut. PostgreSQL integration tests sendiri melewati step test; kegagalan bukan berasal dari schema atau repository integration.
