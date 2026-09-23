@@ -1,9 +1,9 @@
 package consensus
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
-
 )
 
 var (
@@ -12,9 +12,6 @@ var (
 	ErrInvalidRuntimePhase     = errors.New("invalid consensus runtime phase")
 )
 
-// RuntimeConfig defines the externally supplied consensus inputs for one
-// development validator runtime. Production validator-set lifecycle and BFT
-// policy remain open protocol decisions.
 type RuntimeConfig struct {
 	Rules       ValidationRules
 	State       RoundState
@@ -24,9 +21,6 @@ type RuntimeConfig struct {
 	Proposer    ProposerSelector
 }
 
-// ValidatorRuntime is a deterministic development orchestration boundary. It
-// connects proposer selection, proposal acceptance, vote aggregation and
-// finality evidence without defining a production BFT algorithm.
 type ValidatorRuntime struct {
 	rules       ValidationRules
 	state       RoundState
@@ -76,13 +70,11 @@ func NewValidatorRuntime(config RuntimeConfig) (*ValidatorRuntime, error) {
 		votingPower: cloneVotingPowerSet(config.VotingPower),
 		threshold:   config.Threshold,
 		proposer:    config.Proposer,
-		votes:       aggregator,
+		votes:       &aggregator,
 	}, nil
 }
 
-func (r *ValidatorRuntime) State() RoundState {
-	return r.state
-}
+func (r *ValidatorRuntime) State() RoundState { return r.state }
 
 func (r *ValidatorRuntime) ExpectedProposer() ([]byte, error) {
 	if r == nil || r.proposer == nil {
@@ -91,8 +83,6 @@ func (r *ValidatorRuntime) ExpectedProposer() ([]byte, error) {
 	return r.proposer.Proposer(r.state, r.validators)
 }
 
-// AcceptProposal records one opaque proposal payload after checking that the
-// sender is the deterministic proposer for the current round.
 func (r *ValidatorRuntime) AcceptProposal(msg Message) error {
 	if r == nil {
 		return ErrInvalidConsensusRuntime
@@ -112,7 +102,7 @@ func (r *ValidatorRuntime) AcceptProposal(msg Message) error {
 	if err != nil {
 		return err
 	}
-	if string(expected) != string(msg.Sender) {
+	if !bytes.Equal(expected, msg.Sender) {
 		return fmt.Errorf("%w: expected %q got %q", ErrUnexpectedProposer, expected, msg.Sender)
 	}
 	if len(msg.Payload) == 0 {
@@ -123,8 +113,6 @@ func (r *ValidatorRuntime) AcceptProposal(msg Message) error {
 	return nil
 }
 
-// AddVote records a vote for the current accepted proposal and advances to
-// precommit once the caller-supplied quorum is reached.
 func (r *ValidatorRuntime) AddVote(msg Message) error {
 	if r == nil {
 		return ErrInvalidConsensusRuntime
@@ -150,8 +138,6 @@ func (r *ValidatorRuntime) AddVote(msg Message) error {
 	return nil
 }
 
-// FinalizeProposal produces a development finality certificate after quorum.
-// It does not commit a block or mutate canonical chain state.
 func (r *ValidatorRuntime) FinalizeProposal() (FinalityCertificate, error) {
 	if r == nil {
 		return FinalityCertificate{}, ErrInvalidConsensusRuntime
@@ -192,4 +178,3 @@ func cloneVotingPowerSet(set VotingPowerSet) VotingPowerSet {
 	}
 	return cloned
 }
-
