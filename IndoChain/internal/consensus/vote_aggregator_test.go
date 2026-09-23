@@ -52,8 +52,8 @@ func TestVoteAggregatorRejectsDuplicateSender(t *testing.T) {
 func TestVoteAggregatorRejectsSenderWithoutVotingPower(t *testing.T) {
 	agg := testVoteAggregator(t)
 	err := agg.AddVote(makeVote([]byte{9}, []byte("a")))
-	if !errors.Is(err, ErrVoteSenderNotInVotingPower) {
-		t.Fatalf("expected voting-power error, got %v", err)
+	if !errors.Is(err, ErrConsensusMessageUnauthorized) {
+		t.Fatalf("expected validator authorization error, got %v", err)
 	}
 }
 
