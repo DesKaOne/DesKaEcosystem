@@ -39,7 +39,7 @@ Namun IndoChain **belum merupakan blockchain production-ready**. Pekerjaan besar
 | CI | 🟢 | Go test/vet workflow exists; latest run must be checked separately |
 | PoS | 🟡 | Protocol/design direction; runtime not yet complete |
 | BFT consensus | 🟡 | Message/round-state, validator, voting-power, proposer, vote-aggregation, and finality boundaries implemented; production algorithm still pending |
-| Validator runtime | 🟡 | Design/components exist, full consensus loop not yet complete |
+| Validator runtime | 🟡 | Development orchestration boundary implemented; production consensus loop not yet complete |
 | Block production | 🟡 | Not yet a complete production loop |
 | Native gas/fee | 🟡 | Design direction exists; execution integration remains |
 | EVM | 🔴 | Not yet implemented as execution runtime |
@@ -296,6 +296,24 @@ A development-only finality certificate boundary is now implemented under `IndoC
 Tests cover quorum failure, input cloning, context mismatch, mixed-payload evidence, duplicate senders, and non-mutating validation. Detailed scope is documented in `IndoChain/docs/consensus-finality-boundary-v0.1.md`.
 
 This milestone intentionally does not define the production BFT algorithm, prevote/precommit semantics, locking, timeouts, proposer priority/randomness, validator-set transitions, canonical certificate encoding, signature authority registry, P2P finality transport, block-production integration, or multi-height finality gadget.
+
+---
+
+### 4.18 Validator Runtime Boundary
+
+A deterministic development validator runtime is now implemented under `IndoChain/internal/consensus/runtime.go`.
+
+`ValidatorRuntime` composes the existing proposer-selection, consensus-message validation, vote-aggregation, quorum, and finality-certificate boundaries into a controlled lifecycle:
+
+`Proposal → Prevote → Precommit → Finalized`
+
+Proposal acceptance requires the expected proposer for the current round and a valid consensus context. Votes are accepted through the existing aggregation boundary. When the caller-supplied quorum is reached for the accepted opaque payload, the runtime advances to Precommit. Finalization then creates a `FinalityCertificate` and advances the development phase to Finalized.
+
+Rejected proposal/vote paths do not advance the runtime. Finalization does not commit a block or mutate canonical chain state.
+
+Tests cover expected/unexpected proposer behavior, phase safety, quorum-driven progression, finality certificate creation, and refusal to finalize before quorum. Detailed scope is documented in `IndoChain/docs/consensus-validator-runtime-boundary-v0.1.md`.
+
+This milestone intentionally does not define the production BFT algorithm, timeout/round-change behavior, validator-set lifecycle, canonical proposal/finality encoding, block execution/commit, persistence, P2P transport, signature authority registry, rewards, or slashing.
 
 ---
 
@@ -609,13 +627,16 @@ When there is a conflict, the implementation and dedicated protocol specificatio
 **Latest consensus vote aggregation CI fix:** `705a2cbb5c31c78fa43e5c8362978e4094b469de`  
 **Latest consensus finality certificate implementation:** `2764fc835db1c396f102e3e88a550e85c8850e38`  
 **Latest consensus finality certificate tests:** `816b9549175d20a5da2731beb1aea9434b3b1858`  
+**Latest validator runtime implementation:** `18b0ec3ff5748a3d92557a7212f4f1d9e5da367b`  
+**Latest validator runtime tests:** `810bbaab2b009ab7ba5bcc5f87cd9f8c18291385`  
+**Validator runtime boundary documentation:** `523af557240c5e81c9b54249ccf9f3432c97c010`  
 **Consensus finality boundary documentation:** `72bb276ca17848129d0f9bec0c66554aa604a6b`  
-**Latest status-document update:** `146c2225be2dcaf787bc3f724b50d70e214dfcfc`  
+**Latest status-document update:** pending after this milestone  
 **Current branch CI after vote aggregation:** previous CI run `584` failed in `TestVoteAggregatorCalculatesPayloadPowerAndQuorum`; the test assertion has been corrected in `705a2cbb5c31c78fa43e5c8362978e4094b469de`.  
 **Current branch CI after finality boundary:** no pull-request workflow run is associated with HEAD `146c2225be2dcaf787bc3f724b50d70e214dfcfc` yet; do not treat the finality milestone as a green CI gate.  
 **Branch:** `dev/indochain-v0.1`  
 **Stage:** Core Protocol Implementation / Pre-Consensus Integration  
-**Next major boundary:** Validator Runtime + production consensus loop  
+**Next major boundary:** Production consensus state machine + block-production interface  
 
 ### 4.12 Consensus Validator Membership Boundary
 
