@@ -342,6 +342,19 @@ Tests cover repeatable ordering, strict transaction-hash ordering, and the non-m
 
 This milestone intentionally does not implement block production, state execution, gas/fee accounting, persistence, P2P mempool propagation, or consensus finality.
 
+### 4.21 Consensus ↔ Block Candidate Construction Boundary
+
+A deterministic block-candidate construction primitive is now implemented in `IndoChain/internal/consensus/block_candidate.go`.
+
+`BuildBlockCandidate` takes an explicit transaction sequence, snapshots canonical state, executes the supplied development transactions, calculates the deterministic transactions root and resulting state root, and constructs the next block candidate. The candidate is then checked through the existing `ValidateProducedBlock` boundary.
+
+The builder preserves canonical-state immutability and validates consensus/execution context alignment. Transaction selection remains outside the builder so the mempool ordering boundary and future economic selection policy remain separate from block construction.
+
+Tests cover deterministic empty-block construction, next-height calculation, state-root preservation, canonical-state non-mutation, execution-context mismatch, and nil-state rejection. Detailed scope is documented in `IndoChain/docs/consensus-block-candidate-construction-boundary-v0.1.md`.
+
+The existing v0.1 execution rule still exposes one explicit public key. This milestone therefore does not invent a sender-to-public-key registry for multi-sender blocks. Production multi-sender block construction remains dependent on a canonical authority/key-resolution design.
+
+This milestone intentionally does not freeze fee/gas accounting, block limits, canonical serialization, public-key registry, proposer policy, production BFT semantics, persistence, or P2P block-proposal transport.
 ### 4.18.1 CI Fix — Validator Runtime Aggregator Ownership
 
 IndoChain CI run `610` failed during compilation in `internal/consensus/runtime.go:79`: `NewVoteAggregator` returns a `VoteAggregator` value, while `ValidatorRuntime.votes` is a `*VoteAggregator`. The runtime constructor now stores `&aggregator` so the field type and assignment agree. The proposer comparison was also normalized to `bytes.Equal` for explicit byte-slice equality.
@@ -667,7 +680,7 @@ When there is a conflict, the implementation and dedicated protocol specificatio
 **Latest validator runtime tests:** `810bbaab2b009ab7ba5bcc5f87cd9f8c18291385`  
 **Validator runtime boundary documentation:** `523af557240c5e81c9b54249ccf9f3432c97c010`  
 **Consensus finality boundary documentation:** `72bb276ca17848129d0f9bec0c66554aa604a6b`  
-**Latest status-document update:** `b360a1c4205fe45ebef7898a50dddc3d446e0326`    
+**Latest status-document update:** `PENDING`    
 **Current branch CI after vote aggregation:** previous CI run `584` failed in `TestVoteAggregatorCalculatesPayloadPowerAndQuorum`; the test assertion has been corrected in `705a2cbb5c31c78fa43e5c8362978e4094b469de`.  
 **Current branch CI after finality boundary:** no pull-request workflow run was associated with HEAD `146c2225be2dcaf787bc3f724b50d70e214dfcfc`.  
 **Current branch CI after validator runtime:** IndoChain CI run `610` failed on the pull-request merge ref because `ValidatorRuntime` assigned a `VoteAggregator` value to a `*VoteAggregator` field. The runtime fix is `ac27d456622a6d8b3751832e7a73715b3c807adf`; the resulting branch HEAD later passed IndoChain CI run `622`.  
