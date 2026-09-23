@@ -38,7 +38,7 @@ func NewTransaction(id, accountID string, amount Money, txType string) (Transact
 	return Transaction{
 		ID:        id,
 		AccountID: accountID,
-		Asset:     AssetDIDR,
+		Asset:     AssetIDR,
 		Amount:    amount,
 		Type:      txType,
 		Status:    StatusPending,
