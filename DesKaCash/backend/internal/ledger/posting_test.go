@@ -44,3 +44,79 @@ func TestNewPostingRejectsInvalidValues(t *testing.T) {
 		})
 	}
 }
+
+
+func TestValidateBalancedPostings(t *testing.T) {
+	postings := []Posting{
+		{
+			ID: "debit-1", TransactionID: "tx-balanced", AccountID: "source",
+			Asset: AssetIDR, Type: PostingDebit, Amount: Money{BaseUnits: 10_000},
+		},
+		{
+			ID: "credit-1", TransactionID: "tx-balanced", AccountID: "destination",
+			Asset: AssetIDR, Type: PostingCredit, Amount: Money{BaseUnits: 10_000},
+		},
+	}
+	if err := ValidateBalancedPostings(postings); err != nil {
+		t.Fatalf("expected balanced postings, got %v", err)
+	}
+}
+
+func TestValidateBalancedPostingsRejectsUnbalancedSets(t *testing.T) {
+	tests := []struct {
+		name     string
+		postings []Posting
+	}{
+		{
+			name: "missing debit",
+			postings: []Posting{
+				{ID: "credit-1", TransactionID: "tx-1", AccountID: "account", Asset: AssetIDR, Type: PostingCredit, Amount: Money{BaseUnits: 100}},
+			},
+		},
+		{
+			name: "missing credit",
+			postings: []Posting{
+				{ID: "debit-1", TransactionID: "tx-1", AccountID: "account", Asset: AssetIDR, Type: PostingDebit, Amount: Money{BaseUnits: 100}},
+				{ID: "debit-2", TransactionID: "tx-1", AccountID: "account-2", Asset: AssetIDR, Type: PostingDebit, Amount: Money{BaseUnits: 100}},
+			},
+		},
+		{
+			name: "different totals",
+			postings: []Posting{
+				{ID: "debit-1", TransactionID: "tx-1", AccountID: "source", Asset: AssetIDR, Type: PostingDebit, Amount: Money{BaseUnits: 100}},
+				{ID: "credit-1", TransactionID: "tx-1", AccountID: "destination", Asset: AssetIDR, Type: PostingCredit, Amount: Money{BaseUnits: 90}},
+			},
+		},
+		{
+			name: "different assets",
+			postings: []Posting{
+				{ID: "debit-1", TransactionID: "tx-1", AccountID: "source", Asset: AssetIDR, Type: PostingDebit, Amount: Money{BaseUnits: 100}},
+				{ID: "credit-1", TransactionID: "tx-1", AccountID: "destination", Asset: AssetDIDR, Type: PostingCredit, Amount: Money{BaseUnits: 100}},
+			},
+		},
+		{
+			name: "different transactions",
+			postings: []Posting{
+				{ID: "debit-1", TransactionID: "tx-1", AccountID: "source", Asset: AssetIDR, Type: PostingDebit, Amount: Money{BaseUnits: 100}},
+				{ID: "credit-1", TransactionID: "tx-2", AccountID: "destination", Asset: AssetIDR, Type: PostingCredit, Amount: Money{BaseUnits: 100}},
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := ValidateBalancedPostings(tc.postings); err == nil {
+				t.Fatal("expected validation error")
+			}
+		})
+	}
+}
+
+func TestValidateBalancedPostingsRejectsInvalidPosting(t *testing.T) {
+	postings := []Posting{
+		{ID: "debit-1", TransactionID: "tx-1", AccountID: "source", Asset: AssetIDR, Type: PostingDebit, Amount: Money{BaseUnits: 0}},
+		{ID: "credit-1", TransactionID: "tx-1", AccountID: "destination", Asset: AssetIDR, Type: PostingCredit, Amount: Money{BaseUnits: 0}},
+	}
+	if err := ValidateBalancedPostings(postings); err != ErrInvalidPosting {
+		t.Fatalf("expected ErrInvalidPosting, got %v", err)
+	}
+}
