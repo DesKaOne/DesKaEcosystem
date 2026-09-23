@@ -479,7 +479,8 @@ Meaning:
 - mempool/P2P/sync: substantial foundation
 - consensus message boundary: implemented foundation
 - consensus round-state boundary: implemented foundation
-- consensus message ↔ round-state context boundary: implemented foundation; proposer/quorum/finality engine remains next
+- consensus message ↔ round-state context boundary: implemented foundation
+- consensus validator membership boundary: implemented foundation; voting power/quorum/proposer semantics remain next
 - EVM: future execution milestone
 - production network: not yet
 
@@ -532,7 +533,18 @@ When there is a conflict, the implementation and dedicated protocol specificatio
 **Snapshot date:** 2026-09-23  
 **Latest verified green CI:** `15387e0a6e025259d193bee68b13aaa4a15903ff` (IndoChain CI run 517; newer development commits are awaiting CI verification)
 **Latest consensus round-state implementation:** `de59cb9d6485165613c5e7111521e27a639f69f6`
-**Latest consensus message ↔ round-state context implementation:** `fbd3e3a7f88cc0fc16e6a73671bb1a02a6454041`  
+**Latest consensus message ↔ round-state context implementation:** `fbd3e3a7f88cc0fc16e6a73671bb1a02a6454041`
+**Latest consensus validator membership implementation:** `f49385037bf7e22a816eab29a1ceacb49e0a9b4b`  
 **Branch:** `dev/indochain-v0.1`  
 **Stage:** Core Protocol Implementation / Pre-Consensus Integration  
-**Next major boundary:** Consensus Engine context/message semantics + proposer/quorum/voting/finality + Validator Runtime  
+**Next major boundary:** Consensus Engine proposer selection + voting power/quorum + finality + Validator Runtime  
+
+### 4.12 Consensus Validator Membership Boundary
+
+A deterministic validator-membership boundary is now implemented under `IndoChain/internal/consensus/validator_set.go`.
+
+The development `ValidatorSet` rejects empty and duplicate validator identifiers, stores identifiers in deterministic byte-sorted order, clones input identifiers, and exposes membership validation.
+
+Consensus message sender authorization is also connected through `ValidateMessageSender`. A message sender must be present and belong to the supplied validator set before it can be treated as an active validator message.
+
+This milestone intentionally does not define stake, voting power, delegation, registration, activation/deactivation, epoch transitions, proposer selection, rewards, or slashing. Those remain open protocol/validator decisions.
