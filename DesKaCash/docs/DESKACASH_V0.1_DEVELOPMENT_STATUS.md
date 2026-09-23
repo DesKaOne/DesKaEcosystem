@@ -418,3 +418,10 @@ Fix committed sebagai `a5629b2d4fc34968aca407e129b64d2ec2f7706b` dengan perubaha
 Run CI setelah commit dokumentasi `8fca06ceb7dd08cde8c5f3c74b1cd08f094d7200` masih gagal karena fix sebelumnya hanya menutup blok `if`, tetapi fungsi `TestFromIDR` sendiri belum ditutup. Log CI mengonfirmasi error parser yang sama pada `money_test.go:16`.
 
 Fix final dibuat sebagai `f8314cfd95d4322c42d149d614d60d547a033b04` dengan menutup blok `if` dan fungsi `TestFromIDR` secara lengkap. Tidak ada perubahan pada production code.
+
+
+### CI follow-up — 2026-09-23 (third pass)
+
+CI pada commit `aba36585b920e17d3cd90fa5553c0f5a9a484c34` kembali gagal pada `go test ./...`. Parser kini melewati `TestFromIDR`, tetapi menemukan fungsi `TestFromDIDR` juga belum memiliki penutup fungsi.
+
+Fix dibuat sebagai `d7f4f10e03f86b81ff847b1cf0068ab699e635c7` dengan menutup blok `if` dan fungsi `TestFromDIDR`. PostgreSQL integration test tetap berjalan sampai selesai; kegagalan murni berada pada syntax test `money_test.go`.
