@@ -1,6 +1,6 @@
 # DesKaCash v0.1 — Development Status / Handover
 
-Status: **Development / Core backend prototype — immutable posting persistence introduced**  
+Status: **Development / Core backend prototype — explicit IDR/dIDR asset boundary introduced**  
 Branch: `dev/deskacash-v0.1`  
 Repository: `DesKaOne/DesKaEcosystem`  
 Last reviewed: 2026-09-23
@@ -25,7 +25,7 @@ Yang sudah nyata di branch:
 - Provider amount/status validation.
 - PostgreSQL integration tests untuk ledger/debit path.
 - Reconciliation tests yang menggunakan memory ledger nyata untuk reversal/refund.
-- Immutable posting domain model awal dengan validasi debit/credit.\n- Immutable posting persistence contract (`PostingStore`).\n- Memory repository posting storage + duplicate protection.\n- PostgreSQL `ledger_postings` table + create/list persistence.\n- Memory/PostgreSQL tests untuk immutable posting persistence.
+- Immutable posting domain model awal dengan validasi debit/credit.\n- Explicit ledger asset model untuk membedakan `IDR` fiat dan `dIDR` native IndoChain.\n- `Money` sekarang memakai integer base units yang maknanya ditentukan oleh asset: IDR memakai rupiah sebagai base unit, sedangkan dIDR memakai 0.001 dIDR.\n- Default account/transaction asset DesKaCash v0.1 sekarang `IDR`; `dIDR` tetap tersedia sebagai asset terpisah untuk integrasi IndoChain.\n- Database asset constraints sekarang menerima `IDR` dan `dIDR`, sehingga boundary asset tidak lagi dipaksa menjadi dIDR.\n- Immutable posting persistence contract (`PostingStore`).\n- Memory repository posting storage + duplicate protection.\n- PostgreSQL `ledger_postings` table + create/list persistence.\n- Memory/PostgreSQL tests untuk immutable posting persistence.
 - GitHub Actions CI dengan PostgreSQL service, `go test ./...`, dan `go vet ./...`.
 - Feature-scope document untuk arah v0.1.
 - Arah integrasi IndoChain/dIDR sudah terdokumentasi.
@@ -66,7 +66,7 @@ Package `internal/ledger` memiliki Account, Money, Entry, Transaction, Posting, 
 
 Account memiliki account ID, user ID, asset, balance dalam base units, dan version.
 
-Current code masih menggunakan `AssetDIDR = "dIDR"` pada application ledger.
+Current code sekarang menggunakan `AssetIDR = "IDR"` sebagai default application ledger v0.1, sementara `AssetDIDR = "dIDR"` tetap didefinisikan sebagai asset terpisah.
 
 Account sengaja dipisahkan dari alamat IndoChain.
 
@@ -86,6 +86,12 @@ Posting memiliki:
 Validasi posting menolak identifier kosong, asset kosong, amount non-positive, dan posting type yang tidak dikenal.
 
 Model ini sudah memiliki persistence layer terpisah melalui `PostingStore`, memory repository, dan PostgreSQL `ledger_postings`. Namun model ini **belum menjadi source of truth repository** dan belum menggantikan `ledger_entries`/account balance.
+
+### IDR vs dIDR boundary — current progress
+
+Boundary asset sekarang sudah eksplisit di domain dan schema. `IDR` adalah default asset untuk wallet ledger v0.1, sedangkan `dIDR` tetap merupakan asset native IndoChain dan tidak otomatis menjadi saldo fiat DesKaCash. `Money` tetap memakai integer base units, tetapi interpretasi unit mengikuti asset yang melekat pada account/transaction/posting.
+
+Perubahan ini baru memperjelas denomination boundary; conversion/settlement IDR ↔ dIDR, address mapping, dan on-chain verification belum diimplementasikan.
 
 ### Important architecture gap
 
@@ -255,7 +261,7 @@ Setelah perubahan posting model, CI harus dicek berdasarkan SHA branch terbaru s
 
 Branch aktif: `dev/deskacash-v0.1`.
 
-Snapshot commit terbaru saat update dokumen ini: `7e33b9a6186bfeda083fa5edc4817b9a65f1f371`.
+Snapshot commit sebelum update status ini: `fd277643a7240bb7fb222664707a7735e0979645e`. Setelah commit status, SHA branch akan berubah.
 
 Angka comparison terhadap `main` dapat berubah setelah commit baru.
 
@@ -264,8 +270,8 @@ Angka comparison terhadap `main` dapat berubah setelah commit baru.
 ### A. Double-entry ledger belum final
 Current implementation masih memiliki `account.balance_base_units` dan satu ledger entry per transaction. Target membutuhkan immutable postings, debit/credit pair, balanced transaction, account normal balance, reversal transaction, dan balance projection.
 
-### B. IDR vs dIDR boundary belum final
-Feature scope menetapkan IDR fiat sebagai wallet v0.1 dan dIDR sebagai native asset IndoChain. Current ledger masih memakai `AssetDIDR`. Perubahan asset model dan migration harus dilakukan secara eksplisit, bukan diasumsikan selesai dari domain model saja.
+### B. IDR vs dIDR boundary — domain/schema progress
+Feature scope menetapkan IDR fiat sebagai wallet v0.1 dan dIDR sebagai native asset IndoChain. Domain dan migration sekarang sudah membedakan kedua asset tersebut, dengan IDR sebagai default wallet asset. Conversion/settlement dan on-chain mapping masih belum tersedia.
 
 ### C. Transaction state machine belum lengkap
 Payment reconciliation memiliki transition rules, tetapi ledger transaction belum menjadi state machine lengkap dengan seluruh invariant target.
@@ -292,7 +298,7 @@ Dokumentasi architecture sudah ada, tetapi RPC client, transaction submission, f
 
 ### Phase 1 — Ledger Hardening
 1. Finalize account model.
-2. Pisahkan IDR vs dIDR secara eksplisit.
+2. Pisahkan IDR vs dIDR secara eksplisit. **Domain dan schema boundary sudah diperkenalkan; conversion/settlement belum.**
 3. Implement immutable postings. **Domain model dan persistence dasar sudah ada; balancing dan transactional posting belum.**
 4. Implement debit/credit balancing.
 5. Add transaction status machine.
@@ -397,4 +403,4 @@ Prioritas saat ini:
 
 ---
 
-**Latest progression:** immutable postings sekarang sudah dapat disimpan/dibaca melalui memory repository dan PostgreSQL, tetapi belum dipakai sebagai financial source of truth dan belum dipaksa balanced.\n\n**Handover principle:** Jangan menebak status dari chat lama. Gunakan branch `dev/deskacash-v0.1` sebagai kondisi aktual dan dokumen ini sebagai peta handover. Jika code dan dokumen berbeda, verifikasi code terlebih dahulu lalu update dokumentasi.
+**Latest progression:** CI pada `e538eb7f7b1e99c16e39a212bc7bcb115b76628e` sudah hijau. Setelah itu boundary `IDR` vs `dIDR` diperjelas pada domain `Asset`, `Money`, default account/transaction, dan PostgreSQL schema; immutable postings masih belum menjadi financial source of truth dan belum dipaksa balanced.\n\n**Handover principle:** Jangan menebak status dari chat lama. Gunakan branch `dev/deskacash-v0.1` sebagai kondisi aktual dan dokumen ini sebagai peta handover. Jika code dan dokumen berbeda, verifikasi code terlebih dahulu lalu update dokumentasi.
