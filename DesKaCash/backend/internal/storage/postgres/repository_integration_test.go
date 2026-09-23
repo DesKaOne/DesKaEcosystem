@@ -177,7 +177,7 @@ func TestRepositoryStoresImmutablePostingsWithPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	credit, err := ledger.NewPosting("posting-credit-1", tx.ID, account.ID, ledger.AssetDIDR, ledger.PostingCredit, ledger.Money{BaseUnits: 1000}, "transfer")
+	credit, err := ledger.NewPosting("posting-credit-1", tx.ID, account.ID, ledger.AssetIDR, ledger.PostingCredit, ledger.Money{BaseUnits: 1000}, "transfer")
 	if err != nil {
 		t.Fatal(err)
 	}
