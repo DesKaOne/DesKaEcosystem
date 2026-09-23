@@ -32,7 +32,7 @@ Namun IndoChain **belum merupakan blockchain production-ready**. Pekerjaan besar
 | Genesis / devnet | 🟢 | Genesis/devnet creation and tests |
 | Persistent storage | 🟢 | Chain/state storage abstractions and file-backed implementation |
 | Node open/recovery | 🟢 | Stored history/state integrity validation |
-| Mempool | 🟢 | Development implementation + node integration |
+| Mempool | 🟢 | Development implementation + deterministic candidate ordering boundary |
 | P2P | 🟢 | Handshake, messages, gossip/propagation, peer controls |
 | Block sync | 🟢 | Sync protocol components and coordinator/session machinery |
 | Read RPC | 🟢 | Native read-side endpoints/components |
@@ -329,6 +329,18 @@ A development block-production interface is now implemented under `IndoChain/int
 Tests cover deterministic proposal payload generation and rejection of height/proposer context mismatches. Detailed scope is documented in `IndoChain/docs/consensus-block-production-boundary-v0.1.md`.
 
 This milestone intentionally does not implement transaction selection, fee/gas accounting, state execution, persistence, canonical serialization, P2P proposal transport, timeout/round-change behavior, or production BFT semantics.
+
+### 4.20 Consensus ↔ Mempool Deterministic Ordering Boundary
+
+A deterministic development ordering boundary is now implemented in `IndoChain/internal/mempool/mempool.go` through `Pool.SnapshotSorted()`.
+
+The existing mempool stores transactions in a Go map, so raw `Snapshot()` iteration order is not suitable for canonical block construction. `SnapshotSorted()` copies admitted transactions and orders them by transaction hash before returning the candidate sequence.
+
+This closes an important determinism gap between the mempool and the existing block-production boundary without freezing the final transaction-selection policy. Fee/gas priority, nonce sequencing across senders, block limits, stale-transaction eviction, fee sponsorship ordering, and other economic selection rules remain open.
+
+Tests cover repeatable ordering, strict transaction-hash ordering, and the non-mutating nature of the sorted snapshot. Detailed scope is documented in `IndoChain/docs/consensus-mempool-ordering-boundary-v0.1.md`.
+
+This milestone intentionally does not implement block production, state execution, gas/fee accounting, persistence, P2P mempool propagation, or consensus finality.
 
 ### 4.18.1 CI Fix — Validator Runtime Aggregator Ownership
 
@@ -649,13 +661,16 @@ When there is a conflict, the implementation and dedicated protocol specificatio
 **Latest consensus finality certificate implementation:** `2764fc835db1c396f102e3e88a550e85c8850e38`  
 **Latest consensus finality certificate tests:** `816b9549175d20a5da2731beb1aea9434b3b1858`  
 **Latest validator runtime implementation:** `ac27d456622a6d8b3751832e7a73715b3c807adf`  
+**Latest deterministic mempool ordering implementation:** `ceecf3311b029ccb2d697bf201541fc1a69dc115`  
+**Deterministic mempool ordering tests:** `1b2fc2cbddf2b48ff45702d76dd27ba9570772ce`  
+**Deterministic mempool ordering documentation:** `16b7cbbe891f4ae765343684d736018d8c52c56f`  
 **Latest validator runtime tests:** `810bbaab2b009ab7ba5bcc5f87cd9f8c18291385`  
 **Validator runtime boundary documentation:** `523af557240c5e81c9b54249ccf9f3432c97c010`  
 **Consensus finality boundary documentation:** `72bb276ca17848129d0f9bec0c66554aa604a6b`  
 **Latest status-document update:** `PENDING`    
 **Current branch CI after vote aggregation:** previous CI run `584` failed in `TestVoteAggregatorCalculatesPayloadPowerAndQuorum`; the test assertion has been corrected in `705a2cbb5c31c78fa43e5c8362978e4094b469de`.  
 **Current branch CI after finality boundary:** no pull-request workflow run was associated with HEAD `146c2225be2dcaf787bc3f724b50d70e214dfcfc`.  
-**Current branch CI after validator runtime:** IndoChain CI run `610` failed on the pull-request merge ref because `ValidatorRuntime` assigned a `VoteAggregator` value to a `*VoteAggregator` field. The runtime fix is `ac27d456622a6d8b3751832e7a73715b3c807adf`; CI must be rechecked on the resulting branch HEAD.  
+**Current branch CI after validator runtime:** IndoChain CI run `610` failed on the pull-request merge ref because `ValidatorRuntime` assigned a `VoteAggregator` value to a `*VoteAggregator` field. The runtime fix is `ac27d456622a6d8b3751832e7a73715b3c807adf`; the resulting branch HEAD later passed IndoChain CI run `622`.  
 **Branch:** `dev/indochain-v0.1`  
 **Stage:** Core Protocol Implementation / Pre-Consensus Integration  
 **Next major boundary:** Production consensus state machine + block-production interface  
