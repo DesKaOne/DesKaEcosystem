@@ -17,8 +17,6 @@ type Account struct {
 	Version    uint64
 }
 
-const AssetDIDR = "dIDR"
-
 func NewAccount(id, userID string) (Account, error) {
 	if id == "" || userID == "" {
 		return Account{}, ErrInvalidAccount
@@ -27,7 +25,7 @@ func NewAccount(id, userID string) (Account, error) {
 	return Account{
 		ID:      id,
 		UserID:  userID,
-		Asset:   AssetDIDR,
+		Asset:   AssetIDR,
 		Balance: Money{},
 		Version: 1,
 	}, nil
