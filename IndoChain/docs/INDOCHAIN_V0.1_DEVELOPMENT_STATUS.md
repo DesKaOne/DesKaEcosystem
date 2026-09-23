@@ -480,7 +480,8 @@ Meaning:
 - consensus message boundary: implemented foundation
 - consensus round-state boundary: implemented foundation
 - consensus message ↔ round-state context boundary: implemented foundation
-- consensus validator membership boundary: implemented foundation; voting power/quorum/proposer semantics remain next
+- consensus validator membership boundary: implemented foundation
+- consensus message validation pipeline: implemented foundation; proposer/voting-power/quorum/finality semantics remain next
 - EVM: future execution milestone
 - production network: not yet
 
@@ -535,6 +536,7 @@ When there is a conflict, the implementation and dedicated protocol specificatio
 **Latest consensus round-state implementation:** `de59cb9d6485165613c5e7111521e27a639f69f6`
 **Latest consensus message ↔ round-state context implementation:** `fbd3e3a7f88cc0fc16e6a73671bb1a02a6454041`
 **Latest consensus validator membership implementation:** `f49385037bf7e22a816eab29a1ceacb49e0a9b4b`  
+**Latest consensus message validation pipeline implementation:** `374f79d10a9b2bb685af153074dd6c459276eeac`  
 **Branch:** `dev/indochain-v0.1`  
 **Stage:** Core Protocol Implementation / Pre-Consensus Integration  
 **Next major boundary:** Consensus Engine proposer selection + voting power/quorum + finality + Validator Runtime  
@@ -548,3 +550,15 @@ The development `ValidatorSet` rejects empty and duplicate validator identifiers
 Consensus message sender authorization is also connected through `ValidateMessageSender`. A message sender must be present and belong to the supplied validator set before it can be treated as an active validator message.
 
 This milestone intentionally does not define stake, voting power, delegation, registration, activation/deactivation, epoch transitions, proposer selection, rewards, or slashing. Those remain open protocol/validator decisions.
+
+### 4.13 Consensus Message Validation Pipeline Boundary
+
+A composed consensus-message validation pipeline is now implemented under `IndoChain/internal/consensus/message_pipeline.go`.
+
+`ValidateConsensusMessage` applies the existing boundaries in dependency order: message structure/protocol validation, exact round-state context validation, then validator membership/sender authorization.
+
+The pipeline is intentionally limited to existing invariants. Cryptographic signature verification remains a separate boundary through `VerifyMessageSignature`, because the current membership model does not define a public-key-to-validator authority mapping beyond the supplied validator identifier.
+
+Tests cover valid messages, context mismatch, unauthorized sender, input purity, and follow-on signature verification. Detailed scope is documented in `IndoChain/docs/consensus-message-validation-pipeline-v0.1.md`.
+
+This milestone does not define proposer selection, voting power, quorum, vote aggregation, locking, timeouts, finality certificates, validator-set transitions, staking, rewards, or slashing.
