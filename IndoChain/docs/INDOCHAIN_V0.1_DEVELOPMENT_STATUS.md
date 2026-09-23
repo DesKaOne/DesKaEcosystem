@@ -590,7 +590,7 @@ When there is a conflict, the implementation and dedicated protocol specificatio
 **Latest consensus voting power/quorum boundary implementation:** `9e59a2286ed936e823d8b04d3a71dc78c4d987a9`  
 **Latest consensus proposer-selection boundary implementation:** `4564272ddd061a80daf08dce0f2f0b6e726d58ca`  
 **Latest consensus vote aggregation boundary implementation:** `631dfe9b4f66b557e6fe0c5d95d51e0773da1489`  
-**Current branch CI after vote aggregation:** no workflow run is associated with the current HEAD yet; do not treat this as a green release gate.  
+**Current branch CI after vote aggregation:** previous CI run `584` failed in `TestVoteAggregatorCalculatesPayloadPowerAndQuorum`; the test assertion has been corrected in `705a2cbb5c31c78fa43e5c8362978e4094b469de`. CI must be re-verified on the resulting HEAD.  
 **Branch:** `dev/indochain-v0.1`  
 **Stage:** Core Protocol Implementation / Pre-Consensus Integration  
 **Next major boundary:** Consensus finality semantics + Validator Runtime  
