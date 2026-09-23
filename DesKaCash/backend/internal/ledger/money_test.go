@@ -23,6 +23,7 @@ func TestFromDIDR(t *testing.T) {
 
 	if m.DIDR() != 100 {
 		t.Fatalf("expected 100 dIDR, got %d", m.DIDR())
+	}
 }
 
 func TestBaseUnitRepresentation(t *testing.T) {
