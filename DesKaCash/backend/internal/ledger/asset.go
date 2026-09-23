@@ -8,13 +8,13 @@ import "errors"
 type Asset string
 
 const (
-	AssetIDR  Asset = "IDR"
-	AssetDIDR Asset = "dIDR"
+	AssetIDR  = "IDR"
+	AssetDIDR = "dIDR"
 )
 
 var ErrInvalidAsset = errors.New("invalid ledger asset")
 
-func IsSupportedAsset(asset Asset) bool {
+func IsSupportedAsset(asset string) bool {
 	switch asset {
 	case AssetIDR, AssetDIDR:
 		return true
