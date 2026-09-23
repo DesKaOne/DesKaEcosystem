@@ -265,6 +265,18 @@ This milestone intentionally does not define how stake maps to voting power, del
 ---
 
 
+### 4.16 Consensus Vote Aggregation Boundary
+
+A development-only vote aggregation boundary is now implemented under `IndoChain/internal/consensus/vote_aggregator.go`.
+
+`VoteAggregator` binds one exact round-state context to the existing message validation, validator membership, voting-power, and quorum primitives. It accepts only vote messages, prevents duplicate votes from the same validator, requires the sender to have voting power, and aggregates voting power for an exact opaque vote payload.
+
+Quorum evaluation remains caller-supplied through the existing `QuorumThreshold` and overflow-safe `QuorumReached` helper. Signature verification remains a separate boundary because the current v0.1 validator model does not define a canonical validator-identifier-to-public-key mapping.
+
+Tests cover non-vote rejection, duplicate sender rejection, missing voting power, payload-specific power/quorum calculation, input cloning, and context mismatch. Detailed scope is documented in `IndoChain/docs/consensus-vote-aggregation-boundary-v0.1.md`.
+
+This milestone intentionally does not define prevote/precommit semantics, locking, timeouts, round advancement, finality certificates, validator-set transitions, production quorum fraction, canonical vote payload serialization, persistence, or P2P vote transport.
+
 ### 4.15 Consensus Proposer Selection Boundary
 
 A deterministic proposer-selection boundary is now implemented under `IndoChain/internal/consensus/proposer.go`.
@@ -577,9 +589,10 @@ When there is a conflict, the implementation and dedicated protocol specificatio
 **Latest consensus message validation pipeline implementation:** `b3775b69552576777ba14c2c441d3e7fc2251c9a`  
 **Latest consensus voting power/quorum boundary implementation:** `9e59a2286ed936e823d8b04d3a71dc78c4d987a9`  
 **Latest consensus proposer-selection boundary implementation:** `4564272ddd061a80daf08dce0f2f0b6e726d58ca`  
+**Latest consensus vote aggregation boundary:** implemented on `dev/indochain-v0.1`; verify CI against the resulting branch HEAD before release use.  
 **Branch:** `dev/indochain-v0.1`  
 **Stage:** Core Protocol Implementation / Pre-Consensus Integration  
-**Next major boundary:** Consensus Engine vote aggregation + finality semantics + Validator Runtime  
+**Next major boundary:** Consensus finality semantics + Validator Runtime  
 
 ### 4.12 Consensus Validator Membership Boundary
 
