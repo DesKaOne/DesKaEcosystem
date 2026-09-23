@@ -610,7 +610,9 @@ When there is a conflict, the implementation and dedicated protocol specificatio
 **Latest consensus finality certificate implementation:** `2764fc835db1c396f102e3e88a550e85c8850e38`  
 **Latest consensus finality certificate tests:** `816b9549175d20a5da2731beb1aea9434b3b1858`  
 **Consensus finality boundary documentation:** `72bb276ca17848129d0f9bec0c66554aa604a6b`  
-**Current branch CI after vote aggregation:** previous CI run `584` failed in `TestVoteAggregatorCalculatesPayloadPowerAndQuorum`; the test assertion has been corrected in `705a2cbb5c31c78fa43e5c8362978e4094b469de`. CI must be re-verified on the resulting HEAD.  
+**Latest status-document update:** `146c2225be2dcaf787bc3f724b50d70e214dfcfc`  
+**Current branch CI after vote aggregation:** previous CI run `584` failed in `TestVoteAggregatorCalculatesPayloadPowerAndQuorum`; the test assertion has been corrected in `705a2cbb5c31c78fa43e5c8362978e4094b469de`.  
+**Current branch CI after finality boundary:** no pull-request workflow run is associated with HEAD `146c2225be2dcaf787bc3f724b50d70e214dfcfc` yet; do not treat the finality milestone as a green CI gate.  
 **Branch:** `dev/indochain-v0.1`  
 **Stage:** Core Protocol Implementation / Pre-Consensus Integration  
 **Next major boundary:** Validator Runtime + production consensus loop  
