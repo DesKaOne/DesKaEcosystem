@@ -411,3 +411,10 @@ Prioritas saat ini:
 CI pada commit `f5187511163d5408e7b9b1b0b4202b554b20b8f2` gagal di step `go test ./...`. Root cause ditemukan sebagai syntax error pada `money_test.go`: fungsi `TestFromIDR` belum ditutup sebelum deklarasi `TestFromDIDR`.
 
 Fix committed sebagai `a5629b2d4fc34968aca407e129b64d2ec2f7706b` dengan perubahan hanya pada penutupan fungsi test tersebut. PostgreSQL integration tests sendiri melewati step test; kegagalan bukan berasal dari schema atau repository integration.
+
+
+### CI follow-up — 2026-09-23 (second pass)
+
+Run CI setelah commit dokumentasi `8fca06ceb7dd08cde8c5f3c74b1cd08f094d7200` masih gagal karena fix sebelumnya hanya menutup blok `if`, tetapi fungsi `TestFromIDR` sendiri belum ditutup. Log CI mengonfirmasi error parser yang sama pada `money_test.go:16`.
+
+Fix final dibuat sebagai `f8314cfd95d4322c42d149d614d60d547a033b04` dengan menutup blok `if` dan fungsi `TestFromIDR` secara lengkap. Tidak ada perubahan pada production code.
