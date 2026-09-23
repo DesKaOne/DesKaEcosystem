@@ -1,0 +1,197 @@
+package consensus
+
+import (
+	"errors"
+	"fmt"
+
+	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/types"
+)
+
+var (
+	ErrInvalidConsensusRuntime = errors.New("invalid consensus runtime")
+	ErrUnexpectedProposer      = errors.New("unexpected consensus proposer")
+	ErrInvalidRuntimePhase     = errors.New("invalid consensus runtime phase")
+)
+
+// RuntimeConfig defines the externally supplied consensus inputs for one
+// development validator runtime. Production validator-set lifecycle and BFT
+// policy remain open protocol decisions.
+type RuntimeConfig struct {
+	Rules       ValidationRules
+	State       RoundState
+	Validators  ValidatorSet
+	VotingPower VotingPowerSet
+	Threshold   QuorumThreshold
+	Proposer    ProposerSelector
+}
+
+// ValidatorRuntime is a deterministic development orchestration boundary. It
+// connects proposer selection, proposal acceptance, vote aggregation and
+// finality evidence without defining a production BFT algorithm.
+type ValidatorRuntime struct {
+	rules       ValidationRules
+	state       RoundState
+	validators  ValidatorSet
+	votingPower VotingPowerSet
+	threshold   QuorumThreshold
+	proposer    ProposerSelector
+	votes       *VoteAggregator
+	proposal    []byte
+}
+
+func NewValidatorRuntime(config RuntimeConfig) (*ValidatorRuntime, error) {
+	if err := config.State.Validate(); err != nil {
+		return nil, err
+	}
+	if err := config.Validators.Validate(); err != nil {
+		return nil, err
+	}
+	if err := config.VotingPower.Validate(); err != nil {
+		return nil, err
+	}
+	if err := config.Threshold.Validate(); err != nil {
+		return nil, err
+	}
+	if config.Rules.ProtocolVersion != config.State.ProtocolVersion ||
+		config.Rules.ChainID != config.State.ChainID {
+		return nil, ErrInvalidConsensusRuntime
+	}
+	if config.Proposer == nil {
+		return nil, ErrInvalidConsensusRuntime
+	}
+
+	aggregator, err := NewVoteAggregator(
+		config.Rules,
+		config.State,
+		config.Validators,
+		config.VotingPower,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ValidatorRuntime{
+		rules:       config.Rules,
+		state:       config.State,
+		validators:  cloneValidatorSet(config.Validators),
+		votingPower: cloneVotingPowerSet(config.VotingPower),
+		threshold:   config.Threshold,
+		proposer:    config.Proposer,
+		votes:       aggregator,
+	}, nil
+}
+
+func (r *ValidatorRuntime) State() RoundState {
+	return r.state
+}
+
+func (r *ValidatorRuntime) ExpectedProposer() ([]byte, error) {
+	if r == nil || r.proposer == nil {
+		return nil, ErrInvalidConsensusRuntime
+	}
+	return r.proposer.Proposer(r.state, r.validators)
+}
+
+// AcceptProposal records one opaque proposal payload after checking that the
+// sender is the deterministic proposer for the current round.
+func (r *ValidatorRuntime) AcceptProposal(msg Message) error {
+	if r == nil {
+		return ErrInvalidConsensusRuntime
+	}
+	if r.state.Phase != PhaseProposal {
+		return ErrInvalidRuntimePhase
+	}
+	if msg.Type != MessageTypeProposal {
+		return fmt.Errorf("%w: expected proposal message", ErrInvalidConsensusRuntime)
+	}
+	if err := ValidateConsensusMessage(msg, MessageValidationContext{
+		Rules: r.rules, State: r.state, Validators: r.validators,
+	}); err != nil {
+		return err
+	}
+	expected, err := r.ExpectedProposer()
+	if err != nil {
+		return err
+	}
+	if string(expected) != string(msg.Sender) {
+		return fmt.Errorf("%w: expected %q got %q", ErrUnexpectedProposer, expected, msg.Sender)
+	}
+	if len(msg.Payload) == 0 {
+		return ErrInvalidConsensusRuntime
+	}
+	r.proposal = append([]byte(nil), msg.Payload...)
+	r.state.Phase = PhasePrevote
+	return nil
+}
+
+// AddVote records a vote for the current accepted proposal and advances to
+// precommit once the caller-supplied quorum is reached.
+func (r *ValidatorRuntime) AddVote(msg Message) error {
+	if r == nil {
+		return ErrInvalidConsensusRuntime
+	}
+	if r.state.Phase != PhasePrevote && r.state.Phase != PhasePrecommit {
+		return ErrInvalidRuntimePhase
+	}
+	if len(r.proposal) == 0 {
+		return ErrInvalidConsensusRuntime
+	}
+	if err := r.votes.AddVote(msg); err != nil {
+		return err
+	}
+	if r.state.Phase == PhasePrevote {
+		reached, err := r.votes.QuorumForPayload(r.proposal, r.threshold)
+		if err != nil {
+			return err
+		}
+		if reached {
+			r.state.Phase = PhasePrecommit
+		}
+	}
+	return nil
+}
+
+// FinalizeProposal produces a development finality certificate after quorum.
+// It does not commit a block or mutate canonical chain state.
+func (r *ValidatorRuntime) FinalizeProposal() (FinalityCertificate, error) {
+	if r == nil {
+		return FinalityCertificate{}, ErrInvalidConsensusRuntime
+	}
+	if r.state.Phase != PhasePrecommit {
+		return FinalityCertificate{}, ErrInvalidRuntimePhase
+	}
+	certificate, err := NewFinalityCertificate(
+		r.state,
+		r.validators,
+		r.votingPower,
+		r.threshold,
+		r.proposal,
+		r.votes.VotesForPayload(r.proposal),
+	)
+	if err != nil {
+		return FinalityCertificate{}, err
+	}
+	r.state.Phase = PhaseFinalized
+	return certificate, nil
+}
+
+func cloneValidatorSet(set ValidatorSet) ValidatorSet {
+	cloned := ValidatorSet{Validators: make([][]byte, len(set.Validators))}
+	for i, id := range set.Validators {
+		cloned.Validators[i] = append([]byte(nil), id...)
+	}
+	return cloned
+}
+
+func cloneVotingPowerSet(set VotingPowerSet) VotingPowerSet {
+	cloned := VotingPowerSet{Validators: make([]ValidatorVotingPower, len(set.Validators))}
+	for i, entry := range set.Validators {
+		cloned.Validators[i] = ValidatorVotingPower{
+			ValidatorID: append([]byte(nil), entry.ValidatorID...),
+			Power:       entry.Power,
+		}
+	}
+	return cloned
+}
+
+var _ = types.Height(0)
