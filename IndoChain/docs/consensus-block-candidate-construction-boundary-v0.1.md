@@ -81,4 +81,4 @@ This milestone does not freeze:
 
 ## Tests
 
-Tests cover deterministic empty-block construction, next-height calculation, state-root preservation, canonical-state non-mutation, execution-context mismatch, and nil-state rejection.
+Tests cover deterministic empty-block construction, next-height calculation, state-root preservation, canonical-state non-mutation, execution-context mismatch, nil-state rejection, and successful execution of a signed native transaction through the candidate builder.
