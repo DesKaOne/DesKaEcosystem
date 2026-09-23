@@ -2,6 +2,7 @@ package mempool
 
 import (
 	"errors"
+	"sort"
 	"sync"
 
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/transaction"
@@ -69,6 +70,9 @@ func (p *Pool) Len() int {
 	return len(p.txs)
 }
 
+// Snapshot returns the current transactions without promising an iteration order.
+// Callers that construct a block must use SnapshotSorted or another explicit
+// protocol ordering rule before committing transactions to a block.
 func (p *Pool) Snapshot() []transaction.Transaction {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
@@ -76,6 +80,33 @@ func (p *Pool) Snapshot() []transaction.Transaction {
 	out := make([]transaction.Transaction, 0, len(p.txs))
 	for _, tx := range p.txs {
 		out = append(out, tx)
+	}
+	return out
+}
+
+// SnapshotSorted returns a deterministic transaction snapshot ordered by the
+// transaction hash bytes. This is a development ordering primitive only; it
+// does not freeze the final block transaction-selection or fee-priority policy.
+func (p *Pool) SnapshotSorted() []transaction.Transaction {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	type entry struct {
+		hash string
+		tx   transaction.Transaction
+	}
+	entries := make([]entry, 0, len(p.txs))
+	for hash, tx := range p.txs {
+		entries = append(entries, entry{hash: hash, tx: tx})
+	}
+
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].hash < entries[j].hash
+	})
+
+	out := make([]transaction.Transaction, len(entries))
+	for i, entry := range entries {
+		out[i] = entry.tx
 	}
 	return out
 }
