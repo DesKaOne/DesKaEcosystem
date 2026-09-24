@@ -32,6 +32,7 @@ type Router struct {
 	Priorities     map[string]int
 	Catalog        catalog.Store
 	CatalogMaxAge  time.Duration
+	ProviderState  *operational.ProviderStateStore
 }
 
 type candidate struct {
@@ -40,21 +41,21 @@ type candidate struct {
 }
 
 func New(registry *provider.Registry, store operational.Store, priorities map[string]int) (*Router, error) {
-	return newRouter(registry, store, priorities, nil, 0)
+	return newRouter(registry, store, priorities, nil, 0, nil)
 }
 
 func NewWithCatalog(registry *provider.Registry, store operational.Store, priorities map[string]int, catalogStore catalog.Store) (*Router, error) {
-	return newRouter(registry, store, priorities, catalogStore, defaultCatalogMaxAge)
+	return newRouter(registry, store, priorities, catalogStore, defaultCatalogMaxAge, nil)
 }
 
 func NewWithCatalogMaxAge(registry *provider.Registry, store operational.Store, priorities map[string]int, catalogStore catalog.Store, maxAge time.Duration) (*Router, error) {
 	if maxAge <= 0 {
 		return nil, errors.New("catalog max age must be greater than zero")
 	}
-	return newRouter(registry, store, priorities, catalogStore, maxAge)
+	return newRouter(registry, store, priorities, catalogStore, maxAge, nil)
 }
 
-func newRouter(registry *provider.Registry, store operational.Store, priorities map[string]int, catalogStore catalog.Store, catalogMaxAge time.Duration) (*Router, error) {
+func newRouter(registry *provider.Registry, store operational.Store, priorities map[string]int, catalogStore catalog.Store, catalogMaxAge time.Duration, stateStore *operational.ProviderStateStore) (*Router, error) {
 	if registry == nil {
 		return nil, errors.New("provider registry is required")
 	}
@@ -65,7 +66,7 @@ func newRouter(registry *provider.Registry, store operational.Store, priorities 
 	for name, priority := range priorities {
 		copied[normalize(name)] = priority
 	}
-	return &Router{Registry: registry, Store: store, Priorities: copied, Catalog: catalogStore, CatalogMaxAge: catalogMaxAge}, nil
+	return &Router{Registry: registry, Store: store, Priorities: copied, Catalog: catalogStore, CatalogMaxAge: catalogMaxAge, ProviderState: stateStore}, nil
 }
 
 func (r *Router) Select(ctx context.Context, req Request) (string, error) {
@@ -78,6 +79,12 @@ func (r *Router) Select(ctx context.Context, req Request) (string, error) {
 
 	candidates := make([]candidate, 0)
 	for _, name := range r.Registry.Names() {
+		if r.ProviderState != nil {
+			state, ok := r.ProviderState.Get(name)
+			if !ok || !state.Enabled() || !state.Supports(operational.CapabilityPPOB) {
+				continue
+			}
+		}
 		snapshot, ok := r.Store.Get(name)
 		if !ok || snapshot.Health != operational.HealthHealthy || snapshot.Balance < req.Amount {
 			continue
