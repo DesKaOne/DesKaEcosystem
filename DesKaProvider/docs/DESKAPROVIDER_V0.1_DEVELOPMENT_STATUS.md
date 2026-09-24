@@ -1392,3 +1392,66 @@ A fresh CI run is required and must be green (`test`, `vet`, and `race`) before 
 2. if green, review DigiFlazz adapter readiness against the documented v0.1 roadmap checkpoint;
 3. decide whether DigiFlazz has enough verified coverage to move to IAK, without claiming live production verification;
 4. keep live credential validation separate from source-level adapter completeness.
+
+
+### 44. Milestone Update — IAK Prepaid Adapter Foundation
+
+**Date:** 2026-09-25
+
+CI run #247 for the DigiFlazz PLN inquiry milestone is confirmed **green** before starting this milestone:
+
+- workflow — success;
+- `test` — success (`go test ./...` and `go vet ./...`);
+- `race` — success (`go test -race ./...`).
+
+The DigiFlazz adapter now covers the main verified v0.1 neutral capabilities currently implemented in source: prepaid product catalog, PLN inquiry, purchase, status, webhook normalization, and balance synchronization. Live provider credential validation remains separate and has not been claimed.
+
+Based on the documented roadmap checkpoint, the next provider is IAK. Official IAK documentation confirms a prepaid REST API, MD5 authentication using `md5(username+api_key+additional)`, prepaid price list, PLN inquiry, top-up, check-status, callback, and balance capabilities. The v2 prepaid documentation also states that the first top-up response is processing and that reusing the same `ref_id` becomes a status check rather than a new transaction. citeturn0search3turn1search1turn2search0turn3view0
+
+Implemented:
+
+- added environment-backed `IAKConfig`;
+- added IAK prepaid base URL and endpoint overrides;
+- implemented provider-neutral IAK `GetProducts` against the documented prepaid price-list operation;
+- implemented IAK PLN inquiry using the documented `customer_id` and MD5 signature;
+- implemented IAK prepaid top-up mapping;
+- implemented IAK prepaid status lookup by `ref_id`;
+- implemented IAK balance lookup;
+- implemented IAK callback/webhook normalization with the documented `md5(username+api_key+ref_id)` signature when a signature secret is supplied;
+- added deterministic `httptest` coverage for price list, inquiry, purchase, status, balance, webhook signature, and unsupported inquiry;
+- registered IAK in runtime only when IAK credentials are configured, preserving existing DigiFlazz-only test/runtime setups;
+- documented IAK environment settings in `.env.example`.
+
+The adapter intentionally targets the verified **prepaid v2-style endpoints**. Postpaid billing inquiry/payment is not included in this milestone because those operations have a different API contract and must remain a separate provider capability boundary. citeturn2search1turn1search6
+
+### Safety Boundary
+
+This milestone does not:
+
+- introduce automatic transaction retry or cross-provider failover;
+- resubmit ambiguous transactions outside the existing transaction-correlation service;
+- mutate the DesKaCash ledger;
+- fund providers;
+- treat IAK sandbox access as production approval;
+- claim live IAK credential or commercial verification.
+
+The IAK documentation explicitly describes prepaid processing as asynchronous and supports callback or status-check flows. The adapter therefore preserves the existing pending/status/callback model instead of adding an unsafe immediate retry loop. citeturn1search7turn1search0
+
+### Verification Gate
+
+Implementation commits:
+
+- `58fbd9f599d9a215476279bb04c78172f07fa805` — IAK configuration;
+- `f1998fa136ee501d17d9f9ebc96907ff59949f9d` — IAK adapter;
+- `0eb27dcbb3ef647e33e56717c83bd075f8fc145f` — deterministic adapter tests;
+- `e781430555a0457381437daa9f3ecdb9b89e6652` — optional IAK runtime registration;
+- `cd4929bb183d63c11fc96178a6c8d2e0c3dd0bbf` — environment documentation.
+
+A fresh CI run for this IAK milestone is required. `test`, `vet`, and `race` must all be green before the next implementation step.
+
+### Next Milestone
+
+1. verify the fresh CI result for the IAK adapter foundation;
+2. if green, add IAK-specific integration-test harnessing that remains credential-gated;
+3. then review IAK catalog freshness/balance behavior against the existing neutral operational boundaries;
+4. keep live credential validation and production activation separate from source-level adapter completeness.
