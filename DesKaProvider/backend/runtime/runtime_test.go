@@ -128,6 +128,19 @@ func TestNewFromEnvironmentBuildsDurableService(t *testing.T) {
 	if service.interval != 45*time.Second || service.syncService.FailureThreshold != 4 || service.PurchaseService() == nil {
 		t.Fatalf("unexpected service configuration: interval=%s threshold=%d", service.interval, service.syncService.FailureThreshold)
 	}
+	if service.providerState == nil {
+		t.Fatal("expected provider state store")
+	}
+	state, ok := service.providerState.Get("digiflazz")
+	if !ok {
+		t.Fatal("expected registered provider state")
+	}
+	if state.Enabled() {
+		t.Fatal("provider must remain disabled until explicit administrative enablement")
+	}
+	if !state.Supports(operational.CapabilityPPOB) || !state.Supports(operational.CapabilityBalance) || !state.Supports(operational.CapabilityWebhook) {
+		t.Fatalf("unexpected provider capabilities: %#v", state.Capabilities)
+	}
 	if _, err := os.Stat(storePath); !os.IsNotExist(err) {
 		t.Fatalf("store should be created on first write, stat error: %v", err)
 	}
