@@ -708,7 +708,7 @@ func TestCommitRuntimeFinalizedBlockCrossesExplicitHandoff(t *testing.T) {
 	}); if err != nil { t.Fatal(err) }
 	proposal, err := consensus.NewBlockProposal(ctx, candidate); if err != nil { t.Fatal(err) }
 	if err := runtime.AcceptBlockProposal(proposal); err != nil { t.Fatal(err) }
-	vote := consensus.Message{ProtocolVersion: ctx.State.ProtocolVersion, ChainID: ctx.State.ChainID, Epoch: ctx.State.Epoch, Height: ctx.State.Height, Round: ctx.State.Round, Sender: validatorID, Type: consensus.MessageTypeVote, Payload: proposal.Payload}
+	vote := consensus.Message{ProtocolVersion: ctx.State.ProtocolVersion, ChainID: ctx.State.ChainID, Epoch: ctx.State.Epoch, Height: ctx.State.Height, Round: ctx.State.Round, Sender: validatorID, Type: consensus.MessageTypeVote, Payload: proposal.Payload[:]}
 	if err := runtime.AddVote(vote); err != nil { t.Fatal(err) }
 	if _, err := runtime.FinalizeProposal(); err != nil { t.Fatal(err) }
 	if err := n.CommitRuntimeFinalizedBlock(ctx, candidate, runtime, validators, power, validatorResolver, senderResolver); err != nil { t.Fatal(err) }
