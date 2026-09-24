@@ -166,3 +166,21 @@ func TestIAKWebhookRejectsMalformedTransaction(t *testing.T) {
 	_, err := c.HandleWebhook(context.Background(), provider.WebhookRequest{Body:[]byte(`{"ref_id":"order-1","status":"9","code":"xld25000","hp":"08123"}`), SignatureSecret:"secret", Signature:ts("order-1")})
 	if err == nil { t.Fatal("expected malformed webhook error") }
 }
+
+func TestIAKProductListItemValidation(t *testing.T) {
+	cases := []struct{name, body string}{
+		{"invalid item type", `{"data":{"pricelist":["bad"]}}`},
+		{"missing product code", `{"data":{"pricelist":[{"product_description":"XL 25K","product_category":"pulsa","status":"active"}]}}`},
+		{"missing product description", `{"data":{"pricelist":[{"product_code":"xld25000","product_category":"pulsa","status":"active"}]}}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, client := newIAKJSONServer(tc.body)
+			defer srv.Close()
+			c, err := New(iakTestConfig(srv.URL), client)
+			if err != nil { t.Fatal(err) }
+			_, err = c.GetProducts(context.Background(), provider.ProductRequest{})
+			if err == nil { t.Fatal("expected invalid pricelist item error") }
+		})
+	}
+}
