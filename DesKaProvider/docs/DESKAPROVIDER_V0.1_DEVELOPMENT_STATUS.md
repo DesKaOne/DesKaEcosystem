@@ -2261,3 +2261,46 @@ REMAINING RISK:
 1. verify fresh CI for the compile fix;
 2. only after GREEN, continue with durable lifecycle-state persistence design/implementation;
 3. then proceed toward internal Admin API integration.
+
+
+### 67. Milestone Update — Durable Provider Lifecycle State
+
+**Date:** 2026-09-25
+
+CI gate:
+
+- CI #384 for `d28dfccd20afe15636795ac41385fb0bcb20f7d1` is **GREEN**;
+- `test`, `vet`, and `race` all completed successfully;
+- only after this gate was the durable lifecycle-state milestone started.
+
+Completed:
+
+- introduced `ProviderStatePersistence` as the persistence boundary for provider lifecycle state;
+- added `JSONFileProviderStateStore` for durable local operational persistence;
+- provider state is loaded during runtime startup;
+- provider lifecycle changes through `ProviderStateStore.Put` are persisted before the in-memory state is committed;
+- failed persistence therefore does not leave an uncommitted lifecycle mutation in memory;
+- persistence uses temporary files, restrictive `0600` file permissions, sync, and atomic rename;
+- runtime now uses `DESKAPROVIDER_PROVIDER_STATE_STORE_PATH`, defaulting to `data/provider-state.json`;
+- existing provider lifecycle state survives runtime restart;
+- runtime provider registration still does not automatically enable a provider;
+- existing lifecycle state is preserved while runtime registration refreshes the explicit capability set;
+- deterministic tests cover restart recovery, persistence failure atomicity, and file permissions.
+
+Safety boundary:
+
+- lifecycle state remains separate from health, capabilities, balance/liquidity, and ledger state;
+- no automatic funding, retry/failover, credential mutation, or public API was introduced;
+- Admin API remains deferred until authorization/control-plane requirements are defined.
+
+Verification:
+
+- implementation commits: `4f6ebb3e22d01b799f3d68ea449f0894b81c787a`, `c014029546975111945861544e32925ccc50be45`, `d33120f96cd3aeb339924d38fbb6a64433d36ead`, `059d1bb221efbdcdd17907b62118d13e8cf1d702`, `b404a36359c21486492fbfb3d9f651de57815e19`, `f6891e5431faa5abbcd1a62543b625d10dd36c5a`;
+- fresh CI is required for this milestone before proceeding.
+
+### Next Milestone
+
+1. verify durable lifecycle-state CI;
+2. add restart-focused administrative lifecycle tests through `ProviderAdminService`;
+3. then add routing eligibility tests combining lifecycle, health, and catalog freshness;
+4. only after those controls are stable, continue toward the internal Admin API.
