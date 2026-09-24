@@ -116,3 +116,14 @@ Coverage includes successful round advancement, round-local state reset, lock pr
 ### Non-goals
 
 This boundary does not yet define timeout certificates, dedicated timeout messages, prevote/precommit wire types, lock-carrying evidence, multi-node round synchronization, or a production BFT timeout algorithm.
+
+
+## Timeout Evidence Boundary
+
+The consensus package now includes a development-only `TimeoutCertificate` boundary. It binds the current consensus context to a strictly newer target round, a caller-supplied quorum threshold, and a unique canonical validator set.
+
+This evidence requires a strictly newer target round, valid threshold, non-empty validator evidence, validator membership and voting power, unique identifiers, checked voting-power aggregation reaching quorum, and canonical byte ordering.
+
+The certificate describes why a runtime may advance rounds, but does not itself perform the transition. `ValidatorRuntime.AdvanceRound(next)` remains the state-transition boundary.
+
+It intentionally does not define signed timeout messages, aggregated signatures, lock-carrying evidence, network synchronization, or a production BFT timeout algorithm.
