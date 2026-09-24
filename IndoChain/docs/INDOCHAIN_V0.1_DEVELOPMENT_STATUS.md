@@ -882,8 +882,19 @@ When there is a conflict, the implementation and dedicated protocol specificatio
 **Latest consensus ↔ P2P transport binding:** `72cff1d72d6bc98be7f44d875f865aa4966c8eb6`  
 **Latest consensus transport integration tests:** `419266266ee3a84b207ad807139491b00fe31b0b`  
 **Latest deterministic multi-node consensus exchange test:** `04984ecd4c6544dfbf1c6096c82d21874e6c70c1`  
-**Latest consensus transport CI status:** CI #800 failed on merge SHA `95c73f5ddb37a6252860ccd12ef827f336ad5dee` because `ValidateMessage` did not include `MessageTypeConsensus`; fixed in `334510f29671b224ba0d89c932051064ae961675`. CI #802 then failed on merge SHA `e785d4a8f5f9d1d54e8d8551e81b3d832fe7ac5e` because `MessageTypeConsensus` was declared twice; fixed in `cd69f80c5b19ff6cea071b1ea9afe7e4efce13b1`. IndoChain CI #806 completed successfully for `cd69f80c5b19ff6cea071b1ea9afe7e4efce13b1` (test, tidy, and vet gate passed). The new deterministic multi-node exchange test was added in `04984ecd4c6544dfbf1c6096c82d21874e6c70c1`; its CI workflow is not yet visible and remains pending verification.  
+**Latest multi-node ValidatorRuntime transport integration test:** `746a6431aafc087f4b07e56f42a2b7c4a27019f1`  
+**Latest consensus transport CI status:** CI #800 failed on merge SHA `95c73f5ddb37a6252860ccd12ef827f336ad5dee` because `ValidateMessage` did not include `MessageTypeConsensus`; fixed in `334510f29671b224ba0d89c932051064ae961675`. CI #802 then failed on merge SHA `e785d4a8f5f9d1d54e8d8551e81b3d832fe7ac5e` because `MessageTypeConsensus` was declared twice; fixed in `cd69f80c5b19ff6cea071b1ea9afe7e4efce13b1`. IndoChain CI #806 completed successfully for `cd69f80c5b19ff6cea071b1ea9afe7e4efce13b1` (test, tidy, and vet gate passed). The new deterministic multi-node exchange test was added in `04984ecd4c6544dfbf1c6096c82d21874e6c70c1`; its earlier workflow was pending when first recorded. The follow-on ValidatorRuntime integration test initially failed in CI #814 because the test sent unsigned messages through the consensus codec path; the test was corrected to sign proposal/vote messages in `746a6431aafc087f4b07e56f42a2b7c4a27019f1`. IndoChain CI #818 completed successfully for `746a6431aafc087f4b07e56f42a2b7c4a27019f1` (test, tidy, and vet gate passed).  
 
+
+### 4.36 Deterministic Multi-Node Consensus Message Exchange Boundary
+
+The bound consensus transport is now exercised across two independent in-memory node transports in IndoChain/internal/p2p/consensus_multinode_test.go.
+
+The test establishes bidirectional node-to-node connections and performs a deterministic proposal exchange from node A to node B followed by a vote exchange from node B back to node A. Each message crosses the consensus codec and P2P transport boundary, preserving protocol context, message type, payload, signature, and transport-level sender identity.
+
+This milestone demonstrates deterministic multi-node consensus message delivery in-process. It does not implement real network sockets, peer discovery, connection lifecycle, retransmission, authentication/peer identity binding, timeout/round-change behavior, validator authority persistence, or a production consensus loop.
+
+**Next major boundary:** Integrate the consensus transport exchange with consensus RoundState / ValidatorRuntime message processing in a deterministic multi-node integration test  
 
 ### 4.37 Consensus Transport ↔ ValidatorRuntime Multi-Node Processing Boundary
 
@@ -897,15 +908,6 @@ This remains a deterministic in-process integration test. It does not implement 
 
 **Next major boundary:** Extend the multi-node runtime integration from proposal/vote exchange into finalized-block handoff, while preserving the explicit transport/runtime separation and canonical node commit guards.
 
-### 4.36 Deterministic Multi-Node Consensus Message Exchange Boundary
-
-The bound consensus transport is now exercised across two independent in-memory node transports in IndoChain/internal/p2p/consensus_multinode_test.go.
-
-The test establishes bidirectional node-to-node connections and performs a deterministic proposal exchange from node A to node B followed by a vote exchange from node B back to node A. Each message crosses the consensus codec and P2P transport boundary, preserving protocol context, message type, payload, signature, and transport-level sender identity.
-
-This milestone demonstrates deterministic multi-node consensus message delivery in-process. It does not implement real network sockets, peer discovery, connection lifecycle, retransmission, authentication/peer identity binding, timeout/round-change behavior, validator authority persistence, or a production consensus loop.
-
-**Next major boundary:** Integrate the consensus transport exchange with consensus RoundState / ValidatorRuntime message processing in a deterministic multi-node integration test  
 
 ### 4.12 Consensus Validator Membership Boundary
 
