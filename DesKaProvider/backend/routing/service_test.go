@@ -1,3 +1,17 @@
+package routing
+
+import (
+	"context"
+	"errors"
+	"path/filepath"
+	"testing"
+	"path/filepath"
+
+	provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
+	Mock "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/Mock"
+	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/operational"
+)
+
 type mismatchedStatusProvider struct {
 	provider.PPOBProvider
 }
@@ -10,19 +24,6 @@ func (p mismatchedStatusProvider) GetStatus(ctx context.Context, req provider.St
 	status.CustomerNo = "08999999999"
 	return status, nil
 }
-
-package routing
-
-import (
-	"context"
-	"errors"
-	"testing"
-	"path/filepath"
-
-	provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
-	Mock "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/Mock"
-	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/operational"
-)
 
 func TestServicePurchaseRoutesAndExecutesOnce(t *testing.T) {
 	registry := provider.NewRegistry()
