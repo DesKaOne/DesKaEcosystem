@@ -2,8 +2,6 @@ package p2p
 
 import "github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/consensus"
 
-const MessageTypeConsensus MessageType = MessageTypeBlockResponse + 1
-
 // SendConsensus encodes a consensus message and carries it through the
 // explicit node-to-node transport boundary.
 func (t *InMemoryTransport) SendConsensus(peer PeerID, msg consensus.Message, rules consensus.ValidationRules) error {
