@@ -375,6 +375,18 @@ The block-candidate documentation has been updated to record this coverage in `I
 
 This milestone does not freeze multi-sender key resolution, canonical transaction/block serialization, fee/gas policy, block limits, or production consensus semantics.
 
+### 4.23 Consensus ↔ Block Candidate Proposal Bridge
+
+A development-only in-memory bridge is now implemented under `IndoChain/internal/consensus/block_proposal.go`.
+
+`BlockProposal` binds a validated block candidate to the deterministic development block hash returned by `ValidateProducedBlock`. `MessagePayload()` exposes a cloned 32-byte opaque payload suitable for the existing consensus proposal/vote messages, while `SamePayload()` provides deterministic identity comparison.
+
+This connects the output of `BuildBlockCandidate` to the existing `ValidatorRuntime` payload lifecycle without making consensus parse arbitrary block bytes. The candidate remains available to the block-production/validation caller, while consensus currently carries only the development block hash as opaque payload.
+
+Tests cover candidate-to-payload bridging, invalid-candidate rejection, payload round-trip, and payload cloning. Detailed scope is documented in `IndoChain/docs/consensus-block-candidate-proposal-bridge-v0.1.md`.
+
+This milestone intentionally does not freeze canonical block serialization, consensus wire encoding, P2P proposal transport, block execution/commit during finalization, timeout/round-change behavior, production BFT semantics, validator-set lifecycle, or proposer priority/randomness.
+
 ## 5. Protocol Documentation Progress
 
 Documentation has advanced into more formal protocol specification work, including:
@@ -701,7 +713,9 @@ When there is a conflict, the implementation and dedicated protocol specificatio
 **Latest block-candidate construction implementation:** `5d57d41ec1a2b901cdb63b38aa8171f07b27e754`  
 **Latest block-candidate execution coverage:** `29de6a6fa35d791bbc6ae6cb3d812b421a7dd553`  
 **Latest block-candidate documentation:** `239796fd04ba50378572b81a48faa07e63043f16`  
-**Next major boundary:** Consensus proposal ↔ block-candidate integration  
+**Latest block-candidate proposal bridge:** `efdd5b3fd78ba05434a434d00b3cfbc37ccd009a`  
+**Block-candidate proposal bridge documentation:** `88b139f1610921b39680301d4f24e172685a27bc`  
+**Next major boundary:** Integrate validated block proposal payloads with ValidatorRuntime and finality without committing canonical state  
 
 ### 4.12 Consensus Validator Membership Boundary
 
