@@ -1273,7 +1273,12 @@ This milestone does not:
 
 ### Verification Gate
 
-The implementation requires a fresh complete CI run after the catalog synchronization changes. The branch must not advance until `test`, `vet`, and `race` are all green.
+CI run #217 is confirmed **green** for the catalog synchronization implementation:
+
+- `test` — success (`go test ./...` and `go vet ./...`);
+- `race` — success (`go test -race ./...`).
+
+The durable catalog synchronization milestone is verified and the branch is clear for the next development step.
 
 ### Next Milestone
 
