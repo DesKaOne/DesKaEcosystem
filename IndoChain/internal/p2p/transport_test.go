@@ -26,7 +26,7 @@ func TestInMemoryTransportRoutesMessageBetweenNodes(t *testing.T) {
 
 func TestInMemoryTransportRejectsUnknownPeerWithoutMutation(t *testing.T) {
 	a := NewInMemoryTransport(PeerID("node-a"), 1024)
-	msg := Message{Type: MessageTypeVote, Payload: []byte("vote")}
+	msg := Message{Type: MessageTypeTransaction, Payload: []byte("vote")}
 	if err := a.Send(PeerID("missing"), msg); !errors.Is(err, ErrUnknownPeer) { t.Fatalf("error = %v, want %v", err, ErrUnknownPeer) }
 	if _, _, err := a.Receive(); !errors.Is(err, ErrUnknownMessage) { t.Fatalf("receive error = %v, want %v", err, ErrUnknownMessage) }
 }
@@ -37,7 +37,7 @@ func TestInMemoryTransportClonesPayload(t *testing.T) {
 	if err := a.Connect(PeerID("node-b"), b); err != nil { t.Fatal(err) }
 
 	payload := []byte("immutable")
-	if err := a.Send(PeerID("node-b"), Message{Type: MessageTypeVote, Payload: payload}); err != nil { t.Fatal(err) }
+	if err := a.Send(PeerID("node-b"), Message{Type: MessageTypeTransaction, Payload: payload}); err != nil { t.Fatal(err) }
 	payload[0] = 'X'
 
 	_, got, err := b.Receive()
