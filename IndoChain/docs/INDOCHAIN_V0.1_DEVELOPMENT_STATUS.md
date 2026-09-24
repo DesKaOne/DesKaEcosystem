@@ -965,6 +965,10 @@ This remains development-only and does not introduce production BFT timing, roun
 
 **Next finalized-certificate context boundary:** Extended `TestConsensusRuntimeNegativeCrossHeightVoteContextMismatch` to independently mutate the certificate protocol version and chain ID after restoring the epoch/round context. Each mutation must fail with `consensus.ErrStateContextMismatch`, while the canonical height-1 head/hash remains unchanged. Implementation commit: `a16c1ff9608e10d7e1958a7a1ec05b118d5ce9ec`.
 
+**Verified certificate protocol/chain-context CI:** IndoChain CI #919 (workflow run `35979166443`) completed successfully for `a16c1ff9608e10d7e1958a7a1ec05b118d5ce9ec`.
+
+**Next finalized-certificate context boundary:** Completed the certificate context matrix by independently mutating certificate height after restoring protocol version and chain ID. The mutation must fail with `consensus.ErrStateContextMismatch`, while the canonical height-1 head/hash remains unchanged. Implementation commit: `3d5b34200dd196c9a6d146da76daf51bca3ab8ec`.
+
 ### 4.38 Consensus Transport → Runtime → Finalized Node Handoff Boundary
 
 The multi-node consensus integration now crosses the full development handoff from explicit P2P transport into `ValidatorRuntime` finalization and then into the canonical node commit boundary.
