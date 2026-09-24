@@ -1324,3 +1324,16 @@ The changes require a fresh complete CI run after the implementation commits. Th
 2. if green, review DigiFlazz adapter completeness against the neutral PPOB contract;
 3. determine the minimum verified provider-specific work needed before starting the next roadmap provider;
 4. keep automatic transaction retry/failover deferred until provider-specific idempotency semantics are explicitly established.
+
+
+### CI Fix Follow-up — Catalog Freshness Config Declaration
+
+CI #231 failed in the `test` job after the freshness implementation because `runtime.go` referenced `CatalogMaxAge` and `defaultCatalogMaxAge` before those declarations were present in the committed runtime file. The routing and test packages themselves compiled successfully; the failure was isolated to runtime configuration wiring.
+
+Fix applied in commit `909ebb5fe013179cea9682818982cab0ef8944af`:
+
+- declared `defaultCatalogMaxAge = 30 * time.Minute`;
+- added `CatalogMaxAge time.Duration` to runtime `Config`;
+- preserved the existing environment parsing and router wiring.
+
+CI must be re-verified green, including `test`, `vet`, and `race`, before continuing.
