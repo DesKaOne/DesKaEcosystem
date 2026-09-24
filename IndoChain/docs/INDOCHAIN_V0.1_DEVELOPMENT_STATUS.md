@@ -1185,6 +1185,6 @@ Commits:
 - round-change regression tests: `ebadefc03688b55658ad08930274f24d27dd3cb4`
 - vote validation precedence hardening: `20c51dc4b48743fcbcc7f692dd5f0cdf78092eac`
 
-CI gate for the latest implementation is pending and must be verified before this milestone is considered green.
+CI gate verified green: IndoChain CI #1063 (run `36062531531`) completed successfully for implementation commit `20c51dc4b48743fcbcc7f692dd5f0cdf78092eac`.
 
 This remains a development-only timeout/round-change invariant. It does not yet define timeout certificates, proposer timeout messages, prevote/precommit wire separation, lock carry-over evidence, multi-node round synchronization, or the production BFT algorithm.
