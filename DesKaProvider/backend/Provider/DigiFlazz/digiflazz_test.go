@@ -116,3 +116,26 @@ func newHMAC(body []byte, secret string) string {
 	_, _ = h.Write(body)
 	return hex.EncodeToString(h.Sum(nil))
 }
+
+func TestDigiFlazzGetProductsUsesOfficialPriceListEndpoint(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/price-list" { t.Fatalf("unexpected path: %s", r.URL.Path) }
+		var got map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil { t.Fatal(err) }
+		if got["cmd"] != "prepaid" || got["username"] != "buyer" || got["category"] != "Pulsa" { t.Fatalf("unexpected request: %#v", got) }
+		h := md5.Sum([]byte("buyersecretpricelist"))
+		if got["sign"] != hex.EncodeToString(h[:]) { t.Fatalf("unexpected signature: %v", got["sign"]) }
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{
+			{"product_name":"XL 10K","buyer_sku_code":"xld10","buyer_product_status":true},
+			{"product_name":"XL 25K","buyer_sku_code":"xld25","buyer_product_status":false},
+		}})
+	}))
+	defer server.Close()
+
+	c, err := New(config.DigiFlazzConfig{Username:"buyer", APIKey:"secret", PriceListEndpoint:server.URL + "/v1/price-list"}, server.Client())
+	if err != nil { t.Fatal(err) }
+	active := true
+	got, err := c.GetProducts(context.Background(), provider.ProductRequest{Category:"Pulsa", Active:&active})
+	if err != nil { t.Fatal(err) }
+	if len(got) != 1 || got[0].Code != "xld10" || got[0].Name != "XL 10K" { t.Fatalf("unexpected products: %#v", got) }
+}
