@@ -1068,8 +1068,8 @@ func TestConsensusRuntimeNegativeCrossHeightInvalidFinalityEvidence(t *testing.T
 		t.Fatal(err)
 	}
 	certificate2.Height = certificate2.Height - 1
-	if err := n.CommitFinalizedBlock(ctx2, candidate2, certificate2, validators, power, validatorResolver, senderResolver); !errors.Is(err, consensus.ErrFinalityQuorumNotReached) {
-		t.Fatalf("tampered cross-height finality evidence error = %v, want %v", err, consensus.ErrFinalityQuorumNotReached)
+	if err := n.CommitFinalizedBlock(ctx2, candidate2, certificate2, validators, power, validatorResolver, senderResolver); !errors.Is(err, consensus.ErrStateContextMismatch) {
+		t.Fatalf("cross-height finality context error = %v, want %v", err, consensus.ErrStateContextMismatch)
 	}
 	if n.Head.Header.Height != 1 || n.HeadHash != canonicalHeight1Hash {
 		t.Fatal("canonical head changed after cross-height finality evidence rejection")
