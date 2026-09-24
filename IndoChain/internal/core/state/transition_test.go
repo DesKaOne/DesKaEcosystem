@@ -46,6 +46,46 @@ func signedTransfer(t *testing.T, signer *crypto.Ed25519Signer) transaction.Tran
 	return tx
 }
 
+
+type mutatingSenderAuthorityResolver struct {
+	publicKey []byte
+}
+
+func (r mutatingSenderAuthorityResolver) PublicKeyForSender(sender []byte) ([]byte, error) {
+	if len(sender) > 0 {
+		sender[0] = 0xff
+	}
+	return r.publicKey, nil
+}
+
+func TestApplyTransactionClonesSenderForAuthorityResolver(t *testing.T) {
+	seed := bytes.Repeat([]byte{0x42}, ed25519.SeedSize)
+	signer, err := crypto.NewEd25519Signer(ed25519.NewKeyFromSeed(seed))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	s := New()
+	s.Set(types.Address{1}, Account{Balance: 100, Nonce: 0})
+
+	tx := signedTransfer(t, signer)
+	rules := transitionRules(nil)
+	rules.PublicKeyResolver = mutatingSenderAuthorityResolver{publicKey: signer.PublicKey()}
+
+	if err := ApplyTransaction(s, tx, rules); err != nil {
+		t.Fatalf("ApplyTransaction() error = %v", err)
+	}
+	if !bytes.Equal(tx.Sender, types.Address{1}) {
+		t.Fatalf("resolver mutated transaction sender: %v", tx.Sender)
+	}
+	if sender, ok := s.Get(types.Address{1}); !ok || sender.Balance != 70 || sender.Nonce != 1 {
+		t.Fatalf("sender state = %+v, want balance 70 nonce 1", sender)
+	}
+	if recipient, ok := s.Get(types.Address{2}); !ok || recipient.Balance != 30 {
+		t.Fatalf("recipient state = %+v, want balance 30", recipient)
+	}
+}
+
 func TestApplyTransaction(t *testing.T) {
 	seed := bytes.Repeat([]byte{0x42}, ed25519.SeedSize)
 	signer, err := crypto.NewEd25519Signer(ed25519.NewKeyFromSeed(seed))
