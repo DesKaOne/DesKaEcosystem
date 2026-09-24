@@ -730,3 +730,31 @@ This verification status must not be confused with adapter implementation status
 ### Scope note
 
 The immediate engineering focus remains DigiFlazz. After the agreed 50% checkpoint or 100% completion, development moves to IAK, then XP SINDONESIA, Midtrans, and RCB. Provider-specific credentials must remain outside source control.
+
+
+### 28. Milestone Update — CI Failure Fix: Routing Mock Test Import
+
+**Date:** 2026-09-24
+
+CI run #87 failed in the `Test` step while compiling `DesKaProvider/routing`.
+
+Root cause:
+
+- `routing/service_test.go` imported the Mock provider package without an alias;
+- the package declaration exposes the identifier `mock`, while the tests referenced `Mock`, producing an unused-import and undefined-identifier build failure.
+
+Fix applied:
+
+- explicitly aliased the import as `Mock` so the existing test references resolve correctly;
+- no production routing behavior was changed.
+
+### Verification
+
+The failure is confirmed from GitHub Actions run #87. The correction is committed on `dev/deskaprovider-v0.1` at commit `0b66672a90933a96ac73d42c9dc75ece67ac53fd`.
+
+A new CI run is required before proceeding to the transaction correlation/idempotency milestone.
+
+### Next milestone
+
+1. verify CI for the routing test fix;
+2. only after CI is healthy, implement provider transaction correlation/idempotency state around the neutral reference ID.
