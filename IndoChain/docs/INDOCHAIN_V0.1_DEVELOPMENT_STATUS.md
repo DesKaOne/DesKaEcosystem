@@ -423,6 +423,18 @@ Tests cover successful resolution, missing resolver rejection, and certificate/b
 
 This milestone deliberately stops at dependency injection. The current v0.1 transaction model does not contain a canonical sender public-key field, and block execution still accepts one explicit public key. Therefore no synthetic multi-sender registry or execution authority is introduced here.
 
+### 4.27 Consensus ↔ Node Execution Authority Integration Boundary
+
+The explicit execution-authority handoff is now connected to the node execution path without inventing a validator registry.
+
+`state.ExecutionRules` now supports an injected `PublicKeyResolver`, and `Node.ImportBlockWithAuthority` uses a node-owned sender authority resolver when executing transactions. The resolver path takes precedence over the legacy single `PublicKey` field and allows each transaction sender to resolve its own execution key.
+
+The node still executes the entire candidate against a working state before committing the block/state pair, preserving the existing atomic commit boundary. A resolver failure or transaction validation failure therefore cannot advance the node head.
+
+The implementation deliberately keeps consensus validator identity separate from transaction sender identity. No assumption is made that proposer/validator IDs are transaction addresses. Detailed scope is documented in `IndoChain/docs/node-execution-authority-integration-v0.1.md`.
+
+Tests cover successful sender-key resolution through `Node.ImportBlockWithAuthority`. The legacy `ImportBlock(block, publicKey)` path remains available for the existing v0.1 development compatibility path.
+
 ## 5. Protocol Documentation Progress
 
 Documentation has advanced into more formal protocol specification work, including:
@@ -760,7 +772,9 @@ When there is a conflict, the implementation and dedicated protocol specificatio
 **Latest execution-authority handoff implementation:** `3466f7f3a18e286068c0391f00dc64d22d02159e`  
 **Latest execution-authority handoff tests:** `26c58ed77e3b2a2dd50398fabcccb3e74ee84151`  
 **Latest execution-authority handoff documentation:** `9e35299980a4dbe67d786de27fcde9361cdaa1cf`  
-**Next major boundary:** Integrate the explicit authority handoff with block execution without inventing a canonical validator registry  
+**Latest node execution-authority integration:** `3a37071d11f4d7e133f7c23736a3c6f81c091e31`  
+**Latest node execution-authority documentation:** `3a0d109c1900e6bf74ad1e5094ce779bd8ef972d`  
+**Next major boundary:** Bind finalized-block authority to the node commit path using explicit validator/power inputs, while preserving sender-key separation  
 
 ### 4.12 Consensus Validator Membership Boundary
 
