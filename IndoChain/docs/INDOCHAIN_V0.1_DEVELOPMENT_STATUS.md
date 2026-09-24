@@ -885,6 +885,18 @@ When there is a conflict, the implementation and dedicated protocol specificatio
 **Latest consensus transport CI status:** CI #800 failed on merge SHA `95c73f5ddb37a6252860ccd12ef827f336ad5dee` because `ValidateMessage` did not include `MessageTypeConsensus`; fixed in `334510f29671b224ba0d89c932051064ae961675`. CI #802 then failed on merge SHA `e785d4a8f5f9d1d54e8d8551e81b3d832fe7ac5e` because `MessageTypeConsensus` was declared twice; fixed in `cd69f80c5b19ff6cea071b1ea9afe7e4efce13b1`. IndoChain CI #806 completed successfully for `cd69f80c5b19ff6cea071b1ea9afe7e4efce13b1` (test, tidy, and vet gate passed). The new deterministic multi-node exchange test was added in `04984ecd4c6544dfbf1c6096c82d21874e6c70c1`; its CI workflow is not yet visible and remains pending verification.  
 
 
+### 4.37 Consensus Transport ↔ ValidatorRuntime Multi-Node Processing Boundary
+
+The explicit consensus transport is now connected to two independent development `ValidatorRuntime` instances in `IndoChain/internal/p2p/consensus_runtime_multinode_test.go`.
+
+The deterministic integration test establishes the same round state, validator set, voting power, quorum threshold, and proposer selection on nodes A and B. Node A accepts the proposal locally and sends it through the consensus codec/P2P transport; node B receives the message and processes it through `ValidatorRuntime.AcceptProposal`. Node B then processes its vote locally and sends the vote back; node A receives the transported vote and processes it through `ValidatorRuntime.AddVote`. The resulting quorum advances node A to `Precommit`, after which the runtime creates a finality certificate for the shared proposal payload.
+
+This milestone verifies the separation between transport delivery and consensus semantics across two in-process nodes. The transport carries encoded messages, while `ValidatorRuntime` remains responsible for proposal/vote validation, proposer checks, quorum progression, and development-only finalization.
+
+This remains a deterministic in-process integration test. It does not implement signature-authority binding, real network sockets, peer authentication, retransmission, timeout/round-change, validator-set transitions, persistent consensus state, or a production BFT loop.
+
+**Next major boundary:** Extend the multi-node runtime integration from proposal/vote exchange into finalized-block handoff, while preserving the explicit transport/runtime separation and canonical node commit guards.
+
 ### 4.36 Deterministic Multi-Node Consensus Message Exchange Boundary
 
 The bound consensus transport is now exercised across two independent in-memory node transports in IndoChain/internal/p2p/consensus_multinode_test.go.
