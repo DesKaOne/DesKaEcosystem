@@ -30,6 +30,7 @@ type ValidatorRuntime struct {
 	proposer    ProposerSelector
 	votes       *VoteAggregator
 	proposal    []byte
+	certificate *FinalityCertificate
 }
 
 func NewValidatorRuntime(config RuntimeConfig) (*ValidatorRuntime, error) {
@@ -194,7 +195,24 @@ func (r *ValidatorRuntime) FinalizeProposal() (FinalityCertificate, error) {
 	if err != nil {
 		return FinalityCertificate{}, err
 	}
+	r.certificate = &certificate
 	r.state.Phase = PhaseFinalized
+	return certificate, nil
+}
+
+// FinalizedCertificate returns the certificate produced by this runtime after
+// the proposal reached the Finalized phase. The returned certificate is cloned
+// so callers cannot mutate runtime-owned consensus evidence.
+func (r *ValidatorRuntime) FinalizedCertificate() (FinalityCertificate, error) {
+	if r == nil {
+		return FinalityCertificate{}, ErrInvalidConsensusRuntime
+	}
+	if r.state.Phase != PhaseFinalized || r.certificate == nil {
+		return FinalityCertificate{}, ErrInvalidRuntimePhase
+	}
+	certificate := *r.certificate
+	certificate.Payload = append([]byte(nil), r.certificate.Payload...)
+	certificate.Votes = cloneVotes(r.certificate.Votes)
 	return certificate, nil
 }
 
