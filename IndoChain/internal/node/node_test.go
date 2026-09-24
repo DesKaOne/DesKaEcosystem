@@ -713,5 +713,5 @@ func TestCommitRuntimeFinalizedBlockCrossesExplicitHandoff(t *testing.T) {
 	if _, err := runtime.FinalizeProposal(); err != nil { t.Fatal(err) }
 	if err := n.CommitRuntimeFinalizedBlock(ctx, candidate, runtime, validators, power, validatorResolver, senderResolver); err != nil { t.Fatal(err) }
 	if n.Head.Header.Height != candidate.Header.Height { t.Fatalf("head height = %d, want %d", n.Head.Header.Height, candidate.Header.Height) }
-	if n.State.Get(recipient).Balance != 20 { t.Fatalf("recipient balance = %d, want 20", n.State.Get(recipient).Balance) }
+	recipientAccount, ok := n.State.Get(recipient); if !ok || recipientAccount.Balance != 20 { t.Fatalf("recipient balance = %d, want 20", recipientAccount.Balance) }
 }
