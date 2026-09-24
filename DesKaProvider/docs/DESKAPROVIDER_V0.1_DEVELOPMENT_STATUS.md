@@ -1449,9 +1449,42 @@ Implementation commits:
 
 A fresh CI run for this IAK milestone is required. `test`, `vet`, and `race` must all be green before the next implementation step.
 
+### 45. Milestone Update — IAK Credential-Gated Read-Only Integration Harness
+
+**Date:** 2026-09-25
+
+CI #259 for the IAK adapter foundation is confirmed **green** before this milestone:
+
+- workflow — success;
+- `test` — success (`go test ./...` and `go vet ./...`);
+- `race` — success (`go test -race ./...`).
+
+Implemented a live integration-test harness that is intentionally read-only and credential-gated:
+
+- added `IAK_INTEGRATION=1` as the explicit opt-in;
+- requires `IAK_USERNAME` and `IAK_API_KEY` from the runtime environment;
+- validates `LoadIAKConfig()` and adapter construction;
+- calls IAK balance lookup;
+- calls IAK prepaid price-list lookup;
+- does not submit a purchase/top-up transaction;
+- skips cleanly when integration mode or credentials are absent, so normal CI remains credential-free;
+- no credentials or provider secrets are stored in Git.
+
+The harness is a validation mechanism, not proof of production activation. A live run still requires valid IAK runtime credentials and the provider account to be enabled/configured for API access.
+
+### Safety Boundary
+
+The live harness deliberately avoids purchase execution. This keeps source-level verification separate from any financial transaction and avoids creating a real provider-side order merely to prove connectivity.
+
+### Verification Gate
+
+- previous IAK foundation CI #259 — **green**;
+- integration harness commit: `ac56cf40e9084903572dd2027e01251ecc6ea3b4`;
+- a fresh CI run for this commit is required and must have `test`, `vet`, and `race` green.
+
 ### Next Milestone
 
-1. verify the fresh CI result for the IAK adapter foundation;
-2. if green, add IAK-specific integration-test harnessing that remains credential-gated;
-3. then review IAK catalog freshness/balance behavior against the existing neutral operational boundaries;
-4. keep live credential validation and production activation separate from source-level adapter completeness.
+1. verify the fresh CI result for the IAK read-only harness;
+2. if green, review IAK catalog freshness and operational balance semantics against the existing neutral boundaries;
+3. only after that decide whether additional IAK capability work is required before the next roadmap provider;
+4. keep live credentials, commercial activation, and production verification separate from source-level adapter completeness.
