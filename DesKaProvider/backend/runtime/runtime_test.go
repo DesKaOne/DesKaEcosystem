@@ -23,6 +23,7 @@ func (p *balanceMock) GetBalance(context.Context) (int64, error) {
 
 func TestLoadConfigDefaults(t *testing.T) {
 	t.Setenv("DESKAPROVIDER_OPERATIONAL_STORE_PATH", "")
+	t.Setenv("DESKAPROVIDER_PROVIDER_STATE_STORE_PATH", "")
 	t.Setenv("DESKAPROVIDER_TRANSACTION_STORE_PATH", "")
 	t.Setenv("DESKAPROVIDER_OPERATIONAL_CURRENCY", "")
 	t.Setenv("DESKAPROVIDER_BALANCE_SYNC_INTERVAL", "")
@@ -115,6 +116,8 @@ func TestNewFromEnvironmentBuildsDurableService(t *testing.T) {
 	t.Setenv("DIGIFLAZZ_USERNAME", "test-user")
 	t.Setenv("DIGIFLAZZ_API_KEY", "test-key")
 	t.Setenv("DESKAPROVIDER_OPERATIONAL_STORE_PATH", storePath)
+	providerStatePath := filepath.Join(t.TempDir(), "provider-state", "state.json")
+	t.Setenv("DESKAPROVIDER_PROVIDER_STATE_STORE_PATH", providerStatePath)
 	transactionStorePath := filepath.Join(t.TempDir(), "transactions", "state.json")
 	t.Setenv("DESKAPROVIDER_TRANSACTION_STORE_PATH", transactionStorePath)
 	t.Setenv("DESKAPROVIDER_BALANCE_SYNC_INTERVAL", "45s")
