@@ -26,6 +26,7 @@ const (
 	defaultPriceListCacheTTL     = 15 * time.Minute
 	defaultCatalogStorePath      = "data/product-catalog.json"
 	defaultCatalogSyncInterval   = 15 * time.Minute
+	defaultCatalogMaxAge        = 30 * time.Minute
 )
 
 type Config struct {
@@ -36,6 +37,7 @@ type Config struct {
 	Currency              string
 	CatalogStorePath      string
 	CatalogSyncInterval   time.Duration
+	CatalogMaxAge        time.Duration
 }
 
 type Service struct {
