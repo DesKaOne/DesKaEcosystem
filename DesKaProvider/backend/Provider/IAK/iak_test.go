@@ -112,3 +112,57 @@ func TestIAKInquiryUnknownStatusIsRejected(t *testing.T) {
 	_, err = c.Inquiry(context.Background(), provider.InquiryRequest{ProductCode:"pln", CustomerNo:"12345678901"})
 	if err == nil { t.Fatal("expected unknown inquiry status error") }
 }
+
+func TestIAKPurchaseResponseValidation(t *testing.T) {
+	cases := []struct{name, body string; wantErr bool}{
+		{"missing identity", `{"data":{"status":0}}`, true},
+		{"unknown status", `{"data":{"ref_id":"order-1","customer_id":"08123","product_code":"xld25000","status":9}}`, true},
+		{"valid pending", `{"data":{"ref_id":"order-1","customer_id":"08123","product_code":"xld25000","status":0,"message":"PROCESS","rc":"39"}}`, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, client := newIAKJSONServer(tc.body)
+			defer srv.Close()
+			cfg := iakTestConfig(srv.URL)
+			c, err := New(cfg, client)
+			if err != nil { t.Fatal(err) }
+			result, err := c.Purchase(context.Background(), provider.PurchaseRequest{ProductCode:"xld25000", CustomerNo:"08123", ReferenceID:"order-1"})
+			if tc.wantErr && err == nil { t.Fatalf("expected purchase response error: %#v", result) }
+			if !tc.wantErr && (err != nil || result.Status != provider.StatusPending) { t.Fatalf("result=%#v err=%v", result, err) }
+		})
+	}
+}
+
+func TestIAKPurchaseResponseIdentityMismatch(t *testing.T) {
+	srv, client := newIAKJSONServer(`{"data":{"ref_id":"other","customer_id":"08123","product_code":"xld25000","status":0}}`)
+	defer srv.Close()
+	c, err := New(iakTestConfig(srv.URL), client)
+	if err != nil { t.Fatal(err) }
+	_, err = c.Purchase(context.Background(), provider.PurchaseRequest{ProductCode:"xld25000", CustomerNo:"08123", ReferenceID:"order-1"})
+	if err == nil { t.Fatal("expected reference identity mismatch") }
+}
+
+func TestIAKStatusResponseValidation(t *testing.T) {
+	cases := []struct{name, body string; wantErr bool}{
+		{"missing identity", `{"data":{"status":1}}`, true},
+		{"unknown status", `{"data":{"ref_id":"order-1","customer_id":"08123","product_code":"xld25000","status":"9"}}`, true},
+		{"valid success", `{"data":{"ref_id":"order-1","customer_id":"08123","product_code":"xld25000","status":"1","message":"SUCCESS","rc":"00"}}`, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, client := newIAKJSONServer(tc.body)
+			defer srv.Close()
+			c, err := New(iakTestConfig(srv.URL), client)
+			if err != nil { t.Fatal(err) }
+			result, err := c.GetStatus(context.Background(), provider.StatusRequest{ProductCode:"xld25000", CustomerNo:"08123", ReferenceID:"order-1"})
+			if tc.wantErr && err == nil { t.Fatalf("expected status response error: %#v", result) }
+			if !tc.wantErr && (err != nil || result.Status != provider.StatusSuccess) { t.Fatalf("result=%#v err=%v", result, err) }
+		})
+	}
+}
+
+func TestIAKWebhookRejectsMalformedTransaction(t *testing.T) {
+	c, _ := New(config.IAKConfig{Username:"user", APIKey:"secret"}, http.DefaultClient)
+	_, err := c.HandleWebhook(context.Background(), provider.WebhookRequest{Body:[]byte(`{"ref_id":"order-1","status":"9","code":"xld25000","hp":"08123"}`), SignatureSecret:"secret", Signature:ts("order-1")})
+	if err == nil { t.Fatal("expected malformed webhook error") }
+}
