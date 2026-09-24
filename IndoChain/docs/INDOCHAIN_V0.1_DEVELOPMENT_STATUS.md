@@ -474,6 +474,16 @@ The guard explicitly rejects protocol-version mismatch, chain-ID mismatch, conse
 
 This keeps consensus authorization tied to the exact canonical execution point: the consensus context must describe the node's current chain before a finalized candidate can cross into execution/commit. It does not yet define multi-node state synchronization or production validator authority storage.
 
+### 4.32 Consensus Runtime → Node Finalized-Commit Handoff
+
+The development consensus runtime now retains the finality certificate it creates at the `Finalized` phase through `FinalizedCertificate()`. The returned certificate is deep-cloned so execution/node layers cannot mutate consensus-owned evidence.
+
+The node now exposes `CommitRuntimeFinalizedBlock`, an explicit handoff from the finalized consensus runtime into the existing canonical commit boundary. The node still owns canonical-context validation, finality/block binding, proposer authority resolution, transaction sender authority resolution, deterministic execution, and durable state/block commit.
+
+Integration coverage exercises the complete development handoff: block proposal acceptance → quorum vote → runtime finalization → certificate retrieval → node finalized-block commit → canonical head/state advancement.
+
+This milestone intentionally does not make the consensus runtime a production BFT loop and does not define replay protection, timeout/round-change, validator authority persistence, or multi-node transport.
+
 ## 5. Protocol Documentation Progress
 
 Documentation has advanced into more formal protocol specification work, including:
@@ -814,9 +824,10 @@ When there is a conflict, the implementation and dedicated protocol specificatio
 **Latest node execution-authority integration:** `3a37071d11f4d7e133f7c23736a3c6f81c091e31`  
 **Latest node execution-authority documentation:** `3a0d109c1900e6bf74ad1e5094ce779bd8ef972d`  
 **Latest finalized-block → node commit integration:** `3b7bc7e5f6cbe33bd72e84eecc1075cf792ad1e4`  \n**Latest finalized-block commit context guard:** `ec35299e4f6115f0be5e7f46b70962051cb20368`  \n**Latest finalized-block commit failure coverage:** `95c128af32005c53a303a45dc77101c9005506d9`  \
-**Latest canonical consensus-context guard tightening:** `4e11821e796ea769bedbd7a48f6846712c41fffe`  
+**Latest canonical consensus-context guard tightening:** `4e11821e796ea769bedbd7a48f6846712c41fffe`  \
+**Latest consensus-runtime → node finalized-commit handoff:** `a9c1a041f6bce7cdb29df2aff11cea4f64e9f508`  
 **Latest finalized-block → node commit implementation:** `f0e0be0c5ec38a157bfca658ef6ce78e83ba2622`  
-**Next major boundary:** Integrate canonical consensus runtime with node finalized-block commit as an explicit multi-stage handoff, then begin broader multi-node consensus integration  
+**Next major boundary:** Harden the consensus-runtime → node handoff against replay/re-commit and then begin broader multi-node consensus integration  
 
 ### 4.12 Consensus Validator Membership Boundary
 
