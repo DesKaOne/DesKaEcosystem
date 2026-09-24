@@ -881,7 +881,7 @@ When there is a conflict, the implementation and dedicated protocol specificatio
 **Latest consensus message codec tests:** `05f6a2e2fa6a7c45d0f5cac202324056fc7c9dc9`  
 **Latest consensus ↔ P2P transport binding:** `72cff1d72d6bc98be7f44d875f865aa4966c8eb6`  
 **Latest consensus transport integration tests:** `419266266ee3a84b207ad807139491b00fe31b0b`  
-**Latest consensus transport CI status:** CI #800 failed on merge SHA `95c73f5ddb37a6252860ccd12ef827f336ad5dee`. `go mod tidy` passed, but `TestInMemoryTransportRoutesConsensusMessage` failed with `unknown p2p message type` because `ValidateMessage` did not include the newly introduced `MessageTypeConsensus`. Fixed in `334510f29671b224ba0d89c932051064ae961675`; the fix is pending CI verification.  
+**Latest consensus transport CI status:** CI #800 failed on merge SHA `95c73f5ddb37a6252860ccd12ef827f336ad5dee`. `go mod tidy` passed, but `TestInMemoryTransportRoutesConsensusMessage` failed with `unknown p2p message type` because `ValidateMessage` did not include the newly introduced `MessageTypeConsensus`. Fixed in `334510f29671b224ba0d89c932051064ae961675`. CI #802 then failed on merge SHA `e785d4a8f5f9d1d54e8d8551e81b3d832fe7ac5e` because `MessageTypeConsensus` was declared twice, in `message.go` and `consensus_transport.go`. Fixed by removing the duplicate declaration in `cd69f80c5b19ff6cea071b1ea9afe7e4efce13b1`; CI verification for this fix is pending.  
 
 **Next major boundary:** Integrate the bound consensus transport into a deterministic multi-node consensus message exchange test  
 
