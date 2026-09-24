@@ -1523,6 +1523,25 @@ func TestConsensusRuntimeNegativeInvalidVotingPowerSet(t *testing.T) {
 	}
 }
 
+func TestConsensusRuntimeNegativeDuplicateVotingPowerValidator(t *testing.T) {
+	n, candidate, certificate, validators, _, ctx, validatorResolver, senderResolver := finalizedHandoffFixture(t)
+	canonicalHead := n.HeadHash
+
+	// Construct a directly invalid set with the same validator identifier twice.
+	invalidPower := consensus.VotingPowerSet{
+		Validators: []consensus.ValidatorVotingPower{
+			{ValidatorID: []byte("validator-a"), Power: 1},
+			{ValidatorID: []byte("validator-a"), Power: 1},
+		},
+	}
+	if err := n.CommitFinalizedBlock(ctx, candidate, certificate, validators, invalidPower, validatorResolver, senderResolver); !errors.Is(err, consensus.ErrInvalidVotingPowerSet) {
+		t.Fatalf("duplicate voting power validator error = %v, want %v", err, consensus.ErrInvalidVotingPowerSet)
+	}
+	if n.Head.Header.Height != 0 || n.HeadHash != canonicalHead {
+		t.Fatal("canonical head changed after duplicate voting power validator rejection")
+	}
+}
+
 
 func finalizedHandoffFixture(t *testing.T) (*node.Node, block.Block, consensus.FinalityCertificate, consensus.ValidatorSet, consensus.VotingPowerSet, consensus.BlockProductionContext, node.ValidatorAuthorityResolver, node.TransactionAuthorityResolver) {
 	t.Helper()
