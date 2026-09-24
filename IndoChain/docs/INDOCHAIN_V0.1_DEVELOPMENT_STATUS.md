@@ -942,7 +942,11 @@ This remains development-only and does not introduce production BFT timing, roun
 
 **Cross-height negative-path coverage:** Added `TestConsensusRuntimeNegativeCrossHeightStaleContext` in `IndoChain/internal/p2p/consensus_runtime_multinode_test.go`. The test first commits height 1, constructs and finalizes a valid height-2 candidate against the height-1 canonical head, then intentionally submits that height-2 candidate/certificate with the previous height-0 consensus state and previous hash. The node must reject the handoff with `ErrConsensusContextMismatch` and leave the height-1 canonical head unchanged. Implementation commit: `72f65ec00c3a314aad6ac88a515ea4439a30fdd5`.
 
-**Next CI gate:** verify the new cross-height stale-context negative path and its status-document follow-up workflow before extending the matrix to an explicit cross-height replay candidate check.
+**Verified cross-height stale-context CI:** IndoChain CI run `861` completed successfully for `72f65ec00c3a314aad6ac88a515ea4439a30fdd5`. The status-document follow-up run `863` also completed successfully.
+
+**Cross-height replay candidate coverage:** Added `TestConsensusRuntimeNegativeCrossHeightReplayedCandidate`. The test commits a valid height-1 finalized block, commits a valid height-2 finalized block against the height-1 canonical hash, then replays the exact lower-height candidate/certificate from height 1 against the height-2 canonical head. The node must reject the lower-height replay with `ErrFinalizedBlockAlreadyCommitted` before stale-context validation, and the height-2 canonical head/hash must remain unchanged. Implementation commit: `54906e191f4edf36535e4a65a6ae5102d3b25656`.
+
+**Next CI gate:** verify `54906e191f4edf36535e4a65a6ae5102d3b25656` and its status-document follow-up workflow before extending the negative matrix to any additional cross-height variant.
 
 ### 4.38 Consensus Transport → Runtime → Finalized Node Handoff Boundary
 
