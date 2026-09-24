@@ -555,7 +555,7 @@ func TestCommitFinalizedBlockRejectsConsensusContextMismatch(t *testing.T) {
 	beforeHead, beforeHash, beforeRoot := n.Head, n.HeadHash, n.State.Root()
 	ctx := consensus.BlockProductionContext{State: consensus.RoundState{ProtocolVersion: devnet.ProtocolVersion, ChainID: devnet.ChainID, Epoch: 1, Height: 1, Round: 0, Phase: consensus.PhaseProposal}, PreviousHash: n.HeadHash, Proposer: []byte("validator")}
 	resolver := validatorAuthorityResolver{publicKey: []byte("key")}
-	if err := n.CommitFinalizedBlock(ctx, block.Block{}, consensus.FinalityCertificate{}, consensus.ValidatorSet{}, consensus.VotingPowerSet{}, resolver, resolver); err != ErrConsensusContextMismatch { t.Fatalf("error = %v, want %v", err, ErrConsensusContextMismatch) }
+	if err := n.CommitFinalizedBlock(ctx, block.Block{}, consensus.FinalityCertificate{}, consensus.ValidatorSet{}, consensus.VotingPowerSet{}, resolver, senderAuthorityResolver{publicKey: []byte("key")}); err != ErrConsensusContextMismatch { t.Fatalf("error = %v, want %v", err, ErrConsensusContextMismatch) }
 	if !reflect.DeepEqual(n.Head, beforeHead) || n.HeadHash != beforeHash || n.State.Root() != beforeRoot { t.Fatal("node mutated after context mismatch") }
 }
 
