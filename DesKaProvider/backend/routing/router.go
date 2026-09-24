@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
+	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/catalog"
 	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/operational"
 )
 
@@ -25,6 +26,7 @@ type Router struct {
 	Registry   *provider.Registry
 	Store      operational.Store
 	Priorities map[string]int
+	Catalog    catalog.Store
 }
 
 type candidate struct {
@@ -61,13 +63,20 @@ func (r *Router) Select(ctx context.Context, req Request) (string, error) {
 			continue
 		}
 
-		p, err := r.Registry.Get(name)
-		if err != nil {
-			continue
-		}
-		products, err := p.GetProducts(ctx, provider.ProductRequest{})
-		if err != nil || !hasProduct(products, req.ProductCode) {
-			continue
+		if r.Catalog != nil {
+			snapshot, ok := r.Catalog.Get(name)
+			if !ok || !hasProduct(snapshot.Products, req.ProductCode) {
+				continue
+			}
+		} else {
+			p, err := r.Registry.Get(name)
+			if err != nil {
+				continue
+			}
+			products, err := p.GetProducts(ctx, provider.ProductRequest{})
+			if err != nil || !hasProduct(products, req.ProductCode) {
+				continue
+			}
 		}
 
 		priority, ok := r.Priorities[name]
