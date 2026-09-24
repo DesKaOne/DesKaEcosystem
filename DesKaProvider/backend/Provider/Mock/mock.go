@@ -29,6 +29,7 @@ type Provider struct {
 	message      string
 	price        int64
 	purchases    map[string]provider.PurchaseResult
+	purchaseCounts map[string]int
 }
 
 func New(cfg Config) *Provider {
@@ -53,6 +54,7 @@ func New(cfg Config) *Provider {
 		message:      message,
 		price:        cfg.Price,
 		purchases:    make(map[string]provider.PurchaseResult),
+		purchaseCounts: make(map[string]int),
 	}
 }
 
@@ -116,6 +118,7 @@ func (p *Provider) Purchase(ctx context.Context, req provider.PurchaseRequest) (
 		Price:        p.price,
 	}
 	p.purchases[req.ReferenceID] = result
+	p.purchaseCounts[req.ReferenceID]++
 	return result, nil
 }
 
@@ -158,6 +161,5 @@ func (p *Provider) HandleWebhook(ctx context.Context, req provider.WebhookReques
 func (p *Provider) PurchaseCount(referenceID string) int {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	if _, ok := p.purchases[referenceID]; !ok { return 0 }
-	return 1
+	return p.purchaseCounts[referenceID]
 }
