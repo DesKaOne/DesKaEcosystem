@@ -2,6 +2,7 @@ package p2p
 
 import (
 	"bytes"
+	"errors"
 	"testing"
 
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/genesis/devnet"
@@ -391,9 +392,13 @@ func TestConsensusRuntimeNegativeMismatchedProposalPayload(t *testing.T) {
 	ctx := consensus.BlockProductionContext{
 		State: state, PreviousHash: n.HeadHash, Proposer: append([]byte(nil), validatorID...),
 	}
+	rules, err := n.Config.BlockRules(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	candidate, err := consensus.BuildBlockCandidate(consensus.BlockCandidateInput{
 		Context: ctx, Timestamp: n.Head.Header.Timestamp + 1, Transactions: []any{},
-		Rules: n.Config.BlockRules(nil),
+		Rules: rules,
 	}, n.State)
 	if err != nil {
 		t.Fatal(err)
