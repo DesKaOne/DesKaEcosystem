@@ -12,7 +12,7 @@ import (
  provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
 )
 
-func tc(base string) config.IAKConfig{return config.IAKConfig{Username:"user",APIKey:"secret",PriceListEndpoint:base+"/api/pricelist",InquiryPLNEndpoint:base+"/api/inquiry-pln",TopUpEndpoint:base+"/api/top-up",StatusEndpoint:base+"/api/check-status",BalanceEndpoint:base+"/api/check-balance"}}
+func iakTestConfig(base string) config.IAKConfig{return config.IAKConfig{Username:"user",APIKey:"secret",PriceListEndpoint:base+"/api/pricelist",InquiryPLNEndpoint:base+"/api/inquiry-pln",TopUpEndpoint:base+"/api/top-up",StatusEndpoint:base+"/api/check-status",BalanceEndpoint:base+"/api/check-balance"}}
 func ts(s string)string{x:=md5.Sum([]byte("user"+"secret"+s));return hex.EncodeToString(x[:])}
 
 func TestIAKAdapter(t *testing.T){
@@ -28,7 +28,7 @@ func TestIAKAdapter(t *testing.T){
   default:t.Errorf("unexpected path %s",r.URL.Path)
   }
  }));defer srv.Close()
- c,err:=New(tc(srv.URL),srv.Client());if err!=nil{t.Fatal(err)}
+ c,err:=New(iakTestConfig(srv.URL),srv.Client());if err!=nil{t.Fatal(err)}
  active:=true;products,err:=c.GetProducts(context.Background(),provider.ProductRequest{Category:"pulsa",Active:&active});if err!=nil||len(products)!=1{t.Fatalf("products=%#v err=%v",products,err)}
  inq,err:=c.Inquiry(context.Background(),provider.InquiryRequest{ProductCode:"pln",CustomerNo:"12345678901"});if err!=nil||inq.Status!=provider.StatusSuccess{t.Fatalf("inquiry=%#v err=%v",inq,err)}
  p,err:=c.Purchase(context.Background(),provider.PurchaseRequest{ProductCode:"xld25000",CustomerNo:"08123",ReferenceID:"order-1"});if err!=nil||p.Status!=provider.StatusPending{t.Fatalf("purchase=%#v err=%v",p,err)}
@@ -55,11 +55,11 @@ func TestIAKBalanceResponseValidation(t *testing.T) {
 		{name: "invalid balance", body: `{"data":{"balance":"not-a-number"}}`, wantErr: true},
 		{name: "string balance", body: `{"data":{"balance":"123456"}}`, wantErr: false},
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write([]byte(tc.body))
+				_, _ = w.Write([]byte(testCase.body))
 			}))
 			defer srv.Close()
 			cfg := config.IAKConfig{
@@ -69,8 +69,8 @@ func TestIAKBalanceResponseValidation(t *testing.T) {
 			c, err := New(cfg, srv.Client())
 			if err != nil { t.Fatal(err) }
 			balance, err := c.GetBalance(context.Background())
-			if tc.wantErr && err == nil { t.Fatalf("expected error, balance=%d", balance) }
-			if !tc.wantErr && (err != nil || balance != 123456) { t.Fatalf("balance=%d err=%v", balance, err) }
+			if testCase.wantErr && err == nil { t.Fatalf("expected error, balance=%d", balance) }
+			if !testCase.wantErr && (err != nil || balance != 123456) { t.Fatalf("balance=%d err=%v", balance, err) }
 		})
 	}
 }
@@ -95,7 +95,7 @@ func TestIAKProductListRequiresPricelist(t *testing.T) {
 		_, _ = w.Write([]byte(`{"data":{"message":"FAILED","rc":"XX"}}`))
 	}))
 	defer srv.Close()
-	c, err := New(tc(srv.URL), srv.Client())
+	c, err := New(iakTestConfig(srv.URL), srv.Client())
 	if err != nil { t.Fatal(err) }
 	_, err = c.GetProducts(context.Background(), provider.ProductRequest{})
 	if err == nil { t.Fatal("expected malformed product-list response error") }
@@ -106,7 +106,7 @@ func TestIAKInquiryRequiresStatus(t *testing.T) {
 		_, _ = w.Write([]byte(`{"data":{"message":"FAILED","rc":"XX"}}`))
 	}))
 	defer srv.Close()
-	c, err := New(tc(srv.URL), srv.Client())
+	c, err := New(iakTestConfig(srv.URL), srv.Client())
 	if err != nil { t.Fatal(err) }
 	_, err = c.Inquiry(context.Background(), provider.InquiryRequest{ProductCode: "pln", CustomerNo: "12345678901"})
 	if err == nil { t.Fatal("expected missing inquiry status error") }
@@ -117,7 +117,7 @@ func TestIAKInquiryUnknownStatusIsRejected(t *testing.T) {
 		_, _ = w.Write([]byte(`{"data":{"status":"9","message":"UNKNOWN","rc":"XX"}}`))
 	}))
 	defer srv.Close()
-	c, err := New(tc(srv.URL), srv.Client())
+	c, err := New(iakTestConfig(srv.URL), srv.Client())
 	if err != nil { t.Fatal(err) }
 	_, err = c.Inquiry(context.Background(), provider.InquiryRequest{ProductCode: "pln", CustomerNo: "12345678901"})
 	if err == nil { t.Fatal("expected unknown inquiry status error") }
