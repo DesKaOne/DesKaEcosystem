@@ -13,20 +13,12 @@ import (
 
 func TestRouterSelectsHealthyProviderWithSufficientBalanceAndPriority(t *testing.T) {
 	registry := provider.NewRegistry()
-	for _, tc := range []struct {
-		name string
-		balance int64
-		health operational.Health
-	}{
-		{name: "primary", balance: 100000, health: operational.HealthHealthy},
-		{name: "secondary", balance: 500000, health: operational.HealthHealthy},
-	} {
-		p := mock.New(mock.Config{Products: []provider.Product{{Code: "xld10", Name: "Test"}}})
-		if err := registry.Register(tc.name, p); err != nil {
+	for _, name := range []string{"primary", "secondary"} {
+		if err := registry.Register(name, mock.New(mock.Config{
+			Products: []provider.Product{{Code: "xld10", Name: "Test"}},
+		})); err != nil {
 			t.Fatal(err)
 		}
-		store := operational.NewMemoryStore()
-		_ = store
 	}
 
 	store := operational.NewMemoryStore()
