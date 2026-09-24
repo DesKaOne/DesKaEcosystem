@@ -32,6 +32,7 @@ type Client struct {
 	endpoint       string
 	balanceEndpoint   string
 	priceListEndpoint string
+	inquiryPLNEndpoint string
 	httpClient        *http.Client
 }
 
@@ -42,8 +43,9 @@ func New(cfg config.DigiFlazzConfig, httpClient *http.Client) (*Client, error) {
 	if cfg.Endpoint == "" { cfg.Endpoint = defaultEndpoint }
 	if cfg.BalanceEndpoint == "" { cfg.BalanceEndpoint = defaultBalanceEndpoint }
 	if cfg.PriceListEndpoint == "" { cfg.PriceListEndpoint = defaultPriceListEndpoint }
+	if cfg.InquiryPLNEndpoint == "" { cfg.InquiryPLNEndpoint = "https://api.digiflazz.com/v1/inquiry-pln" }
 	if httpClient == nil { httpClient = http.DefaultClient }
-	return &Client{username: cfg.Username, apiKey: cfg.APIKey, endpoint: cfg.Endpoint, balanceEndpoint: cfg.BalanceEndpoint, priceListEndpoint: cfg.PriceListEndpoint, httpClient: httpClient}, nil
+	return &Client{username: cfg.Username, apiKey: cfg.APIKey, endpoint: cfg.Endpoint, balanceEndpoint: cfg.BalanceEndpoint, priceListEndpoint: cfg.PriceListEndpoint, inquiryPLNEndpoint: cfg.InquiryPLNEndpoint, httpClient: httpClient}, nil
 }
 
 type transactionRequest struct {
@@ -136,7 +138,32 @@ func (c *Client) GetProducts(ctx context.Context, req provider.ProductRequest) (
 	}
 	return products, nil
 }
-func (c *Client) Inquiry(context.Context, provider.InquiryRequest) (provider.InquiryResult, error) { return provider.InquiryResult{}, provider.ErrUnsupportedOperation }
+func (c *Client) Inquiry(ctx context.Context, req provider.InquiryRequest) (provider.InquiryResult, error) {
+	if strings.ToLower(strings.TrimSpace(req.ProductCode)) != "pln" {
+		return provider.InquiryResult{}, provider.ErrUnsupportedOperation
+	}
+	if req.CustomerNo == "" {
+		return provider.InquiryResult{}, errors.New("customer number is required for DigiFlazz PLN inquiry")
+	}
+	body, err := json.Marshal(struct {
+		Username string `json:"username"`
+		CustomerNo string `json:"customer_no"`
+		Sign string `json:"sign"`
+	}{Username: c.username, CustomerNo: req.CustomerNo, Sign: c.inquiryPLNSignature(req.CustomerNo)})
+	if err != nil { return provider.InquiryResult{}, fmt.Errorf("encode DigiFlazz PLN inquiry request: %w", err) }
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.inquiryPLNEndpoint, strings.NewReader(string(body)))
+	if err != nil { return provider.InquiryResult{}, fmt.Errorf("create DigiFlazz PLN inquiry request: %w", err) }
+	httpReq.Header.Set("Content-Type", "application/json")
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil { return provider.InquiryResult{}, fmt.Errorf("DigiFlazz PLN inquiry request failed: %w", err) }
+	defer resp.Body.Close()
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil { return provider.InquiryResult{}, fmt.Errorf("read DigiFlazz PLN inquiry response: %w", err) }
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 { return provider.InquiryResult{}, fmt.Errorf("DigiFlazz PLN inquiry HTTP status %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody))) }
+	var decoded struct { Data struct { Message string `json:"message"`; Status string `json:"status"`; RC string `json:"rc"` } `json:"data"` }
+	if err := json.Unmarshal(respBody, &decoded); err != nil { return provider.InquiryResult{}, fmt.Errorf("decode DigiFlazz PLN inquiry response: %w", err) }
+	return provider.InquiryResult{Status: mapStatus(decoded.Data.Status), ProviderCode: decoded.Data.RC, Message: decoded.Data.Message}, nil
+}
 
 func (c *Client) Purchase(ctx context.Context, req provider.PurchaseRequest) (provider.PurchaseResult, error) {
 	if err := validateTransactionRequest(req.ProductCode, req.CustomerNo, req.ReferenceID); err != nil { return provider.PurchaseResult{}, err }
@@ -179,6 +206,7 @@ func (c *Client) transaction(ctx context.Context, req transactionRequest) (trans
 
 func (c *Client) signature(refID string) string { sum := md5.Sum([]byte(c.username+c.apiKey+refID)); return hex.EncodeToString(sum[:]) }
 func (c *Client) balanceSignature() string { sum := md5.Sum([]byte(c.username+c.apiKey+"depo")); return hex.EncodeToString(sum[:]) }
+func (c *Client) inquiryPLNSignature(customerNo string) string { sum := md5.Sum([]byte(c.username+c.apiKey+customerNo)); return hex.EncodeToString(sum[:]) }
 func (c *Client) priceListSignature() string { sum := md5.Sum([]byte(c.username+c.apiKey+"pricelist")); return hex.EncodeToString(sum[:]) }
 func validateTransactionRequest(productCode, customerNo, referenceID string) error { if productCode=="" || customerNo=="" || referenceID=="" { return errors.New("product code, customer number, and reference ID are required") }; return nil }
 func mapPurchaseResult(data transactionResponse) provider.PurchaseResult { return provider.PurchaseResult{ReferenceID:data.Data.ReferenceID, CustomerNo:data.Data.CustomerNo, ProductCode:data.Data.BuyerSKUCode, Status:mapStatus(data.Data.Status), ProviderCode:data.Data.RC, Message:data.Data.Message, SerialNumber:data.Data.SN, Price:data.Data.Price} }
