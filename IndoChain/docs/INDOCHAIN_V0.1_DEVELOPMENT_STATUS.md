@@ -934,6 +934,10 @@ This remains development-only and does not introduce production BFT timing, roun
 
 **Next major boundary:** verify multi-height finalization in CI, then add a deterministic negative-path check for cross-height context/replay rejection so a height-2 handoff cannot be committed against the height-0/height-1 canonical context.
 
+**Latest multi-height CI regression:** IndoChain CI run `853` failed in `TestInMemoryTransportRuntimeFinalizedBlockMultiHeight` at height 2 with `consensus execution context mismatch`. The test had been constructing `RoundState` with the loop height as the epoch argument and a fixed consensus height of zero. That happened to align with the genesis head for the first block, but after height 1 was committed the canonical node head became height 1 while the height-2 consensus context remained at height 0. The correction in `0dde30c6209656e1e7328ce948db61c64a8487e9` derives the consensus context height from `n.Head.Header.Height` and keeps epoch at zero, so the candidate remains the next height (`context height + 1`) while the node commit guard sees the current canonical context.
+
+**Next CI gate:** verify `0dde30c6209656e1e7328ce948db61c64a8487e9` and its status-document follow-up workflow before proceeding to the cross-height negative-path coverage.
+
 ### 4.38 Consensus Transport → Runtime → Finalized Node Handoff Boundary
 
 The multi-node consensus integration now crosses the full development handoff from explicit P2P transport into `ValidatorRuntime` finalization and then into the canonical node commit boundary.
