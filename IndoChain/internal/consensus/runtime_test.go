@@ -101,6 +101,33 @@ func TestValidatorRuntimeAdvancesAndFinalizesAfterQuorum(t *testing.T) {
 	}
 }
 
+func TestValidatorRuntimeRejectsVoteConflictingWithLockedProposal(t *testing.T) {
+	runtime, state, _, _ := runtimeFixture(t)
+	if err := runtime.AcceptProposal(runtimeMessage(state, "validator-a", MessageTypeProposal, "block-8")); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.AddVote(runtimeMessage(state, "validator-a", MessageTypeVote, "block-8")); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.AddVote(runtimeMessage(state, "validator-b", MessageTypeVote, "block-8")); err != nil {
+		t.Fatal(err)
+	}
+	if runtime.State().Phase != PhasePrecommit {
+		t.Fatalf("expected precommit after locking proposal, got %v", runtime.State().Phase)
+	}
+
+	err := runtime.AddVote(runtimeMessage(state, "validator-c", MessageTypeVote, "conflicting-block"))
+	if !errors.Is(err, ErrConflictingLockedProposal) {
+		t.Fatalf("expected locked-proposal conflict, got %v", err)
+	}
+	if runtime.State().Phase != PhasePrecommit {
+		t.Fatalf("runtime phase changed after conflicting locked vote")
+	}
+	if votes := runtime.votes.VotesForPayload([]byte("conflicting-block")); len(votes) != 0 {
+		t.Fatalf("conflicting vote was recorded: %d", len(votes))
+	}
+}
+
 func TestValidatorRuntimeDoesNotFinalizeWithoutQuorum(t *testing.T) {
 	runtime, state, _, _ := runtimeFixture(t)
 	if err := runtime.AcceptProposal(runtimeMessage(state, "validator-a", MessageTypeProposal, "block-8")); err != nil {
