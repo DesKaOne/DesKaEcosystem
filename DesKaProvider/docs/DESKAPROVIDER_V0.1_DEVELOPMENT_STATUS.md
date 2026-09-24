@@ -1609,3 +1609,53 @@ CI run #285 for the corrected IAK response-validation implementation is confirme
 - `race` — success (`go test -race ./...`).
 
 The implementation is therefore cleared for the next IAK capability review. The earlier red runs #275, #279, and #281 are retained as historical failures and are not treated as successful verification.
+
+
+### 48. Milestone Update — IAK Transaction Envelope and Identity Hardening
+
+**Date:** 2026-09-25
+
+CI run #287 for the previous status-document head is confirmed **green** before this implementation step:
+
+- workflow — success.
+
+Reviewed the current official IAK prepaid v2 documentation. IAK requires `ref_id`, `product_code`, `customer_id`, and transaction `status` in top-up responses; check-status likewise returns transaction identity and status. IAK callbacks return `ref_id`, `code`, `hp`, and status, with only success/failed callbacks documented. citeturn0search0turn0search2turn0search3
+
+Hardened the IAK adapter so valid HTTP/JSON envelopes cannot be accepted when transaction identity or status is malformed:
+
+- `Purchase` now requires response `ref_id`, `customer_id`, and `product_code`;
+- purchase status must be one of `PROCESS`, `SUCCESS`, or `FAILED`;
+- purchase response identity is checked against the original request;
+- `GetStatus` now requires transaction identity and a recognized status;
+- status response identity is checked against the requested reference and, when supplied, customer/product fields;
+- webhook normalization now rejects missing transaction identity and unknown status values;
+- added deterministic tests for malformed purchase/status envelopes, identity mismatch, and malformed webhook status.
+
+This closes a provider-boundary validation gap without inventing additional IAK response semantics.
+
+### Safety Boundary
+
+This milestone does not:
+
+- introduce automatic transaction retry or cross-provider failover;
+- resubmit ambiguous transactions;
+- mutate the DesKaCash ledger;
+- fund providers;
+- treat provider balance as customer balance;
+- claim live IAK credential or production activation.
+
+### Verification Gate
+
+Implementation commits:
+
+- `a5cf1545b621656230bd233ed8949573019ebb38` — transaction response validation and identity checks;
+- `e22d5b4d59cc888037e25df2d9f1ef78a430f169` — deterministic transaction-envelope tests.
+
+A fresh CI run for the current head is required. `test`, `vet`, and `race` must all be green before the next development step.
+
+### Next Milestone
+
+1. verify the fresh CI result for IAK transaction envelope hardening;
+2. if green, review remaining verified IAK capability gaps only;
+3. avoid speculative postpaid/game/OVO/eSIM expansion until a neutral contract is explicitly required;
+4. keep live credentials and commercial activation separate from source-level adapter completeness.
