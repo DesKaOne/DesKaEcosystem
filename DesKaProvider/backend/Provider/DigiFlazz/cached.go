@@ -3,6 +3,7 @@ package digiflazz
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -10,8 +11,8 @@ import (
 )
 
 // CachedClient adds a bounded in-memory price-list cache to a DigiFlazz client.
-// It caches the provider-neutral product list by category and applies the
-// requested Active filter after the cached snapshot is read.
+// The cache key includes the neutral category and active filter so the
+// provider-specific active-state mapping remains inside the DigiFlazz client.
 type CachedClient struct {
 	client *Client
 	ttl    time.Duration
@@ -44,13 +45,14 @@ func (c *CachedClient) GetProducts(ctx context.Context, req provider.ProductRequ
 		return nil, err
 	}
 
+	key := cacheKey(req)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	now := time.Now()
-	entry, ok := c.cache[req.Category]
+	entry, ok := c.cache[key]
 	if !ok || !now.Before(entry.expiresAt) {
-		products, err := c.client.GetProducts(ctx, provider.ProductRequest{Category: req.Category})
+		products, err := c.client.GetProducts(ctx, req)
 		if err != nil {
 			return nil, err
 		}
@@ -58,10 +60,10 @@ func (c *CachedClient) GetProducts(ctx context.Context, req provider.ProductRequ
 			products:  append([]provider.Product(nil), products...),
 			expiresAt: now.Add(c.ttl),
 		}
-		c.cache[req.Category] = entry
+		c.cache[key] = entry
 	}
 
-	return filterProducts(entry.products, req.Active), nil
+	return append([]provider.Product(nil), entry.products...), nil
 }
 
 func (c *CachedClient) Inquiry(ctx context.Context, req provider.InquiryRequest) (provider.InquiryResult, error) {
@@ -84,19 +86,10 @@ func (c *CachedClient) GetBalance(ctx context.Context) (int64, error) {
 	return c.client.GetBalance(ctx)
 }
 
-func filterProducts(products []provider.Product, active *bool) []provider.Product {
-	if active == nil {
-		return append([]provider.Product(nil), products...)
+func cacheKey(req provider.ProductRequest) string {
+	active := "nil"
+	if req.Active != nil {
+		active = fmt.Sprintf("%t", *req.Active)
 	}
-	// The underlying price-list response is cached only as provider-neutral
-	// products, so an Active filter can only be applied if the source list
-	// contains the requested active state. DigiFlazz's adapter currently maps
-	// only active products when no explicit filter is supplied.
-	//
-	// Keep the neutral cache semantics deterministic: nil is the full cached
-	// list, and an explicit filter is treated as a cache-level selection.
-	if *active {
-		return append([]provider.Product(nil), products...)
-	}
-	return nil
+	return req.Category + "\x00" + active
 }
