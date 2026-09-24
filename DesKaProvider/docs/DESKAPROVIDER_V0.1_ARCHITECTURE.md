@@ -178,3 +178,21 @@ External Providers / DesKa Infrastructure
 ```
 
 This is a future direction, not part of the initial v0.1 implementation.
+
+
+## 10. v0.1 Provider Contract Notes
+
+The provider-neutral PPOB contract intentionally carries the minimum transaction identity required to preserve correlation across external providers:
+
+- product code
+- customer number
+- provider-neutral reference ID
+- normalized transaction status
+- provider response code/message
+- optional serial number and price
+
+For status checks, the neutral `StatusRequest` retains the original product code, customer number, and reference ID. This is required because DigiFlazz's documented prepaid status flow repeats the topup request with the same `ref_id`, rather than exposing a separate prepaid status endpoint.
+
+For webhooks, the neutral `WebhookRequest` carries body and authentication context so provider adapters can validate signatures before normalizing the event. DigiFlazz currently uses `X-Hub-Signature` with HMAC-SHA1 when a webhook secret is configured.
+
+These fields are provider-neutral at the DesKaProvider boundary; DigiFlazz-specific JSON field names, signature construction, response codes, and HTTP behavior remain inside the adapter.
