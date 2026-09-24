@@ -407,7 +407,7 @@ func TestConsensusRuntimeNegativeMismatchedProposalPayload(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	proposal.Payload = append(proposal.Payload, 0xff)
+	proposal.Candidate.Header.Timestamp++
 	if err := runtime.AcceptBlockProposal(proposal); err == nil {
 		t.Fatal("mismatched proposal payload was accepted")
 	}
@@ -473,9 +473,13 @@ func finalizedHandoffFixture(t *testing.T) (*node.Node, block.Block, consensus.F
 		t.Fatal(err)
 	}
 	ctx := consensus.BlockProductionContext{State: state, PreviousHash: n.HeadHash, Proposer: append([]byte(nil), validatorID...)}
+	rules, err := n.Config.BlockRules(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	candidate, err := consensus.BuildBlockCandidate(consensus.BlockCandidateInput{
 		Context: ctx, Timestamp: n.Head.Header.Timestamp + 1, Transactions: []any{},
-		Rules: n.Config.BlockRules(nil),
+		Rules: rules,
 	}, n.State)
 	if err != nil {
 		t.Fatal(err)
