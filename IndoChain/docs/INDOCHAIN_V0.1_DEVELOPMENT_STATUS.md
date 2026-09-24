@@ -1,6 +1,6 @@
 # IndoChain v0.1 — Development Status Summary
 
-> Snapshot: 2026-09-23  
+> Snapshot: 2026-09-24  
 > Branch: `dev/indochain-v0.1`  
 > Repository: `DesKaOne/DesKaEcosystem`  
 > Purpose: handover / continuity document for future development chats.
@@ -446,6 +446,16 @@ The implementation deliberately keeps consensus validator identity separate from
 
 Tests cover successful sender-key resolution through `Node.ImportBlockWithAuthority`. The legacy `ImportBlock(block, publicKey)` path remains available for the existing v0.1 development compatibility path.
 
+### 4.29 Finalized Block Commit Failure-Path & Context Guard
+
+The finalized-block node commit boundary has been tightened so consensus authorization cannot be applied against a stale or unrelated canonical node context.
+
+Before finality validation or execution authority handoff, `Node.CommitFinalizedBlock` now validates the supplied `BlockProductionContext` and requires protocol version, chain ID, consensus height, and previous block hash to match the live node configuration/head. A mismatch returns `ErrConsensusContextMismatch` without mutating canonical state.
+
+Failure-path coverage now explicitly checks missing authority resolvers and consensus-context mismatch, including preservation of node head, head hash, and state root. The existing atomic execution/commit path remains unchanged: candidate execution occurs against working state, store commit succeeds, then canonical node state/head advance.
+
+Detailed scope is documented in `IndoChain/docs/node-execution-authority-integration-v0.1.md`.
+
 ## 5. Protocol Documentation Progress
 
 Documentation has advanced into more formal protocol specification work, including:
@@ -763,7 +773,7 @@ When there is a conflict, the implementation and dedicated protocol specificatio
 **Latest validator runtime tests:** `810bbaab2b009ab7ba5bcc5f87cd9f8c18291385`  
 **Validator runtime boundary documentation:** `523af557240c5e81c9b54249ccf9f3432c97c010`  
 **Consensus finality boundary documentation:** `72bb276ca17848129d0f9bec0c66554aa604a6b`  
-**Latest status-document update:** `fb63fba4e81ca6e9b822f52b90116694a222fb72`    
+**Latest status-document update:** `PENDING`    
 **Current branch CI after vote aggregation:** previous CI run `584` failed in `TestVoteAggregatorCalculatesPayloadPowerAndQuorum`; the test assertion has been corrected in `705a2cbb5c31c78fa43e5c8362978e4094b469de`.  
 **Current branch CI after finality boundary:** no pull-request workflow run was associated with HEAD `146c2225be2dcaf787bc3f724b50d70e214dfcfc`.  
 **Current branch CI after validator runtime:** IndoChain CI run `610` failed on the pull-request merge ref because `ValidatorRuntime` assigned a `VoteAggregator` value to a `*VoteAggregator` field. The runtime fix is `ac27d456622a6d8b3751832e7a73715b3c807adf`; the resulting branch HEAD later passed IndoChain CI run `622`.  
@@ -785,9 +795,9 @@ When there is a conflict, the implementation and dedicated protocol specificatio
 **Latest execution-authority handoff documentation:** `9e35299980a4dbe67d786de27fcde9361cdaa1cf`  
 **Latest node execution-authority integration:** `3a37071d11f4d7e133f7c23736a3c6f81c091e31`  
 **Latest node execution-authority documentation:** `3a0d109c1900e6bf74ad1e5094ce779bd8ef972d`  
-**Latest finalized-block → node commit integration:** `3b7bc7e5f6cbe33bd72e84eecc1075cf792ad1e4`  
+**Latest finalized-block → node commit integration:** `3b7bc7e5f6cbe33bd72e84eecc1075cf792ad1e4`  \n**Latest finalized-block commit context guard:** `ec35299e4f6115f0be5e7f46b70962051cb20368`  
 **Latest finalized-block → node commit implementation:** `f0e0be0c5ec38a157bfca658ef6ce78e83ba2622`  
-**Next major boundary:** Add explicit finalized-block commit integration failure-path coverage and tighten canonical consensus-to-execution context handling  
+**Next major boundary:** Expand finalized-block commit failure-path coverage for authority resolution, finality mismatch, execution failure, and store failure; then tighten canonical consensus-to-execution context handling further  
 
 ### 4.12 Consensus Validator Membership Boundary
 
