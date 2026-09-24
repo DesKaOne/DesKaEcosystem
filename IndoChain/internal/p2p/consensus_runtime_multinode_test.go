@@ -387,7 +387,7 @@ func TestInMemoryTransportRuntimeFinalizedBlockMultiHeight(t *testing.T) {
 	senderResolver := runtimeSenderAuthorityResolver{}
 
 	var previousHash = n.HeadHash
-	for height := types.Height(1); height <= 2; height++ {
+	for height := types.Height(1); height <= 3; height++ {
 		state, err := consensus.NewRoundState(
 			devnet.ProtocolVersion,
 			devnet.ChainID,
