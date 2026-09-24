@@ -635,3 +635,38 @@ Routing implementation and tests are committed on `dev/deskaprovider-v0.1`. A ne
 1. verify CI for the routing foundation;
 2. integrate routing into a provider selection service without changing DesKaCash ledger semantics;
 3. add transaction safety/idempotency boundaries around provider selection and purchase execution.
+
+
+### 26. Milestone Update — Routed Provider Purchase Execution Boundary
+
+**Date:** 2026-09-24
+
+Completed:
+
+- added `routing.Service` as the provider-neutral purchase execution boundary above the deterministic router;
+- purchase requests now carry product code, customer number, reference ID, amount, and testing flag;
+- the service validates the required request fields before provider selection;
+- provider selection still uses the existing cached balance, health, product availability, and priority rules;
+- the selected provider is resolved from the neutral registry and receives the neutral `PurchaseRequest`;
+- provider purchase results are returned together with the selected provider name;
+- provider-specific errors are wrapped without translating them into DesKaCash ledger operations;
+- intentionally does **not** perform automatic fallback/retry after a provider purchase has been submitted, avoiding duplicate external transactions until an explicit idempotency/correlation boundary exists;
+- added deterministic tests covering routed purchase execution, provider failure propagation without fallback, and request validation.
+
+### Transaction safety boundary
+
+This milestone deliberately stops at one selected provider purchase call:
+
+`Select -> Purchase -> return provider result`
+
+There is no automatic retry, cross-provider failover, customer ledger mutation, or provider funding in this service. The next idempotency layer must establish how a single reference ID is correlated with provider attempts and how repeated requests are resolved before any retry/failover behavior is introduced.
+
+### Verification
+
+The implementation and deterministic tests are committed on `dev/deskaprovider-v0.1`. CI verification for the new routing service changes is still required before the next implementation step.
+
+### Next milestone
+
+1. verify CI for the routed purchase execution boundary;
+2. design and implement provider transaction correlation/idempotency state around the existing reference ID;
+3. ensure repeated requests cannot create unintended duplicate provider purchases before considering controlled failover.
