@@ -2001,3 +2001,42 @@ No credentials or secret values are committed.
 
 Implement the minimum XP SINDONESIA PPOB adapter from the supplied contract, beginning with deterministic HTTP form encoding, saldo/read-only product discovery, and order mapping. Add tests before any credential-gated integration check.
 
+### 57. Milestone Update — XP Core Purchase/Balance Adapter Added
+
+**Date:** 2026-09-25
+
+CI **#325 — GREEN** was verified on the previous commit `21274ef42a265acfbcee89d2a1c54ceebfd1392e`:
+
+- `test` — success;
+- `vet` — success;
+- `race` — success.
+
+Using `docs/XP_SINDONESIA_API_DOC.md` as the source contract, the first XP adapter core has been implemented.
+
+Implemented:
+
+- POST `/api/order.php` using form-encoded `id`, `key`, `api`, `trx`, `kod`, `isi`, `sms`, and callback `url`;
+- order response identity validation;
+- mapping of `proses` to pending, `sukses` to success, `gagal` to failed;
+- order price/SN/error mapping;
+- POST `/api/saldo.php`;
+- saldo parsing from the documented JSON response;
+- callback parsing for the documented GET parameters represented as query data;
+- constant-time callback key validation when a callback secret is configured;
+- explicit `ErrUnsupportedOperation` for catalog, inquiry, and status because the supplied documentation does not provide a safe list-response schema, inquiry contract, or non-resubmitting status endpoint.
+
+The last point is intentional. The documentation shows `daftar_harga.php`, `harga.php`, and order callback behavior, but it does not define a complete response schema for `daftar_harga.php` nor a dedicated transaction-status API. Reusing `order.php` for status could resubmit a transaction, which is unsafe under the provider-neutral routing rules.
+
+Deterministic HTTP tests were added for purchase, balance, callback validation, and explicit unsupported operations.
+
+### Verification Gate
+
+- Previous CI #325 — **GREEN**;
+- XP adapter core — implemented;
+- deterministic tests — added;
+- **new adapter commit CI — pending**.
+
+### Next Milestone
+
+After the new commit is green, verify whether the supplied XP documentation contains an additional `daftar_harga.php` response schema or status mechanism that can safely map to the existing `PPOBProvider`. If not, keep those capabilities explicitly unsupported rather than inventing provider behavior.
+
