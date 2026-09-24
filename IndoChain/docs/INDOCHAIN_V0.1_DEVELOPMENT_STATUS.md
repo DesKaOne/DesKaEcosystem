@@ -1058,3 +1058,9 @@ This milestone does not define proposer selection, voting power, quorum, vote ag
 **Correction:** The test initially used the wrong struct field name for `VotingPowerSet`; corrected to `Validators` in `ff0ea4d59e971f60a3e31e8e51e5eb58d4896bf3` before the CI gate.
 
 **Next CI gate:** verify `ff0ea4d59e971f60a3e31e8e51e5eb58d4896bf3` through the full IndoChain test/tidy/vet workflow before proceeding to the next finalized-handoff negative boundary.
+
+**Verified invalid-voting-power-set CI:** IndoChain CI #981 (workflow run `35984088304`) completed successfully for `ff0ea4d59e971f60a3e31e8e51e5eb58d4896bf3`; the full test/tidy/vet gate passed. The finalized handoff now explicitly rejects a directly constructed zero-power entry with `consensus.ErrInvalidVotingPowerSet` while preserving the canonical genesis head/hash.
+
+**Next finalized-handoff voting-power integrity boundary:** Added `TestConsensusRuntimeNegativeDuplicateVotingPowerValidator`. The test supplies a directly constructed voting-power set containing the same validator identifier twice, requiring `consensus.ErrInvalidVotingPowerSet` and preserving the canonical genesis head/hash. Implementation commit: `b7856625597828fe5518a9839e7861ee04853b21`.
+
+**Next CI gate:** verify `b7856625597828fe5518a9839e7861ee04853b21` through the full IndoChain test/tidy/vet workflow before proceeding to the next finalized-handoff negative boundary.
