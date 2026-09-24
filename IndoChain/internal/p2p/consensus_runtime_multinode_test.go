@@ -199,6 +199,10 @@ func TestInMemoryTransportRuntimeFinalizedBlockHandoff(t *testing.T) {
 	}
 
 	state, err := consensus.NewRoundState(devnet.ProtocolVersion, devnet.ChainID, 1, 0)
+	keyPair, err := crypto.NewEd25519KeyPair(bytes.Repeat([]byte{0x35}, 32))
+	if err != nil { t.Fatal(err) }
+	signer, err := crypto.NewEd25519Signer(keyPair.PrivateKey)
+	if err != nil { t.Fatal(err) }
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -215,6 +219,7 @@ func TestInMemoryTransportRuntimeFinalizedBlockHandoff(t *testing.T) {
 		ProtocolVersion: state.ProtocolVersion,
 		ChainID: state.ChainID,
 		RequireSender: true,
+		RequireSignature: true,
 	}
 	runtimeA, err := consensus.NewValidatorRuntime(consensus.RuntimeConfig{
 		Rules: rules, State: state, Validators: validators, VotingPower: power,
@@ -269,6 +274,8 @@ func TestInMemoryTransportRuntimeFinalizedBlockHandoff(t *testing.T) {
 		Type: consensus.MessageTypeProposal,
 		Payload: proposal.MessagePayload(),
 	}
+	proposalMsg, err = proposalMsg.Sign(signer)
+	if err != nil { t.Fatal(err) }
 
 	nodeA := NewInMemoryTransport(PeerID("node-a"), 4096)
 	nodeB := NewInMemoryTransport(PeerID("node-b"), 4096)
@@ -302,6 +309,8 @@ func TestInMemoryTransportRuntimeFinalizedBlockHandoff(t *testing.T) {
 		Type: consensus.MessageTypeVote,
 		Payload: proposal.MessagePayload(),
 	}
+	vote, err = vote.Sign(signer)
+	if err != nil { t.Fatal(err) }
 	if err := runtimeB.AddVote(vote); err != nil {
 		t.Fatal(err)
 	}
