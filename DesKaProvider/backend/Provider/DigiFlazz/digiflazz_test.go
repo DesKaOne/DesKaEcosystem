@@ -52,6 +52,39 @@ func TestPurchaseBuildsOfficialBuyerRequestAndMapsResponse(t *testing.T) {
 	}
 }
 
+func TestDigiFlazzGetBalanceUsesOfficialDepositEndpoint(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/cek-saldo" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		var got map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Fatal(err)
+		}
+		if got["cmd"] != "deposit" || got["username"] != "buyer" {
+			t.Fatalf("unexpected balance request: %#v", got)
+		}
+		h := md5.Sum([]byte("buyersecretdepo"))
+		if got["sign"] != hex.EncodeToString(h[:]) {
+			t.Fatalf("unexpected balance signature: %v", got["sign"])
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"deposit": 1250000}})
+	}))
+	defer server.Close()
+
+	c, err := New(config.DigiFlazzConfig{Username: "buyer", APIKey: "secret", Endpoint: server.URL + "/v1/transaction", BalanceEndpoint: server.URL + "/v1/cek-saldo"}, server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	balance, err := c.GetBalance(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if balance != 1250000 {
+		t.Fatalf("unexpected balance: %d", balance)
+	}
+}
+
 func TestWebhookSignatureAndMapping(t *testing.T) {
 	body := []byte(`{"data":{"ref_id":"ref-1","customer_no":"087800001233","buyer_sku_code":"xld10","message":"Transaksi Sukses","status":"Sukses","rc":"00","sn":"SN1","price":10000}}`)
 	signature := newHMAC(body, "hooksecret")
