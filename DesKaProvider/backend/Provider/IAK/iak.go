@@ -35,7 +35,7 @@ func (c *Client) GetProducts(ctx context.Context, req provider.ProductRequest)([
  var d map[string]any
  if err:=c.do(ctx,c.priceListEndpoint,p,&d);err!=nil{return nil,err}
  data:=obj(d,"data"); list,ok:=data["pricelist"].([]any); if !ok { return nil, iakResponseError(d, "pricelist") }; out:=make([]provider.Product,0,len(list))
- for _,v:=range list { x,_:=v.(map[string]any); cat:=str(x,"product_category"); active:=strings.EqualFold(str(x,"status"),"active"); if req.Category!=""&&!strings.EqualFold(strings.TrimSpace(cat),strings.TrimSpace(req.Category)){continue}; if req.Active!=nil&&active!=*req.Active{continue}; out=append(out,provider.Product{Code:str(x,"product_code"),Name:str(x,"product_description")}) }
+ for _,v:=range list { x,ok:=v.(map[string]any); if !ok { return nil, errors.New("IAK response contains invalid pricelist item") }; code,name:=str(x,"product_code"),str(x,"product_description"); if code==""||name=="" { return nil, errors.New("IAK response contains incomplete pricelist item") }; cat:=str(x,"product_category"); active:=strings.EqualFold(str(x,"status"),"active"); if req.Category!=""&&!strings.EqualFold(strings.TrimSpace(cat),strings.TrimSpace(req.Category)){continue}; if req.Active!=nil&&active!=*req.Active{continue}; out=append(out,provider.Product{Code:code,Name:name}) }
  return out,nil
 }
 
