@@ -501,3 +501,23 @@ CI run #44 is confirmed red for the malformed test source. The fix is committed 
 1. verify CI for commit `4a5e97bdeb542f24232501f6c3da730773457707`;
 2. if green, wire the operational sync worker into the service lifecycle;
 3. add lifecycle/shutdown and restart behavior tests.
+
+
+### 21. Milestone Update — CI Follow-up: Previous Import Fix Was Incomplete
+
+**Date:** 2026-09-24
+
+CI run DesKaProvider CI #47 remained red. The test job still reported the same parser error at `Provider/operational/json_store_test.go:4:6`: `illegal character U+005C '\\'`.
+
+Follow-up root cause:
+
+- the previous edit did not remove the literal escaped newline/tab sequence from the import block; the source still contained `"os"\\n\\t"path/filepath"` as literal characters.
+
+Fix applied:
+
+- rewrote the complete import block and test source with real Go newlines/tabs;
+- production code was not changed.
+
+### Verification
+
+CI run #47 is confirmed red for the still-malformed test source. The corrected source is committed on `dev/deskaprovider-v0.1` at commit `b47a39acd8feb11af44901c18ef94a2c6e3f8256`. A new CI run must be verified before proceeding.
