@@ -2039,3 +2039,56 @@ Completed:
 1. verify fresh CI `test`, `vet`, and `race` for this milestone;
 2. if green, add the production-oriented separation of provider lifecycle (`ENABLED`/`DISABLED`) from health (`HEALTHY`/`DEGRADED`/`UNHEALTHY`) and capabilities;
 3. then use those states as prerequisites for provider routing.
+
+
+### 62. Milestone Update — Provider Lifecycle, Capability, and Health Separation
+
+**Date:** 2026-09-25
+
+CI gate was re-verified before continuing:
+
+- CI run #354 — GREEN for commit 5dc93bf4ba7d9a80d3491a52bef0002a1e5c2673;
+- test — success;
+- vet — success;
+- race — success.
+
+Completed after the green gate:
+
+- added a provider-neutral ProviderState model;
+- lifecycle is explicitly limited to ENABLED / DISABLED;
+- provider capabilities are modeled independently as PAYMENT, PPOB, PAYOUT, BALANCE, and WEBHOOK;
+- lifecycle defaults to DISABLED, preventing a newly registered provider from becoming routable merely by registration;
+- added a thread-safe ProviderStateStore with normalized provider names and deterministic ordering;
+- defensive copies prevent callers from mutating stored capability state through returned slices;
+- invalid lifecycle values are rejected;
+- deterministic tests cover lifecycle defaults, capability separation, defensive copies, and invalid lifecycle rejection.
+
+### Architectural Boundary
+
+Provider health remains in the existing operational Snapshot.Health model. It is deliberately not merged into lifecycle state:
+
+- lifecycle answers whether the provider is administratively enabled;
+- health answers whether recent operational synchronization is healthy/degraded/unhealthy;
+- capabilities answer which provider-neutral operations are available.
+
+Routing must require all applicable dimensions rather than treating one state as a substitute for another.
+
+### Safety Boundary
+
+- no automatic enablement;
+- no automatic funding;
+- no provider-specific routing logic;
+- no retry/failover;
+- no ledger mutation;
+- no credential changes;
+- no live external provider requests.
+
+### Verification Gate
+
+The lifecycle/capability implementation is now committed, but a fresh CI run for the new commits is required. test, vet, and race must all be green before provider routing is implemented.
+
+### Next Milestone
+
+1. verify fresh CI for the provider-state implementation;
+2. if green, integrate lifecycle/capability/health state into provider selection prerequisites;
+3. only then continue with provider routing behavior and deterministic selection tests.
