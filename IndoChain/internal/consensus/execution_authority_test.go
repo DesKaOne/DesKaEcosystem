@@ -97,3 +97,19 @@ func TestFinalizedBlockAuthorizationRejectsMismatchedPayload(t *testing.T) {
 		t.Fatalf("expected invalid execution authority, got %v", err)
 	}
 }
+
+func TestResolveProposerAuthorityRejectsEmptyResolvedPublicKey(t *testing.T) {
+	hash := types.Hash{1}
+	authorization := FinalizedBlockAuthorization{
+		BlockHash: hash,
+		Proposer:  []byte("validator-a"),
+		Certificate: FinalityCertificate{Payload: hash[:]},
+	}
+	resolver := testAuthorityResolver{
+		validator: []byte("validator-a"),
+		publicKey: nil,
+	}
+	if _, err := ResolveProposerAuthority(authorization, resolver); !errors.Is(err, ErrExecutionAuthorityMissing) {
+		t.Fatalf("ResolveProposerAuthority() error = %v, want %v", err, ErrExecutionAuthorityMissing)
+	}
+}
