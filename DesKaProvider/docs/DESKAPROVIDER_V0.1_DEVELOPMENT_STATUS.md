@@ -414,3 +414,34 @@ No live balance request was executed because runtime DigiFlazz credentials are n
 2. wire the periodic worker into the service lifecycle;
 3. add persistence tests and recovery behavior;
 4. then continue toward provider routing using cached balance and health.
+
+
+### 18. Milestone Update — CI Failure Fix: Sync Worker Compile Error
+
+**Date:** 2026-09-24
+
+CI run DesKaProvider CI #33 failed in the test job during go test ./....
+
+Root cause:
+
+- SyncAll returns a single map[string]error;
+- Run incorrectly assigned two return values from s.SyncAll(ctx);
+- this caused a compile error at Provider/operational/operational.go:112.
+
+Fix applied:
+
+- changed the immediate synchronization call to _ = s.SyncAll(ctx);
+- changed periodic synchronization to explicitly discard the returned error map with _ = s.SyncAll(ctx);
+- retained the intended behavior that individual provider sync failures do not terminate the worker.
+
+The separate integration job in the same CI run completed successfully.
+
+### Verification
+
+The fix is committed on dev/deskaprovider-v0.1 at commit 17ac0f36f5083a165412198364dc88a1b7deb53c. A new CI run is expected for this commit and must be verified before proceeding. The previous run was red because of the compile error above.
+
+### Next milestone
+
+1. verify CI for the fix;
+2. continue with production persistence only after the test suite is green;
+3. then wire the sync worker into the service lifecycle and add recovery tests.
