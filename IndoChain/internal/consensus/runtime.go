@@ -113,6 +113,44 @@ func (r *ValidatorRuntime) AcceptProposal(msg Message) error {
 	return nil
 }
 
+// AcceptBlockProposal converts a validated block proposal into the opaque
+// consensus proposal consumed by the runtime. The block candidate itself is
+// not executed or committed by this method.
+func (r *ValidatorRuntime) AcceptBlockProposal(proposal BlockProposal) error {
+	if r == nil {
+		return ErrInvalidConsensusRuntime
+	}
+	if r.state.Phase != PhaseProposal {
+		return ErrInvalidRuntimePhase
+	}
+	expected, err := r.ExpectedProposer()
+	if err != nil {
+		return err
+	}
+	if proposal.Candidate.Header.Version != r.state.ProtocolVersion ||
+		proposal.Candidate.Header.ChainID != r.state.ChainID ||
+		proposal.Candidate.Header.Height != r.state.Height+1 {
+		return ErrInvalidConsensusRuntime
+	}
+	if !bytes.Equal(proposal.Candidate.Header.Proposer, expected) {
+		return fmt.Errorf("%w: expected %q got %q", ErrUnexpectedProposer, expected, proposal.Candidate.Header.Proposer)
+	}
+	payload := proposal.MessagePayload()
+	if !proposal.SamePayload(payload) {
+		return ErrInvalidConsensusRuntime
+	}
+	return r.AcceptProposal(Message{
+		ProtocolVersion: r.state.ProtocolVersion,
+		ChainID:         r.state.ChainID,
+		Epoch:           r.state.Epoch,
+		Height:          r.state.Height,
+		Round:           r.state.Round,
+		Sender:          append([]byte(nil), proposal.Candidate.Header.Proposer...),
+		Type:            MessageTypeProposal,
+		Payload:         payload,
+	})
+}
+
 func (r *ValidatorRuntime) AddVote(msg Message) error {
 	if r == nil {
 		return ErrInvalidConsensusRuntime
