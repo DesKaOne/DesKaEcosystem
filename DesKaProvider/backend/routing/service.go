@@ -5,11 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 
 	provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
 )
 
-var ErrInvalidPurchaseRequest = errors.New("invalid provider purchase request")
+var (
+	ErrInvalidPurchaseRequest = errors.New("invalid provider purchase request")
+	ErrReferenceConflict = errors.New("provider reference ID already used with different request")
+)
 
 type PurchaseRequest struct {
 	ProductCode string
@@ -26,50 +30,70 @@ type PurchaseExecution struct {
 
 type Service struct {
 	Router *Router
+	mu sync.Mutex
+	transactions map[string]*purchaseCall
+}
+
+type purchaseCall struct {
+	request PurchaseRequest
+	done chan struct{}
+	result PurchaseExecution
+	err error
 }
 
 func NewService(router *Router) (*Service, error) {
 	if router == nil {
 		return nil, errors.New("provider router is required")
 	}
-	return &Service{Router: router}, nil
+	return &Service{Router: router, transactions: make(map[string]*purchaseCall)}, nil
 }
 
 func (s *Service) Purchase(ctx context.Context, req PurchaseRequest) (PurchaseExecution, error) {
-	if err := validatePurchaseRequest(req); err != nil {
-		return PurchaseExecution{}, err
-	}
-	if err := ctx.Err(); err != nil {
-		return PurchaseExecution{}, err
+	if err := validatePurchaseRequest(req); err != nil { return PurchaseExecution{}, err }
+	if err := ctx.Err(); err != nil { return PurchaseExecution{}, err }
+
+	call, owner := s.startPurchase(req)
+	if !owner {
+		if call.err != nil {
+			return PurchaseExecution{}, call.err
+		}
+		select {
+		case <-call.done:
+			return call.result, call.err
+		case <-ctx.Done():
+			return PurchaseExecution{}, ctx.Err()
+		}
 	}
 
-	name, err := s.Router.Select(ctx, Request{
-		ProductCode: req.ProductCode,
-		Amount:      req.Amount,
-	})
-	if err != nil {
-		return PurchaseExecution{}, err
-	}
+	call.result, call.err = s.executePurchase(ctx, req)
+	close(call.done)
+	return call.result, call.err
+}
 
+func (s *Service) startPurchase(req PurchaseRequest) (*purchaseCall, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if existing, ok := s.transactions[req.ReferenceID]; ok {
+		if existing.request != req {
+			return &purchaseCall{err: ErrReferenceConflict}, false
+		}
+		return existing, false
+	}
+	call := &purchaseCall{request: req, done: make(chan struct{})}
+	s.transactions[req.ReferenceID] = call
+	return call, true
+}
+
+func (s *Service) executePurchase(ctx context.Context, req PurchaseRequest) (PurchaseExecution, error) {
+	name, err := s.Router.Select(ctx, Request{ProductCode: req.ProductCode, Amount: req.Amount})
+	if err != nil { return PurchaseExecution{}, err }
 	p, err := s.Router.Registry.Get(name)
-	if err != nil {
-		return PurchaseExecution{}, fmt.Errorf("get selected provider: %w", err)
-	}
-
+	if err != nil { return PurchaseExecution{}, fmt.Errorf("get selected provider: %w", err) }
 	result, err := p.Purchase(ctx, provider.PurchaseRequest{
-		ProductCode: req.ProductCode,
-		CustomerNo:  req.CustomerNo,
-		ReferenceID: req.ReferenceID,
-		Testing:     req.Testing,
+		ProductCode: req.ProductCode, CustomerNo: req.CustomerNo, ReferenceID: req.ReferenceID, Testing: req.Testing,
 	})
-	if err != nil {
-		return PurchaseExecution{}, fmt.Errorf("purchase with provider %q: %w", name, err)
-	}
-
-	return PurchaseExecution{
-		ProviderName: name,
-		Result:       result,
-	}, nil
+	if err != nil { return PurchaseExecution{}, fmt.Errorf("purchase with provider %q: %w", name, err) }
+	return PurchaseExecution{ProviderName: name, Result: result}, nil
 }
 
 func validatePurchaseRequest(req PurchaseRequest) error {
