@@ -277,3 +277,31 @@ The initial baseline interface used `GetStatus(ctx, ref string)` and `HandleWebh
 - The local runtime available for verification was Go 1.23.2; the repository module declares Go 1.25.1, so the exact CI toolchain still needs to provide the declared version.
 - No DigiFlazz live request was executed from this environment.
 - Latest repository CI status exposed through the GitHub integration currently has no reported status/run for the latest commit; it is therefore recorded as **not yet reported**, not as green.
+
+
+### 13. Milestone Update — Provider Registry
+
+**Date:** 2026-09-24
+
+Completed:
+
+- added a provider-neutral `Registry`
+- normalized provider names case-insensitively and with surrounding whitespace trimmed
+- rejected duplicate provider registration
+- rejected empty provider names and nil implementations
+- exposed provider lookup through `Get`
+- exposed registered names through `Names`
+- added deterministic registry unit tests
+
+The registry stores `PPOBProvider` implementations only. It does not know DigiFlazz-specific types or protocols, preserving the provider boundary.
+
+### Verification
+
+The registry tests are designed for `go test ./...`. CI status for the latest branch commit is not yet reported by the available GitHub status integration.
+
+### Next milestone
+
+1. add deterministic mock provider;
+2. add DigiFlazz environment-driven integration test harness;
+3. validate the CS test tuple against the real DigiFlazz API;
+4. then implement provider balance synchronization and provider health.
