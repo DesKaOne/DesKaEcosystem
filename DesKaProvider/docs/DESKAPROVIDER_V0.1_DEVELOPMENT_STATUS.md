@@ -2122,3 +2122,40 @@ Completed:
 2. wire the sync worker into the application service lifecycle with explicit startup/shutdown ownership;
 3. add recovery/restart behavior tests against durable operational snapshots;
 4. then implement production-oriented provider lifecycle and health state separation before provider routing.
+
+
+### 60. Milestone Update — CI Failure Fix: Deterministic Operational Persistence Test
+
+**Date:** 2026-09-25
+
+Completed:
+
+- investigated the latest CI failure before adding any new feature;
+- CI run #344 failed in both test and race because the new persistence regression test constructed the JSON store through NewJSONFileStore using a path whose parent was intentionally a regular file;
+- the constructor correctly rejected that invalid path before the test reached Put, so the test was testing constructor validation rather than the intended invariant;
+- changed the regression test to construct the already-initialized store directly inside the same package, then force persistence failure during Put;
+- production persistence logic was not weakened or bypassed.
+
+### Verification
+
+- CI run #344: RED;
+- root cause isolated from GitHub Actions logs;
+- fix committed at 992f45eb4e055aa9ae9b11240ae71e6f130dc9ca;
+- fresh CI for this fix is now required and must be green before any next feature milestone.
+
+### Safety Boundary
+
+- no provider adapter, routing, financial, treasury, or webhook behavior was changed;
+- the production invariant remains: persistence must succeed before the new operational snapshot becomes visible in memory;
+- the test now verifies that invariant at the Put boundary.
+
+### Known Limitations
+
+- current HEAD CI is pending after the fix;
+- no lifecycle or routing feature will be advanced until test, vet, and race are green.
+
+### Next Milestone
+
+1. verify CI for 992f45e;
+2. if green, continue the planned operational lifecycle integration and recovery tests;
+3. only after that proceed to provider lifecycle/health separation and routing.
