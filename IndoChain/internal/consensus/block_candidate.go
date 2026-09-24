@@ -73,13 +73,13 @@ func BuildBlockCandidate(input BlockCandidateInput, canonicalState *state.State)
 	candidate := block.Block{
 		Header: block.Header{
 			Version:           input.Context.State.ProtocolVersion,
-			ChainID:            input.Context.State.ChainID,
+			ChainID:           input.Context.State.ChainID,
 			Height:            input.Context.State.Height + 1,
 			Timestamp:         input.Timestamp,
 			PreviousHash:      input.Context.PreviousHash,
 			TransactionsRoot:  txsRoot,
 			StateRoot:         working.Root(),
-			Proposer:           append([]byte(nil), input.Context.Proposer...),
+			Proposer:          append([]byte(nil), input.Context.Proposer...),
 			ConsensusEvidence: append([]byte(nil), input.ConsensusEvidence...),
 		},
 		Transactions: cloneBlockTransactions(input.Transactions),
