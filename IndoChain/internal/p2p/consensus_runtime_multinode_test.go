@@ -174,3 +174,162 @@ func TestInMemoryTransportConsensusRuntimeIntegration(t *testing.T) {
 		t.Fatalf("certificate votes = %d, want 2", len(certificate.Votes))
 	}
 }
+
+
+func TestInMemoryTransportRuntimeFinalizedBlockHandoff(t *testing.T) {
+	store := storage.NewMemoryStore()
+	n, err := node.NewDevnet(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	state, err := consensus.NewRoundState(devnet.ProtocolVersion, devnet.ChainID, 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	validatorID := []byte("validator-a")
+	validators, err := consensus.NewValidatorSet([][]byte{validatorID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	power, err := consensus.NewVotingPowerSet([]consensus.ValidatorVotingPower{{ValidatorID: validatorID, Power: 1}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rules := consensus.ValidationRules{
+		ProtocolVersion: state.ProtocolVersion,
+		ChainID: state.ChainID,
+		RequireSender: true,
+	}
+	runtimeA, err := consensus.NewValidatorRuntime(consensus.RuntimeConfig{
+		Rules: rules, State: state, Validators: validators, VotingPower: power,
+		Threshold: consensus.QuorumThreshold{Numerator: 1, Denominator: 1},
+		Proposer: consensus.RoundRobinProposer{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeB, err := consensus.NewValidatorRuntime(consensus.RuntimeConfig{
+		Rules: rules, State: state, Validators: validators, VotingPower: power,
+		Threshold: consensus.QuorumThreshold{Numerator: 1, Denominator: 1},
+		Proposer: consensus.RoundRobinProposer{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := consensus.BlockProductionContext{
+		State: state,
+		PreviousHash: n.HeadHash,
+		Proposer: append([]byte(nil), validatorID...),
+	}
+	txsRoot, err := block.TransactionsRoot([]any{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate := block.Block{
+		Header: block.Header{
+			Version: devnet.ProtocolVersion,
+			ChainID: devnet.ChainID,
+			Height: 1,
+			Timestamp: n.Head.Header.Timestamp + 1,
+			PreviousHash: n.HeadHash,
+			TransactionsRoot: txsRoot,
+			StateRoot: n.State.Root(),
+			Proposer: append([]byte(nil), validatorID...),
+		},
+		Transactions: []any{},
+	}
+	proposal, err := consensus.NewBlockProposal(ctx, candidate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proposalMsg := consensus.Message{
+		ProtocolVersion: state.ProtocolVersion,
+		ChainID: state.ChainID,
+		Epoch: state.Epoch,
+		Height: state.Height,
+		Round: state.Round,
+		Sender: append([]byte(nil), validatorID...),
+		Type: consensus.MessageTypeProposal,
+		Payload: proposal.MessagePayload(),
+	}
+
+	nodeA := NewInMemoryTransport(PeerID("node-a"), 4096)
+	nodeB := NewInMemoryTransport(PeerID("node-b"), 4096)
+	if err := nodeA.Connect(PeerID("node-b"), nodeB); err != nil {
+		t.Fatal(err)
+	}
+	if err := nodeB.Connect(PeerID("node-a"), nodeA); err != nil {
+		t.Fatal(err)
+	}
+	if err := nodeA.SendConsensus(PeerID("node-b"), proposalMsg, rules); err != nil {
+		t.Fatal(err)
+	}
+	from, received, err := nodeB.ReceiveConsensus(rules)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if from != PeerID("node-a") {
+		t.Fatalf("proposal sender = %q, want node-a", from)
+	}
+	if err := runtimeB.AcceptProposal(received); err != nil {
+		t.Fatal(err)
+	}
+
+	vote := consensus.Message{
+		ProtocolVersion: state.ProtocolVersion,
+		ChainID: state.ChainID,
+		Epoch: state.Epoch,
+		Height: state.Height,
+		Round: state.Round,
+		Sender: append([]byte(nil), validatorID...),
+		Type: consensus.MessageTypeVote,
+		Payload: proposal.MessagePayload(),
+	}
+	if err := runtimeB.AddVote(vote); err != nil {
+		t.Fatal(err)
+	}
+	if err := nodeB.SendConsensus(PeerID("node-a"), vote, rules); err != nil {
+		t.Fatal(err)
+	}
+	from, received, err = nodeA.ReceiveConsensus(rules)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if from != PeerID("node-b") {
+		t.Fatalf("vote sender = %q, want node-b", from)
+	}
+	if err := runtimeA.AcceptProposal(proposalMsg); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtimeA.AddVote(received); err != nil {
+		t.Fatal(err)
+	}
+	certificate, err := runtimeA.FinalizeProposal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtimeA.State().Phase != consensus.PhaseFinalized {
+		t.Fatal("runtime A did not reach finalized phase")
+	}
+
+	validatorResolver := validatorAuthorityResolver{publicKey: []byte("validator-public-key")}
+	senderResolver := senderAuthorityResolver{}
+	if err := n.CommitFinalizedBlock(ctx, candidate, certificate, validators, power, validatorResolver, senderResolver); err != nil {
+		t.Fatal(err)
+	}
+	if n.Head.Header.Height != 1 {
+		t.Fatalf("node head height = %d, want 1", n.Head.Header.Height)
+	}
+	if n.HeadHash == (types.Hash{}) {
+		t.Fatal("node head hash is zero after finalized handoff")
+	}
+	stored, storedHash, err := store.Head()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Header.Height != 1 || storedHash != n.HeadHash {
+		t.Fatal("canonical store head does not match finalized handoff")
+	}
+}
