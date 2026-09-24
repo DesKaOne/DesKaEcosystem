@@ -48,26 +48,26 @@ func New(cfg config.DigiFlazzConfig, httpClient *http.Client) (*Client, error) {
 }
 
 type transactionRequest struct {
-	Username     string \`json:"username"\`
-	BuyerSKUCode string \`json:"buyer_sku_code"\`
-	CustomerNo   string \`json:"customer_no"\`
-	ReferenceID  string \`json:"ref_id"\`
-	Sign         string \`json:"sign"\`
-	Testing      bool   \`json:"testing,omitempty"\`
+	Username     string `json:"username"`
+	BuyerSKUCode string `json:"buyer_sku_code"`
+	CustomerNo   string `json:"customer_no"`
+	ReferenceID  string `json:"ref_id"`
+	Sign         string `json:"sign"`
+	Testing      bool   `json:"testing,omitempty"`
 }
 
 type transactionResponse struct {
 	Data struct {
-		ReferenceID    string  \`json:"ref_id"\`
-		CustomerNo     string  \`json:"customer_no"\`
-		BuyerSKUCode   string  \`json:"buyer_sku_code"\`
-		Message        string  \`json:"message"\`
-		Status         string  \`json:"status"\`
-		RC             string  \`json:"rc"\`
-		SN             string  \`json:"sn"\`
-		BuyerLastSaldo float64 \`json:"buyer_last_saldo"\`
-		Price          int64   \`json:"price"\`
-	} \`json:"data"\`
+		ReferenceID    string  `json:"ref_id"`
+		CustomerNo     string  `json:"customer_no"`
+		BuyerSKUCode   string  `json:"buyer_sku_code"`
+		Message        string  `json:"message"`
+		Status         string  `json:"status"`
+		RC             string  `json:"rc"`
+		SN             string  `json:"sn"`
+		BuyerLastSaldo float64 `json:"buyer_last_saldo"`
+		Price          int64   `json:"price"`
+	} `json:"data"`
 }
 
 func (c *Client) GetProducts(context.Context, Provider.ProductRequest) ([]Provider.Product, error) {
@@ -125,15 +125,15 @@ func (c *Client) HandleWebhook(_ context.Context, req Provider.WebhookRequest) (
 
 	var payload struct {
 		Data struct {
-			ReferenceID  string \`json:"ref_id"\`
-			CustomerNo   string \`json:"customer_no"\`
-			BuyerSKUCode string \`json:"buyer_sku_code"\`
-			Message      string \`json:"message"\`
-			Status       string \`json:"status"\`
-			RC           string \`json:"rc"\`
-			SN           string \`json:"sn"\`
-			Price        int64  \`json:"price"\`
-		} \`json:"data"\`
+			ReferenceID  string `json:"ref_id"`
+			CustomerNo   string `json:"customer_no"`
+			BuyerSKUCode string `json:"buyer_sku_code"`
+			Message      string `json:"message"`
+			Status       string `json:"status"`
+			RC           string `json:"rc"`
+			SN           string `json:"sn"`
+			Price        int64  `json:"price"`
+		} `json:"data"`
 	}
 	if err := json.Unmarshal(req.Body, &payload); err != nil {
 		return Provider.WebhookEvent{}, fmt.Errorf("decode DigiFlazz webhook: %w", err)
