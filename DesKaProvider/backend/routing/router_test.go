@@ -165,3 +165,39 @@ func TestRouterUsesCatalogSnapshotWithoutProviderProductLookup(t *testing.T) {
 		t.Fatalf("expected catalog-backed mock selection, got %q", got)
 	}
 }
+
+func TestRouterRejectsStaleCatalogSnapshot(t *testing.T) {
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", mock.New(mock.Config{Products: []provider.Product{{Code: "xld10", Name: "Test"}}})); err != nil {
+		t.Fatal(err)
+	}
+	store := operational.NewMemoryStore()
+	if err := store.Put(operational.Snapshot{ProviderName: "mock", Balance: 100000, Health: operational.HealthHealthy}); err != nil {
+		t.Fatal(err)
+	}
+	catalogStore := catalog.NewMemoryStore()
+	if err := catalogStore.Put(catalog.Snapshot{
+		ProviderName: "mock",
+		Products: []provider.Product{{Code: "xld10", Name: "Test"}},
+		SyncedAt: time.Now().Add(-2 * time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	router, err := NewWithCatalogMaxAge(registry, store, nil, catalogStore, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = router.Select(context.Background(), Request{ProductCode: "xld10", Amount: 50000})
+	if !errors.Is(err, ErrNoProviderAvailable) {
+		t.Fatalf("expected stale catalog to remove provider from candidates, got %v", err)
+	}
+}
+
+func TestNewWithCatalogMaxAgeRejectsInvalidMaxAge(t *testing.T) {
+	registry := provider.NewRegistry()
+	store := operational.NewMemoryStore()
+	catalogStore := catalog.NewMemoryStore()
+	if _, err := NewWithCatalogMaxAge(registry, store, nil, catalogStore, 0); err == nil {
+		t.Fatal("expected invalid catalog max age error")
+	}
+}
