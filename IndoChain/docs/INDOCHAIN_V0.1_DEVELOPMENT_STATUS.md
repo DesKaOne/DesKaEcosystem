@@ -1102,3 +1102,10 @@ This milestone does not define proposer selection, voting power, quorum, vote ag
 **Next execution-authority validation boundary:** Added `TestResolveProposerAuthorityRejectsInvalidAuthorization` in `IndoChain/internal/consensus/execution_authority_test.go`. The test covers missing block hash, missing proposer, and missing certificate payload, requiring `consensus.ErrInvalidExecutionAuthority` before resolver lookup. Implementation commit: `d8c2f4396d22606acd36666f2e5d7eb272faa0f0`.
 
 **Next CI gate:** verify `d8c2f4396d22606acd36666f2e5d7eb272faa0f0` through the full IndoChain test/tidy/vet workflow before proceeding to the next execution-authority boundary.
+
+
+**Verified execution-authority validation CI:** IndoChain CI #1012 (workflow run `35986828442`) completed successfully for `d8c2f4396d22606acd36666f2e5d7eb272faa0f0`; the full test/tidy/vet gate passed.
+
+**Next execution-authority precedence boundary:** Added `TestResolveProposerAuthorityValidatesBeforeResolverLookup`. The test supplies invalid finalized authorization together with a resolver that would return an explicit error, requiring `consensus.ErrInvalidExecutionAuthority` first. This locks the validation-before-external-resolution ordering without invoking the resolver for malformed authorization. Implementation commit: `bd691c3b96d2ac06df4c3f5667b67a3657aa94a5`.
+
+**Next CI gate:** verify `bd691c3b96d2ac06df4c3f5667b67a3657aa94a5` through the full IndoChain test/tidy/vet workflow before proceeding to the next execution-authority boundary.
