@@ -21,16 +21,18 @@ import (
 var ErrInvalidWebhookSignature = errors.New("invalid DigiFlazz webhook signature")
 
 const (
-	defaultEndpoint        = "https://api.digiflazz.com/v1/transaction"
-	defaultBalanceEndpoint = "https://api.digiflazz.com/v1/cek-saldo"
+	defaultEndpoint          = "https://api.digiflazz.com/v1/transaction"
+	defaultBalanceEndpoint   = "https://api.digiflazz.com/v1/cek-saldo"
+	defaultPriceListEndpoint = "https://api.digiflazz.com/v1/price-list"
 )
 
 type Client struct {
 	username       string
 	apiKey         string
 	endpoint       string
-	balanceEndpoint string
-	httpClient     *http.Client
+	balanceEndpoint   string
+	priceListEndpoint string
+	httpClient        *http.Client
 }
 
 func New(cfg config.DigiFlazzConfig, httpClient *http.Client) (*Client, error) {
@@ -39,8 +41,9 @@ func New(cfg config.DigiFlazzConfig, httpClient *http.Client) (*Client, error) {
 	}
 	if cfg.Endpoint == "" { cfg.Endpoint = defaultEndpoint }
 	if cfg.BalanceEndpoint == "" { cfg.BalanceEndpoint = defaultBalanceEndpoint }
+	if cfg.PriceListEndpoint == "" { cfg.PriceListEndpoint = defaultPriceListEndpoint }
 	if httpClient == nil { httpClient = http.DefaultClient }
-	return &Client{username: cfg.Username, apiKey: cfg.APIKey, endpoint: cfg.Endpoint, balanceEndpoint: cfg.BalanceEndpoint, httpClient: httpClient}, nil
+	return &Client{username: cfg.Username, apiKey: cfg.APIKey, endpoint: cfg.Endpoint, balanceEndpoint: cfg.BalanceEndpoint, priceListEndpoint: cfg.PriceListEndpoint, httpClient: httpClient}, nil
 }
 
 type transactionRequest struct {
@@ -95,7 +98,44 @@ func (c *Client) GetBalance(ctx context.Context) (int64, error) {
 	return int64(decoded.Data.Deposit), nil
 }
 
-func (c *Client) GetProducts(context.Context, provider.ProductRequest) ([]provider.Product, error) { return nil, provider.ErrUnsupportedOperation }
+type priceListRequest struct {
+	Cmd string `json:"cmd"`
+	Username string `json:"username"`
+	Sign string `json:"sign"`
+	Category string `json:"category,omitempty"`
+}
+
+type priceListResponse struct {
+	Data []struct {
+		ProductName string `json:"product_name"`
+		BuyerSKUCode string `json:"buyer_sku_code"`
+		BuyerProductStatus bool `json:"buyer_product_status"`
+	} `json:"data"`
+}
+
+func (c *Client) GetProducts(ctx context.Context, req provider.ProductRequest) ([]provider.Product, error) {
+	body, err := json.Marshal(priceListRequest{Cmd: "prepaid", Username: c.username, Sign: c.priceListSignature(), Category: req.Category})
+	if err != nil { return nil, fmt.Errorf("encode DigiFlazz price list request: %w", err) }
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.priceListEndpoint, strings.NewReader(string(body)))
+	if err != nil { return nil, fmt.Errorf("create DigiFlazz price list request: %w", err) }
+	httpReq.Header.Set("Content-Type", "application/json")
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil { return nil, fmt.Errorf("DigiFlazz price list request failed: %w", err) }
+	defer resp.Body.Close()
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil { return nil, fmt.Errorf("read DigiFlazz price list response: %w", err) }
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("DigiFlazz price list HTTP status %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+	}
+	var decoded priceListResponse
+	if err := json.Unmarshal(respBody, &decoded); err != nil { return nil, fmt.Errorf("decode DigiFlazz price list response: %w", err) }
+	products := make([]provider.Product, 0, len(decoded.Data))
+	for _, item := range decoded.Data {
+		if req.Active != nil && item.BuyerProductStatus != *req.Active { continue }
+		products = append(products, provider.Product{Code: item.BuyerSKUCode, Name: item.ProductName})
+	}
+	return products, nil
+}
 func (c *Client) Inquiry(context.Context, provider.InquiryRequest) (provider.InquiryResult, error) { return provider.InquiryResult{}, provider.ErrUnsupportedOperation }
 
 func (c *Client) Purchase(ctx context.Context, req provider.PurchaseRequest) (provider.PurchaseResult, error) {
@@ -139,6 +179,7 @@ func (c *Client) transaction(ctx context.Context, req transactionRequest) (trans
 
 func (c *Client) signature(refID string) string { sum := md5.Sum([]byte(c.username+c.apiKey+refID)); return hex.EncodeToString(sum[:]) }
 func (c *Client) balanceSignature() string { sum := md5.Sum([]byte(c.username+c.apiKey+"depo")); return hex.EncodeToString(sum[:]) }
+func (c *Client) priceListSignature() string { sum := md5.Sum([]byte(c.username+c.apiKey+"pricelist")); return hex.EncodeToString(sum[:]) }
 func validateTransactionRequest(productCode, customerNo, referenceID string) error { if productCode=="" || customerNo=="" || referenceID=="" { return errors.New("product code, customer number, and reference ID are required") }; return nil }
 func mapPurchaseResult(data transactionResponse) provider.PurchaseResult { return provider.PurchaseResult{ReferenceID:data.Data.ReferenceID, CustomerNo:data.Data.CustomerNo, ProductCode:data.Data.BuyerSKUCode, Status:mapStatus(data.Data.Status), ProviderCode:data.Data.RC, Message:data.Data.Message, SerialNumber:data.Data.SN, Price:data.Data.Price} }
 func mapPurchaseStatus(data transactionResponse) provider.PurchaseStatus { return provider.PurchaseStatus{ReferenceID:data.Data.ReferenceID, CustomerNo:data.Data.CustomerNo, ProductCode:data.Data.BuyerSKUCode, Status:mapStatus(data.Data.Status), ProviderCode:data.Data.RC, Message:data.Data.Message, SerialNumber:data.Data.SN, Price:data.Data.Price} }
