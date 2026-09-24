@@ -861,8 +861,8 @@ When there is a conflict, the implementation and dedicated protocol specificatio
 **Latest replay/re-commit guard fix:** `7d471998b021b9caa91b5776be37d3aec0fe3e6f`  
 **Latest multi-node finalized-commit convergence test:** `c2d1de1bb23aff4017843a6cc58c05208b7f5c29`  
 **Latest explicit node-to-node transport implementation:** `624a3ebf0a514dfd80afc6494c46f89f9bc0f497`  
-**Latest explicit node-to-node transport tests:** `a685f8f37e82421f811e4a1eeab93398c3440b41`  
-**Latest transport CI status:** no workflow run is currently associated with `a685f8f37e82421f811e4a1eeab93398c3440b41`; this is not yet a green CI gate.  
+**Latest explicit node-to-node transport tests:** `fc61f67ad93fcaf6d27155832e106ac12838b938`  
+**Latest transport CI status:** previous CI #784 failed because transport tests referenced undefined `MessageTypeVote`; fixed by using the existing `MessageTypeTransaction`. CI for `fc61f67ad93fcaf6d27155832e106ac12838b938` is pending and is not yet a green CI gate.  
 **Next major boundary:** Bind consensus message encoding/decoding to the explicit node-to-node transport boundary  
 
 ### 4.12 Consensus Validator Membership Boundary
