@@ -633,7 +633,7 @@ func TestCommitFinalizedBlockRejectsTransactionExecutionFailureWithoutMutation(t
 	vote := consensus.Message{ProtocolVersion: devnet.ProtocolVersion, ChainID: devnet.ChainID, Epoch: 1, Height: 0, Round: 0, Sender: validatorID, Type: consensus.MessageTypeVote, Payload: payload[:]}
 	certificate, err := consensus.NewFinalityCertificate(ctx.State, validators, power, consensus.QuorumThreshold{Numerator: 1, Denominator: 1}, payload[:], []consensus.Message{vote}); if err != nil { t.Fatal(err) }
 	beforeHead, beforeHash, beforeRoot := n.Head, n.HeadHash, n.State.Root()
-	if err := n.CommitFinalizedBlock(ctx, candidate, certificate, validatorResolver, power, validatorResolver, senderResolver); err == nil { t.Fatal("expected transaction execution failure") }
+	if err := n.CommitFinalizedBlock(ctx, candidate, certificate, validators, power, validatorResolver, senderResolver); err == nil { t.Fatal("expected transaction execution failure") }
 	if !reflect.DeepEqual(n.Head, beforeHead) || n.HeadHash != beforeHash || n.State.Root() != beforeRoot { t.Fatal("node mutated after transaction execution failure") }
 }
 
