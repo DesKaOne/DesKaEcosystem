@@ -473,3 +473,31 @@ The previous CI fix is verified green in GitHub Actions run #37. The new persist
 2. wire the operational sync worker into the service lifecycle;
 3. add lifecycle/shutdown and restart behavior tests;
 4. then continue toward provider routing using persisted balance and health.
+
+
+### 20. Milestone Update — CI Failure: Malformed JSON Store Test Import
+
+**Date:** 2026-09-24
+
+CI run DesKaProvider CI #44 failed in the test job during `go test ./...`.
+
+Root cause:
+
+- `DesKaProvider/backend/Provider/operational/json_store_test.go` contained literal escaped newline/tab sequences in the import block;
+- Go reported `illegal character U+005C '\\'` at line 4 before the operational package tests could compile;
+- the integration job still completed successfully.
+
+Fix applied:
+
+- repaired the import block so `os`, `path/filepath`, `testing`, and `time` are valid Go imports;
+- no production persistence behavior was changed.
+
+### Verification
+
+CI run #44 is confirmed red for the malformed test source. The fix is committed on `dev/deskaprovider-v0.1` at commit `4a5e97bdeb542f24232501f6c3da730773457707`. A new CI run must be verified before proceeding.
+
+### Next milestone
+
+1. verify CI for commit `4a5e97bdeb542f24232501f6c3da730773457707`;
+2. if green, wire the operational sync worker into the service lifecycle;
+3. add lifecycle/shutdown and restart behavior tests.
