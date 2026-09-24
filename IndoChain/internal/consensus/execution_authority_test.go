@@ -29,6 +29,20 @@ func (r nonCloningAuthorityResolver) PublicKeyForValidator(id []byte) ([]byte, e
 	return r.publicKey, nil
 }
 
+
+type mutatingAuthorityResolver struct {
+	validator []byte
+	publicKey []byte
+}
+
+func (r mutatingAuthorityResolver) PublicKeyForValidator(id []byte) ([]byte, error) {
+	if string(id) != string(r.validator) {
+		return nil, ErrExecutionAuthorityMissing
+	}
+	id[0] = 'X'
+	return r.publicKey, nil
+}
+
 func TestResolveProposerAuthority(t *testing.T) {
 	hash := types.Hash{1, 2, 3}
 	authorization := FinalizedBlockAuthorization{
@@ -141,5 +155,25 @@ func TestResolveProposerAuthorityClonesResolverPublicKey(t *testing.T) {
 	resolved[0] = 'X'
 	if string(source) != "public-key" {
 		t.Fatalf("resolver public key mutated through returned slice: %q", source)
+	}
+}
+
+func TestResolveProposerAuthorityClonesProposerForResolver(t *testing.T) {
+	hash := types.Hash{1}
+	proposer := []byte("validator-a")
+	authorization := FinalizedBlockAuthorization{
+		BlockHash: hash,
+		Proposer:  proposer,
+		Certificate: FinalityCertificate{Payload: hash[:]},
+	}
+	_, err := ResolveProposerAuthority(authorization, mutatingAuthorityResolver{
+		validator: []byte("validator-a"),
+		publicKey: []byte("public-key"),
+	})
+	if err != nil {
+		t.Fatalf("ResolveProposerAuthority() error = %v", err)
+	}
+	if string(proposer) != "validator-a" {
+		t.Fatalf("resolver mutated caller proposer through shared slice: %q", proposer)
 	}
 }
