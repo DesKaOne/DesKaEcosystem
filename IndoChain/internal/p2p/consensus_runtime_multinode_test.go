@@ -212,7 +212,7 @@ func TestInMemoryTransportRuntimeFinalizedBlockHandoff(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	power, err = consensus.NewVotingPowerSet([]consensus.ValidatorVotingPower{{ValidatorID: validatorID, Power: 1}})
+	power, err := consensus.NewVotingPowerSet([]consensus.ValidatorVotingPower{{ValidatorID: validatorID, Power: 1}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -762,7 +762,7 @@ func TestConsensusRuntimeNegativeFinalityQuorumNotReached(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	power, err := consensus.NewVotingPowerSet([]consensus.ValidatorVotingPower{
+	power, err = consensus.NewVotingPowerSet([]consensus.ValidatorVotingPower{
 		{ValidatorID: []byte("validator-a"), Power: 1},
 		{ValidatorID: []byte("validator-b"), Power: 1},
 	})
