@@ -342,6 +342,16 @@ Tests cover repeatable ordering, strict transaction-hash ordering, and the non-m
 
 This milestone intentionally does not implement block production, state execution, gas/fee accounting, persistence, P2P mempool propagation, or consensus finality.
 
+### 4.22 Finalized Runtime → Node Replay/Re-commit Guard
+
+The finalized consensus-to-node handoff now has an explicit append-only replay guard in `IndoChain/internal/node/node.go`.
+
+`CommitFinalizedBlock` rejects a finalized candidate whose height is already at or below the canonical node head before validator-authority resolution or transaction execution. This makes the node boundary explicitly reject re-commit of an already committed finalized block rather than relying only on downstream consensus/block validation.
+
+Regression coverage was added for committing a finalized block successfully and then replaying the same finalized candidate/certificate. The second commit is rejected with `ErrFinalizedBlockAlreadyCommitted` and canonical head/state remain unchanged.
+
+This remains a local execution/commit safety boundary. It does not define cross-node replay protection, persistent finality indexing, validator-set lifecycle, or production BFT replay/evidence semantics.
+
 ### 4.21 Consensus ↔ Block Candidate Construction Boundary
 
 A deterministic block-candidate construction primitive is now implemented in `IndoChain/internal/consensus/block_candidate.go`.
@@ -805,7 +815,7 @@ When there is a conflict, the implementation and dedicated protocol specificatio
 **Current branch CI after vote aggregation:** previous CI run `584` failed in `TestVoteAggregatorCalculatesPayloadPowerAndQuorum`; the test assertion has been corrected in `705a2cbb5c31c78fa43e5c8362978e4094b469de`.  
 **Current branch CI after finality boundary:** no pull-request workflow run was associated with HEAD `146c2225be2dcaf787bc3f724b50d70e214dfcfc`.  
 **Current branch CI after validator runtime:** IndoChain CI run `610` failed on the pull-request merge ref because `ValidatorRuntime` assigned a `VoteAggregator` value to a `*VoteAggregator` field. The runtime fix is `ac27d456622a6d8b3751832e7a73715b3c807adf`; the resulting branch HEAD later passed IndoChain CI run `622`.  
-**Latest CI failure before current fix:** IndoChain CI run `752` (merge ref `aa12c043bfabae2d2927e483349f87f09ef9c093`) failed during compilation in `IndoChain/internal/node/node_test.go:711` because `proposal.Payload` is a `types.Hash` array while the consensus vote message requires `[]byte`. The production runtime/node implementation was already compiling and the failure was isolated to the finalized runtime handoff test. The test now passes `proposal.Payload[:]` via commit `709215921ac191addeacf9a06549cf0dce244cb1`. CI for that fix is pending.  
+**Latest CI failure before finalized-runtime test fix:** IndoChain CI run `752` (merge ref `aa12c043bfabae2d2927e483349f87f09ef9c093`) failed during compilation in `IndoChain/internal/node/node_test.go:711` because `proposal.Payload` is a `types.Hash` array while the consensus vote message requires `[]byte`. The production runtime/node implementation was already compiling and the failure was isolated to the finalized runtime handoff test. The test now passes `proposal.Payload[:]` via commit `709215921ac191addeacf9a06549cf0dce244cb1`.\n**Verified CI after finalized-runtime test fix:** IndoChain CI run `754` completed successfully on commit `709215921ac191addeacf9a06549cf0dce244cb1` (test, go vet, and tidy checks passed).\n**Current CI after replay/re-commit guard:** no pull-request workflow run is associated yet with commit `9a2c88504b640cfe905f0d63beea468d433f5581`; verification is pending.  
 
 **Branch:** `dev/indochain-v0.1`  
 **Stage:** Core Protocol Implementation / Pre-Consensus Integration  
