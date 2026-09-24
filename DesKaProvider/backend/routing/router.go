@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
 	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/catalog"
@@ -15,7 +16,10 @@ import (
 var (
 	ErrNoProviderAvailable = errors.New("no provider available")
 	ErrInvalidRouteRequest = errors.New("invalid provider route request")
+	ErrCatalogStale = errors.New("provider catalog is stale")
 )
+
+const defaultCatalogMaxAge = 30 * time.Minute
 
 type Request struct {
 	ProductCode string
@@ -23,10 +27,11 @@ type Request struct {
 }
 
 type Router struct {
-	Registry   *provider.Registry
-	Store      operational.Store
-	Priorities map[string]int
-	Catalog    catalog.Store
+	Registry       *provider.Registry
+	Store          operational.Store
+	Priorities     map[string]int
+	Catalog        catalog.Store
+	CatalogMaxAge  time.Duration
 }
 
 type candidate struct {
@@ -35,14 +40,21 @@ type candidate struct {
 }
 
 func New(registry *provider.Registry, store operational.Store, priorities map[string]int) (*Router, error) {
-	return newRouter(registry, store, priorities, nil)
+	return newRouter(registry, store, priorities, nil, 0)
 }
 
 func NewWithCatalog(registry *provider.Registry, store operational.Store, priorities map[string]int, catalogStore catalog.Store) (*Router, error) {
-	return newRouter(registry, store, priorities, catalogStore)
+	return newRouter(registry, store, priorities, catalogStore, defaultCatalogMaxAge)
 }
 
-func newRouter(registry *provider.Registry, store operational.Store, priorities map[string]int, catalogStore catalog.Store) (*Router, error) {
+func NewWithCatalogMaxAge(registry *provider.Registry, store operational.Store, priorities map[string]int, catalogStore catalog.Store, maxAge time.Duration) (*Router, error) {
+	if maxAge <= 0 {
+		return nil, errors.New("catalog max age must be greater than zero")
+	}
+	return newRouter(registry, store, priorities, catalogStore, maxAge)
+}
+
+func newRouter(registry *provider.Registry, store operational.Store, priorities map[string]int, catalogStore catalog.Store, catalogMaxAge time.Duration) (*Router, error) {
 	if registry == nil {
 		return nil, errors.New("provider registry is required")
 	}
@@ -53,7 +65,7 @@ func newRouter(registry *provider.Registry, store operational.Store, priorities 
 	for name, priority := range priorities {
 		copied[normalize(name)] = priority
 	}
-	return &Router{Registry: registry, Store: store, Priorities: copied, Catalog: catalogStore}, nil
+	return &Router{Registry: registry, Store: store, Priorities: copied, Catalog: catalogStore, CatalogMaxAge: catalogMaxAge}, nil
 }
 
 func (r *Router) Select(ctx context.Context, req Request) (string, error) {
@@ -73,7 +85,13 @@ func (r *Router) Select(ctx context.Context, req Request) (string, error) {
 
 		if r.Catalog != nil {
 			snapshot, ok := r.Catalog.Get(name)
-			if !ok || !hasProduct(snapshot.Products, req.ProductCode) {
+			if !ok {
+				continue
+			}
+			if r.CatalogMaxAge > 0 && time.Since(snapshot.SyncedAt) > r.CatalogMaxAge {
+				continue
+			}
+			if !hasProduct(snapshot.Products, req.ProductCode) {
 				continue
 			}
 		} else {
