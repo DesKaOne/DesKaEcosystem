@@ -1,18 +1,17 @@
 package consensus
 
 import (
-	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
 
-	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/types"
+	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/crypto"
 )
 
 var (
-	ErrInvalidTimeoutMessage       = errors.New("invalid consensus timeout message")
-	ErrTimeoutAuthorityMissing     = errors.New("timeout authority resolver missing")
-	ErrTimeoutTargetRoundMismatch  = errors.New("timeout target round mismatch")
+	ErrInvalidTimeoutMessage      = errors.New("invalid consensus timeout message")
+	ErrTimeoutAuthorityMissing    = errors.New("timeout authority resolver missing")
+	ErrTimeoutTargetRoundMismatch = errors.New("timeout target round mismatch")
 )
 
 const timeoutPayloadSize = 8
@@ -30,7 +29,7 @@ func NewTimeoutMessage(
 	state RoundState,
 	validatorID []byte,
 	nextRound uint64,
-	signer interface{ Sign([]byte) ([]byte, error) },
+	signer crypto.Signer,
 ) (Message, error) {
 	if err := state.Validate(); err != nil {
 		return Message{}, err
@@ -55,12 +54,11 @@ func NewTimeoutMessage(
 		Type:            MessageTypeTimeout,
 		Payload:         encodeTimeoutTargetRound(nextRound),
 	}
-	signature, err := signer.Sign(msg.SigningBytes())
+	signed, err := msg.Sign(signer)
 	if err != nil {
 		return Message{}, err
 	}
-	msg.Signature = append([]byte(nil), signature...)
-	return msg, nil
+	return signed, nil
 }
 
 // TimeoutTargetRound decodes the canonical timeout payload.
@@ -83,8 +81,8 @@ func ValidateTimeoutMessage(
 	rules.RequireSender = true
 	rules.RequireSignature = true
 	if err := ValidateConsensusMessage(msg, MessageValidationContext{
-		Rules: rules,
-		State: state,
+		Rules:      rules,
+		State:      state,
 		Validators: validators,
 	}); err != nil {
 		return 0, err
@@ -162,8 +160,3 @@ func encodeTimeoutTargetRound(nextRound uint64) []byte {
 	binary.BigEndian.PutUint64(payload[:], nextRound)
 	return payload[:]
 }
-
-// Keep bytes imported in this boundary so defensive-copy expectations remain
-// explicit in code review when message identifiers are compared or extended.
-var _ = bytes.Equal
-var _ types.Height
