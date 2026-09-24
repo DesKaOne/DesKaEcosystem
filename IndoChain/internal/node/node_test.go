@@ -711,6 +711,77 @@ func TestCommitFinalizedBlockUsesExplicitAuthorityBoundaries(t *testing.T) {
 	if got, ok := n.State.Get(recipient); !ok || got.Balance != 20 { t.Fatalf("recipient = %+v, want balance 20", got) }
 }
 
+func TestCommitRuntimeFinalizedBlockConvergesAcrossTwoNodes(t *testing.T) {
+	n1, ctx, candidate, _, validatorResolver, senderResolver, recipient := finalizedBlockFixture(t, storage.NewMemoryStore())
+	n2, err := NewDevnet(storage.NewMemoryStore())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Both nodes start from the same canonical genesis/state and therefore must
+	// converge on the same finalized block/state when given the same evidence.
+	sender := types.Address([]byte("fixture-sender"))
+	n2.State.Set(sender, state.Account{Balance: 60, Nonce: 0})
+
+	validatorID := append([]byte(nil), candidate.Header.Proposer...)
+	validators, err := consensus.NewValidatorSet([][]byte{validatorID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	power, err := consensus.NewVotingPowerSet([]consensus.ValidatorVotingPower{{ValidatorID: validatorID, Power: 1}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	runtime, err := consensus.NewValidatorRuntime(consensus.RuntimeConfig{
+		Rules: consensus.ValidationRules{ProtocolVersion: ctx.State.ProtocolVersion, ChainID: ctx.State.ChainID, RequireSender: true},
+		State: ctx.State, Validators: validators, VotingPower: power,
+		Threshold: consensus.QuorumThreshold{Numerator: 1, Denominator: 1}, Proposer: consensus.RoundRobinProposer{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	proposal, err := consensus.NewBlockProposal(ctx, candidate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.AcceptBlockProposal(proposal); err != nil {
+		t.Fatal(err)
+	}
+	vote := consensus.Message{
+		ProtocolVersion: ctx.State.ProtocolVersion, ChainID: ctx.State.ChainID,
+		Epoch: ctx.State.Epoch, Height: ctx.State.Height, Round: ctx.State.Round,
+		Sender: validatorID, Type: consensus.MessageTypeVote, Payload: proposal.Payload[:],
+	}
+	if err := runtime.AddVote(vote); err != nil {
+		t.Fatal(err)
+	}
+	certificate, err := runtime.FinalizeProposal()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := n1.CommitFinalizedBlock(ctx, candidate, certificate, validators, power, validatorResolver, senderResolver); err != nil {
+		t.Fatal(err)
+	}
+	if err := n2.CommitFinalizedBlock(ctx, candidate, certificate, validators, power, validatorResolver, senderResolver); err != nil {
+		t.Fatal(err)
+	}
+
+	if n1.HeadHash != n2.HeadHash {
+		t.Fatalf("node head hashes diverged: %x != %x", n1.HeadHash, n2.HeadHash)
+	}
+	if n1.State.Root() != n2.State.Root() {
+		t.Fatalf("node state roots diverged: %x != %x", n1.State.Root(), n2.State.Root())
+	}
+	if got, ok := n1.State.Get(recipient); !ok || got.Balance != 20 {
+		t.Fatalf("node 1 recipient balance = %d, want 20", got.Balance)
+	}
+	if got, ok := n2.State.Get(recipient); !ok || got.Balance != 20 {
+		t.Fatalf("node 2 recipient balance = %d, want 20", got.Balance)
+	}
+}
+
 func TestCommitRuntimeFinalizedBlockCrossesExplicitHandoff(t *testing.T) {
 	n, ctx, candidate, _, validatorResolver, senderResolver, recipient := finalizedBlockFixture(t, storage.NewMemoryStore())
 	validatorID := append([]byte(nil), candidate.Header.Proposer...)
