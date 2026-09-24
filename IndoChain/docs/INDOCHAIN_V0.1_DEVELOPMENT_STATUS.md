@@ -1071,3 +1071,9 @@ This milestone does not define proposer selection, voting power, quorum, vote ag
 
 **Next CI gate:** verify `2143ac2a599a932c0124c0be34d2e92b57b6b7fc` through the full IndoChain test/tidy/vet workflow before proceeding to the next finalized-handoff negative boundary.
 
+
+**Verified unsorted-voting-power CI:** IndoChain CI #989 (workflow run `35985380325`) completed successfully for `2143ac2a599a932c0124c0be34d2e92b57b6b7fc`; the full test/tidy/vet gate passed. The finalized handoff now explicitly rejects a non-canonical validator-ID ordering in the supplied voting-power set with `consensus.ErrInvalidVotingPowerSet` while preserving the canonical genesis head/hash.
+
+**Next finalized-handoff voting-power integrity boundary:** Added `TestConsensusRuntimeNegativeEmptyValidatorIDVotingPower`. The test supplies a directly constructed voting-power set containing an empty validator identifier with positive power, requiring `consensus.ErrInvalidVotingPowerSet` and preserving the canonical genesis head/hash. Implementation commit: `977053ff849cde6ecce0337108c61ab3e2720465`.
+
+**Next CI gate:** verify `977053ff849cde6ecce0337108c61ab3e2720465` through the full IndoChain test/tidy/vet workflow before proceeding to the next finalized-handoff negative boundary.
