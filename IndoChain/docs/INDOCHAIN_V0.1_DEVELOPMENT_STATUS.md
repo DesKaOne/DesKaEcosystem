@@ -928,7 +928,11 @@ This remains development-only and does not introduce production BFT timing, roun
 **Latest negative-path matrix implementation:** `066f1bff2788fb5fc719a12082efa2bf7d311c3b`  
 **CI failure and root cause:** IndoChain CI run `836` / push run `835` failed for `066f1bff2788fb5fc719a12082efa2bf7d311c3b` during `go test ./...`. The negative-path test treated `BlockProposal.Payload` as a slice although it is the fixed-size `types.Hash`, and the shared fixture passed `n.Config.BlockRules(nil)` without unpacking its `(rules, error)` result. The same failing test also exposed that `ValidatorRuntime.AcceptBlockProposal` was not recomputing the candidate payload; it only compared the proposal payload to itself. These were corrected in `c5fe45b09df64d35e922e3e4de893db6aeb7a094` and `ff63ae7009370f572fac50d85f38eb53ce03c446`. CI run `840` then exposed a second fixture naming collision: the execution `block.ExecutionRules` variable and consensus `ValidationRules` used the same `rules` identifier. This was corrected in `22323dc2a5070fa47608425faef6933a97a12fa2`.
 
-**Next major boundary:** verify the negative-path matrix in CI, then extend the handoff boundary toward deterministic multi-height finalization while preserving canonical replay/context guards.
+**Latest multi-height finalized handoff test:** `34e3b4e5880228cd38872d8db7d0454c3f10fc6e`. The new deterministic integration commits two consecutive finalized blocks at heights 1 and 2 through the same transport → runtime → certificate → node-commit boundary, verifying that each block uses the previous canonical head hash and that the persistent store head follows the node head after each commit.
+
+**CI status for multi-height implementation:** workflow result was not yet published when this status entry was recorded; verify branch HEAD before treating this milestone as a CI gate.
+
+**Next major boundary:** verify multi-height finalization in CI, then add a deterministic negative-path check for cross-height context/replay rejection so a height-2 handoff cannot be committed against the height-0/height-1 canonical context.
 
 ### 4.38 Consensus Transport → Runtime → Finalized Node Handoff Boundary
 
