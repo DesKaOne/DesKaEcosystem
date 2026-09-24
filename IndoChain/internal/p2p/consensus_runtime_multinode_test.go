@@ -1513,7 +1513,7 @@ func TestConsensusRuntimeNegativeInvalidVotingPowerSet(t *testing.T) {
 	// Construct an invalid voting-power set directly so the finalized handoff
 	// exercises its validation boundary instead of failing during fixture setup.
 	invalidPower := consensus.VotingPowerSet{
-		Entries: []consensus.ValidatorVotingPower{{ValidatorID: []byte("validator-a"), Power: 0}},
+		Validators: []consensus.ValidatorVotingPower{{ValidatorID: []byte("validator-a"), Power: 0}},
 	}
 	if err := n.CommitFinalizedBlock(ctx, candidate, certificate, validators, invalidPower, validatorResolver, senderResolver); !errors.Is(err, consensus.ErrInvalidVotingPowerSet) {
 		t.Fatalf("invalid voting power set error = %v, want %v", err, consensus.ErrInvalidVotingPowerSet)
