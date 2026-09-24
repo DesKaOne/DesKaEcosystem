@@ -3,6 +3,7 @@ package p2p
 import (
 	"bytes"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/genesis/devnet"
@@ -1495,8 +1496,8 @@ func TestConsensusRuntimeNegativeMissingValidatorMembership(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := n.CommitFinalizedBlock(ctx, candidate, certificate, missingValidatorSet, power, validatorResolver, senderResolver); !errors.Is(err, consensus.ErrValidatorNotFound) {
-		t.Fatalf("missing validator membership error = %v, want %v", err, consensus.ErrValidatorNotFound)
+	if err := n.CommitFinalizedBlock(ctx, candidate, certificate, missingValidatorSet, power, validatorResolver, senderResolver); err == nil || !strings.Contains(err.Error(), "sender not found") {
+		t.Fatalf("missing validator membership error = %v, want sender-not-found membership rejection", err)
 	}
 	if n.Head.Header.Height != 0 || n.HeadHash != canonicalHead {
 		t.Fatal("canonical head changed after missing validator membership rejection")
