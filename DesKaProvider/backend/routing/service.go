@@ -12,7 +12,10 @@ import (
 
 var (
 	ErrInvalidPurchaseRequest = errors.New("invalid provider purchase request")
-	ErrReferenceConflict = errors.New("provider reference ID already used with different request")
+	ErrReferenceConflict      = errors.New("provider reference ID already used with different request")
+	ErrWebhookTransactionNotFound = errors.New("provider webhook reference ID not found")
+	ErrWebhookReferenceConflict   = errors.New("provider webhook conflicts with stored transaction")
+	ErrInvalidWebhookEvent         = errors.New("invalid provider webhook event")
 )
 
 type PurchaseRequest struct {
@@ -49,8 +52,12 @@ func NewService(router *Router) (*Service, error) {
 }
 
 func (s *Service) Purchase(ctx context.Context, req PurchaseRequest) (PurchaseExecution, error) {
-	if err := validatePurchaseRequest(req); err != nil { return PurchaseExecution{}, err }
-	if err := ctx.Err(); err != nil { return PurchaseExecution{}, err }
+	if err := validatePurchaseRequest(req); err != nil {
+		return PurchaseExecution{}, err
+	}
+	if err := ctx.Err(); err != nil {
+		return PurchaseExecution{}, err
+	}
 
 	call, owner := s.startPurchase(req)
 	if call == nil {
@@ -65,9 +72,70 @@ func (s *Service) Purchase(ctx context.Context, req PurchaseRequest) (PurchaseEx
 		}
 	}
 
-	call.result, call.err = s.executePurchase(ctx, req)
+	result, err := s.executePurchase(ctx, req)
+	s.mu.Lock()
+	call.result, call.err = result, err
+	s.mu.Unlock()
 	close(call.done)
-	return call.result, call.err
+	return result, err
+}
+
+func (s *Service) HandleWebhook(ctx context.Context, event provider.WebhookEvent) (PurchaseExecution, error) {
+	if err := validateWebhookEvent(event); err != nil {
+		return PurchaseExecution{}, err
+	}
+	if err := ctx.Err(); err != nil {
+		return PurchaseExecution{}, err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	call, ok := s.transactions[event.ReferenceID]
+	if !ok {
+		return PurchaseExecution{}, ErrWebhookTransactionNotFound
+	}
+	if call.request.ProductCode != event.ProductCode || call.request.CustomerNo != event.CustomerNo {
+		return PurchaseExecution{}, ErrWebhookReferenceConflict
+	}
+
+	select {
+	case <-call.done:
+	default:
+		return PurchaseExecution{}, ErrWebhookReferenceConflict
+	}
+
+	incoming := provider.PurchaseResult{
+		ReferenceID: event.ReferenceID,
+		CustomerNo: event.CustomerNo,
+		ProductCode: event.ProductCode,
+		Status: event.Status,
+		ProviderCode: event.ProviderCode,
+		Message: event.Message,
+		SerialNumber: event.SerialNumber,
+		Price: event.Price,
+	}
+
+	current := call.result.Result
+	if current.Status == provider.StatusSuccess || current.Status == provider.StatusFailed {
+		if samePurchaseResult(current, incoming) {
+			return call.result, nil
+		}
+		return PurchaseExecution{}, ErrWebhookReferenceConflict
+	}
+	if current.Status != provider.StatusPending {
+		return PurchaseExecution{}, ErrWebhookReferenceConflict
+	}
+	if incoming.Status == provider.StatusPending {
+		call.result.Result = incoming
+		return call.result, nil
+	}
+	if incoming.Status != provider.StatusSuccess && incoming.Status != provider.StatusFailed {
+		return PurchaseExecution{}, ErrInvalidWebhookEvent
+	}
+
+	call.result.Result = incoming
+	return call.result, nil
 }
 
 func (s *Service) startPurchase(req PurchaseRequest) (*purchaseCall, bool) {
@@ -86,13 +154,22 @@ func (s *Service) startPurchase(req PurchaseRequest) (*purchaseCall, bool) {
 
 func (s *Service) executePurchase(ctx context.Context, req PurchaseRequest) (PurchaseExecution, error) {
 	name, err := s.Router.Select(ctx, Request{ProductCode: req.ProductCode, Amount: req.Amount})
-	if err != nil { return PurchaseExecution{}, err }
+	if err != nil {
+		return PurchaseExecution{}, err
+	}
 	p, err := s.Router.Registry.Get(name)
-	if err != nil { return PurchaseExecution{}, fmt.Errorf("get selected provider: %w", err) }
+	if err != nil {
+		return PurchaseExecution{}, fmt.Errorf("get selected provider: %w", err)
+	}
 	result, err := p.Purchase(ctx, provider.PurchaseRequest{
-		ProductCode: req.ProductCode, CustomerNo: req.CustomerNo, ReferenceID: req.ReferenceID, Testing: req.Testing,
+		ProductCode: req.ProductCode,
+		CustomerNo: req.CustomerNo,
+		ReferenceID: req.ReferenceID,
+		Testing: req.Testing,
 	})
-	if err != nil { return PurchaseExecution{}, fmt.Errorf("purchase with provider %q: %w", name, err) }
+	if err != nil {
+		return PurchaseExecution{}, fmt.Errorf("purchase with provider %q: %w", name, err)
+	}
 	return PurchaseExecution{ProviderName: name, Result: result}, nil
 }
 
@@ -104,4 +181,29 @@ func validatePurchaseRequest(req PurchaseRequest) error {
 		return fmt.Errorf("%w: product code, customer number, reference ID, and positive amount are required", ErrInvalidPurchaseRequest)
 	}
 	return nil
+}
+
+func validateWebhookEvent(event provider.WebhookEvent) error {
+	if strings.TrimSpace(event.ReferenceID) == "" ||
+		strings.TrimSpace(event.ProductCode) == "" ||
+		strings.TrimSpace(event.CustomerNo) == "" {
+		return fmt.Errorf("%w: reference ID, product code, and customer number are required", ErrInvalidWebhookEvent)
+	}
+	if event.Status != provider.StatusPending &&
+		event.Status != provider.StatusSuccess &&
+		event.Status != provider.StatusFailed {
+		return fmt.Errorf("%w: unsupported transaction status", ErrInvalidWebhookEvent)
+	}
+	return nil
+}
+
+func samePurchaseResult(a, b provider.PurchaseResult) bool {
+	return a.ReferenceID == b.ReferenceID &&
+		a.CustomerNo == b.CustomerNo &&
+		a.ProductCode == b.ProductCode &&
+		a.Status == b.Status &&
+		a.ProviderCode == b.ProviderCode &&
+		a.Message == b.Message &&
+		a.SerialNumber == b.SerialNumber &&
+		a.Price == b.Price
 }
