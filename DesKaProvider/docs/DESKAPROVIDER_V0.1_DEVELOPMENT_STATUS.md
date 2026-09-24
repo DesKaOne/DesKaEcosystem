@@ -758,3 +758,30 @@ A new CI run is required before proceeding to the transaction correlation/idempo
 
 1. verify CI for the routing test fix;
 2. only after CI is healthy, implement provider transaction correlation/idempotency state around the neutral reference ID.
+
+
+### 29. Milestone Update — CI Failure Follow-up: Mock Import Alias Still Missing
+
+**Date:** 2026-09-24
+
+CI run #94 remained red in the `Test` step.
+
+Root cause confirmed from the GitHub Actions log:
+
+- `routing/service_test.go` still imported the Mock provider package without an explicit alias;
+- the package declaration is `mock`, while the tests reference `Mock.Provider`;
+- Go therefore reported the import as unused and `Mock` as undefined.
+
+Fix applied:
+
+- explicitly aliased the import as `Mock`;
+- production routing behavior remains unchanged.
+
+### Verification
+
+The failure is confirmed in CI run #94. The source fix is committed on `dev/deskaprovider-v0.1` at commit `cf04d96f705c6c00c2a1a55db0691db7e81e7d0e`. A fresh CI run must be verified before starting transaction correlation/idempotency work.
+
+### Next milestone
+
+1. verify CI after the import-alias fix;
+2. only after CI is healthy, implement provider transaction correlation/idempotency state around the neutral reference ID.
