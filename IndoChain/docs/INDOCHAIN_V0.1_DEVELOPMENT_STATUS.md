@@ -1064,3 +1064,10 @@ This milestone does not define proposer selection, voting power, quorum, vote ag
 **Next finalized-handoff voting-power integrity boundary:** Added `TestConsensusRuntimeNegativeDuplicateVotingPowerValidator`. The test supplies a directly constructed voting-power set containing the same validator identifier twice, requiring `consensus.ErrInvalidVotingPowerSet` and preserving the canonical genesis head/hash. Implementation commit: `b7856625597828fe5518a9839e7861ee04853b21`.
 
 **Next CI gate:** verify `b7856625597828fe5518a9839e7861ee04853b21` through the full IndoChain test/tidy/vet workflow before proceeding to the next finalized-handoff negative boundary.
+
+**Verified duplicate-voting-power CI:** IndoChain CI #985 (workflow run `35984429456`) completed successfully for `b7856625597828fe5518a9839e7861ee04853b21`; the full test/tidy/vet gate passed. The finalized handoff now explicitly rejects duplicate validator identifiers in the supplied voting-power set with `consensus.ErrInvalidVotingPowerSet` while preserving the canonical genesis head/hash.
+
+**Next finalized-handoff voting-power integrity boundary:** Added `TestConsensusRuntimeNegativeUnsortedVotingPowerSet`. The test supplies a directly constructed voting-power set whose validator identifiers are not in canonical byte-sorted order, requiring `consensus.ErrInvalidVotingPowerSet` and preserving the canonical genesis head/hash. Implementation commit: `2143ac2a599a932c0124c0be34d2e92b57b6b7fc`.
+
+**Next CI gate:** verify `2143ac2a599a932c0124c0be34d2e92b57b6b7fc` through the full IndoChain test/tidy/vet workflow before proceeding to the next finalized-handoff negative boundary.
+
