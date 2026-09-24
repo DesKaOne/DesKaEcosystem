@@ -521,3 +521,36 @@ Fix applied:
 ### Verification
 
 CI run #47 is confirmed red for the still-malformed test source. The corrected source is committed on `dev/deskaprovider-v0.1` at commit `b47a39acd8feb11af44901c18ef94a2c6e3f8256`. A new CI run must be verified before proceeding.
+
+
+
+### 22. Milestone Update — Service Lifecycle Wiring + Graceful Shutdown
+
+**Date:** 2026-09-24
+
+Completed:
+
+- verified DesKaProvider CI run #49 for the corrected JSON store test source: **success**;
+- added a runtime assembly package at `backend/runtime`;
+- added environment-driven operational runtime configuration:
+  - `DESKAPROVIDER_OPERATIONAL_STORE_PATH`
+  - `DESKAPROVIDER_OPERATIONAL_CURRENCY`
+  - `DESKAPROVIDER_BALANCE_SYNC_INTERVAL`
+  - `DESKAPROVIDER_BALANCE_FAILURE_THRESHOLD`
+- defaulted the operational sync interval to 30 seconds and failure threshold to 3;
+- wired the DigiFlazz provider, durable JSON operational store, and balance sync service into the runtime assembly;
+- replaced the empty service `main.go` with a signal-aware lifecycle using SIGINT/SIGTERM cancellation;
+- added lifecycle tests covering configuration validation, immediate balance synchronization, graceful context cancellation, and environment-based durable service construction;
+- documented the runtime configuration in `backend/.env.example`.
+
+### Verification
+
+CI run #49 is green for the corrected test source. The lifecycle changes were then committed to `dev/deskaprovider-v0.1`; the new lifecycle commit still requires its own CI result before the next implementation step.
+
+The runtime intentionally does not introduce an HTTP server or admin API yet. It only wires the already-documented provider balance synchronization lifecycle.
+
+### Next milestone
+
+1. verify CI for the lifecycle wiring;
+2. add an explicit restart/recovery lifecycle test using the durable JSON store;
+3. then continue toward provider routing using persisted balance and health.
