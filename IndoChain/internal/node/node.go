@@ -179,6 +179,21 @@ func validateStoredHistory(store storage.ChainStore, head block.Block, storedHea
 	return nil
 }
 
+
+func validateCanonicalConsensusContext(n *Node, ctx consensus.BlockProductionContext) error {
+	if n == nil || n.State == nil {
+		return ErrNilStore
+	}
+	if err := ctx.State.Validate(); err != nil {
+		return err
+	}
+	if ctx.State.ProtocolVersion != n.Config.ProtocolVersion || ctx.State.ChainID != n.Config.ChainID ||
+		ctx.State.Height != n.Head.Header.Height || ctx.PreviousHash != n.HeadHash {
+		return ErrConsensusContextMismatch
+	}
+	return nil
+}
+
 // ImportBlock validates and executes the next block against canonical state,
 // then commits the resulting block and state before advancing the node head.
 func (n *Node) ImportBlock(b block.Block, publicKey []byte) error {
@@ -260,12 +275,8 @@ func (n *Node) CommitFinalizedBlock(
 	if validatorResolver == nil || senderResolver == nil {
 		return errors.New("missing finalized-block authority resolver")
 	}
-	if err := ctx.State.Validate(); err != nil {
+	if err := validateCanonicalConsensusContext(n, ctx); err != nil {
 		return err
-	}
-	if ctx.State.ProtocolVersion != n.Config.ProtocolVersion || ctx.State.ChainID != n.Config.ChainID ||
-		ctx.State.Height != n.Head.Header.Height || ctx.PreviousHash != n.HeadHash {
-		return ErrConsensusContextMismatch
 	}
 	if _, err := consensus.ValidateFinalizedBlock(ctx, candidate, certificate, validators, votingPower); err != nil {
 		return err
