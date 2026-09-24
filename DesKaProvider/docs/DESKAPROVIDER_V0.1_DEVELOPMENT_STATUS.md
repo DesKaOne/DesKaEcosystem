@@ -1552,3 +1552,40 @@ CI run #267 for the IAK balance hardening implementation is confirmed **green**:
 The verified implementation commit for the code change is `38e03536003ea03fc33f9779b0a1d4bfaece5725`. The status-document-only follow-up commit does not change executable code.
 
 The IAK balance hardening milestone is therefore cleared for the next development step.
+
+
+### 47. Milestone Update — IAK Response Envelope Hardening
+
+**Date:** 2026-09-25
+
+CI #271 is confirmed **green** before this milestone. The existing IAK balance hardening and status-document follow-up are therefore cleared.
+
+Official IAK documentation was reviewed for the currently implemented prepaid capabilities. The documented price-list response requires a `pricelist` array and exposes `status`, `product_code`, `product_description`, and `product_category`; the documented PLN inquiry response requires `status`, `customer_id`, `message`, and `rc`. IAK also documents REST/HTTPS usage and JSON responses. citeturn5view0turn6view0turn4view0
+
+Hardened the adapter so an HTTP 2xx response cannot silently be treated as a valid provider result when the required response envelope is absent:
+
+- `GetProducts` now requires `data.pricelist` to be an array;
+- `Inquiry` now requires a recognized IAK status (`1` or `2`);
+- unknown inquiry status values are rejected instead of leaking arbitrary provider values into the neutral transaction-status field;
+- deterministic tests cover malformed product-list responses, missing inquiry status, and unknown inquiry status.
+
+This keeps provider-level failures distinguishable from valid empty product catalogs and valid inquiry outcomes. The change does not infer undocumented response semantics.
+
+### Safety Boundary
+
+No transaction retry, failover, ledger mutation, provider funding, or live purchase execution was added.
+
+### Verification Gate
+
+Implementation commits:
+
+- `5027fdf2efb19cbe98c7b28fea83da42541cd60f` — response envelope validation;
+- `26e9ab7bfb41430abef937ae8a6a91e02e4b404a` — deterministic response-validation tests.
+
+A fresh CI run for this hardening change is required. `test`, `vet`, and `race` must all be green before the next step.
+
+### Next Milestone
+
+1. verify fresh CI for the IAK response-envelope hardening;
+2. if green, continue only with verified IAK capability gaps;
+3. keep postpaid, OVO, game inquiry, and other capabilities outside the prepaid v0.1 adapter until their neutral contract is explicitly designed and provider documentation is verified.
