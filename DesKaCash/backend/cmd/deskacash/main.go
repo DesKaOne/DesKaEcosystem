@@ -4,8 +4,8 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/DesKaOne/DesKaEcosystem/DesKaCash/backend/internal/config"
-	"github.com/DesKaOne/DesKaEcosystem/DesKaCash/backend/internal/httpapi"
+	"github.com/DesKaOne/DesKaEcosystem/DesKaCash/internal/config"
+	"github.com/DesKaOne/DesKaEcosystem/DesKaCash/internal/httpapi"
 )
 
 func main() {

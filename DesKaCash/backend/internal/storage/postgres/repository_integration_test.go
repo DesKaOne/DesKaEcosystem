@@ -2,15 +2,15 @@ package postgres
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
 	"time"
-	"database/sql"
 
-	"github.com/DesKaOne/DesKaEcosystem/DesKaCash/backend/internal/ledger"
+	"github.com/DesKaOne/DesKaEcosystem/DesKaCash/internal/ledger"
 )
 
 func TestRepositoryApplyCreditWithPostgres(t *testing.T) {
@@ -139,7 +139,6 @@ func migrationPath(t *testing.T) string {
 
 	return filepath.Join(filepath.Dir(file), "../../../migrations/001_init_ledger.sql")
 }
-
 
 func TestRepositoryStoresImmutablePostingsWithPostgres(t *testing.T) {
 	dsn := os.Getenv("DESKACASH_TEST_DATABASE_URL")

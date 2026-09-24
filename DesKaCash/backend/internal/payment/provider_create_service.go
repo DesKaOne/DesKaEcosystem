@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/DesKaOne/DesKaEcosystem/DesKaCash/backend/internal/ledger"
+	"github.com/DesKaOne/DesKaEcosystem/DesKaCash/internal/ledger"
 )
 
 var ErrProviderAmountMismatch = errors.New("provider amount mismatch")

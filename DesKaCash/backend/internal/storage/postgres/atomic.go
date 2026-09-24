@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"errors"
 
-	"github.com/DesKaOne/DesKaEcosystem/DesKaCash/backend/internal/ledger"
+	"github.com/DesKaOne/DesKaEcosystem/DesKaCash/internal/ledger"
 )
 
 // ApplyCredit atomically applies a successful credit to an account.

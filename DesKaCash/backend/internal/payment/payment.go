@@ -4,7 +4,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/DesKaOne/DesKaEcosystem/DesKaCash/backend/internal/ledger"
+	"github.com/DesKaOne/DesKaEcosystem/DesKaCash/internal/ledger"
 )
 
 var ErrInvalidPayment = errors.New("invalid payment")
@@ -12,12 +12,12 @@ var ErrInvalidPayment = errors.New("invalid payment")
 type Status string
 
 const (
-	StatusPending  Status = "pending"
+	StatusPending   Status = "pending"
 	StatusSucceeded Status = "succeeded"
-	StatusFailed   Status = "failed"
-	StatusExpired  Status = "expired"
-	StatusReversed Status = "reversed"
-	StatusRefunded Status = "refunded"
+	StatusFailed    Status = "failed"
+	StatusExpired   Status = "expired"
+	StatusReversed  Status = "reversed"
+	StatusRefunded  Status = "refunded"
 )
 
 // Payment is the application-layer record for an external payment attempt.

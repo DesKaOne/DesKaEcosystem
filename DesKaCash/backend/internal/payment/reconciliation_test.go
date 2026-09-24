@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DesKaOne/DesKaEcosystem/DesKaCash/backend/internal/ledger"
+	"github.com/DesKaOne/DesKaEcosystem/DesKaCash/internal/ledger"
 )
 
 type memoryPaymentStore struct {
@@ -237,7 +237,6 @@ func TestReconcilerRejectsInvalidWebhookStatus(t *testing.T) {
 	}
 }
 
-
 func TestReconcilerReversesSucceededPaymentWithLedgerDebit(t *testing.T) {
 	payment, err := NewPayment("pay-1", "acct-1", "demo", "idem-1", ledger.FromDIDR(100))
 	if err != nil {
@@ -299,16 +298,26 @@ func TestReconcilerRefundsSucceededPaymentWithLedgerDebit(t *testing.T) {
 func TestReconcilerReversalDebitsActualLedgerBalance(t *testing.T) {
 	ctx := context.Background()
 	account, err := ledger.NewAccount("acct-1", "user-1")
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	store := ledger.NewMemoryRepository()
-	if err := store.CreateAccount(ctx, account); err != nil { t.Fatal(err) }
+	if err := store.CreateAccount(ctx, account); err != nil {
+		t.Fatal(err)
+	}
 
 	seed, err := ledger.NewTransaction("seed-1", account.ID, ledger.FromDIDR(100), "seed")
-	if err != nil { t.Fatal(err) }
-	if err := store.ApplyCredit(ctx, seed, "seed"); err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ApplyCredit(ctx, seed, "seed"); err != nil {
+		t.Fatal(err)
+	}
 
 	payment, err := NewPayment("pay-1", account.ID, "demo", "idem-1", ledger.FromDIDR(100))
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	payment.ProviderID = "provider-1"
 	payment.Status = StatusSucceeded
 	payments := newMemoryPaymentStore(payment)
@@ -316,38 +325,66 @@ func TestReconcilerReversalDebitsActualLedgerBalance(t *testing.T) {
 
 	event := WebhookEvent{ID: "event-reversal", Provider: "demo", ProviderID: "provider-1", Status: StatusReversed, Amount: payment.Amount.BaseUnits}
 	got, err := reconciler.ReconcileWebhook(ctx, event, payment.ID)
-	if err != nil { t.Fatal(err) }
-	if got.Status != StatusReversed { t.Fatalf("expected reversed status, got %q", got.Status) }
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != StatusReversed {
+		t.Fatalf("expected reversed status, got %q", got.Status)
+	}
 
 	updated, err := store.GetAccount(ctx, account.ID)
-	if err != nil { t.Fatal(err) }
-	if updated.Balance.BaseUnits != 0 { t.Fatalf("expected zero balance after reversal, got %d", updated.Balance.BaseUnits) }
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Balance.BaseUnits != 0 {
+		t.Fatalf("expected zero balance after reversal, got %d", updated.Balance.BaseUnits)
+	}
 	entries, err := store.ListEntries(ctx, account.ID)
-	if err != nil { t.Fatal(err) }
-	if len(entries) != 2 || entries[1].Type != ledger.EntryDebit { t.Fatalf("expected credit and debit entries, got %#v", entries) }
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 || entries[1].Type != ledger.EntryDebit {
+		t.Fatalf("expected credit and debit entries, got %#v", entries)
+	}
 }
 
 func TestReconcilerRefundInsufficientFundsLeavesPaymentSucceeded(t *testing.T) {
 	ctx := context.Background()
 	account, err := ledger.NewAccount("acct-1", "user-1")
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	store := ledger.NewMemoryRepository()
-	if err := store.CreateAccount(ctx, account); err != nil { t.Fatal(err) }
+	if err := store.CreateAccount(ctx, account); err != nil {
+		t.Fatal(err)
+	}
 
 	payment, err := NewPayment("pay-1", account.ID, "demo", "idem-1", ledger.FromDIDR(100))
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	payment.ProviderID = "provider-1"
 	payment.Status = StatusSucceeded
 	payments := newMemoryPaymentStore(payment)
 	reconciler := NewReconciler(payments, NewMemoryWebhookStore(), store)
 
 	event := WebhookEvent{ID: "event-refund", Provider: "demo", ProviderID: "provider-1", Status: StatusRefunded, Amount: payment.Amount.BaseUnits}
-	if _, err := reconciler.ReconcileWebhook(ctx, event, payment.ID); !errors.Is(err, ledger.ErrInsufficientFunds) { t.Fatalf("expected insufficient funds, got %v", err) }
+	if _, err := reconciler.ReconcileWebhook(ctx, event, payment.ID); !errors.Is(err, ledger.ErrInsufficientFunds) {
+		t.Fatalf("expected insufficient funds, got %v", err)
+	}
 
 	stored, err := payments.Get(ctx, payment.ID)
-	if err != nil { t.Fatal(err) }
-	if stored.Status != StatusSucceeded { t.Fatalf("expected payment to remain succeeded, got %q", stored.Status) }
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Status != StatusSucceeded {
+		t.Fatalf("expected payment to remain succeeded, got %q", stored.Status)
+	}
 	entries, err := store.ListEntries(ctx, account.ID)
-	if err != nil { t.Fatal(err) }
-	if len(entries) != 0 { t.Fatalf("expected no ledger entries after failed refund, got %d", len(entries)) }
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("expected no ledger entries after failed refund, got %d", len(entries))
+	}
 }

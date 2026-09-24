@@ -3,7 +3,7 @@ package payment
 import (
 	"testing"
 
-	"github.com/DesKaOne/DesKaEcosystem/DesKaCash/backend/internal/ledger"
+	"github.com/DesKaOne/DesKaEcosystem/DesKaCash/internal/ledger"
 )
 
 func TestNewPayment(t *testing.T) {
@@ -37,12 +37,12 @@ func TestNewPayment(t *testing.T) {
 
 func TestNewPaymentRejectsInvalidInput(t *testing.T) {
 	tests := []struct {
-		name string
-		id string
-		accountID string
-		provider string
+		name           string
+		id             string
+		accountID      string
+		provider       string
 		idempotencyKey string
-		amount ledger.Money
+		amount         ledger.Money
 	}{
 		{"missing id", "", "acc-1", "demo", "key-1", ledger.Money{BaseUnits: 1}},
 		{"missing account", "pay-1", "", "demo", "key-1", ledger.Money{BaseUnits: 1}},

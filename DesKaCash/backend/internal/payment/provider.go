@@ -3,7 +3,7 @@ package payment
 import (
 	"context"
 
-	"github.com/DesKaOne/DesKaEcosystem/DesKaCash/backend/internal/ledger"
+	"github.com/DesKaOne/DesKaEcosystem/DesKaCash/internal/ledger"
 )
 
 // Provider abstracts an external payment rail from the application domain.
@@ -15,8 +15,8 @@ type Provider interface {
 }
 
 type ProviderPayment struct {
-	ID         string
-	Status     Status
-	Amount     ledger.Money
-	Reference  string
+	ID        string
+	Status    Status
+	Amount    ledger.Money
+	Reference string
 }

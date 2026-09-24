@@ -1,4 +1,4 @@
-module github.com/DesKaOne/DesKaEcosystem/DesKaCash/backend
+module github.com/DesKaOne/DesKaEcosystem/DesKaCash
 
 go 1.24
 

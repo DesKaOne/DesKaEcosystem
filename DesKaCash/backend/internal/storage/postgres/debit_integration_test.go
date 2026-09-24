@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DesKaOne/DesKaEcosystem/DesKaCash/backend/internal/ledger"
+	"github.com/DesKaOne/DesKaEcosystem/DesKaCash/internal/ledger"
 )
 
 func TestRepositoryApplyDebitWithPostgres(t *testing.T) {

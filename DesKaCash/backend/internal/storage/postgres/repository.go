@@ -6,12 +6,12 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/DesKaOne/DesKaEcosystem/DesKaCash/backend/internal/ledger"
+	"github.com/DesKaOne/DesKaEcosystem/DesKaCash/internal/ledger"
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
 var (
-	_ ledger.Repository = (*Repository)(nil)
+	_ ledger.Repository   = (*Repository)(nil)
 	_ ledger.PostingStore = (*Repository)(nil)
 )
 
@@ -141,7 +141,6 @@ func (r *Repository) ListEntries(ctx context.Context, accountID string) ([]ledge
 	}
 	return entries, nil
 }
-
 
 func (r *Repository) CreatePosting(ctx context.Context, posting ledger.Posting) error {
 	const query = `INSERT INTO ledger_postings

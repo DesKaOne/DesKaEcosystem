@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/DesKaOne/DesKaEcosystem/DesKaCash/backend/internal/ledger"
+	"github.com/DesKaOne/DesKaEcosystem/DesKaCash/internal/ledger"
 )
 
 func TestMemoryPaymentStoreRejectsDuplicateIdempotencyKey(t *testing.T) {
