@@ -138,6 +138,84 @@ func (s *Service) HandleWebhook(ctx context.Context, event provider.WebhookEvent
 	return call.result, nil
 }
 
+func (s *Service) Reconcile(ctx context.Context, referenceID string) (PurchaseExecution, error) {
+	if strings.TrimSpace(referenceID) == "" {
+		return PurchaseExecution{}, fmt.Errorf("%w: reference ID is required", ErrInvalidPurchaseRequest)
+	}
+	if err := ctx.Err(); err != nil {
+		return PurchaseExecution{}, err
+	}
+
+	s.mu.Lock()
+	call, ok := s.transactions[referenceID]
+	if !ok {
+		s.mu.Unlock()
+		return PurchaseExecution{}, ErrWebhookTransactionNotFound
+	}
+	request := call.request
+	providerName := call.result.ProviderName
+	if providerName == "" {
+		s.mu.Unlock()
+		return PurchaseExecution{}, ErrWebhookReferenceConflict
+	}
+	select {
+	case <-call.done:
+	default:
+		s.mu.Unlock()
+		return PurchaseExecution{}, ErrWebhookReferenceConflict
+	}
+	s.mu.Unlock()
+
+	p, err := s.Router.Registry.Get(providerName)
+	if err != nil {
+		return PurchaseExecution{}, fmt.Errorf("get provider for reconciliation: %w", err)
+	}
+	status, err := p.GetStatus(ctx, provider.StatusRequest{
+		ProductCode: request.ProductCode,
+		CustomerNo: request.CustomerNo,
+		ReferenceID: referenceID,
+	})
+	if err != nil {
+		return PurchaseExecution{}, fmt.Errorf("get status from provider %q: %w", providerName, err)
+	}
+	if status.ReferenceID != referenceID ||
+		status.ProductCode != request.ProductCode ||
+		status.CustomerNo != request.CustomerNo {
+		return PurchaseExecution{}, ErrWebhookReferenceConflict
+	}
+	if status.Status != provider.StatusPending &&
+		status.Status != provider.StatusSuccess &&
+		status.Status != provider.StatusFailed {
+		return PurchaseExecution{}, fmt.Errorf("%w: unsupported reconciliation status", ErrInvalidWebhookEvent)
+	}
+
+	incoming := provider.PurchaseResult{
+		ReferenceID: status.ReferenceID,
+		CustomerNo: status.CustomerNo,
+		ProductCode: status.ProductCode,
+		Status: status.Status,
+		ProviderCode: status.ProviderCode,
+		Message: status.Message,
+		SerialNumber: status.SerialNumber,
+		Price: status.Price,
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	current := call.result.Result
+	if current.Status == provider.StatusSuccess || current.Status == provider.StatusFailed {
+		if samePurchaseResult(current, incoming) {
+			return call.result, nil
+		}
+		return PurchaseExecution{}, ErrWebhookReferenceConflict
+	}
+	if current.Status != provider.StatusPending {
+		return PurchaseExecution{}, ErrWebhookReferenceConflict
+	}
+	call.result.Result = incoming
+	return call.result, nil
+}
+
 func (s *Service) startPurchase(req PurchaseRequest) (*purchaseCall, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
