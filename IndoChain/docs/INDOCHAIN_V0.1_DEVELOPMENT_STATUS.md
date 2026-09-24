@@ -1143,3 +1143,8 @@ This milestone does not define proposer selection, voting power, quorum, vote ag
 **Next transaction-authority resolution boundary:** Added `TestApplyTransactionPropagatesSenderAuthorityResolverError` in `IndoChain/internal/core/state/transition_test.go`. The test injects a sender-authority resolver that returns an explicit lookup error and requires `ApplyTransaction` to propagate that error without mutating canonical sender state or creating the recipient account. Implementation/test commit: `0a7eff7d64196576bafc42eba67f1c8eac81c283`.
 
 **Next CI gate:** verify `0a7eff7d64196576bafc42eba67f1c8eac81c283` through the full IndoChain test/tidy/vet workflow before proceeding to the next transaction-authority boundary.
+
+
+**Next transaction-authority resolution boundary:** Added `TestApplyTransactionRejectsEmptyResolvedSenderAuthority`. The injected sender-authority resolver returns an empty public key; transaction validation must reject it with `transaction.ErrInvalidPublicKey` and preserve the canonical sender state without creating the recipient. Implementation/test commit: `d5ad56d18e6779b7fffda6831c503cefe35a3f81`.
+
+**Next CI gate:** verify `d5ad56d18e6779b7fffda6831c503cefe35a3f81` through the full IndoChain test/tidy/vet workflow before proceeding to the next transaction-authority boundary.
