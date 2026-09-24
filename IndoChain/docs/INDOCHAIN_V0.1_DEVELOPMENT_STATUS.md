@@ -977,7 +977,11 @@ This remains development-only and does not introduce production BFT timing, roun
 
 **Next finalized-handoff protocol boundary:** Extended `TestConsensusRuntimeNegativeCrossHeightVoteContextMismatch` to restore the completed certificate context and independently mutate the certificate quorum threshold to an invalid `2/1` ratio. `Node.CommitFinalizedBlock` must reject the certificate with `consensus.ErrInvalidQuorumThreshold`, and the canonical height-1 head/hash must remain unchanged. Implementation commit: `a3ec645018431cf444bfafb1f0e519edaf04479d`.
 
-**Next CI gate:** verify `a3ec645018431cf444bfafb1f0e519edaf04479d` through the full IndoChain test/tidy/vet workflow.
+**Verified invalid-threshold CI:** IndoChain CI #931 (workflow run `35980062835`) completed successfully for `a3ec645018431cf444bfafb1f0e519edaf04479d`; test, tidy, and vet all passed.
+
+**Next finalized-handoff certificate-integrity boundary:** Added `TestConsensusRuntimeNegativeInvalidFinalityCertificateStructure`. The test independently clears the certificate payload and then the certificate vote set, requiring `consensus.ErrInvalidFinalityCertificate` in both cases while preserving the canonical genesis head/hash. Implementation commit: `2875efe14d56e9031389c11c1a8999a65764c5da`.
+
+**Next CI gate:** verify `2875efe14d56e9031389c11c1a8999a65764c5da` through the full IndoChain test/tidy/vet workflow.
 
 ### 4.38 Consensus Transport → Runtime → Finalized Node Handoff Boundary
 
