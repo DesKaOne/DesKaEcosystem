@@ -1112,3 +1112,55 @@ Fix commit: `274df50f624426746324108e6ec6f8ba37a5d03b`.
 ### Verification Gate
 
 CI #170 is **failure**. The branch must not advance to the next milestone until a fresh CI run verifies both `test` and `race` green.
+
+
+### 39. Milestone Update — DigiFlazz Prepaid Product Catalog Boundary
+
+**Date:** 2026-09-24
+
+CI #174 is confirmed green before this milestone:
+
+- `test` — success (`go test ./...` and `go vet ./...`);
+- `race` — success (`go test -race ./...`).
+
+The next provider boundary addresses a functional gap in the existing runtime routing path: the neutral router performs a provider product-capability check through `GetProducts`, while the DigiFlazz adapter previously returned `ErrUnsupportedOperation`. That meant the composed DigiFlazz purchase route could not pass the product-capability stage.
+
+Completed:
+
+- added DigiFlazz prepaid price-list endpoint configuration;
+- added default `https://api.digiflazz.com/v1/price-list`;
+- added `DIGIFLAZZ_PRICE_LIST_ENDPOINT` override support;
+- implemented DigiFlazz `GetProducts` against the documented Buyer prepaid price-list operation;
+- uses the documented `prepaid` command and `md5(username + apiKey + "pricelist")` signature;
+- maps `buyer_sku_code` and `product_name` into the provider-neutral product contract;
+- supports the existing neutral category filter;
+- supports the existing neutral active filter using `buyer_product_status`;
+- added deterministic HTTP test coverage for endpoint, request fields, signature, response mapping, and active filtering.
+
+The official DigiFlazz documentation states that the Buyer price-list endpoint is `https://api.digiflazz.com/v1/price-list`, uses `cmd=prepaid), and signs with `md5(username + apiKey + "pricelist")`. It also notes that price-list checks are rate-limited and recommends storing the list locally and updating it periodically. citeturn1search0
+
+### Safety Boundary
+
+This milestone only closes the provider product-capability boundary. It does not:
+
+- introduce automatic retry or failover;
+- mutate the DesKaCash ledger;
+- fund providers;
+- move provider-specific protocol fields outside the DigiFlazz adapter.
+
+The documented price-list rate limitation is an explicit reason not to treat this direct `GetProducts` call as the final production catalog architecture. A subsequent catalog-cache/synchronization boundary should be considered before high-volume production routing. citeturn1search0
+
+### Verification Gate
+
+- CI #174 for commit `13b57f81d90c0011ea608c8f8127a596c408ed02` is **success**.
+- Both `test` and `race` jobs were independently verified green before starting this milestone.
+- Product-catalog implementation commits:
+  - `21c35a5e6c7bb49908dfd12488a87a3e0d0e1d5b`
+  - `8e3719186f3093f134ca8a1b9dda5f99c27a0f07`
+  - `cd1d0cebd5ff51547e53e44f51d56239e4e92e4c`
+
+### Next Milestone
+
+1. verify CI for the DigiFlazz product-catalog implementation;
+2. if green, design the minimum catalog-cache/synchronization boundary so routing does not repeatedly hit a rate-limited provider price-list endpoint;
+3. keep automatic retry/failover deferred until provider-specific idempotency semantics are explicitly established.
