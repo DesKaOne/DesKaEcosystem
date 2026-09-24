@@ -1697,3 +1697,42 @@ A fresh CI run for the current head is required. `test`, `vet`, and `race` must 
 1. verify the current-head CI;
 2. if green, review whether any remaining verified IAK v0.1 gap is material to the existing neutral contract;
 3. otherwise keep IAK stable and prepare the next roadmap provider rather than expanding the neutral contract speculatively.
+
+### 50. Milestone Update — IAK Required Transaction Field Hardening
+
+**Date:** 2026-09-25
+
+CI run #299 for the previous current head is confirmed **green** before this implementation step.
+
+Official IAK prepaid v2 documentation requires transaction responses to include `ref_id`, `status`, product/customer identity, `price`, `message`, `balance`, `tr_id`, and `rc`. The neutral DesKaProvider transaction contracts currently expose identity, normalized status, provider code/message, serial number, and price; provider-only balance and transaction ID remain outside that neutral contract. https://api.iak.id/api/prepaid/core/v2/transaction/top-up https://api.iak.id/api/prepaid/core/v2/check-status
+
+Hardened the IAK adapter only for required fields that map directly to the existing neutral contract:
+
+- PLN inquiry now rejects a missing `message` field;
+- purchase responses now require a valid `price` and non-empty `message`;
+- check-status responses now require a valid `price` and non-empty `message`;
+- webhook payloads now require a valid `price` and non-empty `message`;
+- numeric price values are accepted from JSON numbers or numeric strings;
+- deterministic tests cover missing message/price cases for purchase and status plus inquiry/webhook field validation.
+
+The implementation deliberately does **not** add IAK `balance` or `tr_id` to the neutral contracts merely to mirror provider-specific response fields. Those values remain provider-specific until a concrete neutral use case requires them.
+
+### Safety Boundary
+
+No transaction retry/failover, ledger mutation, provider funding, or live purchase execution was added.
+
+### Verification Gate
+
+Implementation commits:
+
+- `3707dc54fd282632743af804796079e28f43756b` — required IAK transaction field validation;
+- `63280ec2a549f6af53a3fe5cab58f17fcdcd43d8` — deterministic validation tests.
+
+A fresh CI run for the current head is required. `test`, `vet`, and `race` must all be green before the next provider-development step.
+
+### Next Milestone
+
+1. verify the current-head CI;
+2. if green, keep IAK stable unless another verified gap materially affects the existing neutral contract;
+3. prepare the next roadmap provider, XP SINDONESIA, only after its concrete API contract is verified;
+4. do not invent an XP adapter endpoint/signature/request schema from the public product pages alone.
