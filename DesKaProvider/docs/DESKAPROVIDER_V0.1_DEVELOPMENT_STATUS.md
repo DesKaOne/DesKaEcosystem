@@ -1659,3 +1659,41 @@ A fresh CI run for the current head is required. `test`, `vet`, and `race` must 
 2. if green, review remaining verified IAK capability gaps only;
 3. avoid speculative postpaid/game/OVO/eSIM expansion until a neutral contract is explicitly required;
 4. keep live credentials and commercial activation separate from source-level adapter completeness.
+
+
+### 49. Milestone Update — IAK Pricelist Item Contract Hardening
+
+**Date:** 2026-09-25
+
+The previous milestone's current-head CI is confirmed **green** before this follow-up: CI run #293 completed successfully.
+
+Official IAK prepaid v2 price-list documentation requires each `pricelist` item to provide `product_code`, `product_description`, `product_details`, `product_nominal`, `product_price`, `product_type`, `active_period`, `status`, `icon_url`, and `product_category`. citeturn0search0
+
+The adapter previously validated only that `data.pricelist` was an array. It now also rejects malformed list entries and entries missing the neutral fields needed by DesKaProvider:
+
+- each pricelist entry must be a JSON object;
+- `product_code` is required;
+- `product_description` is required;
+- malformed entries cannot silently become an empty `Product`;
+- deterministic tests cover invalid item types and missing required neutral fields.
+
+The adapter still deliberately does not copy provider-specific fields such as nominal, price, icon, or active-period into the neutral `Product` contract because those fields are not currently part of the provider-neutral interface.
+
+### Safety Boundary
+
+No transaction retry/failover, ledger mutation, provider funding, or live purchase execution was added.
+
+### Verification Gate
+
+Implementation commits:
+
+- `fbe2a3424774ce5c18e09decd55f94b8fa054311` — pricelist item validation;
+- `3f987fa4e58dd74dd154396b772e42547824f706` — deterministic tests.
+
+A fresh CI run for the current head is required. `test`, `vet`, and `race` must all be green before continuing.
+
+### Next Milestone
+
+1. verify the current-head CI;
+2. if green, review whether any remaining verified IAK v0.1 gap is material to the existing neutral contract;
+3. otherwise keep IAK stable and prepare the next roadmap provider rather than expanding the neutral contract speculatively.
