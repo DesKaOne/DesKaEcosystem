@@ -445,3 +445,31 @@ The fix is committed on dev/deskaprovider-v0.1 at commit 17ac0f36f5083a165412198
 1. verify CI for the fix;
 2. continue with production persistence only after the test suite is green;
 3. then wire the sync worker into the service lifecycle and add recovery tests.
+
+
+### 19. Milestone Update — Durable Operational Snapshot Persistence
+
+**Date:** 2026-09-24
+
+Completed:
+
+- verified CI run #37 for the previous fix: **success**;
+- changed the operational Store contract so persistence failures are returned instead of being silently ignored;
+- added durable JSON file storage for operational snapshots;
+- implemented atomic temp-file replacement and restrictive 0600 file permissions;
+- added automatic parent-directory creation;
+- added recovery on service/process restart by loading persisted snapshots;
+- added deterministic tests for persistence/recovery and corrupt-state rejection;
+- retained the in-memory store for deterministic unit tests;
+- documented that JSON persistence is an interim v0.1 runtime boundary, while PostgreSQL remains the documented deployment target.
+
+### Verification
+
+The previous CI fix is verified green in GitHub Actions run #37. The new persistence changes have not yet received a CI result and must be verified before the next implementation step.
+
+### Next milestone
+
+1. verify CI for the durable persistence changes;
+2. wire the operational sync worker into the service lifecycle;
+3. add lifecycle/shutdown and restart behavior tests;
+4. then continue toward provider routing using persisted balance and health.
