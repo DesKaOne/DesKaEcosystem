@@ -51,7 +51,8 @@ func ResolveProposerAuthority(
 	if resolver == nil {
 		return nil, ErrExecutionAuthorityMissing
 	}
-	publicKey, err := resolver.PublicKeyForValidator(authorization.Proposer)
+	proposer := append([]byte(nil), authorization.Proposer...)
+	publicKey, err := resolver.PublicKeyForValidator(proposer)
 	if err != nil {
 		return nil, err
 	}
