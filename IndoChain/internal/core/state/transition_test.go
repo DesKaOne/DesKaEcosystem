@@ -56,6 +56,13 @@ type failingSenderAuthorityResolver struct {
 	err error
 }
 
+type emptySenderAuthorityResolver struct{}
+
+func (emptySenderAuthorityResolver) PublicKeyForSender([]byte) ([]byte, error) {
+	return nil, nil
+}
+
+
 func (r failingSenderAuthorityResolver) PublicKeyForSender([]byte) ([]byte, error) {
 	return nil, r.err
 }
@@ -119,6 +126,31 @@ func TestApplyTransactionPropagatesSenderAuthorityResolverError(t *testing.T) {
 	}
 	if _, ok := s.Get(types.Address{2}); ok {
 		t.Fatal("recipient created after resolver error")
+	}
+}
+
+func TestApplyTransactionRejectsEmptyResolvedSenderAuthority(t *testing.T) {
+	seed := bytes.Repeat([]byte{0x42}, ed25519.SeedSize)
+	signer, err := crypto.NewEd25519Signer(ed25519.NewKeyFromSeed(seed))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	s := New()
+	s.Set(types.Address{1}, Account{Balance: 100, Nonce: 0})
+
+	tx := signedTransfer(t, signer)
+	rules := transitionRules(nil)
+	rules.PublicKeyResolver = emptySenderAuthorityResolver{}
+
+	if err := ApplyTransaction(s, tx, rules); err != transaction.ErrInvalidPublicKey {
+		t.Fatalf("ApplyTransaction() error = %v, want %v", err, transaction.ErrInvalidPublicKey)
+	}
+	if sender, ok := s.Get(types.Address{1}); !ok || sender.Balance != 100 || sender.Nonce != 0 {
+		t.Fatalf("sender state mutated after empty authority: %+v", sender)
+	}
+	if _, ok := s.Get(types.Address{2}); ok {
+		t.Fatal("recipient created after empty authority")
 	}
 }
 
