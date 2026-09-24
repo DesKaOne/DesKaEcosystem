@@ -9,6 +9,7 @@ import (
 	provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
 	mock "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/Mock"
 	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/operational"
+	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/catalog"
 )
 
 func TestRouterSelectsHealthyProviderWithSufficientBalanceAndPriority(t *testing.T) {
@@ -131,5 +132,36 @@ func TestRouterValidatesRequest(t *testing.T) {
 	}
 	if _, err := router.Select(context.Background(), Request{ProductCode: "xld10"}); !errors.Is(err, ErrInvalidRouteRequest) {
 		t.Fatalf("expected invalid request error, got %v", err)
+	}
+}
+
+func TestRouterUsesCatalogSnapshotWithoutProviderProductLookup(t *testing.T) {
+	registry := provider.NewRegistry()
+	mock := mock.New(mock.Config{Products: []provider.Product{{Code: "xld10", Name: "Test"}}})
+	if err := registry.Register("mock", mock); err != nil {
+		t.Fatal(err)
+	}
+	store := operational.NewMemoryStore()
+	if err := store.Put(operational.Snapshot{ProviderName: "mock", Balance: 100000, Health: operational.HealthHealthy}); err != nil {
+		t.Fatal(err)
+	}
+	catalogStore := catalog.NewMemoryStore()
+	if err := catalogStore.Put(catalog.Snapshot{
+		ProviderName: "mock",
+		Products: []provider.Product{{Code: "xld10", Name: "Test"}},
+		SyncedAt: time.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	router, err := NewWithCatalog(registry, store, nil, catalogStore)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := router.Select(context.Background(), Request{ProductCode: "xld10", Amount: 50000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "mock" {
+		t.Fatalf("expected catalog-backed mock selection, got %q", got)
 	}
 }
