@@ -1736,3 +1736,16 @@ A fresh CI run for the current head is required. `test`, `vet`, and `race` must 
 2. if green, keep IAK stable unless another verified gap materially affects the existing neutral contract;
 3. prepare the next roadmap provider, XP SINDONESIA, only after its concrete API contract is verified;
 4. do not invent an XP adapter endpoint/signature/request schema from the public product pages alone.
+
+### CI Correction — IAK Required Transaction Field Hardening
+
+CI run #303 exposed fixture failures after the new required `price` validation was added. Production adapter behavior was not the failure: the existing deterministic purchase/status/webhook success fixtures omitted the now-required provider field.
+
+Correction committed as `01501cb25d1bd5435908dd2fb2b672515aad09f0`:
+
+- updated valid purchase fixture with `price`;
+- updated valid status fixture with `price`;
+- updated valid webhook fixture with `price`;
+- no production adapter behavior was changed by this correction.
+
+CI #303 is recorded as **red** and is not accepted as the verification gate. A fresh CI run for the correction commit must be fully green before proceeding.
