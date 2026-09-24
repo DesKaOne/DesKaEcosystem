@@ -1228,4 +1228,4 @@ Commits:
 - signed timeout boundary: `bc0003f57f3919ac3c5a8a17a92da703bef9b6a3`
 - signed timeout regression tests: `eb3e4b9a3df23aff8ec68878a01712394c9b356e`
 
-CI gate for this milestone must be verified against the latest timeout-message test commit before this status is considered complete.
+CI gate verified green: IndoChain CI #1099 (run `36067928984`) completed successfully for documentation commit `93f195bc4b52760440f92a60a0ab5f4a94917f78`.
