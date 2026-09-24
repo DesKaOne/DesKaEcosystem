@@ -22,6 +22,7 @@ const (
 	defaultSyncInterval          = 30 * time.Second
 	defaultFailureThreshold      = 3
 	defaultCurrency              = "IDR"
+	defaultPriceListCacheTTL     = 15 * time.Minute
 )
 
 type Config struct {
@@ -86,8 +87,12 @@ func NewFromEnvironment(httpClient *http.Client) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
+	cachedClient, err := digiflazz.NewCachedClient(client, defaultPriceListCacheTTL)
+	if err != nil {
+		return nil, err
+	}
 	registry := provider.NewRegistry()
-	if err := registry.Register("digiflazz", client); err != nil {
+	if err := registry.Register("digiflazz", cachedClient); err != nil {
 		return nil, err
 	}
 	store, err := operational.NewJSONFileStore(cfg.StorePath)
