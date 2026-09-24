@@ -122,3 +122,51 @@ func (testProvider) GetStatus(context.Context, provider.StatusRequest) (provider
 func (testProvider) HandleWebhook(context.Context, provider.WebhookRequest) (provider.WebhookEvent, error) {
 	return provider.WebhookEvent{}, provider.ErrUnsupportedOperation
 }
+
+
+func TestSyncServiceRunPerformsImmediateSyncAndStopsOnContextCancellation(t *testing.T) {
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", balanceStub{balance: 2200000}); err != nil {
+		t.Fatal(err)
+	}
+	store := NewMemoryStore()
+	svc, err := NewSyncService(registry, store, "IDR", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- svc.Run(ctx, time.Hour)
+	}()
+
+	deadline := time.After(time.Second)
+	for {
+		snapshot, ok := store.Get("mock")
+		if ok {
+			if snapshot.Balance != 2200000 || snapshot.Health != HealthHealthy {
+				t.Fatalf("unexpected immediate sync snapshot: %#v", snapshot)
+			}
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("sync worker did not perform its immediate synchronization")
+		default:
+			time.Sleep(time.Millisecond)
+		}
+	}
+
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("expected context cancellation, got %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("sync worker did not stop after context cancellation")
+	}
+}
