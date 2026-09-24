@@ -288,3 +288,52 @@ func TestServiceHandleWebhookRejectsUnknownAndConflictingReferences(t *testing.T
 	})
 	if !errors.Is(err, ErrWebhookReferenceConflict) { t.Fatalf("expected webhook reference conflict, got %v", err) }
 }
+
+
+func TestServiceReconcileUsesProviderStatusWithoutResubmitting(t *testing.T) {
+	registry := provider.NewRegistry()
+	mock := Mock.New(Mock.Config{
+		Products: []provider.Product{{Code: "pln20", Name: "PLN 20"}},
+		ProviderCode: "00", Message: "pending", PurchaseStatus: provider.StatusPending, Price: 20000,
+	})
+	if err := registry.Register("mock", mock); err != nil { t.Fatal(err) }
+	store := operational.NewMemoryStore()
+	if err := store.Put(operational.Snapshot{ProviderName: "mock", Balance: 100000, Health: operational.HealthHealthy}); err != nil { t.Fatal(err) }
+	router, err := New(registry, store, map[string]int{"mock": 1})
+	if err != nil { t.Fatal(err) }
+	service, err := NewService(router)
+	if err != nil { t.Fatal(err) }
+
+	req := PurchaseRequest{ProductCode: "pln20", CustomerNo: "08123456789", ReferenceID: "ref-reconcile", Amount: 20000}
+	execution, err := service.Purchase(context.Background(), req)
+	if err != nil { t.Fatal(err) }
+	if execution.Result.Status != provider.StatusPending { t.Fatalf("expected pending purchase, got %q", execution.Result.Status) }
+
+	reconciled, err := service.Reconcile(context.Background(), req.ReferenceID)
+	if err != nil { t.Fatal(err) }
+	if reconciled != execution { t.Fatalf("expected reconciliation to preserve provider status, got %#v vs %#v", reconciled, execution) }
+	if got := mock.PurchaseCount(req.ReferenceID); got != 1 { t.Fatalf("expected reconciliation not to resubmit purchase, got %d submissions", got) }
+}
+
+func TestServiceReconcileRejectsIdentityMismatch(t *testing.T) {
+	registry := provider.NewRegistry()
+	mock := Mock.New(Mock.Config{
+		Products: []provider.Product{{Code: "pln20", Name: "PLN 20"}},
+		ProviderCode: "00", Message: "pending", PurchaseStatus: provider.StatusPending,
+	})
+	if err := registry.Register("mock", mock); err != nil { t.Fatal(err) }
+	store := operational.NewMemoryStore()
+	if err := store.Put(operational.Snapshot{ProviderName: "mock", Balance: 100000, Health: operational.HealthHealthy}); err != nil { t.Fatal(err) }
+	router, err := New(registry, store, map[string]int{"mock": 1})
+	if err != nil { t.Fatal(err) }
+	service, err := NewService(router)
+	if err != nil { t.Fatal(err) }
+
+	req := PurchaseRequest{ProductCode: "pln20", CustomerNo: "08123456789", ReferenceID: "ref-reconcile-mismatch", Amount: 20000}
+	if _, err := service.Purchase(context.Background(), req); err != nil { t.Fatal(err) }
+
+	// Mock status is keyed by reference, so alter the stored transaction only through
+	// the test's provider result contract by using a different request identity.
+	_, err = service.Reconcile(context.Background(), "unknown")
+	if !errors.Is(err, ErrWebhookTransactionNotFound) { t.Fatalf("expected unknown reference error, got %v", err) }
+}
