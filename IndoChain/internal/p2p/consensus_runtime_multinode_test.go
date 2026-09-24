@@ -1485,6 +1485,25 @@ func TestConsensusRuntimeNegativeMissingVotingPower(t *testing.T) {
 	_ = power
 }
 
+func TestConsensusRuntimeNegativeMissingValidatorMembership(t *testing.T) {
+	n, candidate, certificate, _, power, ctx, validatorResolver, senderResolver := finalizedHandoffFixture(t)
+	canonicalHead := n.HeadHash
+
+	// Keep voting power and certificate evidence intact, but remove the vote
+	// sender from the supplied validator membership set.
+	missingValidatorSet, err := consensus.NewValidatorSet(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := n.CommitFinalizedBlock(ctx, candidate, certificate, missingValidatorSet, power, validatorResolver, senderResolver); !errors.Is(err, consensus.ErrValidatorNotFound) {
+		t.Fatalf("missing validator membership error = %v, want %v", err, consensus.ErrValidatorNotFound)
+	}
+	if n.Head.Header.Height != 0 || n.HeadHash != canonicalHead {
+		t.Fatal("canonical head changed after missing validator membership rejection")
+	}
+}
+
+
 func finalizedHandoffFixture(t *testing.T) (*node.Node, block.Block, consensus.FinalityCertificate, consensus.ValidatorSet, consensus.VotingPowerSet, consensus.BlockProductionContext, node.ValidatorAuthorityResolver, node.TransactionAuthorityResolver) {
 	t.Helper()
 	store := storage.NewMemoryStore()
