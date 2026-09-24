@@ -12,7 +12,7 @@ import (
 	"testing"
 
 	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/config"
-	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
+	provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
 )
 
 func TestPurchaseBuildsOfficialBuyerRequestAndMapsResponse(t *testing.T) {
@@ -41,13 +41,13 @@ func TestPurchaseBuildsOfficialBuyerRequestAndMapsResponse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := c.Purchase(context.Background(), Provider.PurchaseRequest{
+	got, err := c.Purchase(context.Background(), provider.PurchaseRequest{
 		ProductCode: "xld10", CustomerNo: "087800001232", ReferenceID: "ref-1",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Status != Provider.StatusFailed || got.ProviderCode != "02" {
+	if got.Status != provider.StatusFailed || got.ProviderCode != "02" {
 		t.Fatalf("unexpected result: %#v", got)
 	}
 }
@@ -60,17 +60,17 @@ func TestWebhookSignatureAndMapping(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := c.HandleWebhook(context.Background(), Provider.WebhookRequest{
+	got, err := c.HandleWebhook(context.Background(), provider.WebhookRequest{
 		Body: body, Signature: "sha1=" + signature, SignatureSecret: "hooksecret",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Status != Provider.StatusSuccess || got.ProviderCode != "00" || got.SerialNumber != "SN1" {
+	if got.Status != provider.StatusSuccess || got.ProviderCode != "00" || got.SerialNumber != "SN1" {
 		t.Fatalf("unexpected webhook: %#v", got)
 	}
 
-	_, err = c.HandleWebhook(context.Background(), Provider.WebhookRequest{
+	_, err = c.HandleWebhook(context.Background(), provider.WebhookRequest{
 		Body: body, Signature: "sha1=bad", SignatureSecret: "hooksecret",
 	})
 	if err == nil {
