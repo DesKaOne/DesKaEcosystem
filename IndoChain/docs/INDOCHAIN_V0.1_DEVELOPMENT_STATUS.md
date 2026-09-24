@@ -910,6 +910,26 @@ This remains a deterministic in-process integration test. It does not implement 
 
 **Next major boundary:** Extend the multi-node runtime integration from proposal/vote exchange into finalized-block handoff, while preserving the explicit transport/runtime separation and canonical node commit guards.
 
+### 4.39 Consensus Transport → Runtime → Finalized Node Handoff Negative-Path Matrix
+
+The finalized handoff boundary now has deterministic negative-path coverage in `IndoChain/internal/p2p/consensus_runtime_multinode_test.go`.
+
+The matrix covers four failure classes without weakening the existing canonical guards:
+
+- **Mismatched proposal payload:** a block proposal whose opaque payload no longer matches its candidate is rejected by the validator runtime before phase advancement.
+- **Stale canonical context:** a finalized candidate submitted with a stale previous-hash context is rejected by `Node.CommitFinalizedBlock` with `ErrConsensusContextMismatch`, and the canonical head remains unchanged.
+- **Invalid finality evidence:** tampered certificate payload is rejected at the finalized-block validation boundary, and the node head remains unchanged.
+- **Replayed finalized block:** after one successful finalized commit, replaying the exact canonical candidate/certificate is rejected with `ErrFinalizedBlockAlreadyCommitted`.
+
+A shared deterministic finalized-handoff fixture keeps the negative tests aligned with the same Devnet, block-candidate, signed consensus-message, runtime-finality, validator-authority, and transaction-authority boundaries used by the positive integration path.
+
+This remains development-only and does not introduce production BFT timing, round-change/timeout, persistent finality indexing, or cross-node replay semantics.
+
+**Latest negative-path matrix implementation:** `066f1bff2788fb5fc719a12082efa2bf7d311c3b`  
+**CI status for latest implementation:** workflow result was not yet published when this status entry was recorded; it must be rechecked against branch HEAD before treating this commit as a CI gate.
+
+**Next major boundary:** verify the negative-path matrix in CI, then extend the handoff boundary toward deterministic multi-height finalization while preserving canonical replay/context guards.
+
 ### 4.38 Consensus Transport → Runtime → Finalized Node Handoff Boundary
 
 The multi-node consensus integration now crosses the full development handoff from explicit P2P transport into `ValidatorRuntime` finalization and then into the canonical node commit boundary.
