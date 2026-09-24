@@ -399,6 +399,20 @@ Tests cover successful validated-candidate acceptance and rejection when the can
 
 This milestone still does not define canonical serialization, P2P proposal transport, block execution during finalization, timeout/round-change behavior, or production BFT semantics.
 
+### 4.25 Consensus Finality ↔ Block Execution/Commit Authority Boundary
+
+A development-only finality-to-block authority boundary is now implemented under `IndoChain/internal/consensus/finality_block.go`.
+
+`ValidateFinalizedBlock` validates the block-production context, independently validates the `FinalityCertificate`, and requires the certificate payload to equal the deterministic development hash of the exact candidate block. This prevents a certificate for one payload from being presented as authority for a different block candidate.
+
+`FinalizedBlockCommitter` defines the narrow responsibility boundary after this authority check: consensus establishes that validator authority finalized the candidate payload, while the execution/commit owner remains responsible for executing the block against canonical state and committing block/state atomically.
+
+Tests cover successful certificate-to-candidate binding and rejection when the candidate hash differs from the certificate payload. Detailed scope is documented in `IndoChain/docs/consensus-finality-block-commit-boundary-v0.1.md`.
+
+A concrete `Node.CommitFinalizedBlock` experiment was deliberately removed immediately after review because the current node API still requires explicit execution public-key authority and the consensus fixture does not define a canonical validator-set/public-key mapping. No synthetic validator set or nil public key is retained in the node path. The repository therefore preserves the architecture guardrail that consensus must not invent execution authority context.
+
+This milestone intentionally does not define canonical block/certificate serialization, P2P finality transport, production BFT semantics, timeout/round-change behavior, validator-set lifecycle, fee/gas accounting, or public-key authority resolution.
+
 ## 5. Protocol Documentation Progress
 
 Documentation has advanced into more formal protocol specification work, including:
@@ -730,7 +744,10 @@ When there is a conflict, the implementation and dedicated protocol specificatio
 **Latest ValidatorRuntime block-proposal integration:** `dc648205aafffa119deea923386bdfe3e3f9575d`  
 **Latest runtime integration implementation:** `885fbc210c4078534a13f22d621eabb5d4635e44`  
 **Latest proposal-bridge documentation:** `b592cc9ca46aa6876daf438bfaacb77d3d206404`  
-**Next major boundary:** Consensus finality ↔ block execution/commit boundary  
+**Latest finality/block authority implementation:** `71604b7742067d0a170ad2432adecec44daaf614`  
+**Latest finality/block authority tests:** `a8d090beafae65e7a13764ed26e443ac10a75a66`  
+**Latest finality/block authority documentation:** `00600567f1e653350848eff959305fc4d7127fde`  
+**Next major boundary:** Define an explicit execution-authority handoff for finalized candidates without inventing validator-to-public-key mapping  
 
 ### 4.12 Consensus Validator Membership Boundary
 
