@@ -879,3 +879,28 @@ Commits: `a0e65e33d30b6f0435e8a7652ddf2b1265b6df5b`, `cda41646425f09a6192e856f83
 ### Verification gate
 
 A fresh CI result for the concurrent idempotency test and documentation update is required before the next reliability milestone.
+
+### 34. Milestone Update — CI Race-Detector Hardening
+
+**Date:** 2026-09-24
+
+CI run #122 is confirmed green for the concurrent idempotency documentation commit before this milestone.
+
+Added a dedicated GitHub Actions race-detector job for the DesKaProvider backend:
+
+- uses the module-declared Go 1.25.1 toolchain;
+- runs `go test -race ./...`;
+- executes alongside the existing unit-test/vet job;
+- specifically hardens verification of the mutex/channel-based concurrent purchase idempotency boundary;
+- does not introduce retry, failover, ledger mutation, or new provider behavior.
+
+The race job is a verification-only CI hardening step. Provider-specific integration remains separately credential-gated.
+
+### Verification gate
+
+The workflow change and this milestone documentation require a fresh GitHub Actions run. The branch must remain blocked from the next reliability implementation until the complete CI run, including the race-detector job, is green.
+
+### Next milestone
+
+1. verify the complete CI run including `go test -race ./...`;
+2. then continue with provider transaction callback/webhook correlation at the neutral routing boundary, without moving ledger semantics into DesKaProvider.
