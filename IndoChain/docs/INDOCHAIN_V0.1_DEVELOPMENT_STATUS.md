@@ -938,6 +938,12 @@ This remains development-only and does not introduce production BFT timing, roun
 
 **Next CI gate:** verify `0dde30c6209656e1e7328ce948db61c64a8487e9` and its status-document follow-up workflow before proceeding to the cross-height negative-path coverage.
 
+**Verified multi-height CI:** IndoChain CI run `857` completed successfully for `0dde30c6209656e1e7328ce948db61c64a8487e9`. The status-document follow-up run `859` also completed successfully. The multi-height finalized handoff is therefore green through the test/tidy/vet CI gate.
+
+**Cross-height negative-path coverage:** Added `TestConsensusRuntimeNegativeCrossHeightStaleContext` in `IndoChain/internal/p2p/consensus_runtime_multinode_test.go`. The test first commits height 1, constructs and finalizes a valid height-2 candidate against the height-1 canonical head, then intentionally submits that height-2 candidate/certificate with the previous height-0 consensus state and previous hash. The node must reject the handoff with `ErrConsensusContextMismatch` and leave the height-1 canonical head unchanged. Implementation commit: `72f65ec00c3a314aad6ac88a515ea4439a30fdd5`.
+
+**Next CI gate:** verify the new cross-height stale-context negative path and its status-document follow-up workflow before extending the matrix to an explicit cross-height replay candidate check.
+
 ### 4.38 Consensus Transport → Runtime → Finalized Node Handoff Boundary
 
 The multi-node consensus integration now crosses the full development handoff from explicit P2P transport into `ValidatorRuntime` finalization and then into the canonical node commit boundary.
