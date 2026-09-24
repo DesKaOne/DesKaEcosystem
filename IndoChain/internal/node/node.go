@@ -256,6 +256,30 @@ func (n *Node) ImportBlockWithAuthority(b block.Block, resolver TransactionAutho
 	return nil
 }
 
+// CommitRuntimeFinalizedBlock consumes a finalized certificate owned by the
+// consensus runtime and crosses the explicit consensus-to-execution handoff.
+// The runtime remains responsible for producing finality; the node remains
+// responsible for canonical context validation, authority resolution,
+// execution, and durable commit.
+func (n *Node) CommitRuntimeFinalizedBlock(
+	ctx consensus.BlockProductionContext,
+	candidate block.Block,
+	runtime *consensus.ValidatorRuntime,
+	validators consensus.ValidatorSet,
+	votingPower consensus.VotingPowerSet,
+	validatorResolver ValidatorAuthorityResolver,
+	senderResolver TransactionAuthorityResolver,
+) error {
+	if runtime == nil {
+		return errors.New("nil consensus runtime")
+	}
+	certificate, err := runtime.FinalizedCertificate()
+	if err != nil {
+		return err
+	}
+	return n.CommitFinalizedBlock(ctx, candidate, certificate, validators, votingPower, validatorResolver, senderResolver)
+}
+
 // CommitFinalizedBlock validates the consensus finality binding and explicit
 // proposer authority before executing and committing the block. Transaction
 // sender authority remains separately resolved by senderResolver; validator
