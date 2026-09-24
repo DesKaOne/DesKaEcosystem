@@ -1095,3 +1095,10 @@ This milestone does not define proposer selection, voting power, quorum, vote ag
 **Next proposer-authority boundary:** Added `TestConsensusRuntimeNegativeValidatorAuthorityResolutionError`. The test keeps finalized evidence valid but makes the injected validator-authority resolver return an explicit lookup error. `Node.CommitFinalizedBlock` must propagate that resolver error and preserve the canonical genesis head/hash. Implementation commit: `6b5575856ea23bf3ae8a29471c228886ca6ec450`.
 
 **Next CI gate:** verify `6b5575856ea23bf3ae8a29471c228886ca6ec450` through the full IndoChain test/tidy/vet workflow before proceeding to the next finalized-handoff authority boundary.
+
+
+**Verified resolver-error CI:** IndoChain CI #1008 (workflow run `35986643826`) completed successfully for `6b5575856ea23bf3ae8a29471c228886ca6ec450`; the full test/tidy/vet gate passed. The finalized handoff now explicitly propagates validator-authority resolver failures without changing canonical state.
+
+**Next execution-authority validation boundary:** Added `TestResolveProposerAuthorityRejectsInvalidAuthorization` in `IndoChain/internal/consensus/execution_authority_test.go`. The test covers missing block hash, missing proposer, and missing certificate payload, requiring `consensus.ErrInvalidExecutionAuthority` before resolver lookup. Implementation commit: `d8c2f4396d22606acd36666f2e5d7eb272faa0f0`.
+
+**Next CI gate:** verify `d8c2f4396d22606acd36666f2e5d7eb272faa0f0` through the full IndoChain test/tidy/vet workflow before proceeding to the next execution-authority boundary.
