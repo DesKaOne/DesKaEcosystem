@@ -572,3 +572,29 @@ Root cause from the GitHub Actions log:
 The import path was corrected in commit `91f688e7bba21480b9fd81f5a21a22029973470b`.
 
 The previous CI failure was an import-path/module-boundary issue, not a runtime test failure. A new CI run is required to verify the correction.
+
+### 24. Milestone Update — Explicit Restart/Recovery Lifecycle Test
+
+**Date:** 2026-09-24
+
+Completed:
+
+- verified DesKaProvider CI run #64 for the previous runtime import-path fix: **success**;
+- added an explicit restart/recovery lifecycle test using the durable JSON operational store;
+- the test creates a first service instance, performs an immediate provider balance synchronization, and persists the healthy snapshot;
+- a second, distinct service/store instance reloads the same snapshot after the simulated restart boundary;
+- the recovered balance and health are asserted before the second synchronization;
+- the second synchronization updates the persisted balance and confirms healthy state with zero consecutive failures;
+- the test remains provider-neutral by using the existing deterministic mock balance provider.
+
+### Verification
+
+The restart/recovery test is committed on `dev/deskaprovider-v0.1` at commit `a82757cf227286422a38f6af41e6a6a9bdf96c80`.
+
+A new CI run has not yet been reported for this commit at the time of this update. It must be verified before proceeding.
+
+### Next milestone
+
+1. verify CI for the restart/recovery test;
+2. design the provider routing contract around persisted balance and health;
+3. implement deterministic routing tests before adding provider-specific routing behavior.
