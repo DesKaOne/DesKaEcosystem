@@ -710,7 +710,6 @@ func TestConsensusRuntimeNegativeCrossHeightVoteContextMismatch(t *testing.T) {
 	if n.Head.Header.Height != 1 || n.HeadHash != canonicalHeight1Hash {
 		t.Fatal("canonical head changed after cross-height certificate chain ID rejection")
 	}
-}
 
 	certificate2.ChainID = state2.ChainID
 	certificate2.Height++
