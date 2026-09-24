@@ -1,6 +1,11 @@
 package provider
 
-import (\n\t"context"\n\t"errors"\n)\n\nvar ErrUnsupportedOperation = errors.New("provider operation is not supported")
+import (
+	"context"
+	"errors"
+)
+
+var ErrUnsupportedOperation = errors.New("provider operation is not supported")
 
 type TransactionStatus string
 
@@ -75,12 +80,12 @@ type WebhookRequest struct {
 type WebhookEvent struct {
 	ReferenceID  string
 	CustomerNo   string
-	ProductCode   string
-	Status        TransactionStatus
-	ProviderCode  string
-	Message       string
-	SerialNumber  string
-	Price         int64
+	ProductCode  string
+	Status       TransactionStatus
+	ProviderCode string
+	Message      string
+	SerialNumber string
+	Price        int64
 }
 
 type PPOBProvider interface {
