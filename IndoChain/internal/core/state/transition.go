@@ -24,14 +24,20 @@ func ApplyTransaction(s *State, tx transaction.Transaction, rules ExecutionRules
 	if s == nil {
 		return errors.New("nil state")
 	}
+	if err := transaction.Validate(tx, rules.Validation); err != nil {
+		return err
+	}
+
 	publicKey := rules.PublicKey
 	if rules.PublicKeyResolver != nil {
 		sender := append([]byte(nil), tx.Sender...)
 		resolved, err := rules.PublicKeyResolver.PublicKeyForSender(sender)
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 		publicKey = resolved
 	}
-	if err := transaction.ValidateAndVerify(tx, rules.Validation, publicKey); err != nil {
+	if err := transaction.ValidateSignature(tx, publicKey); err != nil {
 		return err
 	}
 	if len(tx.Sender) == 0 || len(tx.Recipient) == 0 {
