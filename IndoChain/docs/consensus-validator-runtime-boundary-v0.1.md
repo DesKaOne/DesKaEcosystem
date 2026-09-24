@@ -127,3 +127,25 @@ This evidence requires a strictly newer target round, valid threshold, non-empty
 The certificate describes why a runtime may advance rounds, but does not itself perform the transition. `ValidatorRuntime.AdvanceRound(next)` remains the state-transition boundary.
 
 It intentionally does not define signed timeout messages, aggregated signatures, lock-carrying evidence, network synchronization, or a production BFT timeout algorithm.
+
+## Signed Timeout Message Boundary
+
+The consensus package now includes a development-only signed timeout-message boundary.
+
+A timeout message uses `MessageTypeTimeout` and carries the target next round as a canonical 8-byte big-endian payload. The message is bound to the current protocol/chain/epoch/height/round context and uses the existing consensus signing domain.
+
+`ValidateTimeoutMessage` validates message structure, exact round-state context, validator membership, strictly newer target round, public-key resolution, and Ed25519 signature verification.
+
+`NewTimeoutCertificateFromMessages` authenticates all supplied timeout messages, requires a common target round, and delegates unique-validator, voting-power, quorum, and canonical-order checks to `NewTimeoutCertificate`. It does not advance the runtime or mutate canonical state.
+
+### Tests
+
+Coverage includes:
+- successful signed timeout evidence and certificate construction;
+- tampered payload/signature rejection;
+- mismatched target-round rejection;
+- stale target-round rejection.
+
+### Non-goals
+
+This boundary does not yet define aggregated timeout signatures, lock-carrying timeout evidence, proposer synchronization, automatic runtime advancement, P2P timeout transport, persistent timeout evidence, or the production BFT timeout algorithm.
