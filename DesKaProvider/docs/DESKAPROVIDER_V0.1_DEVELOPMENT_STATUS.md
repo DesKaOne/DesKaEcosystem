@@ -1211,7 +1211,12 @@ The cache implementation commits are:
 - eaa2f8c866abd52754028f9438f3124dee978cb2
 - 3dad3977fdcf5a66eaa35c3cba72c57f45c2c00e
 
-A fresh complete CI run for the cache implementation is required before the next development step. The branch must not advance until test, vet, and race are all green.
+CI run #192 for the cache implementation is confirmed **green**:
+
+- test — success (`go test ./...` and `go vet ./...`);
+- race — success (`go test -race ./...`).
+
+The cache milestone is therefore verified and the branch is clear for the next development step.
 
 ### Next Milestone
 
