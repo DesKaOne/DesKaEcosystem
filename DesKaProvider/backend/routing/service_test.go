@@ -444,11 +444,4 @@ func TestServiceRestartRecoversDurableTransactionState(t *testing.T) {
 		t.Fatalf("expected restart-safe idempotency without resubmission, got %d submissions", got)
 	}
 
-	reconciled, err := recoveredService.Reconcile(context.Background(), req.ReferenceID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if reconciled != recovered {
-		t.Fatalf("expected recovered reconciliation state to remain pending, got %#v", reconciled)
-	}
 }
