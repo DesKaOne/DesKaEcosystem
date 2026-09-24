@@ -10,6 +10,7 @@ import (
 	"time"
 
 	provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
+	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/catalog"
 	digiflazz "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/DigiFlazz"
 	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/operational"
 	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/config"
@@ -23,6 +24,8 @@ const (
 	defaultFailureThreshold      = 3
 	defaultCurrency              = "IDR"
 	defaultPriceListCacheTTL     = 15 * time.Minute
+	defaultCatalogStorePath      = "data/product-catalog.json"
+	defaultCatalogSyncInterval   = 15 * time.Minute
 )
 
 type Config struct {
@@ -31,12 +34,16 @@ type Config struct {
 	SyncInterval          time.Duration
 	FailureThreshold      int
 	Currency              string
+	CatalogStorePath      string
+	CatalogSyncInterval   time.Duration
 }
 
 type Service struct {
 	syncService    *operational.SyncService
 	purchaseService *routing.Service
+	catalogSync    *catalog.SyncService
 	interval       time.Duration
+	catalogInterval time.Duration
 }
 
 func LoadConfig() (Config, error) {
@@ -46,6 +53,8 @@ func LoadConfig() (Config, error) {
 		SyncInterval:         defaultSyncInterval,
 		FailureThreshold:     defaultFailureThreshold,
 		Currency:             os.Getenv("DESKAPROVIDER_OPERATIONAL_CURRENCY"),
+		CatalogStorePath:     os.Getenv("DESKAPROVIDER_CATALOG_STORE_PATH"),
+		CatalogSyncInterval:  defaultCatalogSyncInterval,
 	}
 	if cfg.StorePath == "" {
 		cfg.StorePath = defaultStorePath
@@ -55,6 +64,16 @@ func LoadConfig() (Config, error) {
 	}
 	if cfg.Currency == "" {
 		cfg.Currency = defaultCurrency
+	}
+	if cfg.CatalogStorePath == "" {
+		cfg.CatalogStorePath = defaultCatalogStorePath
+	}
+	if raw := os.Getenv("DESKAPROVIDER_CATALOG_SYNC_INTERVAL"); raw != "" {
+		interval, err := time.ParseDuration(raw)
+		if err != nil || interval <= 0 {
+			return Config{}, fmt.Errorf("invalid DESKAPROVIDER_CATALOG_SYNC_INTERVAL: %q", raw)
+		}
+		cfg.CatalogSyncInterval = interval
 	}
 
 	if raw := os.Getenv("DESKAPROVIDER_BALANCE_SYNC_INTERVAL"); raw != "" {
@@ -103,6 +122,14 @@ func NewFromEnvironment(httpClient *http.Client) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
+	catalogStore, err := catalog.NewJSONFileStore(cfg.CatalogStorePath)
+	if err != nil {
+		return nil, err
+	}
+	catalogSync, err := catalog.NewSyncService(registry, catalogStore)
+	if err != nil {
+		return nil, err
+	}
 	transactionStore, err := routing.NewJSONFileTransactionStore(cfg.TransactionStorePath)
 	if err != nil {
 		return nil, err
@@ -111,11 +138,15 @@ func NewFromEnvironment(httpClient *http.Client) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
+	router.Catalog = catalogStore
+	if err != nil {
+		return nil, err
+	}
 	purchaseService, err := routing.NewServiceWithStore(router, transactionStore)
 	if err != nil {
 		return nil, err
 	}
-	return &Service{syncService: syncService, purchaseService: purchaseService, interval: cfg.SyncInterval}, nil
+	return &Service{syncService: syncService, purchaseService: purchaseService, catalogSync: catalogSync, interval: cfg.SyncInterval, catalogInterval: cfg.CatalogSyncInterval}, nil
 }
 
 func New(syncService *operational.SyncService, interval time.Duration) (*Service, error) {
@@ -132,7 +163,24 @@ func (s *Service) Run(ctx context.Context) error {
 	if ctx == nil {
 		return errors.New("context is required")
 	}
-	return s.syncService.Run(ctx, s.interval)
+	if s.catalogSync == nil {
+		return s.syncService.Run(ctx, s.interval)
+	}
+	if ctx == nil {
+		return errors.New("context is required")
+	}
+	_ = s.catalogSync.SyncAll(ctx)
+	ticker := time.NewTicker(s.catalogInterval)
+	defer ticker.Stop()
+	go func() { _ = s.syncService.Run(ctx, s.interval) }()
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			_ = s.catalogSync.SyncAll(ctx)
+		}
+	}
 }
 
 func (s *Service) PurchaseService() *routing.Service {
