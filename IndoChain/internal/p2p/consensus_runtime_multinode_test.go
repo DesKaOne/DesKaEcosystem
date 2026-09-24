@@ -673,6 +673,16 @@ func TestConsensusRuntimeNegativeCrossHeightVoteContextMismatch(t *testing.T) {
 	if n.Head.Header.Height != 1 || n.HeadHash != canonicalHeight1Hash {
 		t.Fatal("canonical head changed after cross-height vote context rejection")
 	}
+
+	// Restore the vote context so the next mutation isolates certificate-level context.
+	certificate2.Votes[0].Height = state2.Height
+	certificate2.Round++
+	if err := n.CommitFinalizedBlock(ctx2, candidate2, certificate2, validators, power, validatorResolver, senderResolver); !errors.Is(err, consensus.ErrStateContextMismatch) {
+		t.Fatalf("cross-height certificate round context error = %v, want %v", err, consensus.ErrStateContextMismatch)
+	}
+	if n.Head.Header.Height != 1 || n.HeadHash != canonicalHeight1Hash {
+		t.Fatal("canonical head changed after cross-height certificate round rejection")
+	}
 }
 
 func TestConsensusRuntimeNegativeCrossHeightReplayedCandidate(t *testing.T) {
