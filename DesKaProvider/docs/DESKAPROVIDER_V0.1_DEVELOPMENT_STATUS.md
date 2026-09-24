@@ -1017,3 +1017,9 @@ The durable transaction store records provider transaction correlation and norma
 1. verify CI for this durable transaction-state milestone;
 2. if green, continue with the next reliability boundary without introducing automatic retry/failover prematurely;
 3. evaluate the minimum runtime wiring needed to use the durable transaction store in the service composition.
+
+### CI Fix Follow-up
+
+- CI #153 failed because the reconciliation test helper was accidentally placed before the Go `package` declaration.
+- Fixed in `a5e37a6996bb5b1acdfe16d5145051b0a4216059`.
+- CI must be re-run and verified green before continuing.
