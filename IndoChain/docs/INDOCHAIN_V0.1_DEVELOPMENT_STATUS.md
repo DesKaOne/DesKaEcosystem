@@ -423,6 +423,17 @@ Tests cover successful resolution, missing resolver rejection, and certificate/b
 
 This milestone deliberately stops at dependency injection. The current v0.1 transaction model does not contain a canonical sender public-key field, and block execution still accepts one explicit public key. Therefore no synthetic multi-sender registry or execution authority is introduced here.
 
+### 4.28 Finalized Block → Node Commit Authority Boundary
+
+The finalized-block authority path is now connected to the node commit boundary. `Node.CommitFinalizedBlock` requires the explicit consensus `BlockProductionContext`, candidate block, `FinalityCertificate`, `ValidatorSet`, `VotingPowerSet`, a validator authority resolver, and a separate transaction sender authority resolver.
+
+The node first validates the candidate/certificate binding through `ValidateFinalizedBlock`, then performs the explicit proposer-validator authority handoff through `ResolveProposerAuthority`, and only then executes the block through `ImportBlockWithAuthority` using sender-level key resolution.
+
+This deliberately keeps three identities/boundaries separate: consensus validator identity, proposer execution authority, and transaction sender authority. No canonical validator registry or validator-to-address assumption is introduced.
+
+The commit path retains the existing atomic working-state → store commit → node-head advancement sequence. Tests cover a successful finalized-block path from certificate validation through authority resolution and canonical commit.
+
+Detailed scope is documented in the finalized-block and execution-authority boundary documents plus the node integration implementation.
 ### 4.27 Consensus ↔ Node Execution Authority Integration Boundary
 
 The explicit execution-authority handoff is now connected to the node execution path without inventing a validator registry.
@@ -774,7 +785,9 @@ When there is a conflict, the implementation and dedicated protocol specificatio
 **Latest execution-authority handoff documentation:** `9e35299980a4dbe67d786de27fcde9361cdaa1cf`  
 **Latest node execution-authority integration:** `3a37071d11f4d7e133f7c23736a3c6f81c091e31`  
 **Latest node execution-authority documentation:** `3a0d109c1900e6bf74ad1e5094ce779bd8ef972d`  
-**Next major boundary:** Bind finalized-block authority to the node commit path using explicit validator/power inputs, while preserving sender-key separation  
+**Latest finalized-block → node commit integration:** `3b7bc7e5f6cbe33bd72e84eecc1075cf792ad1e4`  
+**Latest finalized-block → node commit implementation:** `f0e0be0c5ec38a157bfca658ef6ce78e83ba2622`  
+**Next major boundary:** Add explicit finalized-block commit integration failure-path coverage and tighten canonical consensus-to-execution context handling  
 
 ### 4.12 Consensus Validator Membership Boundary
 
