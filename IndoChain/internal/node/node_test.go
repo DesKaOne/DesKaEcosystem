@@ -531,3 +531,33 @@ func TestImportBlockWithAuthorityResolvesSenderKey(t *testing.T) {
 	if err := n.ImportBlockWithAuthority(b, senderAuthorityResolver{publicKey: signer.PublicKey()}); err != nil { t.Fatal(err) }
 	if got, ok := n.State.Get(recipient); !ok || got.Balance != 10 { t.Fatalf("recipient = %+v, want balance 10", got) }
 }
+
+
+type validatorAuthorityResolver struct { publicKey []byte }
+func (r validatorAuthorityResolver) PublicKeyForValidator(validatorID []byte) ([]byte, error) { return append([]byte(nil), r.publicKey...), nil }
+
+func TestCommitFinalizedBlockUsesExplicitAuthorityBoundaries(t *testing.T) {
+	store := storage.NewMemoryStore()
+	n, err := NewDevnet(store); if err != nil { t.Fatal(err) }
+	seed := make([]byte, 32); seed[0] = 19
+	keyPair, err := crypto.NewEd25519KeyPair(seed); if err != nil { t.Fatal(err) }
+	signer, err := crypto.NewEd25519Signer(keyPair.PrivateKey); if err != nil { t.Fatal(err) }
+	validatorID := []byte("validator-a")
+	validators, err := consensus.NewValidatorSet([][]byte{validatorID}); if err != nil { t.Fatal(err) }
+	power, err := consensus.NewVotingPowerSet([]consensus.ValidatorVotingPower{{ValidatorID: validatorID, Power: 1}}); if err != nil { t.Fatal(err) }
+	ctx := consensus.BlockProductionContext{State: consensus.RoundState{ProtocolVersion: devnet.ProtocolVersion, ChainID: devnet.ChainID, Epoch: 1, Height: 0, Round: 0, Phase: consensus.PhaseProposal}, PreviousHash: n.HeadHash, Proposer: validatorID}
+	sender := types.Address([]byte("finalized-sender")); recipient := types.Address([]byte("finalized-recipient"))
+	n.State.Set(sender, state.Account{Balance: 60, Nonce: 0})
+	tx := transaction.Transaction{Version: devnet.ProtocolVersion, ChainID: devnet.ChainID, Nonce: 0, Sender: sender, Recipient: recipient, Value: 20, GasLimit: 100}
+	tx.Signature, err = transaction.Sign(tx, signer); if err != nil { t.Fatal(err) }
+	rules, err := n.Config.BlockRules(signer.PublicKey()); if err != nil { t.Fatal(err) }
+	working := n.State.Snapshot(); if err := state.ApplyTransaction(working, tx, rules.Transaction); err != nil { t.Fatal(err) }
+	candidate := block.Block{Header: block.Header{Version: devnet.ProtocolVersion, ChainID: devnet.ChainID, Height: 1, Timestamp: n.Head.Header.Timestamp + 1, PreviousHash: n.HeadHash, StateRoot: working.Root(), Proposer: validatorID}, Transactions: []any{tx}}
+	candidate.Header.TransactionsRoot, err = block.TransactionsRoot(candidate.Transactions); if err != nil { t.Fatal(err) }
+	payload, err := consensus.ValidateProducedBlock(ctx, candidate); if err != nil { t.Fatal(err) }
+	vote := consensus.Message{ProtocolVersion: 1, ChainID: 1001, Epoch: 1, Height: 0, Round: 0, Sender: validatorID, Type: consensus.MessageTypeVote, Payload: payload[:]}
+	certificate, err := consensus.NewFinalityCertificate(ctx.State, validators, power, consensus.QuorumThreshold{Numerator: 1, Denominator: 1}, payload[:], []consensus.Message{vote}); if err != nil { t.Fatal(err) }
+	if err := n.CommitFinalizedBlock(ctx, candidate, certificate, validators, power, validatorAuthorityResolver{publicKey: signer.PublicKey()}, senderAuthorityResolver{publicKey: signer.PublicKey()}); err != nil { t.Fatal(err) }
+	if n.Head.Header.Height != 1 { t.Fatalf("head height = %d, want 1", n.Head.Header.Height) }
+	if got, ok := n.State.Get(recipient); !ok || got.Balance != 20 { t.Fatalf("recipient = %+v, want balance 20", got) }
+}
