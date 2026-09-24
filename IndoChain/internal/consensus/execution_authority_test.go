@@ -76,6 +76,20 @@ func TestResolveProposerAuthorityRejectsInvalidAuthorization(t *testing.T) {
 	}
 }
 
+func TestResolveProposerAuthorityValidatesBeforeResolverLookup(t *testing.T) {
+	hash := types.Hash{1}
+	invalid := FinalizedBlockAuthorization{
+		BlockHash: hash,
+		Proposer:  []byte("validator-a"),
+		Certificate: FinalityCertificate{Payload: []byte{2}},
+	}
+	resolverErr := errors.New("resolver must not be called")
+	resolver := testAuthorityResolver{err: resolverErr}
+	if _, err := ResolveProposerAuthority(invalid, resolver); !errors.Is(err, ErrInvalidExecutionAuthority) {
+		t.Fatalf("ResolveProposerAuthority() error = %v, want %v", err, ErrInvalidExecutionAuthority)
+	}
+}
+
 func TestFinalizedBlockAuthorizationRejectsMismatchedPayload(t *testing.T) {
 	hash := types.Hash{1}
 	other := types.Hash{2}
