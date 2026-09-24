@@ -355,3 +355,32 @@ The live integration request has not been executed from this environment because
 
 1. execute the live CS test when runtime secrets are available;
 2. then implement provider balance synchronization and provider health state.
+
+
+### 16. Milestone Update — CI Restoration + Operational Balance/Health Foundation
+
+**Date:** 2026-09-24
+
+Completed:
+
+- fixed the GitHub Actions integration job so the workflow does not gate a job directly on the `secrets` context;
+- the live DigiFlazz test now skips cleanly when runtime credentials are unavailable, keeping the CI workflow visible and deterministic without requiring secrets;
+- added optional provider-neutral `BalanceProvider` capability;
+- added an operational snapshot model for provider balance and health state;
+- added thread-safe in-memory operational storage as the deterministic v0.1 persistence boundary;
+- added balance synchronization service with configurable failure threshold;
+- successful sync records balance, `last_checked_at`, `last_success_at`, and healthy state;
+- failed sync preserves the last known balance and records the error, with degraded/unhealthy state based on consecutive failure count;
+- added deterministic unit tests for success, health escalation, and unsupported balance capability.
+
+### Verification
+
+The new operational package is designed for `go test ./...` and `go vet ./...`. A live provider balance endpoint is intentionally not implemented yet because the current source API catalog does not establish a concrete balance endpoint/response contract for DigiFlazz or the other providers.
+
+### Next milestone
+
+1. define the concrete provider balance adapter contract from verified provider API documentation;
+2. implement the first real provider balance adapter;
+3. replace/integrate the in-memory operational store with the documented persistence layer;
+4. add the periodic 30–60 second worker;
+5. then continue toward provider routing using cached balance and health.
