@@ -1884,3 +1884,51 @@ No speculative endpoint, credential, signature, request schema, status mapping, 
 5. add credential-gated read-only integration checks where supported;
 6. require fresh CI `test`, `vet`, and `race` green.
 
+### 54. Milestone Update — XP API Research Boundary Reconfirmed
+
+**Date:** 2026-09-25
+
+CI run **#315** for the previous status-document commit is confirmed **GREEN**:
+
+- `test` — success (`go mod tidy`, `go test ./...`, `go vet ./...`);
+- `race` — success (`go test -race ./...`).
+
+Additional XP SINDONESIA API research was performed after the green gate.
+
+The official public site continues to provide product/catalog evidence, including product codes, prices, and availability/status. citeturn2search0turn2search1
+
+The official homepage exposes an API navigation entry, but direct retrieval of `https://xp.sindonesia.net/api/` still fails through the available web source with a cache/fetch miss. No official API contract content was therefore obtained.
+
+A historical third-party search result references an older `xp.sindonesia.net/api.php` endpoint and mentions POST/JSON behavior. This is treated only as historical lead material, not as current API documentation or authorization to implement the adapter. citeturn2search3
+
+### Implementation Decision
+
+XP SINDONESIA remains blocked at contract-discovery stage.
+
+Do not implement based on the historical third-party reference because it does not verify the current:
+
+- endpoint and HTTP contract;
+- authentication/credential format;
+- signature formula;
+- product/pricelist schema;
+- transaction request/response schema;
+- status semantics;
+- callback/webhook contract;
+- balance contract.
+
+No speculative XP adapter code was added.
+
+### Verification Gate
+
+- Previous CI run **#315 — GREEN**;
+- current XP contract — **still insufficiently verified for implementation**.
+
+### Next Milestone
+
+1. obtain the current XP API documentation/content or provider-issued integration specification;
+2. verify authentication, transaction, status, callback, and balance contracts;
+3. implement the minimum existing `PPOBProvider` mapping;
+4. add deterministic HTTP tests;
+5. add credential-gated read-only integration checks where supported;
+6. require fresh CI `test`, `vet`, and `race` green.
+
