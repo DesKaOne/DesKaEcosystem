@@ -17,33 +17,34 @@ import (
 )
 
 const (
-	defaultStorePath       = "data/operational-snapshots.json"
-	defaultSyncInterval    = 30 * time.Second
-	defaultFailureThreshold = 3
-	defaultCurrency        = "IDR"
+	defaultStorePath             = "data/operational-snapshots.json"
+	defaultTransactionStorePath  = "data/provider-transactions.json"
+	defaultSyncInterval          = 30 * time.Second
+	defaultFailureThreshold      = 3
+	defaultCurrency              = "IDR"
 )
 
 type Config struct {
-	StorePath        string
-	TransactionStorePath string
-	SyncInterval     time.Duration
-	FailureThreshold int
-	Currency         string
+	StorePath             string
+	TransactionStorePath  string
+	SyncInterval          time.Duration
+	FailureThreshold      int
+	Currency              string
 }
 
 type Service struct {
-	syncService *operational.SyncService
+	syncService    *operational.SyncService
 	purchaseService *routing.Service
-	interval    time.Duration
+	interval       time.Duration
 }
 
 func LoadConfig() (Config, error) {
 	cfg := Config{
-		StorePath:        os.Getenv("DESKAPROVIDER_OPERATIONAL_STORE_PATH"),
+		StorePath:            os.Getenv("DESKAPROVIDER_OPERATIONAL_STORE_PATH"),
 		TransactionStorePath: os.Getenv("DESKAPROVIDER_TRANSACTION_STORE_PATH"),
-		SyncInterval:     defaultSyncInterval,
-		FailureThreshold: defaultFailureThreshold,
-		Currency:         os.Getenv("DESKAPROVIDER_OPERATIONAL_CURRENCY"),
+		SyncInterval:         defaultSyncInterval,
+		FailureThreshold:     defaultFailureThreshold,
+		Currency:             os.Getenv("DESKAPROVIDER_OPERATIONAL_CURRENCY"),
 	}
 	if cfg.StorePath == "" {
 		cfg.StorePath = defaultStorePath
@@ -129,8 +130,9 @@ func (s *Service) Run(ctx context.Context) error {
 	return s.syncService.Run(ctx, s.interval)
 }
 
-
 func (s *Service) PurchaseService() *routing.Service {
-	if s == nil { return nil }
+	if s == nil {
+		return nil
+	}
 	return s.purchaseService
 }
