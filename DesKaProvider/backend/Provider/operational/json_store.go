@@ -74,12 +74,21 @@ func (s *JSONFileStore) Put(snapshot Snapshot) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.snapshots[snapshot.ProviderName] = snapshot
-	return s.persistLocked()
+	next := make(map[string]Snapshot, len(s.snapshots)+1)
+	for name, existing := range s.snapshots {
+		next[name] = existing
+	}
+	next[snapshot.ProviderName] = snapshot
+
+	if err := s.persist(next); err != nil {
+		return err
+	}
+	s.snapshots = next
+	return nil
 }
 
-func (s *JSONFileStore) persistLocked() error {
-	state := jsonFileState{Snapshots: s.snapshots}
+func (s *JSONFileStore) persist(snapshots map[string]Snapshot) error {
+	state := jsonFileState{Snapshots: snapshots}
 	data, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode operational store: %w", err)
