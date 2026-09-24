@@ -1161,3 +1161,30 @@ This milestone does not define proposer selection, voting power, quorum, vote ag
 **Limitation:** This is a development locking invariant, not production BFT locking. The existing v0.1 runtime still models votes through the current `MessageTypeVote` / `VoteAggregator` boundary and does not yet implement distinct prevote/precommit message types, timeout/round-change, or lock carry-over across rounds.
 
 **Next CI gate:** verify `9bf20d37ca6db46b99f44325dedd7eecf96dead0` through the full IndoChain test/tidy/vet workflow before proceeding to timeout/round-change or the next consensus lifecycle boundary.
+
+### 4.23 Consensus Timeout / Round-Change Runtime Boundary
+
+A deterministic development round-change boundary is now implemented in `IndoChain/internal/consensus/runtime.go`.
+
+`ValidatorRuntime.AdvanceRound(next)` models a timeout/round-change transition by requiring a strictly newer round, resetting the phase to `PhaseProposal`, clearing the current proposal, resetting round-local vote aggregation, and preserving the previously locked proposal. The state transition and replacement vote aggregator are prepared before runtime mutation so a failed transition leaves the runtime unchanged.
+
+A validator that already holds a lock may accept the same locked proposal in the next round, while a conflicting proposal is rejected with `ErrConflictingLockedProposal`. Round changes after finalization are rejected, and rejected conflicting proposals do not mutate round-local state.
+
+Vote validation is performed before the lock-conflict check so malformed or unauthorized messages cannot use the lock boundary to bypass the existing consensus-message/validator validation order.
+
+Regression tests cover:
+- successful round advancement with lock preservation;
+- reset of proposal and round-local votes;
+- acceptance of the locked proposal in the next round;
+- rejection of a conflicting proposal after round change;
+- rejection of round change after finalization;
+- non-mutating behavior on rejected transitions.
+
+Commits:
+- round-change runtime boundary: `d8d13ce5000990399e47de5767f1c9ada1f9888e`
+- round-change regression tests: `ebadefc03688b55658ad08930274f24d27dd3cb4`
+- vote validation precedence hardening: `20c51dc4b48743fcbcc7f692dd5f0cdf78092eac`
+
+CI gate for the latest implementation is pending and must be verified before this milestone is considered green.
+
+This remains a development-only timeout/round-change invariant. It does not yet define timeout certificates, proposer timeout messages, prevote/precommit wire separation, lock carry-over evidence, multi-node round synchronization, or the production BFT algorithm.
