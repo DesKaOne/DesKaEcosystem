@@ -23,6 +23,7 @@ func (p *balanceMock) GetBalance(context.Context) (int64, error) {
 
 func TestLoadConfigDefaults(t *testing.T) {
 	t.Setenv("DESKAPROVIDER_OPERATIONAL_STORE_PATH", "")
+	t.Setenv("DESKAPROVIDER_TRANSACTION_STORE_PATH", "")
 	t.Setenv("DESKAPROVIDER_OPERATIONAL_CURRENCY", "")
 	t.Setenv("DESKAPROVIDER_BALANCE_SYNC_INTERVAL", "")
 	t.Setenv("DESKAPROVIDER_BALANCE_FAILURE_THRESHOLD", "")
@@ -31,7 +32,7 @@ func TestLoadConfigDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.StorePath != defaultStorePath || cfg.SyncInterval != defaultSyncInterval ||
+	if cfg.StorePath != defaultStorePath || cfg.TransactionStorePath != defaultTransactionStorePath || cfg.SyncInterval != defaultSyncInterval ||
 		cfg.FailureThreshold != defaultFailureThreshold || cfg.Currency != defaultCurrency {
 		t.Fatalf("unexpected defaults: %#v", cfg)
 	}
@@ -107,6 +108,8 @@ func TestNewFromEnvironmentBuildsDurableService(t *testing.T) {
 	t.Setenv("DIGIFLAZZ_USERNAME", "test-user")
 	t.Setenv("DIGIFLAZZ_API_KEY", "test-key")
 	t.Setenv("DESKAPROVIDER_OPERATIONAL_STORE_PATH", storePath)
+	transactionStorePath := filepath.Join(t.TempDir(), "transactions", "state.json")
+	t.Setenv("DESKAPROVIDER_TRANSACTION_STORE_PATH", transactionStorePath)
 	t.Setenv("DESKAPROVIDER_BALANCE_SYNC_INTERVAL", "45s")
 	t.Setenv("DESKAPROVIDER_BALANCE_FAILURE_THRESHOLD", "4")
 	t.Setenv("DESKAPROVIDER_OPERATIONAL_CURRENCY", "IDR")
@@ -115,7 +118,7 @@ func TestNewFromEnvironmentBuildsDurableService(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if service.interval != 45*time.Second || service.syncService.FailureThreshold != 4 {
+	if service.interval != 45*time.Second || service.syncService.FailureThreshold != 4 || service.PurchaseService() == nil {
 		t.Fatalf("unexpected service configuration: interval=%s threshold=%d", service.interval, service.syncService.FailureThreshold)
 	}
 	if _, err := os.Stat(storePath); !os.IsNotExist(err) {
