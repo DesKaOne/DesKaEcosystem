@@ -752,6 +752,27 @@ func TestConsensusRuntimeNegativeInvalidFinalityCertificateStructure(t *testing.
 	}
 }
 
+func TestConsensusRuntimeNegativeFinalityQuorumNotReached(t *testing.T) {
+	n, candidate, certificate, validators, power, ctx, validatorResolver, senderResolver := finalizedHandoffFixture(t)
+	canonicalHead := n.HeadHash
+
+	certificate.Threshold = consensus.QuorumThreshold{Numerator: 2, Denominator: 1}
+	if err := n.CommitFinalizedBlock(ctx, candidate, certificate, validators, power, validatorResolver, senderResolver); !errors.Is(err, consensus.ErrInvalidQuorumThreshold) {
+		t.Fatalf("invalid quorum threshold error = %v, want %v", err, consensus.ErrInvalidQuorumThreshold)
+	}
+	if n.Head.Header.Height != 0 || n.HeadHash != canonicalHead {
+		t.Fatal("canonical head changed after invalid quorum threshold rejection")
+	}
+
+	certificate.Threshold = consensus.QuorumThreshold{Numerator: 2, Denominator: 3}
+	if err := n.CommitFinalizedBlock(ctx, candidate, certificate, validators, power, validatorResolver, senderResolver); !errors.Is(err, consensus.ErrFinalityQuorumNotReached) {
+		t.Fatalf("unreached finality quorum error = %v, want %v", err, consensus.ErrFinalityQuorumNotReached)
+	}
+	if n.Head.Header.Height != 0 || n.HeadHash != canonicalHead {
+		t.Fatal("canonical head changed after unreached finality quorum rejection")
+	}
+}
+
 func TestConsensusRuntimeNegativeCrossHeightReplayedCandidate(t *testing.T) {
 	n, candidate1, certificate1, validators, power, ctx1, validatorResolver, senderResolver := finalizedHandoffFixture(t)
 	if err := n.CommitFinalizedBlock(ctx1, candidate1, certificate1, validators, power, validatorResolver, senderResolver); err != nil {
