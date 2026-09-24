@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
-	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/Mock"
+	Mock "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/Mock"
 	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/operational"
 )
 
