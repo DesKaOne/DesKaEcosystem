@@ -614,6 +614,188 @@ func TestConsensusRuntimeNegativeCrossHeightReplayedCandidate(t *testing.T) {
 	}
 }
 
+func TestConsensusRuntimeNegativeCrossHeightDifferentCandidate(t *testing.T) {
+	n, candidate1, certificate1, validators, power, ctx1, validatorResolver, senderResolver := finalizedHandoffFixture(t)
+	if err := n.CommitFinalizedBlock(ctx1, candidate1, certificate1, validators, power, validatorResolver, senderResolver); err != nil {
+		t.Fatal(err)
+	}
+	canonicalHeight1Hash := n.HeadHash
+
+	state2, err := consensus.NewRoundState(devnet.ProtocolVersion, devnet.ChainID, 0, n.Head.Header.Height)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx2 := consensus.BlockProductionContext{
+		State:        state2,
+		PreviousHash: canonicalHeight1Hash,
+		Proposer:     append([]byte(nil), candidate1.Header.Proposer...),
+	}
+	rules, err := n.Config.BlockRules(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate2, err := consensus.BuildBlockCandidate(consensus.BlockCandidateInput{
+		Context: ctx2,
+		Timestamp: n.Head.Header.Timestamp + 1,
+		Transactions: []any{},
+		Rules: rules,
+	}, n.State)
+	if err != nil {
+		t.Fatal(err)
+	}
+	consensusRules := consensus.ValidationRules{
+		ProtocolVersion: state2.ProtocolVersion,
+		ChainID:         state2.ChainID,
+		RequireSender:   true,
+		RequireSignature: true,
+	}
+	runtime2, err := consensus.NewValidatorRuntime(consensus.RuntimeConfig{
+		Rules: consensusRules,
+		State: state2,
+		Validators: validators,
+		VotingPower: power,
+		Threshold: consensus.QuorumThreshold{Numerator: 1, Denominator: 1},
+		Proposer: consensus.RoundRobinProposer{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	proposal2, err := consensus.NewBlockProposal(ctx2, candidate2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyPair, err := crypto.NewEd25519KeyPair(bytes.Repeat([]byte{0x58}, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer, err := crypto.NewEd25519Signer(keyPair.PrivateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proposalMsg2 := consensus.Message{
+		ProtocolVersion: state2.ProtocolVersion,
+		ChainID: state2.ChainID,
+		Epoch: state2.Epoch,
+		Height: state2.Height,
+		Round: state2.Round,
+		Sender: append([]byte(nil), candidate2.Header.Proposer...),
+		Type: consensus.MessageTypeProposal,
+		Payload: proposal2.MessagePayload(),
+	}
+	proposalMsg2, err = proposalMsg2.Sign(signer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime2.AcceptProposal(proposalMsg2); err != nil {
+		t.Fatal(err)
+	}
+	vote2 := consensus.Message{
+		ProtocolVersion: state2.ProtocolVersion,
+		ChainID: state2.ChainID,
+		Epoch: state2.Epoch,
+		Height: state2.Height,
+		Round: state2.Round,
+		Sender: append([]byte(nil), candidate2.Header.Proposer...),
+		Type: consensus.MessageTypeVote,
+		Payload: proposal2.MessagePayload(),
+	}
+	vote2, err = vote2.Sign(signer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime2.AddVote(vote2); err != nil {
+		t.Fatal(err)
+	}
+	certificate2, err := runtime2.FinalizeProposal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := n.CommitFinalizedBlock(ctx2, candidate2, certificate2, validators, power, validatorResolver, senderResolver); err != nil {
+		t.Fatal(err)
+	}
+	canonicalHeight2Hash := n.HeadHash
+
+	// Build a different, otherwise valid height-1 candidate against the same
+	// genesis context. It must not be mistaken for an exact canonical replay.
+	alternateCtx := ctx1
+	alternateCandidate, err := consensus.BuildBlockCandidate(consensus.BlockCandidateInput{
+		Context: alternateCtx,
+		Timestamp: candidate1.Header.Timestamp + 1,
+		Transactions: []any{},
+		Rules: rules,
+	}, n.State)
+	if err != nil {
+		t.Fatal(err)
+	}
+	alternateProposal, err := consensus.NewBlockProposal(alternateCtx, alternateCandidate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	alternateRuntime, err := consensus.NewValidatorRuntime(consensus.RuntimeConfig{
+		Rules: consensusRules,
+		State: ctx1.State,
+		Validators: validators,
+		VotingPower: power,
+		Threshold: consensus.QuorumThreshold{Numerator: 1, Denominator: 1},
+		Proposer: consensus.RoundRobinProposer{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	alternateProposalMsg := consensus.Message{
+		ProtocolVersion: ctx1.State.ProtocolVersion,
+		ChainID: ctx1.State.ChainID,
+		Epoch: ctx1.State.Epoch,
+		Height: ctx1.State.Height,
+		Round: ctx1.State.Round,
+		Sender: append([]byte(nil), alternateCandidate.Header.Proposer...),
+		Type: consensus.MessageTypeProposal,
+		Payload: alternateProposal.MessagePayload(),
+	}
+	alternateProposalMsg, err = alternateProposalMsg.Sign(signer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := alternateRuntime.AcceptProposal(alternateProposalMsg); err != nil {
+		t.Fatal(err)
+	}
+	alternateVote := consensus.Message{
+		ProtocolVersion: ctx1.State.ProtocolVersion,
+		ChainID: ctx1.State.ChainID,
+		Epoch: ctx1.State.Epoch,
+		Height: ctx1.State.Height,
+		Round: ctx1.State.Round,
+		Sender: append([]byte(nil), alternateCandidate.Header.Proposer...),
+		Type: consensus.MessageTypeVote,
+		Payload: alternateProposal.MessagePayload(),
+	}
+	alternateVote, err = alternateVote.Sign(signer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := alternateRuntime.AddVote(alternateVote); err != nil {
+		t.Fatal(err)
+	}
+	alternateCertificate, err := alternateRuntime.FinalizeProposal()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	alternateHash, err := block.Hash(alternateCandidate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if alternateHash == canonicalHeight1Hash {
+		t.Fatal("alternate candidate unexpectedly matched canonical height-1 hash")
+	}
+	if err := n.CommitFinalizedBlock(ctx1, alternateCandidate, alternateCertificate, validators, power, validatorResolver, senderResolver); !errors.Is(err, node.ErrConsensusContextMismatch) {
+		t.Fatalf("different lower-height candidate error = %v, want %v", err, node.ErrConsensusContextMismatch)
+	}
+	if n.Head.Header.Height != 2 || n.HeadHash != canonicalHeight2Hash {
+		t.Fatal("canonical head changed after different lower-height candidate rejection")
+	}
+}
+
 func TestConsensusRuntimeNegativeCrossHeightStaleContext(t *testing.T) {
 	n, candidate1, certificate1, validators, power, ctx1, validatorResolver, senderResolver := finalizedHandoffFixture(t)
 	if err := n.CommitFinalizedBlock(ctx1, candidate1, certificate1, validators, power, validatorResolver, senderResolver); err != nil {
