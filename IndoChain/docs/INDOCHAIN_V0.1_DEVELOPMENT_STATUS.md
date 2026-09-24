@@ -946,7 +946,11 @@ This remains development-only and does not introduce production BFT timing, roun
 
 **Cross-height replay candidate coverage:** Added `TestConsensusRuntimeNegativeCrossHeightReplayedCandidate`. The test commits a valid height-1 finalized block, commits a valid height-2 finalized block against the height-1 canonical hash, then replays the exact lower-height candidate/certificate from height 1 against the height-2 canonical head. The node must reject the lower-height replay with `ErrFinalizedBlockAlreadyCommitted` before stale-context validation, and the height-2 canonical head/hash must remain unchanged. Implementation commit: `54906e191f4edf36535e4a65a6ae5102d3b25656`.
 
-**Next CI gate:** verify `54906e191f4edf36535e4a65a6ae5102d3b25656` and its status-document follow-up workflow before extending the negative matrix to any additional cross-height variant.
+**Verified cross-height replay CI:** IndoChain CI run `865` completed successfully for `54906e191f4edf36535e4a65a6ae5102d3b25656`. The status-document follow-up run `867` also completed successfully.
+
+**Cross-height different-candidate coverage:** Added `TestConsensusRuntimeNegativeCrossHeightDifferentCandidate`. After height 2 is canonical, the test constructs a different but otherwise valid height-1 candidate against the original genesis context and finalizes its certificate. Because its hash differs from the canonical height-1 block, the replay guard must not classify it as an exact replay; canonical context validation must instead reject it with `ErrConsensusContextMismatch`, while the height-2 canonical head/hash remains unchanged. Implementation commit: `399d7311f0021575b3d221737bc79630fb451128`.
+
+**Next CI gate:** verify `399d7311f0021575b3d221737bc79630fb451128` and its status-document follow-up workflow before moving the finalized handoff negative matrix to the next protocol boundary.
 
 ### 4.38 Consensus Transport → Runtime → Finalized Node Handoff Boundary
 
