@@ -2092,3 +2092,41 @@ The lifecycle/capability implementation is now committed, but a fresh CI run for
 1. verify fresh CI for the provider-state implementation;
 2. if green, integrate lifecycle/capability/health state into provider selection prerequisites;
 3. only then continue with provider routing behavior and deterministic selection tests.
+
+
+### 63. Milestone Update — State-Aware Provider Routing Prerequisites
+
+**Date:** 2026-09-25
+
+CI gate before implementation:
+
+- CI run #360 — **GREEN** for commit `e0cb4dbbba97efcc9c7e43c6e282ad47478ca816`;
+- `test` — success;
+- `vet` — success;
+- `race` — success.
+
+Completed:
+
+- routing can now optionally receive `ProviderStateStore`;
+- state-aware constructors were added without changing the existing provider-neutral Router contract;
+- when provider state is configured, a candidate must be administratively `ENABLED`, explicitly capable of `PPOB`, operationally `HEALTHY`, funded above the requested amount, and present in a fresh catalog when catalog routing is enabled;
+- lifecycle, capability, and operational health remain separate prerequisites;
+- existing deterministic priority and provider-name tie-breaking remain unchanged;
+- deterministic tests cover disabled providers, wrong capabilities, and an eligible provider;
+- no automatic fallback/retry/failover was introduced.
+
+### Routing Safety Boundary
+
+The state-aware router is intentionally an eligibility gate, not a provider-specific policy engine. It does not inspect provider names or external API fields.
+
+A provider being registered is insufficient for routing. Explicit administrative enablement and capability declaration are required when the state store is configured.
+
+### Verification Gate
+
+The state-aware routing changes are committed, but a **fresh CI run for the new commits is required**. `test`, `vet`, and `race` must all be GREEN before continuing to routing execution/idempotency changes or Admin API work.
+
+### Next Milestone
+
+1. verify fresh CI for state-aware routing;
+2. if green, integrate the state-aware router into the existing purchase service construction path without bypassing the state gate;
+3. then add deterministic routing eligibility tests covering health degradation and stale operational snapshots.
