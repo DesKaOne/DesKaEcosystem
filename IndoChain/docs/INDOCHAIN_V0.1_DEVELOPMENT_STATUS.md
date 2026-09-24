@@ -1152,3 +1152,12 @@ This milestone does not define proposer selection, voting power, quorum, vote ag
 **Next transaction-authority precedence boundary:** Hardened `state.ApplyTransaction` so structural transaction validation runs before injected sender-authority resolution. Added `TestApplyTransactionValidatesBeforeSenderAuthorityResolver`, which supplies an invalid transaction version together with a resolver error and requires `transaction.ErrInvalidVersion`, proving malformed transactions are rejected before external authority lookup and canonical state remains unchanged. Implementation commit: `8cf77d9c7cd8a46de63df563b34c6353e225b627`; regression-test commit: `16c2144b43fdb7e11663483bd2764cd71f148597`.
 
 **Next CI gate:** verify `16c2144b43fdb7e11663483bd2764cd71f148597` through the full IndoChain test/tidy/vet workflow before proceeding to the next transaction-authority boundary.
+
+
+**Verified transaction-authority validation precedence:** IndoChain CI #1050 (workflow run `35994245603`) completed successfully for `16c2144b43fdb7e11663483bd2764cd71f148597`; the full test/tidy/vet gate passed. Structural transaction validation is now verified to precede sender-authority resolver lookup.
+
+**Next consensus runtime locking boundary:** Hardened `ValidatorRuntime` with an explicit locked proposal once the configured quorum is reached. After locking, a vote carrying a different payload is rejected with `consensus.ErrConflictingLockedProposal` before it can enter the vote aggregator; finalization also requires the locked payload to remain identical to the active proposal. Added `TestValidatorRuntimeRejectsVoteConflictingWithLockedProposal`, including the invariant that the conflicting vote is not recorded and the runtime remains in `PhasePrecommit`. Implementation commit: `59867d76e1b04aa43637d9b039bb01c6db91803f`; regression-test commit: `9bf20d37ca6db46b99f44325dedd7eecf96dead0`.
+
+**Limitation:** This is a development locking invariant, not production BFT locking. The existing v0.1 runtime still models votes through the current `MessageTypeVote` / `VoteAggregator` boundary and does not yet implement distinct prevote/precommit message types, timeout/round-change, or lock carry-over across rounds.
+
+**Next CI gate:** verify `9bf20d37ca6db46b99f44325dedd7eecf96dead0` through the full IndoChain test/tidy/vet workflow before proceeding to timeout/round-change or the next consensus lifecycle boundary.
