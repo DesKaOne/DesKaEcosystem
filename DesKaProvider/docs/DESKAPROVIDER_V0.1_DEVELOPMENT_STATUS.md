@@ -404,7 +404,7 @@ Completed:
 
 ### Verification
 
-The DigiFlazz balance contract is supported by the official documentation. urlDigiFlazz Cek Deposit documentationhttps://developer.digiflazz.com/api/buyer/cek-saldo/
+The DigiFlazz balance contract is supported by the official documentation. https://developer.digiflazz.com/api/buyer/cek-saldo/
 
 No live balance request was executed because runtime DigiFlazz credentials are not available. The adapter is covered by deterministic HTTP tests.
 
