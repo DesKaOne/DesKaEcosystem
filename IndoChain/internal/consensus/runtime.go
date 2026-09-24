@@ -11,6 +11,7 @@ var (
 	ErrUnexpectedProposer        = errors.New("unexpected consensus proposer")
 	ErrInvalidRuntimePhase       = errors.New("invalid consensus runtime phase")
 	ErrConflictingLockedProposal = errors.New("conflicting locked proposal")
+	ErrRoundChangeFinalized      = errors.New("cannot change round after finalization")
 )
 
 type RuntimeConfig struct {
@@ -79,6 +80,41 @@ func NewValidatorRuntime(config RuntimeConfig) (*ValidatorRuntime, error) {
 
 func (r *ValidatorRuntime) State() RoundState { return r.state }
 
+// AdvanceRound moves the runtime to a strictly newer round after a timeout
+// or round-change event. The current proposal and round-local votes are reset,
+// while the locked proposal is preserved for the next round.
+func (r *ValidatorRuntime) AdvanceRound(next uint64) error {
+	if r == nil {
+		return ErrInvalidConsensusRuntime
+	}
+	if r.state.Phase == PhaseFinalized {
+		return ErrRoundChangeFinalized
+	}
+	if next <= r.state.Round {
+		return fmt.Errorf("%w: current=%d next=%d", ErrRoundRegression, r.state.Round, next)
+	}
+
+	nextState, err := r.state.AdvanceRound(next)
+	if err != nil {
+		return err
+	}
+	aggregator, err := NewVoteAggregator(
+		r.rules,
+		nextState,
+		r.validators,
+		r.votingPower,
+	)
+	if err != nil {
+		return err
+	}
+
+	r.state = nextState
+	r.votes = &aggregator
+	r.proposal = nil
+	r.certificate = nil
+	return nil
+}
+
 func (r *ValidatorRuntime) ExpectedProposer() ([]byte, error) {
 	if r == nil || r.proposer == nil {
 		return nil, ErrInvalidConsensusRuntime
@@ -110,6 +146,9 @@ func (r *ValidatorRuntime) AcceptProposal(msg Message) error {
 	}
 	if len(msg.Payload) == 0 {
 		return ErrInvalidConsensusRuntime
+	}
+	if len(r.lockedProposal) > 0 && !bytes.Equal(r.lockedProposal, msg.Payload) {
+		return fmt.Errorf("%w: locked=%q received=%q", ErrConflictingLockedProposal, r.lockedProposal, msg.Payload)
 	}
 	r.proposal = append([]byte(nil), msg.Payload...)
 	r.state.Phase = PhasePrevote
