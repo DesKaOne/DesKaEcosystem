@@ -11,10 +11,10 @@ import (
 )
 
 var (
-	ErrInvalidPurchaseRequest = errors.New("invalid provider purchase request")
-	ErrReferenceConflict      = errors.New("provider reference ID already used with different request")
-	ErrWebhookTransactionNotFound = errors.New("provider webhook reference ID not found")
-	ErrWebhookReferenceConflict   = errors.New("provider webhook conflicts with stored transaction")
+	ErrInvalidPurchaseRequest      = errors.New("invalid provider purchase request")
+	ErrReferenceConflict           = errors.New("provider reference ID already used with different request")
+	ErrWebhookTransactionNotFound  = errors.New("provider webhook reference ID not found")
+	ErrWebhookReferenceConflict    = errors.New("provider webhook conflicts with stored transaction")
 	ErrInvalidWebhookEvent         = errors.New("invalid provider webhook event")
 )
 
@@ -32,23 +32,49 @@ type PurchaseExecution struct {
 }
 
 type Service struct {
-	Router *Router
-	mu sync.Mutex
+	Router       *Router
+	Store        TransactionStore
+	mu           sync.Mutex
 	transactions map[string]*purchaseCall
 }
 
 type purchaseCall struct {
 	request PurchaseRequest
-	done chan struct{}
-	result PurchaseExecution
-	err error
+	done    chan struct{}
+	result  PurchaseExecution
+	err     error
 }
 
 func NewService(router *Router) (*Service, error) {
+	return NewServiceWithStore(router, NewMemoryTransactionStore())
+}
+
+func NewServiceWithStore(router *Router, store TransactionStore) (*Service, error) {
 	if router == nil {
 		return nil, errors.New("provider router is required")
 	}
-	return &Service{Router: router, transactions: make(map[string]*purchaseCall)}, nil
+	if store == nil {
+		return nil, errors.New("transaction store is required")
+	}
+
+	service := &Service{
+		Router:       router,
+		Store:        store,
+		transactions: make(map[string]*purchaseCall),
+	}
+	for _, state := range store.All() {
+		if state.Request.ReferenceID == "" || state.Execution.ProviderName == "" {
+			return nil, errors.New("invalid persisted transaction state")
+		}
+		call := &purchaseCall{
+			request: state.Request,
+			done:    make(chan struct{}),
+			result:  state.Execution,
+		}
+		close(call.done)
+		service.transactions[state.Request.ReferenceID] = call
+	}
+	return service, nil
 }
 
 func (s *Service) Purchase(ctx context.Context, req PurchaseRequest) (PurchaseExecution, error) {
@@ -73,6 +99,11 @@ func (s *Service) Purchase(ctx context.Context, req PurchaseRequest) (PurchaseEx
 	}
 
 	result, err := s.executePurchase(ctx, req)
+	if err == nil {
+		if storeErr := s.Store.Put(TransactionState{Request: req, Execution: result}); storeErr != nil {
+			err = fmt.Errorf("persist transaction state: %w", storeErr)
+		}
+	}
 	s.mu.Lock()
 	call.result, call.err = result, err
 	s.mu.Unlock()
@@ -106,14 +137,14 @@ func (s *Service) HandleWebhook(ctx context.Context, event provider.WebhookEvent
 	}
 
 	incoming := provider.PurchaseResult{
-		ReferenceID: event.ReferenceID,
-		CustomerNo: event.CustomerNo,
-		ProductCode: event.ProductCode,
-		Status: event.Status,
+		ReferenceID:  event.ReferenceID,
+		CustomerNo:   event.CustomerNo,
+		ProductCode:  event.ProductCode,
+		Status:       event.Status,
 		ProviderCode: event.ProviderCode,
-		Message: event.Message,
+		Message:      event.Message,
 		SerialNumber: event.SerialNumber,
-		Price: event.Price,
+		Price:        event.Price,
 	}
 
 	current := call.result.Result
@@ -127,6 +158,9 @@ func (s *Service) HandleWebhook(ctx context.Context, event provider.WebhookEvent
 		return PurchaseExecution{}, ErrWebhookReferenceConflict
 	}
 	if incoming.Status == provider.StatusPending {
+		if err := s.persistLocked(call.request, PurchaseExecution{ProviderName: call.result.ProviderName, Result: incoming}); err != nil {
+			return PurchaseExecution{}, err
+		}
 		call.result.Result = incoming
 		return call.result, nil
 	}
@@ -134,7 +168,11 @@ func (s *Service) HandleWebhook(ctx context.Context, event provider.WebhookEvent
 		return PurchaseExecution{}, ErrInvalidWebhookEvent
 	}
 
-	call.result.Result = incoming
+	next := PurchaseExecution{ProviderName: call.result.ProviderName, Result: incoming}
+	if err := s.persistLocked(call.request, next); err != nil {
+		return PurchaseExecution{}, err
+	}
+	call.result = next
 	return call.result, nil
 }
 
@@ -172,7 +210,7 @@ func (s *Service) Reconcile(ctx context.Context, referenceID string) (PurchaseEx
 	}
 	status, err := p.GetStatus(ctx, provider.StatusRequest{
 		ProductCode: request.ProductCode,
-		CustomerNo: request.CustomerNo,
+		CustomerNo:  request.CustomerNo,
 		ReferenceID: referenceID,
 	})
 	if err != nil {
@@ -190,14 +228,14 @@ func (s *Service) Reconcile(ctx context.Context, referenceID string) (PurchaseEx
 	}
 
 	incoming := provider.PurchaseResult{
-		ReferenceID: status.ReferenceID,
-		CustomerNo: status.CustomerNo,
-		ProductCode: status.ProductCode,
-		Status: status.Status,
+		ReferenceID:  status.ReferenceID,
+		CustomerNo:   status.CustomerNo,
+		ProductCode:  status.ProductCode,
+		Status:       status.Status,
 		ProviderCode: status.ProviderCode,
-		Message: status.Message,
+		Message:      status.Message,
 		SerialNumber: status.SerialNumber,
-		Price: status.Price,
+		Price:        status.Price,
 	}
 
 	s.mu.Lock()
@@ -212,8 +250,19 @@ func (s *Service) Reconcile(ctx context.Context, referenceID string) (PurchaseEx
 	if current.Status != provider.StatusPending {
 		return PurchaseExecution{}, ErrWebhookReferenceConflict
 	}
-	call.result.Result = incoming
+	next := PurchaseExecution{ProviderName: call.result.ProviderName, Result: incoming}
+	if err := s.persistLocked(call.request, next); err != nil {
+		return PurchaseExecution{}, err
+	}
+	call.result = next
 	return call.result, nil
+}
+
+func (s *Service) persistLocked(request PurchaseRequest, execution PurchaseExecution) error {
+	if err := s.Store.Put(TransactionState{Request: request, Execution: execution}); err != nil {
+		return fmt.Errorf("persist transaction state: %w", err)
+	}
+	return nil
 }
 
 func (s *Service) startPurchase(req PurchaseRequest) (*purchaseCall, bool) {
@@ -241,9 +290,9 @@ func (s *Service) executePurchase(ctx context.Context, req PurchaseRequest) (Pur
 	}
 	result, err := p.Purchase(ctx, provider.PurchaseRequest{
 		ProductCode: req.ProductCode,
-		CustomerNo: req.CustomerNo,
+		CustomerNo:  req.CustomerNo,
 		ReferenceID: req.ReferenceID,
-		Testing: req.Testing,
+		Testing:     req.Testing,
 	})
 	if err != nil {
 		return PurchaseExecution{}, fmt.Errorf("purchase with provider %q: %w", name, err)
