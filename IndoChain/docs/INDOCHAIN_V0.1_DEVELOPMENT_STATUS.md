@@ -1188,3 +1188,6 @@ Commits:
 CI gate verified green: IndoChain CI #1063 (run `36062531531`) completed successfully for implementation commit `20c51dc4b48743fcbcc7f692dd5f0cdf78092eac`.
 
 This remains a development-only timeout/round-change invariant. It does not yet define timeout certificates, proposer timeout messages, prevote/precommit wire separation, lock carry-over evidence, multi-node round synchronization, or the production BFT algorithm.
+
+
+Formatting follow-up: runtime field alignment was normalized to gofmt-style formatting in commit `21d4be9f07e2b41ca0987f90688e0e828edee171`. The latest completed IndoChain CI remains #1063 (run `36062531531`) with success on implementation commit `20c51dc4b48743fcbcc7f692dd5f0cdf78092eac`.
