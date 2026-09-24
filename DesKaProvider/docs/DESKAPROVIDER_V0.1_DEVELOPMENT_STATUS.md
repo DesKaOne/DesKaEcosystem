@@ -2168,3 +2168,55 @@ Next milestone:
 1. verify fresh CI for runtime state-gate integration;
 2. then define the minimal administrative state mutation boundary needed to enable/disable providers safely;
 3. only after that, continue with routing health/freshness eligibility and Admin API integration.
+
+
+
+### 65. Milestone Update — Minimal Administrative Provider Lifecycle Boundary
+
+**Date:** 2026-09-25
+
+CI gate before implementation:
+
+- CI #374 — **GREEN** for commit `b105b434f271a1574ab47e04365f6b077b0b29fa`;
+- workflow completed successfully;
+- the runtime state-gate milestone therefore passed the mandatory CI gate before feature work continued.
+
+Completed:
+
+- added `ProviderAdminService` as the internal administrative control-plane boundary for provider lifecycle mutation;
+- lifecycle changes are limited to `ENABLED` / `DISABLED`;
+- administrative mutation requires an already-registered provider state;
+- unknown or empty provider names return `ErrProviderNotFound`;
+- invalid lifecycle values return `ErrInvalidLifecycle`;
+- lifecycle mutation preserves the provider's capabilities unchanged;
+- administrative lifecycle mutation does not alter operational health;
+- added deterministic tests for enable/disable behavior, unknown providers, invalid lifecycle values, capability preservation, and concurrent lifecycle mutation;
+- no HTTP/Admin API endpoint, authentication mechanism, provider credential mutation, automatic funding, retry/failover, or ledger mutation was introduced.
+
+### Administrative Safety Boundary
+
+The new service is intentionally a domain/control-plane boundary rather than a public API:
+
+`Admin Web/API -> ProviderAdminService -> ProviderStateStore`
+
+The service does not expose provider-specific API fields and does not permit administrative lifecycle changes to masquerade as health or capability changes.
+
+Provider lifecycle remains separate from:
+
+- health state in the operational snapshot;
+- provider capabilities;
+- provider balance/liquidity;
+- financial ledger state.
+
+### Verification Gate
+
+- implementation commits: `fdc145cb75863ec1bf7422099ae5f84a0a699c44`, `08807e4e9bbf8ed845da15ed2ca956df55368a53`;
+- a fresh CI run for the new administrative boundary is required;
+- `test`, `vet`, and `race` must all be **GREEN** before continuing.
+
+### Next Milestone
+
+1. verify CI for the administrative lifecycle boundary;
+2. determine the durable persistence boundary for administrative provider lifecycle state before exposing an Admin API;
+3. then add routing eligibility tests for degraded/unhealthy and stale operational snapshots;
+4. only after those controls are stable, proceed toward the internal Admin API/control plane.
