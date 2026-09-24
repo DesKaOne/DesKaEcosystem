@@ -965,3 +965,55 @@ The reconciliation implementation and documentation require a fresh complete CI 
 1. verify the complete CI run for status reconciliation;
 2. define the minimum durable transaction-state model needed for restart-safe correlation/reconciliation;
 3. defer automatic retry/failover until that durable state and provider-specific idempotency semantics are explicitly established.
+
+### 37. Milestone Update — Durable Transaction-State Correlation Boundary
+
+**Date:** 2026-09-24
+
+Completed:
+
+- added a provider-neutral `TransactionStore` boundary for routed purchase correlation;
+- added an in-memory transaction store for deterministic service behavior;
+- added a durable JSON transaction store with:
+  - automatic parent-directory creation;
+  - atomic temp-file replacement;
+  - 0600 transaction-state file permissions;
+  - deterministic sorted reads;
+  - corrupt JSON rejection;
+- extended `routing.Service` with `NewServiceWithStore`;
+- retained `NewService` as the in-memory convenience constructor;
+- restored persisted transaction states into completed in-memory correlation calls during service initialization;
+- persisted provider transaction results after a successful provider submission;
+- persisted webhook status transitions before updating in-memory state;
+- persisted reconciliation status transitions before updating in-memory state;
+- preserved the existing no-resubmission rule: restart recovery returns the persisted transaction state and does not submit the same provider purchase again;
+- added restart/recovery coverage using a fresh service, fresh registry, fresh provider instance, and the same durable transaction store;
+- replaced the previous reconciliation identity test with a real provider-status identity mismatch test;
+- kept retry/failover out of scope because durable state alone does not establish provider-specific idempotency semantics for ambiguous submission failures;
+
+### Verification
+
+- CI run #137 for commit `57079560eeb4fe8291c74c9c53d3013e52d17a46` is **success** and was verified before this milestone.
+- The durable transaction-state implementation commits are:
+  - `e1a1e879ae788f63f7669f85100c09ccd66899ba`
+  - `cfca16a84cb965094d68dfec745f45880784de96`
+  - `5ff980f9de690894ec3ec3ea7695faab7f2ecebf`
+  - `15fa727fac4b04b75cea715e31ab17e79e559ad7`
+  - `8da3eecce2e511aa47dd2d68d576cc3e605bd466`
+- Final CI verification for the docs commit is required before treating this milestone as green.
+
+### Safety Boundary
+
+The durable transaction store records provider transaction correlation and normalized result state only. It does not:
+
+- mutate the DesKaCash ledger;
+- automatically retry an ambiguous provider submission;
+- automatically fail over to another provider after submission;
+- fund providers;
+- replace provider-specific idempotency/correlation guarantees.
+
+### Next milestone
+
+1. verify CI for this durable transaction-state milestone;
+2. if green, continue with the next reliability boundary without introducing automatic retry/failover prematurely;
+3. evaluate the minimum runtime wiring needed to use the durable transaction store in the service composition.
