@@ -37,3 +37,9 @@ The existing `ImportBlock(block, publicKey)` API remains available for the curre
 ## Not frozen
 
 This milestone does not define a persistent validator registry, address/key canonical serialization, validator-to-account binding, staking authority, production BFT semantics, fee/gas rules, or EVM account mapping.
+
+## Finalized commit context guard
+
+The finalized-block node commit path now validates the supplied consensus context against the live node before any candidate execution or authority handoff. Protocol version, chain ID, consensus height, and previous block hash must match the node configuration/head; otherwise the operation returns `ErrConsensusContextMismatch` without mutating node state.
+
+This prevents a stale or cross-context consensus object from being used to authorize execution against a different canonical head. Failure-path tests cover missing authority resolvers and consensus-context mismatch, with explicit checks that node state/head remain unchanged.
