@@ -1223,3 +1223,58 @@ The cache milestone is therefore verified and the branch is clear for the next d
 1. verify the complete CI result for the cache boundary;
 2. if green, review whether a neutral durable catalog synchronization layer is required before adding the next provider;
 3. keep transaction retry/failover deferred until provider-specific idempotency semantics are explicitly established.
+
+### 41. Milestone Update — Neutral Durable Catalog Synchronization Boundary
+
+**Date:** 2026-09-25
+
+The previous cache milestone was already verified green before this work:
+
+- CI #196 — success;
+- test — success;
+- vet — success;
+- race — success.
+
+Implemented the minimum neutral catalog synchronization layer so routing no longer needs to call a provider price-list endpoint on every route selection:
+
+- added provider-neutral `catalog.Snapshot` containing provider name, product list, and synchronization timestamp;
+- added thread-safe in-memory catalog store;
+- added durable JSON catalog store with:
+  - missing/empty file initialization;
+  - corrupt JSON rejection;
+  - deterministic sorted reads;
+  - atomic temporary-file replacement;
+  - restrictive 0600 file permissions;
+  - defensive product-slice copies;
+- added provider-neutral `catalog.SyncService` that obtains `GetProducts` snapshots from registered providers and stores them with a synchronization timestamp;
+- added `routing.NewWithCatalog`;
+- routing now uses the synchronized catalog when one is supplied and no longer performs a provider `GetProducts` request during selection;
+- retained the existing router constructor behavior for tests/legacy composition that do not provide a catalog;
+- runtime now composes the durable catalog store and catalog synchronization service;
+- runtime performs an initial catalog synchronization and repeats it on a configurable 15-minute default interval;
+- added `DESKAPROVIDER_CATALOG_STORE_PATH`;
+- added `DESKAPROVIDER_CATALOG_SYNC_INTERVAL`;
+- default catalog path is `data/product-catalog.json`;
+- documented the new settings in `backend/.env.example`;
+- added deterministic tests for catalog synchronization, durable persistence/corrupt-file handling, defensive copies, and catalog-backed routing.
+
+The catalog is now a neutral operational snapshot boundary. Provider-specific protocol details remain inside provider adapters. The catalog does not represent customer balances, transaction state, or DesKaCash ledger state.
+
+### Safety Boundary
+
+This milestone does not:
+
+- introduce automatic transaction retry or failover;
+- resubmit ambiguous provider transactions;
+- mutate the DesKaCash ledger;
+- fund providers;
+- treat catalog availability as proof of transaction success;
+- move provider-specific price-list protocol behavior into the routing layer.
+
+### Verification Gate
+
+The implementation requires a fresh complete CI run after the catalog synchronization changes. The branch must not advance until `test`, `vet`, and `race` are all green.
+
+### Next Milestone
+
+After CI is green, review catalog freshness/error semantics and provider-adapter readiness before proceeding to the next provider. Keep transaction retry/failover deferred until provider-specific idempotency semantics are explicitly established.
