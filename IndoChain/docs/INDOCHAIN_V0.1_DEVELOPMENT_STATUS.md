@@ -387,6 +387,18 @@ Tests cover candidate-to-payload bridging, invalid-candidate rejection, payload 
 
 This milestone intentionally does not freeze canonical block serialization, consensus wire encoding, P2P proposal transport, block execution/commit during finalization, timeout/round-change behavior, production BFT semantics, validator-set lifecycle, or proposer priority/randomness.
 
+### 4.24 ValidatorRuntime ↔ Validated Block Proposal Integration
+
+The validated block-candidate bridge is now consumed directly by `ValidatorRuntime` through `AcceptBlockProposal`.
+
+The runtime checks the candidate protocol version, chain ID, next height, and expected proposer before converting the validated candidate into the existing opaque consensus proposal payload. Accepted candidates move the runtime from Proposal to Prevote through the same proposal lifecycle already used by `AcceptProposal`.
+
+The runtime does not execute or commit the candidate. Canonical state mutation remains outside consensus runtime finalization, preserving the existing separation between consensus authority and block execution/commit.
+
+Tests cover successful validated-candidate acceptance and rejection when the candidate proposer does not match the runtime's expected proposer. The proposal-bridge documentation has been updated accordingly.
+
+This milestone still does not define canonical serialization, P2P proposal transport, block execution during finalization, timeout/round-change behavior, or production BFT semantics.
+
 ## 5. Protocol Documentation Progress
 
 Documentation has advanced into more formal protocol specification work, including:
@@ -715,7 +727,10 @@ When there is a conflict, the implementation and dedicated protocol specificatio
 **Latest block-candidate documentation:** `239796fd04ba50378572b81a48faa07e63043f16`  
 **Latest block-candidate proposal bridge:** `efdd5b3fd78ba05434a434d00b3cfbc37ccd009a`  
 **Block-candidate proposal bridge documentation:** `88b139f1610921b39680301d4f24e172685a27bc`  
-**Next major boundary:** Integrate validated block proposal payloads with ValidatorRuntime and finality without committing canonical state  
+**Latest ValidatorRuntime block-proposal integration:** `dc648205aafffa119deea923386bdfe3e3f9575d`  
+**Latest runtime integration implementation:** `885fbc210c4078534a13f22d621eabb5d4635e44`  
+**Latest proposal-bridge documentation:** `b592cc9ca46aa6876daf438bfaacb77d3d206404`  
+**Next major boundary:** Consensus finality ↔ block execution/commit boundary  
 
 ### 4.12 Consensus Validator Membership Boundary
 
