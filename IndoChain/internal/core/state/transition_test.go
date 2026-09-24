@@ -3,6 +3,7 @@ package state
 import (
 	"bytes"
 	"crypto/ed25519"
+	"errors"
 	"testing"
 
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/transaction"
@@ -51,6 +52,15 @@ type mutatingSenderAuthorityResolver struct {
 	publicKey []byte
 }
 
+type failingSenderAuthorityResolver struct {
+	err error
+}
+
+func (r failingSenderAuthorityResolver) PublicKeyForSender([]byte) ([]byte, error) {
+	return nil, r.err
+}
+
+
 func (r mutatingSenderAuthorityResolver) PublicKeyForSender(sender []byte) ([]byte, error) {
 	if len(sender) > 0 {
 		sender[0] = 0xff
@@ -83,6 +93,32 @@ func TestApplyTransactionClonesSenderForAuthorityResolver(t *testing.T) {
 	}
 	if recipient, ok := s.Get(types.Address{2}); !ok || recipient.Balance != 30 {
 		t.Fatalf("recipient state = %+v, want balance 30", recipient)
+	}
+}
+
+func TestApplyTransactionPropagatesSenderAuthorityResolverError(t *testing.T) {
+	seed := bytes.Repeat([]byte{0x42}, ed25519.SeedSize)
+	signer, err := crypto.NewEd25519Signer(ed25519.NewKeyFromSeed(seed))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	s := New()
+	s.Set(types.Address{1}, Account{Balance: 100, Nonce: 0})
+
+	tx := signedTransfer(t, signer)
+	rules := transitionRules(nil)
+	resolverErr := errors.New("sender authority lookup failed")
+	rules.PublicKeyResolver = failingSenderAuthorityResolver{err: resolverErr}
+
+	if err := ApplyTransaction(s, tx, rules); !errors.Is(err, resolverErr) {
+		t.Fatalf("ApplyTransaction() error = %v, want resolver error", err)
+	}
+	if sender, ok := s.Get(types.Address{1}); !ok || sender.Balance != 100 || sender.Nonce != 0 {
+		t.Fatalf("sender state mutated after resolver error: %+v", sender)
+	}
+	if _, ok := s.Get(types.Address{2}); ok {
+		t.Fatal("recipient created after resolver error")
 	}
 }
 
