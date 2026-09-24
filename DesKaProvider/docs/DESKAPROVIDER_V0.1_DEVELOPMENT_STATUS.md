@@ -1932,3 +1932,44 @@ No speculative XP adapter code was added.
 5. add credential-gated read-only integration checks where supported;
 6. require fresh CI `test`, `vet`, and `race` green.
 
+### 55. Milestone Update — Official XP API Link Reconfirmed; Contract Still Unavailable
+
+**Date:** 2026-09-25
+
+The previous status commit `2675853bdc95af0a5ddbba5163dfc4a8d2e9ab8b` has now passed CI **#317 — GREEN**:
+
+- `test` — success;
+- `vet` — success;
+- `race` — success.
+
+Fresh official-site research confirms the XP SINDONESIA homepage exposes an **API** navigation entry linking directly to `https://xp.sindonesia.net/api/`. citeturn1view0
+
+The same official site provides current public product catalog evidence for prepaid pulsa and internet/data products, including product codes, prices, and READY/KOSONG status. citeturn0search2turn0search3
+
+However, the official API page itself still cannot be retrieved by the available web source (cache/fetch miss). Therefore the following remain **unverified**:
+
+- HTTP method and exact endpoint contract;
+- authentication and credential fields;
+- request signature/hash formula;
+- pricelist response schema;
+- transaction request/response schema;
+- transaction status semantics;
+- callback/webhook authentication and payload;
+- balance endpoint and response schema.
+
+### Implementation Decision
+
+No XP adapter implementation is added in this milestone.
+
+Public catalog data is sufficient to confirm XP is a relevant PPOB product source, but it is **not sufficient to safely derive an H2H integration contract**. The existing `PPOBProvider` interface therefore remains unchanged and no speculative authentication, endpoint, status mapping, or webhook behavior is introduced.
+
+### Verification Gate
+
+- CI #317 — **GREEN**;
+- official API navigation — **confirmed**;
+- official API contract content — **not yet retrievable / insufficient for implementation**.
+
+### Next Milestone
+
+Proceed only when the current XP API contract is obtained from the provider's API documentation or provider-issued integration material. Then implement the minimum existing `PPOBProvider` mapping with deterministic HTTP tests and credential-gated read-only integration checks where supported.
+
