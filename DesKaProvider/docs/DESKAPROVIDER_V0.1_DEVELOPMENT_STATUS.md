@@ -2333,3 +2333,24 @@ CI #398 for `c567f7d5647e38596eb79710f0dc152971c3f9a5` was **RED** in both `test
 - fix commit: `c339359c68434f730de8ebc80daca4d7aa272ec9`;
 - fresh CI is mandatory before any next milestone;
 - no feature work proceeds until `test`, `vet`, and `race` are green.
+
+
+### 69. CI Recovery — Provider State Store Compile Fix
+
+CI #402 remained **RED** after the previous JSON-tag fix.
+
+**ROOT CAUSE**
+
+- `ProviderStateStore.Put` declared `capabilities` twice in the same scope, producing `no new variables on left side of :=`;
+- the same edit also left a recursive `allMemory()` helper that had no valid implementation.
+
+**FIX**
+
+- removed the duplicate normalization block from `Put`;
+- removed the invalid recursive helper;
+- retained the validated candidate-map + persistence-before-memory-commit behavior.
+
+**Verification**
+
+- fix commit: `434ab26fd1208da60f3363f7420f37361a60d2f`;
+- CI must return green for `test`, `vet`, and `race` before the next milestone.
