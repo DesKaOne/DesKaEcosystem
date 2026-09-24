@@ -1191,3 +1191,22 @@ This remains a development-only timeout/round-change invariant. It does not yet 
 
 
 Formatting follow-up: runtime field alignment was normalized to gofmt-style formatting in commit `21d4be9f07e2b41ca0987f90688e0e828edee171`. The latest completed IndoChain CI remains #1063 (run `36062531531`) with success on implementation commit `20c51dc4b48743fcbcc7f692dd5f0cdf78092eac`.
+
+### 4.24 Consensus Timeout Evidence Boundary
+
+A deterministic development timeout-evidence boundary is now implemented in `IndoChain/internal/consensus/timeout.go`.
+
+`TimeoutCertificate` binds protocol version, chain, epoch, height, current round, target next round, caller-supplied quorum threshold, and a canonical set of validator identifiers. Construction requires a strictly newer target round, unique validators with voting power, and quorum. Validator identifiers are cloned and canonically byte-sorted.
+
+`ValidateTimeoutCertificate` independently verifies context, target round, threshold, validator uniqueness/membership, checked voting-power aggregation, quorum, and canonical validator ordering without mutating the supplied state or certificate.
+
+This is intentionally a development evidence boundary. It does not yet define signed timeout messages, timeout signature aggregation, lock-carrying evidence, proposer synchronization, or a production BFT timeout algorithm.
+
+Regression tests cover quorum success, canonical ordering, insufficient quorum, stale target round, duplicate validators, and non-canonical certificate rejection.
+
+Commits:
+- timeout certificate implementation: `7664ba77a1e1f941cb699e55e58432aaec5165ef`
+- canonical ordering fix: `1652ecff8c3d721bc2c1c46ca4af30ff537cc853`
+- timeout regression tests: `1c969c2576f9f8e00a2c8146d74d94f8cb69c000`
+
+CI must be verified green on the latest implementation before this milestone is considered complete.
