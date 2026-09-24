@@ -756,6 +756,19 @@ func TestConsensusRuntimeNegativeFinalityQuorumNotReached(t *testing.T) {
 	n, candidate, certificate, validators, power, ctx, validatorResolver, senderResolver := finalizedHandoffFixture(t)
 	canonicalHead := n.HeadHash
 
+	// Keep the certificate structurally valid but make one vote insufficient:
+	// validator-a has 1/2 of total voting power while the threshold is 2/3.
+	validators, err = consensus.NewValidatorSet([][]byte{[]byte("validator-a"), []byte("validator-b")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	power, err = consensus.NewVotingPowerSet([]consensus.ValidatorVotingPower{
+		{ValidatorID: []byte("validator-a"), Power: 1},
+		{ValidatorID: []byte("validator-b"), Power: 1},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	certificate.Threshold = consensus.QuorumThreshold{Numerator: 2, Denominator: 3}
 	if err := n.CommitFinalizedBlock(ctx, candidate, certificate, validators, power, validatorResolver, senderResolver); !errors.Is(err, consensus.ErrFinalityQuorumNotReached) {
 		t.Fatalf("unreached finality quorum error = %v, want %v", err, consensus.ErrFinalityQuorumNotReached)
