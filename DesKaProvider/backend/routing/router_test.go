@@ -201,3 +201,91 @@ func TestNewWithCatalogMaxAgeRejectsInvalidMaxAge(t *testing.T) {
 		t.Fatal("expected invalid catalog max age error")
 	}
 }
+
+
+func TestRouterRequiresEnabledPPOBCapabilityWhenProviderStateIsConfigured(t *testing.T) {
+	registry := provider.NewRegistry()
+	for _, name := range []string{"disabled", "wrong-capability", "healthy"} {
+		if err := registry.Register(name, mock.New(mock.Config{
+			Products: []provider.Product{{Code: "xld10", Name: "Test"}},
+		})); err != nil {
+			t.Fatal(err)
+		}
+	}
+	store := operational.NewMemoryStore()
+	for _, name := range []string{"disabled", "wrong-capability", "healthy"} {
+		if err := store.Put(operational.Snapshot{
+			ProviderName: name,
+			Balance:      100000,
+			Health:       operational.HealthHealthy,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	states := operational.NewProviderStateStore()
+	if err := states.Put(operational.ProviderState{
+		ProviderName: "disabled",
+		Lifecycle:    operational.LifecycleDisabled,
+		Capabilities: []operational.Capability{operational.CapabilityPPOB},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := states.Put(operational.ProviderState{
+		ProviderName: "wrong-capability",
+		Lifecycle:    operational.LifecycleEnabled,
+		Capabilities: []operational.Capability{operational.CapabilityBalance},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := states.Put(operational.ProviderState{
+		ProviderName: "healthy",
+		Lifecycle:    operational.LifecycleEnabled,
+		Capabilities: []operational.Capability{operational.CapabilityPPOB},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	router, err := NewWithState(registry, store, nil, states)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := router.Select(context.Background(), Request{ProductCode: "xld10", Amount: 50000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "healthy" {
+		t.Fatalf("expected state-eligible provider, got %q", got)
+	}
+}
+
+func TestRouterStateGateRejectsAllWhenNoProviderIsEnabledForCapability(t *testing.T) {
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", mock.New(mock.Config{
+		Products: []provider.Product{{Code: "xld10", Name: "Test"}},
+	})); err != nil {
+		t.Fatal(err)
+	}
+	store := operational.NewMemoryStore()
+	if err := store.Put(operational.Snapshot{
+		ProviderName: "mock",
+		Balance:      100000,
+		Health:       operational.HealthHealthy,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	states := operational.NewProviderStateStore()
+	if err := states.Put(operational.ProviderState{
+		ProviderName: "mock",
+		Lifecycle:    operational.LifecycleDisabled,
+		Capabilities: []operational.Capability{operational.CapabilityPPOB},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	router, err := NewWithState(registry, store, nil, states)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := router.Select(context.Background(), Request{ProductCode: "xld10", Amount: 50000}); !errors.Is(err, ErrNoProviderAvailable) {
+		t.Fatalf("expected no-provider error, got %v", err)
+	}
+}
