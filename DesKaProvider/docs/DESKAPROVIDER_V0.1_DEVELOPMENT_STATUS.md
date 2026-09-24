@@ -2079,3 +2079,46 @@ This milestone is documentation-only. No provider funding execution, automatic m
 ### Next Milestone
 
 Continue the current provider implementation track only after its CI gate is green, while using the new operational/admin requirements document as the architectural reference for the future Admin Web and Treasury implementation.
+
+
+### 59. Milestone Update — Operational Persistence Atomicity & Sync Worker Lifecycle
+
+**Date:** 2026-09-25
+
+Completed:
+
+- hardened the durable operational snapshot store so a failed filesystem persistence operation does not leave an uncommitted snapshot visible in the in-memory state;
+- JSONFileStore.Put now prepares the next snapshot map, persists it successfully, and only then swaps the in-memory state;
+- added a deterministic regression test for persistence failure and in-memory rollback behavior;
+- added a lifecycle test for SyncService.Run covering immediate first synchronization and clean shutdown through context.Context cancellation;
+- preserved the existing worker behavior of continuing periodic synchronization while individual provider sync failures remain isolated in the per-provider error map.
+
+### Verification
+
+- current branch head before this milestone was verified by GitHub Actions run #336 — GREEN;
+- test — success;
+- vet — success;
+- race — success;
+- new persistence and lifecycle tests are now committed and require a fresh CI run before the next milestone;
+- no external provider request or credential was used.
+
+### Safety Boundary
+
+- provider balance remains an operational snapshot, not customer balance or ledger state;
+- persistence failure cannot silently commit a snapshot only in memory;
+- worker cancellation is explicit through context.Context;
+- no retry, failover, automatic funding, or financial ledger mutation was introduced.
+
+### Known Limitations
+
+- JSON file persistence remains an interim single-process v0.1 boundary; PostgreSQL remains the deployment target;
+- SyncService.Run is the current worker lifecycle primitive, but it is not yet wired into a broader application/service startup and shutdown coordinator;
+- provider lifecycle state (enabled/disabled) and capability state are not yet modeled in the operational package;
+- routing has not yet been implemented.
+
+### Next Milestone
+
+1. verify fresh CI test, vet, and race for this milestone;
+2. wire the sync worker into the application service lifecycle with explicit startup/shutdown ownership;
+3. add recovery/restart behavior tests against durable operational snapshots;
+4. then implement production-oriented provider lifecycle and health state separation before provider routing.
