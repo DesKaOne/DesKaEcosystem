@@ -129,6 +129,34 @@ func TestApplyTransactionPropagatesSenderAuthorityResolverError(t *testing.T) {
 	}
 }
 
+func TestApplyTransactionValidatesBeforeSenderAuthorityResolver(t *testing.T) {
+	seed := bytes.Repeat([]byte{0x42}, ed25519.SeedSize)
+	signer, err := crypto.NewEd25519Signer(ed25519.NewKeyFromSeed(seed))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	s := New()
+	s.Set(types.Address{1}, Account{Balance: 100, Nonce: 0})
+
+	tx := signedTransfer(t, signer)
+	tx.Version = 99
+
+	rules := transitionRules(nil)
+	resolverErr := errors.New("sender authority lookup failed")
+	rules.PublicKeyResolver = failingSenderAuthorityResolver{err: resolverErr}
+
+	if err := ApplyTransaction(s, tx, rules); err != transaction.ErrInvalidVersion {
+		t.Fatalf("ApplyTransaction() error = %v, want %v", err, transaction.ErrInvalidVersion)
+	}
+	if sender, ok := s.Get(types.Address{1}); !ok || sender.Balance != 100 || sender.Nonce != 0 {
+		t.Fatalf("sender state mutated after structural validation failure: %+v", sender)
+	}
+	if _, ok := s.Get(types.Address{2}); ok {
+		t.Fatal("recipient created after structural validation failure")
+	}
+}
+
 func TestApplyTransactionRejectsEmptyResolvedSenderAuthority(t *testing.T) {
 	seed := bytes.Repeat([]byte{0x42}, ed25519.SeedSize)
 	signer, err := crypto.NewEd25519Signer(ed25519.NewKeyFromSeed(seed))
