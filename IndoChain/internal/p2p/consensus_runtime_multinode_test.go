@@ -1067,7 +1067,7 @@ func TestConsensusRuntimeNegativeCrossHeightInvalidFinalityEvidence(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	certificate2.Payload = []byte("tampered-cross-height-finality")
+	certificate2.Height = certificate2.Height - 1
 	if err := n.CommitFinalizedBlock(ctx2, candidate2, certificate2, validators, power, validatorResolver, senderResolver); !errors.Is(err, consensus.ErrFinalityQuorumNotReached) {
 		t.Fatalf("tampered cross-height finality evidence error = %v, want %v", err, consensus.ErrFinalityQuorumNotReached)
 	}
