@@ -357,3 +357,177 @@ func TestInMemoryTransportRuntimeFinalizedBlockHandoff(t *testing.T) {
 		t.Fatal("canonical store head does not match finalized handoff")
 	}
 }
+
+
+func TestConsensusRuntimeNegativeMismatchedProposalPayload(t *testing.T) {
+	state, err := consensus.NewRoundState(devnet.ProtocolVersion, devnet.ChainID, 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	validatorID := []byte("validator-a")
+	validators, err := consensus.NewValidatorSet([][]byte{validatorID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	power, err := consensus.NewVotingPowerSet([]consensus.ValidatorVotingPower{{ValidatorID: validatorID, Power: 1}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime, err := consensus.NewValidatorRuntime(consensus.RuntimeConfig{
+		Rules: consensus.ValidationRules{ProtocolVersion: state.ProtocolVersion, ChainID: state.ChainID, RequireSender: true},
+		State: state, Validators: validators, VotingPower: power,
+		Threshold: consensus.QuorumThreshold{Numerator: 1, Denominator: 1},
+		Proposer: consensus.RoundRobinProposer{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	store := storage.NewMemoryStore()
+	n, err := node.NewDevnet(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := consensus.BlockProductionContext{
+		State: state, PreviousHash: n.HeadHash, Proposer: append([]byte(nil), validatorID...),
+	}
+	candidate, err := consensus.BuildBlockCandidate(consensus.BlockCandidateInput{
+		Context: ctx, Timestamp: n.Head.Header.Timestamp + 1, Transactions: []any{},
+		Rules: n.Config.BlockRules(nil),
+	}, n.State)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proposal, err := consensus.NewBlockProposal(ctx, candidate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proposal.Payload = append(proposal.Payload, 0xff)
+	if err := runtime.AcceptBlockProposal(proposal); err == nil {
+		t.Fatal("mismatched proposal payload was accepted")
+	}
+	if runtime.State().Phase != consensus.PhaseProposal {
+		t.Fatalf("runtime phase = %v, want proposal after rejected payload", runtime.State().Phase)
+	}
+}
+
+func TestConsensusRuntimeNegativeStaleFinalizedContext(t *testing.T) {
+	n, candidate, certificate, validators, power, ctx, validatorResolver, senderResolver := finalizedHandoffFixture(t)
+	stale := ctx
+	stale.PreviousHash = types.Hash{}
+	if err := n.CommitFinalizedBlock(stale, candidate, certificate, validators, power, validatorResolver, senderResolver); !errors.Is(err, node.ErrConsensusContextMismatch) {
+		t.Fatalf("stale context error = %v, want %v", err, node.ErrConsensusContextMismatch)
+	}
+	if n.Head.Header.Height != 0 {
+		t.Fatalf("node head height = %d, want 0 after rejected stale context", n.Head.Header.Height)
+	}
+}
+
+func TestConsensusRuntimeNegativeInvalidFinalityEvidence(t *testing.T) {
+	n, candidate, certificate, validators, power, ctx, validatorResolver, senderResolver := finalizedHandoffFixture(t)
+	certificate.Payload = []byte("tampered-finality-payload")
+	if err := n.CommitFinalizedBlock(ctx, candidate, certificate, validators, power, validatorResolver, senderResolver); err == nil {
+		t.Fatal("tampered finality evidence was accepted")
+	}
+	if n.Head.Header.Height != 0 {
+		t.Fatalf("node head height = %d, want 0 after rejected finality evidence", n.Head.Header.Height)
+	}
+}
+
+func TestConsensusRuntimeNegativeReplayedFinalizedBlock(t *testing.T) {
+	n, candidate, certificate, validators, power, ctx, validatorResolver, senderResolver := finalizedHandoffFixture(t)
+	if err := n.CommitFinalizedBlock(ctx, candidate, certificate, validators, power, validatorResolver, senderResolver); err != nil {
+		t.Fatal(err)
+	}
+	if err := n.CommitFinalizedBlock(ctx, candidate, certificate, validators, power, validatorResolver, senderResolver); !errors.Is(err, node.ErrFinalizedBlockAlreadyCommitted) {
+		t.Fatalf("replayed finalized block error = %v, want %v", err, node.ErrFinalizedBlockAlreadyCommitted)
+	}
+	if n.Head.Header.Height != 1 {
+		t.Fatalf("node head height = %d, want 1 after replay rejection", n.Head.Header.Height)
+	}
+}
+
+func finalizedHandoffFixture(t *testing.T) (*node.Node, block.Block, consensus.FinalityCertificate, consensus.ValidatorSet, consensus.VotingPowerSet, consensus.BlockProductionContext, node.ValidatorAuthorityResolver, node.TransactionAuthorityResolver) {
+	t.Helper()
+	store := storage.NewMemoryStore()
+	n, err := node.NewDevnet(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := consensus.NewRoundState(devnet.ProtocolVersion, devnet.ChainID, 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	validatorID := []byte("validator-a")
+	validators, err := consensus.NewValidatorSet([][]byte{validatorID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	power, err := consensus.NewVotingPowerSet([]consensus.ValidatorVotingPower{{ValidatorID: validatorID, Power: 1}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := consensus.BlockProductionContext{State: state, PreviousHash: n.HeadHash, Proposer: append([]byte(nil), validatorID...)}
+	candidate, err := consensus.BuildBlockCandidate(consensus.BlockCandidateInput{
+		Context: ctx, Timestamp: n.Head.Header.Timestamp + 1, Transactions: []any{},
+		Rules: n.Config.BlockRules(nil),
+	}, n.State)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyPair, err := crypto.NewEd25519KeyPair(bytes.Repeat([]byte{0x35}, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer, err := crypto.NewEd25519Signer(keyPair.PrivateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rules := consensus.ValidationRules{
+		ProtocolVersion: state.ProtocolVersion, ChainID: state.ChainID,
+		RequireSender: true, RequireSignature: true,
+	}
+	runtime, err := consensus.NewValidatorRuntime(consensus.RuntimeConfig{
+		Rules: rules, State: state, Validators: validators, VotingPower: power,
+		Threshold: consensus.QuorumThreshold{Numerator: 1, Denominator: 1},
+		Proposer: consensus.RoundRobinProposer{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	proposal, err := consensus.NewBlockProposal(ctx, candidate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proposalMsg := consensus.Message{
+		ProtocolVersion: state.ProtocolVersion, ChainID: state.ChainID,
+		Epoch: state.Epoch, Height: state.Height, Round: state.Round,
+		Sender: append([]byte(nil), validatorID...), Type: consensus.MessageTypeProposal,
+		Payload: proposal.MessagePayload(),
+	}
+	proposalMsg, err = proposalMsg.Sign(signer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.AcceptProposal(proposalMsg); err != nil {
+		t.Fatal(err)
+	}
+	vote := consensus.Message{
+		ProtocolVersion: state.ProtocolVersion, ChainID: state.ChainID,
+		Epoch: state.Epoch, Height: state.Height, Round: state.Round,
+		Sender: append([]byte(nil), validatorID...), Type: consensus.MessageTypeVote,
+		Payload: proposal.MessagePayload(),
+	}
+	vote, err = vote.Sign(signer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.AddVote(vote); err != nil {
+		t.Fatal(err)
+	}
+	certificate, err := runtime.FinalizeProposal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return n, candidate, certificate, validators, power, ctx, runtimeValidatorAuthorityResolver{}, runtimeSenderAuthorityResolver{}
+}
