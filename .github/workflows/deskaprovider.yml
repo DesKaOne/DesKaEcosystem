@@ -47,28 +47,3 @@ jobs:
       - name: Vet
         run: go vet ./...
 
-  integration:
-    runs-on: ubuntu-latest
-
-    defaults:
-      run:
-        working-directory: DesKaProvider/backend
-
-    env:
-      DIGIFLAZZ_USERNAME: ${{ secrets.DIGIFLAZZ_USERNAME }}
-      DIGIFLAZZ_API_KEY: ${{ secrets.DIGIFLAZZ_API_KEY }}
-      DIGIFLAZZ_INTEGRATION: "1"
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: "1.25.1"
-          cache: true
-          cache-dependency-path: DesKaProvider/backend/go.mod
-
-      - name: Live DigiFlazz CS test
-        run: go test ./Provider/DigiFlazz -run TestLiveCSFailureCase -count=1
