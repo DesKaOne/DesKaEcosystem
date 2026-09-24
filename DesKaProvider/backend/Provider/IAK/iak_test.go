@@ -88,3 +88,37 @@ func TestIAKImplementsProviderCapabilities(t *testing.T) {
 	if _, ok := any(c).(provider.PPOBProvider); !ok { t.Fatal("IAK client must implement PPOBProvider") }
 	if _, ok := any(c).(provider.BalanceProvider); !ok { t.Fatal("IAK client must implement BalanceProvider") }
 }
+
+
+func TestIAKProductListRequiresPricelist(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r) {
+		_, _ = w.Write([]byte(`{"data":{"message":"FAILED","rc":"XX"}}`))
+	}))
+	defer srv.Close()
+	c, err := New(tc(srv.URL), srv.Client())
+	if err != nil { t.Fatal(err) }
+	_, err = c.GetProducts(context.Background(), provider.ProductRequest{})
+	if err == nil { t.Fatal("expected malformed product-list response error") }
+}
+
+func TestIAKInquiryRequiresStatus(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r) {
+		_, _ = w.Write([]byte(`{"data":{"message":"FAILED","rc":"XX"}}`))
+	}))
+	defer srv.Close()
+	c, err := New(tc(srv.URL), srv.Client())
+	if err != nil { t.Fatal(err) }
+	_, err = c.Inquiry(context.Background(), provider.InquiryRequest{ProductCode: "pln", CustomerNo: "12345678901"})
+	if err == nil { t.Fatal("expected missing inquiry status error") }
+}
+
+func TestIAKInquiryUnknownStatusIsRejected(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r) {
+		_, _ = w.Write([]byte(`{"data":{"status":"9","message":"UNKNOWN","rc":"XX"}}`))
+	}))
+	defer srv.Close()
+	c, err := New(tc(srv.URL), srv.Client())
+	if err != nil { t.Fatal(err) }
+	_, err = c.Inquiry(context.Background(), provider.InquiryRequest{ProductCode: "pln", CustomerNo: "12345678901"})
+	if err == nil { t.Fatal("expected unknown inquiry status error") }
+}
