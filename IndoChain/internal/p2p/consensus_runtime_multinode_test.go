@@ -1466,6 +1466,25 @@ func TestConsensusRuntimeNegativeReplayedFinalizedBlock(t *testing.T) {
 	}
 }
 
+func TestConsensusRuntimeNegativeMissingVotingPower(t *testing.T) {
+	n, candidate, certificate, validators, power, ctx, validatorResolver, senderResolver := finalizedHandoffFixture(t)
+	canonicalHead := n.HeadHash
+
+	// Keep the validator set and finality evidence valid, but remove the
+	// certificate vote sender from the supplied voting-power set.
+	missingPower, err := consensus.NewVotingPowerSet(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := n.CommitFinalizedBlock(ctx, candidate, certificate, validators, missingPower, validatorResolver, senderResolver); !errors.Is(err, consensus.ErrVoteSenderNotInVotingPower) {
+		t.Fatalf("missing voting power error = %v, want %v", err, consensus.ErrVoteSenderNotInVotingPower)
+	}
+	if n.Head.Header.Height != 0 || n.HeadHash != canonicalHead {
+		t.Fatal("canonical head changed after missing voting power rejection")
+	}
+	_ = power
+}
+
 func finalizedHandoffFixture(t *testing.T) (*node.Node, block.Block, consensus.FinalityCertificate, consensus.ValidatorSet, consensus.VotingPowerSet, consensus.BlockProductionContext, node.ValidatorAuthorityResolver, node.TransactionAuthorityResolver) {
 	t.Helper()
 	store := storage.NewMemoryStore()
