@@ -484,6 +484,14 @@ The guard explicitly rejects protocol-version mismatch, chain-ID mismatch, conse
 
 This keeps consensus authorization tied to the exact canonical execution point: the consensus context must describe the node's current chain before a finalized candidate can cross into execution/commit. It does not yet define multi-node state synchronization or production validator authority storage.
 
+### 4.33 Multi-node Finalized-Commit Convergence Boundary
+
+A first multi-node convergence test is now implemented in `IndoChain/internal/node/node_test.go`.
+
+The test starts two independent nodes from the same Devnet genesis/state, creates and finalizes one development block through the consensus runtime, then submits the same finalized candidate and certificate to both node commit boundaries. Both nodes must converge on the same canonical head hash and state root, and both must apply the same transaction state transition.
+
+This closes the first deterministic consensus-runtime → node → canonical-state convergence check across more than one node instance. It is still an in-process development test: it does not implement P2P transport, network message delivery, timeout/round-change behavior, persistent validator authority, or a production multi-node consensus loop.
+
 ### 4.32 Consensus Runtime → Node Finalized-Commit Handoff
 
 The development consensus runtime now retains the finality certificate it creates at the `Finalized` phase through `FinalizedCertificate()`. The returned certificate is deep-cloned so execution/node layers cannot mutate consensus-owned evidence.
@@ -841,7 +849,8 @@ When there is a conflict, the implementation and dedicated protocol specificatio
 **Latest consensus-runtime → node finalized-commit handoff:** `a9c1a041f6bce7cdb29df2aff11cea4f64e9f508`  
 **Latest finalized-block → node commit implementation:** `7d471998b021b9caa91b5776be37d3aec0fe3e6f`  
 **Latest replay/re-commit guard fix:** `7d471998b021b9caa91b5776be37d3aec0fe3e6f`  
-**Next major boundary:** Harden the consensus-runtime → node handoff against replay/re-commit and then begin broader multi-node consensus integration  
+**Latest multi-node finalized-commit convergence test:** `c2d1de1bb23aff4017843a6cc58c05208b7f5c29`  
+**Next major boundary:** Broaden multi-node consensus integration beyond in-process convergence into explicit node-to-node message/transport boundaries  
 
 ### 4.12 Consensus Validator Membership Boundary
 
