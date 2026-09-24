@@ -1598,3 +1598,14 @@ CI #275 exposed a compile failure in the response-hardening change before the te
 Correction committed as `a6aeb2d1af49aa2972e02a239a7db2941fe5ba8d`. No provider behavior was changed by this correction; it only restores valid Go syntax for the helper introduced in the previous milestone.
 
 CI #275 is recorded as **red** and is not accepted as the verification gate. A fresh CI run on the correction commit is required and must be fully green before proceeding.
+
+
+### Verification Follow-up — IAK Response Envelope Hardening CI
+
+CI run #285 for the corrected IAK response-validation implementation is confirmed **green**:
+
+- workflow — success;
+- `test` — success (`go test ./...` and `go vet ./...`);
+- `race` — success (`go test -race ./...`).
+
+The implementation is therefore cleared for the next IAK capability review. The earlier red runs #275, #279, and #281 are retained as historical failures and are not treated as successful verification.
