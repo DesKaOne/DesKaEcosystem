@@ -150,3 +150,43 @@ func TestServicePurchaseValidatesRequest(t *testing.T) {
 		t.Fatalf("expected invalid request error, got %v", err)
 	}
 }
+
+func TestServicePurchaseIsIdempotentByReferenceID(t *testing.T) {
+	registry := provider.NewRegistry()
+	mock := Mock.New(Mock.Config{Products: []provider.Product{{Code: "pln20", Name: "PLN 20"}}, ProviderCode: "00", PurchaseStatus: provider.StatusSuccess, Price: 20000})
+	if err := registry.Register("mock", mock); err != nil { t.Fatal(err) }
+	store := operational.NewMemoryStore()
+	if err := store.Put(operational.Snapshot{ProviderName: "mock", Balance: 100000, Health: operational.HealthHealthy}); err != nil { t.Fatal(err) }
+	router, err := New(registry, store, map[string]int{"mock": 1})
+	if err != nil { t.Fatal(err) }
+	service, err := NewService(router)
+	if err != nil { t.Fatal(err) }
+
+	req := PurchaseRequest{ProductCode: "pln20", CustomerNo: "08123456789", ReferenceID: "ref-idempotent", Amount: 20000}
+	first, err := service.Purchase(context.Background(), req)
+	if err != nil { t.Fatal(err) }
+	second, err := service.Purchase(context.Background(), req)
+	if err != nil { t.Fatal(err) }
+	if first != second { t.Fatalf("expected repeated request to return identical execution: %#v != %#v", first, second) }
+
+	status, err := mock.GetStatus(context.Background(), provider.StatusRequest{ProductCode: req.ProductCode, CustomerNo: req.CustomerNo, ReferenceID: req.ReferenceID})
+	if err != nil { t.Fatal(err) }
+	if status.ReferenceID != req.ReferenceID || status.Status != provider.StatusSuccess { t.Fatalf("unexpected stored status: %#v", status) }
+}
+
+func TestServicePurchaseRejectsReferenceConflict(t *testing.T) {
+	registry := provider.NewRegistry()
+	mock := Mock.New(Mock.Config{Products: []provider.Product{{Code: "pln20", Name: "PLN 20"}}})
+	if err := registry.Register("mock", mock); err != nil { t.Fatal(err) }
+	store := operational.NewMemoryStore()
+	if err := store.Put(operational.Snapshot{ProviderName: "mock", Balance: 100000, Health: operational.HealthHealthy}); err != nil { t.Fatal(err) }
+	router, err := New(registry, store, map[string]int{"mock": 1})
+	if err != nil { t.Fatal(err) }
+	service, err := NewService(router)
+	if err != nil { t.Fatal(err) }
+
+	_, err = service.Purchase(context.Background(), PurchaseRequest{ProductCode: "pln20", CustomerNo: "08123456789", ReferenceID: "ref-conflict", Amount: 20000})
+	if err != nil { t.Fatal(err) }
+	_, err = service.Purchase(context.Background(), PurchaseRequest{ProductCode: "pln20", CustomerNo: "08987654321", ReferenceID: "ref-conflict", Amount: 20000})
+	if !errors.Is(err, ErrReferenceConflict) { t.Fatalf("expected reference conflict, got %v", err) }
+}
