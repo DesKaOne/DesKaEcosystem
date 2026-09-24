@@ -1578,6 +1578,23 @@ func TestConsensusRuntimeNegativeEmptyValidatorIDVotingPower(t *testing.T) {
 	}
 }
 
+func TestConsensusRuntimeNegativeVotingPowerTotalOverflow(t *testing.T) {
+	n, candidate, certificate, validators, _, ctx, validatorResolver, senderResolver := finalizedHandoffFixture(t)
+	canonicalHead := n.HeadHash
+	invalidPower := consensus.VotingPowerSet{
+		Validators: []consensus.ValidatorVotingPower{
+			{ValidatorID: []byte("validator-a"), Power: ^uint64(0)},
+			{ValidatorID: []byte("validator-b"), Power: 1},
+		},
+	}
+	if err := n.CommitFinalizedBlock(ctx, candidate, certificate, validators, invalidPower, validatorResolver, senderResolver); !errors.Is(err, consensus.ErrInvalidVotingPowerSet) {
+		t.Fatalf("error = %v, want ErrInvalidVotingPowerSet", err)
+	}
+	if n.HeadHash != canonicalHead {
+		t.Fatal("canonical head changed after voting power overflow rejection")
+	}
+}
+
 func finalizedHandoffFixture(t *testing.T) (*node.Node, block.Block, consensus.FinalityCertificate, consensus.ValidatorSet, consensus.VotingPowerSet, consensus.BlockProductionContext, node.ValidatorAuthorityResolver, node.TransactionAuthorityResolver) {
 	t.Helper()
 	store := storage.NewMemoryStore()
