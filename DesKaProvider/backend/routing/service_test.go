@@ -130,16 +130,13 @@ func TestServicePurchaseDoesNotFallbackAfterProviderError(t *testing.T) {
 		t.Fatalf("expected provider failure to be returned, got %q", execution.Result.Status)
 	}
 
-	status, err := second.GetStatus(context.Background(), provider.StatusRequest{
+	_, err = second.GetStatus(context.Background(), provider.StatusRequest{
 		ProductCode: "pln20",
 		CustomerNo:  "08123456789",
 		ReferenceID: "ref-002",
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if status.Status != provider.StatusPending {
-		t.Fatalf("expected no fallback purchase, got status %q", status.Status)
+	if !errors.Is(err, Mock.ErrTransactionNotFound) {
+		t.Fatalf("expected no fallback purchase, got %v", err)
 	}
 }
 
