@@ -413,6 +413,16 @@ A concrete `Node.CommitFinalizedBlock` experiment was deliberately removed immed
 
 This milestone intentionally does not define canonical block/certificate serialization, P2P finality transport, production BFT semantics, timeout/round-change behavior, validator-set lifecycle, fee/gas accounting, or public-key authority resolution.
 
+### 4.26 Consensus ↔ Execution Authority Handoff Boundary
+
+An explicit dependency-injection boundary is now implemented under `IndoChain/internal/consensus/execution_authority.go`.
+
+`ExecutionAuthorityResolver` makes the execution/node layer responsible for resolving a validator identity to the public key required by the existing transaction execution API. `FinalizedBlockAuthorization` binds the finalized block hash, proposer identity, and certificate payload before that handoff. `ResolveProposerAuthority` performs the lookup and returns a defensive copy without mutating consensus state or creating a protocol-level registry.
+
+Tests cover successful resolution, missing resolver rejection, and certificate/block-payload mismatch. Detailed scope is documented in `IndoChain/docs/consensus-execution-authority-handoff-v0.1.md`.
+
+This milestone deliberately stops at dependency injection. The current v0.1 transaction model does not contain a canonical sender public-key field, and block execution still accepts one explicit public key. Therefore no synthetic multi-sender registry or execution authority is introduced here.
+
 ## 5. Protocol Documentation Progress
 
 Documentation has advanced into more formal protocol specification work, including:
@@ -747,7 +757,10 @@ When there is a conflict, the implementation and dedicated protocol specificatio
 **Latest finality/block authority implementation:** `71604b7742067d0a170ad2432adecec44daaf614`  
 **Latest finality/block authority tests:** `a8d090beafae65e7a13764ed26e443ac10a75a66`  
 **Latest finality/block authority documentation:** `00600567f1e653350848eff959305fc4d7127fde`  
-**Next major boundary:** Define an explicit execution-authority handoff for finalized candidates without inventing validator-to-public-key mapping  
+**Latest execution-authority handoff implementation:** `3466f7f3a18e286068c0391f00dc64d22d02159e`  
+**Latest execution-authority handoff tests:** `26c58ed77e3b2a2dd50398fabcccb3e74ee84151`  
+**Latest execution-authority handoff documentation:** `9e35299980a4dbe67d786de27fcde9361cdaa1cf`  
+**Next major boundary:** Integrate the explicit authority handoff with block execution without inventing a canonical validator registry  
 
 ### 4.12 Consensus Validator Membership Boundary
 
