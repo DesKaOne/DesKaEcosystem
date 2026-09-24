@@ -1973,3 +1973,31 @@ Public catalog data is sufficient to confirm XP is a relevant PPOB product sourc
 
 Proceed only when the current XP API contract is obtained from the provider's API documentation or provider-issued integration material. Then implement the minimum existing `PPOBProvider` mapping with deterministic HTTP tests and credential-gated read-only integration checks where supported.
 
+### 56. Milestone Update — XP Configuration Contract Added
+
+**Date:** 2026-09-25
+
+The provider-supplied XP SINDONESIA documentation in `docs/XP_SINDONESIA_API_DOC.md` is now the implementation basis.
+
+Verified configuration fields from that document:
+
+- numeric member `id`;
+- `key`;
+- `api`;
+- separate POST endpoints for saldo, harga, daftar harga, and order.
+
+Added `backend/config/xp_sindonesia.go` with environment-backed configuration and documented endpoint defaults.
+
+No credentials or secret values are committed.
+
+### Verification Gate
+
+- CI #319 for the previous commit — **GREEN**;
+- XP documentation — available in repository and ready for adapter implementation;
+- configuration layer — added;
+- XP transaction adapter — not yet implemented in this milestone.
+
+### Next Milestone
+
+Implement the minimum XP SINDONESIA PPOB adapter from the supplied contract, beginning with deterministic HTTP form encoding, saldo/read-only product discovery, and order mapping. Add tests before any credential-gated integration check.
+
