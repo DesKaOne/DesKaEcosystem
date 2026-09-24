@@ -13,6 +13,7 @@ import (
 type ExecutionRules struct {
 	Validation transaction.ValidationRules
 	PublicKey  []byte
+	PublicKeyResolver PublicKeyResolver
 }
 
 // ApplyTransaction validates and applies one transaction atomically.
@@ -23,7 +24,13 @@ func ApplyTransaction(s *State, tx transaction.Transaction, rules ExecutionRules
 	if s == nil {
 		return errors.New("nil state")
 	}
-	if err := transaction.ValidateAndVerify(tx, rules.Validation, rules.PublicKey); err != nil {
+	publicKey := rules.PublicKey
+	if rules.PublicKeyResolver != nil {
+		resolved, err := rules.PublicKeyResolver.PublicKeyForSender(tx.Sender)
+		if err != nil { return err }
+		publicKey = resolved
+	}
+	if err := transaction.ValidateAndVerify(tx, rules.Validation, publicKey); err != nil {
 		return err
 	}
 	if len(tx.Sender) == 0 || len(tx.Recipient) == 0 {
