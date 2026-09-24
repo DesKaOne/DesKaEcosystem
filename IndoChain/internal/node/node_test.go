@@ -537,6 +537,28 @@ func TestImportBlockWithAuthorityResolvesSenderKey(t *testing.T) {
 type validatorAuthorityResolver struct { publicKey []byte }
 func (r validatorAuthorityResolver) PublicKeyForValidator(validatorID []byte) ([]byte, error) { return append([]byte(nil), r.publicKey...), nil }
 
+type failingAuthorityResolver struct { err error }
+func (r failingAuthorityResolver) PublicKeyForValidator([]byte) ([]byte, error) { return nil, r.err }
+func (r failingAuthorityResolver) PublicKeyForSender([]byte) ([]byte, error) { return nil, r.err }
+
+func TestCommitFinalizedBlockRejectsMissingResolversWithoutMutation(t *testing.T) {
+	store := storage.NewMemoryStore()
+	n, err := NewDevnet(store); if err != nil { t.Fatal(err) }
+	beforeHead, beforeHash, beforeRoot := n.Head, n.HeadHash, n.State.Root()
+	ctx := consensus.BlockProductionContext{State: consensus.RoundState{ProtocolVersion: devnet.ProtocolVersion, ChainID: devnet.ChainID, Epoch: 1, Height: 0, Round: 0, Phase: consensus.PhaseProposal}, PreviousHash: n.HeadHash, Proposer: []byte("validator")}
+	if err := n.CommitFinalizedBlock(ctx, block.Block{}, consensus.FinalityCertificate{}, consensus.ValidatorSet{}, consensus.VotingPowerSet{}, nil, nil); err == nil { t.Fatal("expected missing resolver error") }
+	if !reflect.DeepEqual(n.Head, beforeHead) || n.HeadHash != beforeHash || n.State.Root() != beforeRoot { t.Fatal("node mutated after missing resolver rejection") }
+}
+
+func TestCommitFinalizedBlockRejectsConsensusContextMismatch(t *testing.T) {
+	store := storage.NewMemoryStore(); n, err := NewDevnet(store); if err != nil { t.Fatal(err) }
+	beforeHead, beforeHash, beforeRoot := n.Head, n.HeadHash, n.State.Root()
+	ctx := consensus.BlockProductionContext{State: consensus.RoundState{ProtocolVersion: devnet.ProtocolVersion, ChainID: devnet.ChainID, Epoch: 1, Height: 1, Round: 0, Phase: consensus.PhaseProposal}, PreviousHash: n.HeadHash, Proposer: []byte("validator")}
+	resolver := validatorAuthorityResolver{publicKey: []byte("key")}
+	if err := n.CommitFinalizedBlock(ctx, block.Block{}, consensus.FinalityCertificate{}, consensus.ValidatorSet{}, consensus.VotingPowerSet{}, resolver, resolver); err != ErrConsensusContextMismatch { t.Fatalf("error = %v, want %v", err, ErrConsensusContextMismatch) }
+	if !reflect.DeepEqual(n.Head, beforeHead) || n.HeadHash != beforeHash || n.State.Root() != beforeRoot { t.Fatal("node mutated after context mismatch") }
+}
+
 func TestCommitFinalizedBlockUsesExplicitAuthorityBoundaries(t *testing.T) {
 	store := storage.NewMemoryStore()
 	n, err := NewDevnet(store); if err != nil { t.Fatal(err) }
