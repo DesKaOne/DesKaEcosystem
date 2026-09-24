@@ -43,3 +43,48 @@ func TestIAKWebhookSignature(t *testing.T){
 }
 
 func TestIAKUnsupportedInquiry(t *testing.T){c,_:=New(config.IAKConfig{Username:"u",APIKey:"k"},http.DefaultClient);_,err:=c.Inquiry(context.Background(),provider.InquiryRequest{ProductCode:"foo",CustomerNo:"1"});if err!=provider.ErrUnsupportedOperation{t.Fatalf("err=%v",err)}}
+
+
+func TestIAKBalanceResponseValidation(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+		wantErr bool
+	}{
+		{name: "missing balance", body: `{"data":{}}`, wantErr: true},
+		{name: "invalid balance", body: `{"data":{"balance":"not-a-number"}}`, wantErr: true},
+		{name: "string balance", body: `{"data":{"balance":"123456"}}`, wantErr: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer srv.Close()
+			cfg := config.IAKConfig{
+				Username: "user", APIKey: "secret",
+				BalanceEndpoint: srv.URL,
+			}
+			c, err := New(cfg, srv.Client())
+			if err != nil { t.Fatal(err) }
+			balance, err := c.GetBalance(context.Background())
+			if tc.wantErr && err == nil { t.Fatalf("expected error, balance=%d", balance) }
+			if !tc.wantErr && (err != nil || balance != 123456) { t.Fatalf("balance=%d err=%v", balance, err) }
+		})
+	}
+}
+
+func TestIAKImplementsProviderCapabilities(t *testing.T) {
+	c, err := New(config.IAKConfig{
+		Username: "user", APIKey: "secret",
+		PriceListEndpoint: "https://example.invalid/pricelist",
+		InquiryPLNEndpoint: "https://example.invalid/inquiry",
+		TopUpEndpoint: "https://example.invalid/top-up",
+		StatusEndpoint: "https://example.invalid/status",
+		BalanceEndpoint: "https://example.invalid/balance",
+	}, http.DefaultClient)
+	if err != nil { t.Fatal(err) }
+	if _, ok := any(c).(provider.PPOBProvider); !ok { t.Fatal("IAK client must implement PPOBProvider") }
+	if _, ok := any(c).(provider.BalanceProvider); !ok { t.Fatal("IAK client must implement BalanceProvider") }
+}
