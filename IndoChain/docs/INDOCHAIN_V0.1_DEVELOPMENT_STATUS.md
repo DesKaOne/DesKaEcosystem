@@ -1042,3 +1042,10 @@ This milestone does not define proposer selection, voting power, quorum, vote ag
 **Next finalized-handoff validator-membership boundary:** Added `TestConsensusRuntimeNegativeMissingValidatorMembership`. The test keeps the certificate and voting-power evidence intact but supplies an empty validator membership set, requiring `consensus.ErrValidatorNotFound` and preserving the canonical genesis head/hash. Implementation commit: `8ce3e1f4c754505f0e1acfe2625ac65d312b447e`.
 
 **Next CI gate:** verify `8ce3e1f4c754505f0e1acfe2625ac65d312b447e` through the full IndoChain test/tidy/vet workflow before proceeding to the next finalized-handoff negative boundary.
+
+
+**CI failure and root cause:** IndoChain CI #971 (workflow run `35982909334`) failed in `TestConsensusRuntimeNegativeMissingValidatorMembership`. The test expected `consensus.ErrValidatorNotFound`, but the existing consensus-message validation pipeline rejects the vote sender earlier with the active-validator membership error `sender not found`, wrapped by the finality validation path. The protocol boundary is therefore already rejecting the missing membership correctly; the test assertion was too specific to the lower-level validator-set sentinel.
+
+**Correction:** Updated `TestConsensusRuntimeNegativeMissingValidatorMembership` to assert the actual sender-membership rejection message while retaining the canonical-head immutability check. Implementation commit: `6c8f1ec6ab61deecd6e94c288376ab56f83301f8`.
+
+**Next CI gate:** verify `6c8f1ec6ab61deecd6e94c288376ab56f83301f8` through the full IndoChain test/tidy/vet workflow before proceeding to the next finalized-handoff negative boundary.
