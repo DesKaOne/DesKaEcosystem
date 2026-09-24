@@ -692,6 +692,24 @@ func TestConsensusRuntimeNegativeCrossHeightVoteContextMismatch(t *testing.T) {
 	if n.Head.Header.Height != 1 || n.HeadHash != canonicalHeight1Hash {
 		t.Fatal("canonical head changed after cross-height certificate epoch rejection")
 	}
+
+	certificate2.Epoch = state2.Epoch
+	certificate2.ProtocolVersion++
+	if err := n.CommitFinalizedBlock(ctx2, candidate2, certificate2, validators, power, validatorResolver, senderResolver); !errors.Is(err, consensus.ErrStateContextMismatch) {
+		t.Fatalf("cross-height certificate protocol version context error = %v, want %v", err, consensus.ErrStateContextMismatch)
+	}
+	if n.Head.Header.Height != 1 || n.HeadHash != canonicalHeight1Hash {
+		t.Fatal("canonical head changed after cross-height certificate protocol version rejection")
+	}
+
+	certificate2.ProtocolVersion = state2.ProtocolVersion
+	certificate2.ChainID++
+	if err := n.CommitFinalizedBlock(ctx2, candidate2, certificate2, validators, power, validatorResolver, senderResolver); !errors.Is(err, consensus.ErrStateContextMismatch) {
+		t.Fatalf("cross-height certificate chain ID context error = %v, want %v", err, consensus.ErrStateContextMismatch)
+	}
+	if n.Head.Header.Height != 1 || n.HeadHash != canonicalHeight1Hash {
+		t.Fatal("canonical head changed after cross-height certificate chain ID rejection")
+	}
 }
 
 func TestConsensusRuntimeNegativeCrossHeightReplayedCandidate(t *testing.T) {
