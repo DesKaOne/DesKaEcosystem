@@ -494,6 +494,20 @@ Regression tests cover two-node routing, unknown-peer rejection without inbox mu
 
 The boundary is therefore ready to become the transport handoff for consensus messages without coupling the consensus engine directly to a concrete network implementation.
 
+
+### 4.35 Consensus Message ↔ Explicit P2P Transport Binding
+
+The consensus-message foundation is now bound to the explicit node-to-node transport boundary.
+
+`IndoChain/internal/consensus/message_codec.go` now provides deterministic encode/decode for the existing consensus message fields (protocol version, chain ID, epoch, height, round, sender, message type, payload, and signature). Decoding re-validates the supplied consensus rules and rejects unsupported wire versions, malformed length fields, trailing bytes, and invalid messages.
+
+`IndoChain/internal/p2p/consensus_transport.go` adds the `MessageTypeConsensus` transport envelope plus `SendConsensus` / `ReceiveConsensus` helpers. Consensus messages are encoded before entering the P2P transport and decoded only after the transport boundary, while the existing transport payload limit remains enforced.
+
+Tests cover deterministic consensus codec round-trip/trailing-data rejection and end-to-end in-memory node-to-node consensus message delivery, including transport-size rejection.
+
+This milestone intentionally does not implement network sockets, peer discovery/lifecycle, authenticated transport, retransmission/backpressure, canonical production consensus networking, or timeout/round-change behavior. The transport remains an in-process development boundary.
+
+
 ### 4.33 Multi-node Finalized-Commit Convergence Boundary
 
 A first multi-node convergence test is now implemented in `IndoChain/internal/node/node_test.go`.
@@ -862,8 +876,14 @@ When there is a conflict, the implementation and dedicated protocol specificatio
 **Latest multi-node finalized-commit convergence test:** `c2d1de1bb23aff4017843a6cc58c05208b7f5c29`  
 **Latest explicit node-to-node transport implementation:** `624a3ebf0a514dfd80afc6494c46f89f9bc0f497`  
 **Latest explicit node-to-node transport tests:** `fc61f67ad93fcaf6d27155832e106ac12838b938`  
-**Latest transport CI status:** previous CI #784 failed because transport tests referenced undefined `MessageTypeVote`; fixed by using the existing `MessageTypeTransaction`. CI for `fc61f67ad93fcaf6d27155832e106ac12838b938` is pending and is not yet a green CI gate.  
-**Next major boundary:** Bind consensus message encoding/decoding to the explicit node-to-node transport boundary  
+**Verified transport CI:** IndoChain CI run `788` completed successfully for `fc61f67ad93fcaf6d27155832e106ac12838b938`.  
+**Latest consensus message codec implementation:** `6c41cc4e08401696cea94ad0997f4699d3b8c7da`  
+**Latest consensus message codec tests:** `05f6a2e2fa6a7c45d0f5cac202324056fc7c9dc9`  
+**Latest consensus ↔ P2P transport binding:** `72cff1d72d6bc98be7f44d875f865aa4966c8eb6`  
+**Latest consensus transport integration tests:** `419266266ee3a84b207ad807139491b00fe31b0b`  
+**Latest consensus transport CI status:** no workflow run was associated with `419266266ee3a84b207ad807139491b00fe31b0b` yet; the status document records this boundary as pending CI verification.  
+
+**Next major boundary:** Integrate the bound consensus transport into a deterministic multi-node consensus message exchange test  
 
 ### 4.12 Consensus Validator Membership Boundary
 
