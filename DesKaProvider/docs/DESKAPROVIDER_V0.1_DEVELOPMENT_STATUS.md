@@ -1283,3 +1283,44 @@ The durable catalog synchronization milestone is verified and the branch is clea
 ### Next Milestone
 
 After CI is green, review catalog freshness/error semantics and provider-adapter readiness before proceeding to the next provider. Keep transaction retry/failover deferred until provider-specific idempotency semantics are explicitly established.
+
+
+### 42. Milestone Update — Catalog Freshness / Stale-Data Routing Boundary
+
+**Date:** 2026-09-25
+
+CI #217 was confirmed green for the previous durable catalog synchronization milestone before this work.
+
+Implemented a neutral freshness policy on top of the durable catalog boundary:
+
+- added a 30-minute default maximum catalog age for routing;
+- added `DESKAPROVIDER_CATALOG_MAX_AGE` runtime configuration;
+- runtime now constructs the router with the configured catalog maximum age;
+- catalog-backed routing rejects provider snapshots older than the configured freshness window;
+- preserved the legacy direct-provider product lookup path for routers created without a catalog store;
+- added deterministic tests for stale catalog rejection and invalid freshness configuration;
+- documented the new environment setting in `.env.example`.
+
+The policy deliberately treats stale catalog data as insufficient for a new route selection. It does not refresh the provider inline and does not silently reuse expired catalog data, preserving the separation between scheduled synchronization and transaction routing.
+
+### Safety Boundary
+
+This milestone does not:
+
+- introduce automatic transaction retry or failover;
+- resubmit ambiguous provider transactions;
+- mutate the DesKaCash ledger;
+- fund providers;
+- treat a stale catalog as proof of product availability;
+- move provider-specific catalog protocol behavior outside provider adapters.
+
+### Verification Gate
+
+The changes require a fresh complete CI run after the implementation commits. The `test`, `vet`, and `race` jobs must all be green before the next provider-development step.
+
+### Next Milestone
+
+1. verify the fresh CI result for the catalog freshness boundary;
+2. if green, review DigiFlazz adapter completeness against the neutral PPOB contract;
+3. determine the minimum verified provider-specific work needed before starting the next roadmap provider;
+4. keep automatic transaction retry/failover deferred until provider-specific idempotency semantics are explicitly established.
