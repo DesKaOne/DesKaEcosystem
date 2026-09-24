@@ -55,8 +55,31 @@ func (s ProviderState) Supports(capability Capability) bool {
 }
 
 type ProviderStateStore struct {
-	mu     sync.RWMutex
-	states map[string]ProviderState
+	mu          sync.RWMutex
+	states      map[string]ProviderState
+	persistence ProviderStatePersistence
+}
+
+type ProviderStatePersistence interface {
+	Load() ([]ProviderState, error)
+	Save([]ProviderState) error
+}
+
+func NewPersistentProviderStateStore(persistence ProviderStatePersistence) (*ProviderStateStore, error) {
+	if persistence == nil {
+		return nil, errors.New("provider state persistence is required")
+	}
+	store := &ProviderStateStore{states: make(map[string]ProviderState), persistence: persistence}
+	states, err := persistence.Load()
+	if err != nil {
+		return nil, err
+	}
+	for _, state := range states {
+		if err := store.putMemory(state); err != nil {
+			return nil, err
+		}
+	}
+	return store, nil
 }
 
 func NewProviderStateStore() *ProviderStateStore {
@@ -70,6 +93,23 @@ func (s *ProviderStateStore) Get(name string) (ProviderState, bool) {
 	state, ok := s.states[name]
 	state.Capabilities = append([]Capability(nil), state.Capabilities...)
 	return state, ok
+}
+
+func (s *ProviderStateStore) putMemory(state ProviderState) error {
+	state.ProviderName = strings.TrimSpace(strings.ToLower(state.ProviderName))
+	if state.ProviderName == "" {
+		return errors.New("provider name is required")
+	}
+	switch state.Lifecycle {
+	case LifecycleEnabled, LifecycleDisabled:
+	default:
+		return errors.New("invalid provider lifecycle")
+	}
+	capabilities := append([]Capability(nil), state.Capabilities...)
+	sort.Slice(capabilities, func(i, j int) bool { return capabilities[i] < capabilities[j] })
+	state.Capabilities = capabilities
+	s.states[state.ProviderName] = state
+	return nil
 }
 
 func (s *ProviderStateStore) Put(state ProviderState) error {
@@ -88,8 +128,17 @@ func (s *ProviderStateStore) Put(state ProviderState) error {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.states[state.ProviderName] = state
+	if err := s.putMemory(state); err != nil {
+		return err
+	}
+	if s.persistence != nil {
+		return s.persistence.Save(s.allMemory())
+	}
 	return nil
+}
+
+func (s *ProviderStateStore) allMemory() []ProviderState {
+	return s.allMemory()
 }
 
 func (s *ProviderStateStore) All() []ProviderState {
