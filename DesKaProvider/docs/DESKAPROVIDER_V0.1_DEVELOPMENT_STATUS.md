@@ -598,3 +598,40 @@ A new CI run has not yet been reported for this commit at the time of this updat
 1. verify CI for the restart/recovery test;
 2. design the provider routing contract around persisted balance and health;
 3. implement deterministic routing tests before adding provider-specific routing behavior.
+
+### 25. Milestone Update — Deterministic Provider Routing Foundation
+
+**Date:** 2026-09-24
+
+Completed:
+
+- verified DesKaProvider CI run #68 for the restart/recovery milestone: **success**;
+- added a provider-neutral routing package at `backend/routing`;
+- routing requires a persisted operational snapshot with healthy provider state and sufficient cached balance;
+- routing verifies that the selected provider exposes the requested product through the existing provider-neutral `GetProducts` contract;
+- provider priority is configurable through the router constructor;
+- equal-priority candidates use provider name as a deterministic tie-break;
+- unavailable, unhealthy, insufficient-balance, and missing-product candidates are excluded;
+- invalid route requests and the no-provider condition have explicit errors;
+- added deterministic tests for priority selection, operational exclusions, product availability, tie-breaking, and request validation.
+
+### Routing boundary
+
+The router consumes:
+
+- provider-neutral `Registry`;
+- operational `Store`;
+- cached balance and health snapshots;
+- provider-neutral product availability.
+
+It does **not** implement provider-specific API logic, pricing logic, or automatic provider funding.
+
+### Verification
+
+Routing implementation and tests are committed on `dev/deskaprovider-v0.1`. A new CI run is required for the routing changes before the next implementation step.
+
+### Next milestone
+
+1. verify CI for the routing foundation;
+2. integrate routing into a provider selection service without changing DesKaCash ledger semantics;
+3. add transaction safety/idempotency boundaries around provider selection and purchase execution.
