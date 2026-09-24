@@ -300,14 +300,26 @@ func (n *Node) CommitFinalizedBlock(
 	if validatorResolver == nil || senderResolver == nil {
 		return errors.New("missing finalized-block authority resolver")
 	}
+	// A finalized block is append-only at the node boundary. For a replayed
+	// candidate, identify the exact canonical block first so a stale consensus
+	// context cannot mask the replay error. A different block at an old height
+	// still proceeds to canonical-context validation and is rejected there.
+	if candidate.Header.Height > 0 && candidate.Header.Height <= n.Head.Header.Height {
+		canonicalBlock, canonicalHash, err := n.Store.GetBlock(candidate.Header.Height)
+		if err == nil {
+			candidateHash, hashErr := block.Hash(candidate)
+			if hashErr == nil && candidateHash == canonicalHash {
+				return ErrFinalizedBlockAlreadyCommitted
+			}
+			if canonicalHash != (types.Hash{}) {
+				if storedHash, storedHashErr := block.Hash(canonicalBlock); storedHashErr == nil && storedHash == candidateHash {
+					return ErrFinalizedBlockAlreadyCommitted
+				}
+			}
+		}
+	}
 	if err := validateCanonicalConsensusContext(n, ctx); err != nil {
 		return err
-	}
-	// A finalized block is append-only at the node boundary. Reject a block
-	// whose height is already at or below the canonical head before authority
-	// resolution or execution work can occur.
-	if candidate.Header.Height > 0 && candidate.Header.Height <= n.Head.Header.Height {
-		return ErrFinalizedBlockAlreadyCommitted
 	}
 	if _, err := consensus.ValidateFinalizedBlock(ctx, candidate, certificate, validators, votingPower); err != nil {
 		return err
