@@ -2040,3 +2040,42 @@ Deterministic HTTP tests were added for purchase, balance, callback validation, 
 
 After the new commit is green, verify whether the supplied XP documentation contains an additional `daftar_harga.php` response schema or status mechanism that can safely map to the existing `PPOBProvider`. If not, keep those capabilities explicitly unsupported rather than inventing provider behavior.
 
+
+### 58. Milestone Update — Operational/Admin & Treasury Requirements Captured
+
+**Date:** 2026-09-25
+
+A dedicated requirements document was added to preserve the operational architecture decisions from the DesKaProvider planning session:
+
+- `docs/DESKAPROVIDER_V0.1_OPERATIONAL_ADMIN_REQUIREMENTS.md`
+
+The document records the following required directions:
+
+- DesKaProvider must include an Admin Web / Control Panel, not only service APIs;
+- Admin Web manages external-provider lifecycle, including enable/disable;
+- provider capability state is separate from provider health and lifecycle state;
+- provider routing remains inside DesKaProvider;
+- provider balance is cached operational data and remains distinct from customer balance and treasury;
+- DesKaProvider gains a Treasury domain for settlement, provider funding, deposits, reconciliation, and audit;
+- Midtrans is treated primarily as a payment/collection/settlement rail in the initial architecture, not as a PPOB provider;
+- provider funding should use a provider deposit API when a verified API exists, so administrators do not have to operate each provider dashboard manually;
+- manual provider funding remains available when no provider deposit API exists;
+- funding must use an explicit authorization workflow and must not silently move money because a liquidity warning exists;
+- RCB may expose multiple capabilities only after the relevant production capability and verification state are confirmed;
+- Admin Web must operate through service/domain layers and must not directly mutate financial database state;
+- webhook, credential, ledger, audit, KYC, and security boundaries are preserved;
+- public Open API remains a later phase after internal infrastructure is stable.
+
+### Safety / Scope Boundary
+
+This milestone is documentation-only. No provider funding execution, automatic money movement, new provider credential handling, or financial ledger mutation was added.
+
+### Verification Gate
+
+- Documentation commit: `2db8cf99025ddd539a43c59cd7e29b210572b6e4`
+- No production behavior changed by this milestone.
+- Existing CI status remains governed by the current branch head and subsequent CI run.
+
+### Next Milestone
+
+Continue the current provider implementation track only after its CI gate is green, while using the new operational/admin requirements document as the architectural reference for the future Admin Web and Treasury implementation.
