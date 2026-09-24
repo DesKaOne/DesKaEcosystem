@@ -10,7 +10,7 @@ import (
 
 type JSONFileProviderStateStore struct { path string }
 
-type providerStateFile struct { States []ProviderState ` + "`json:"states"`" + ` }
+type providerStateFile struct { States []ProviderState `json:"states"` }
 
 func NewJSONFileProviderStateStore(path string) (*JSONFileProviderStateStore, error) {
 	if path == "" { return nil, errors.New("provider state store path is required") }
