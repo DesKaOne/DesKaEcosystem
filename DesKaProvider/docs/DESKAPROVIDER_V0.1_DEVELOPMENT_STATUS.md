@@ -1050,3 +1050,40 @@ The production reconciliation boundary is unchanged.
 ### Verification gate
 
 CI #160 is red. The fix must reach a complete green CI result, including `test` and `race`, before continuing to the next milestone.
+
+### 38. Milestone Update — Runtime Durable Transaction-Service Wiring
+
+**Date:** 2026-09-24
+
+CI #164 is confirmed green before this milestone:
+
+- `test` — success (`go test ./...` and `go vet ./...`);
+- `race` — success (`go test -race ./...`).
+
+Completed the minimum runtime composition needed to make the durable transaction-state boundary usable by the actual runtime:
+
+- added `TransactionStorePath` to runtime configuration;
+- added default durable transaction state path `data/provider-transactions.json`;
+- added environment override `DESKAPROVIDER_TRANSACTION_STORE_PATH`;
+- `NewFromEnvironment` now opens the durable transaction store;
+- runtime now composes the existing provider registry + operational store + neutral router + `routing.Service` with the durable transaction store;
+- exposed the composed neutral purchase service through `PurchaseService()`;
+- kept provider-specific logic inside adapters and customer ledger semantics outside DesKaProvider;
+- automatic retry/failover remains out of scope.
+
+Deterministic runtime tests now verify the new configuration default and that environment-based construction produces a non-nil routed purchase service.
+
+### Safety Boundary
+
+Runtime wiring only composes existing boundaries. It does not introduce automatic resubmission, cross-provider failover, DesKaCash ledger mutation, or provider funding.
+
+### Verification
+
+- CI #164 for commit `5b00148f83aee9bfacaebd277a5e95019c53108e` is **success**.
+- Both `test` and `race` jobs were independently verified green.
+- Runtime wiring commits: `1c3d1d6d7b935e450ca4e0e4eac55a5e3eb53da0`, `14ed03b0e0d779c6102f21ea3f9c08a0d2d0ce7c`.
+
+### Next milestone
+
+1. verify the CI result for runtime wiring;
+2. then continue with the next reliability/provider boundary without introducing automatic retry/failover prematurely.
