@@ -12,13 +12,13 @@ import (
 
 func TestServicePurchaseRoutesAndExecutesOnce(t *testing.T) {
 	registry := provider.NewRegistry()
-	mock := &Mock.Provider{
-		Products:      []provider.Product{{Code: "pln20", Name: "PLN 20"}},
-		ProviderCode:  "00",
-		Message:       "success",
+	mock := Mock.New(Mock.Config{
+		Products:       []provider.Product{{Code: "pln20", Name: "PLN 20"}},
+		ProviderCode:   "00",
+		Message:        "success",
 		PurchaseStatus: provider.StatusSuccess,
-		Price:         20000,
-	}
+		Price:          20000,
+	})
 	if err := registry.Register("mock", mock); err != nil {
 		t.Fatal(err)
 	}
@@ -75,18 +75,18 @@ func TestServicePurchaseRoutesAndExecutesOnce(t *testing.T) {
 
 func TestServicePurchaseDoesNotFallbackAfterProviderError(t *testing.T) {
 	registry := provider.NewRegistry()
-	first := &Mock.Provider{
-		Products:      []provider.Product{{Code: "pln20", Name: "PLN 20"}},
+	first := Mock.New(Mock.Config{
+		Products:       []provider.Product{{Code: "pln20", Name: "PLN 20"}},
 		PurchaseStatus: provider.StatusFailed,
 		ProviderCode:   "99",
 		Message:        "failed",
-	}
-	second := &Mock.Provider{
-		Products:      []provider.Product{{Code: "pln20", Name: "PLN 20"}},
+	})
+	second := Mock.New(Mock.Config{
+		Products:       []provider.Product{{Code: "pln20", Name: "PLN 20"}},
 		PurchaseStatus: provider.StatusSuccess,
 		ProviderCode:   "00",
 		Message:        "success",
-	}
+	})
 	if err := registry.Register("first", first); err != nil {
 		t.Fatal(err)
 	}
