@@ -4,8 +4,6 @@ import (
 	"crypto/ed25519"
 	"errors"
 	"testing"
-
-	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/types"
 )
 
 type timeoutTestSigner struct {
@@ -192,4 +190,3 @@ func TestTimeoutMessageRejectsStaleTargetRound(t *testing.T) {
 	}
 }
 
-var _ types.ProtocolVersion
