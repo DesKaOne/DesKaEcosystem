@@ -128,6 +128,83 @@ func TestValidatorRuntimeRejectsVoteConflictingWithLockedProposal(t *testing.T) 
 	}
 }
 
+func TestValidatorRuntimeAdvancesRoundPreservingLock(t *testing.T) {
+	runtime, state, _, _ := runtimeFixture(t)
+	if err := runtime.AcceptProposal(runtimeMessage(state, "validator-a", MessageTypeProposal, "block-8")); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.AddVote(runtimeMessage(state, "validator-a", MessageTypeVote, "block-8")); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.AddVote(runtimeMessage(state, "validator-b", MessageTypeVote, "block-8")); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.AdvanceRound(1); err != nil {
+		t.Fatal(err)
+	}
+	if got := runtime.State(); got.Round != 1 || got.Phase != PhaseProposal {
+		t.Fatalf("unexpected round state after round change: round=%d phase=%v", got.Round, got.Phase)
+	}
+	if runtime.proposal != nil || len(runtime.votes.Votes) != 0 {
+		t.Fatal("round-local proposal or votes were not reset")
+	}
+
+	newRoundState := runtime.State()
+	if err := runtime.AcceptProposal(runtimeMessage(newRoundState, "validator-b", MessageTypeProposal, "block-8")); err != nil {
+		t.Fatalf("locked proposal should remain acceptable in the next round: %v", err)
+	}
+}
+
+func TestValidatorRuntimeRejectsConflictingProposalAfterRoundChange(t *testing.T) {
+	runtime, state, _, _ := runtimeFixture(t)
+	if err := runtime.AcceptProposal(runtimeMessage(state, "validator-a", MessageTypeProposal, "block-8")); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.AddVote(runtimeMessage(state, "validator-a", MessageTypeVote, "block-8")); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.AddVote(runtimeMessage(state, "validator-b", MessageTypeVote, "block-8")); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.AdvanceRound(1); err != nil {
+		t.Fatal(err)
+	}
+
+	newRoundState := runtime.State()
+	err := runtime.AcceptProposal(runtimeMessage(newRoundState, "validator-b", MessageTypeProposal, "block-9"))
+	if !errors.Is(err, ErrConflictingLockedProposal) {
+		t.Fatalf("expected locked proposal conflict, got %v", err)
+	}
+	if got := runtime.State(); got.Round != 1 || got.Phase != PhaseProposal {
+		t.Fatalf("runtime changed after conflicting proposal: round=%d phase=%v", got.Round, got.Phase)
+	}
+	if runtime.proposal != nil || len(runtime.votes.Votes) != 0 {
+		t.Fatal("conflicting proposal mutated round-local state")
+	}
+}
+
+func TestValidatorRuntimeRejectsRoundChangeAfterFinalization(t *testing.T) {
+	runtime, state, _, _ := runtimeFixture(t)
+	if err := runtime.AcceptProposal(runtimeMessage(state, "validator-a", MessageTypeProposal, "block-8")); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.AddVote(runtimeMessage(state, "validator-a", MessageTypeVote, "block-8")); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.AddVote(runtimeMessage(state, "validator-b", MessageTypeVote, "block-8")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runtime.FinalizeProposal(); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.AdvanceRound(1); !errors.Is(err, ErrRoundChangeFinalized) {
+		t.Fatalf("expected finalized round-change rejection, got %v", err)
+	}
+	if got := runtime.State(); got.Round != 0 || got.Phase != PhaseFinalized {
+		t.Fatalf("runtime changed after rejected finalized round change: round=%d phase=%v", got.Round, got.Phase)
+	}
+}
+
 func TestValidatorRuntimeDoesNotFinalizeWithoutQuorum(t *testing.T) {
 	runtime, state, _, _ := runtimeFixture(t)
 	if err := runtime.AcceptProposal(runtimeMessage(state, "validator-a", MessageTypeProposal, "block-8")); err != nil {
