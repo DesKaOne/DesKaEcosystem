@@ -7,9 +7,13 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
+
+	provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
 )
 
 type JSONFileStore struct {
+	mu sync.RWMutex
 	path string
 	data map[string]Snapshot
 }
@@ -29,6 +33,7 @@ func NewJSONFileStore(path string) (*JSONFileStore, error) {
 }
 
 func (s *JSONFileStore) Get(name string) (Snapshot, bool) {
+	s.mu.RLock(); defer s.mu.RUnlock()
 	v, ok := s.data[name]
 	v.Products = append([]provider.Product(nil), v.Products...)
 	return v, ok
@@ -37,20 +42,23 @@ func (s *JSONFileStore) Get(name string) (Snapshot, bool) {
 func (s *JSONFileStore) Put(snapshot Snapshot) error {
 	if snapshot.ProviderName == "" { return errors.New("provider name is required") }
 	if snapshot.SyncedAt.IsZero() { return errors.New("catalog sync time is required") }
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.data[snapshot.ProviderName] = Snapshot{ProviderName:snapshot.ProviderName, Products:append([]provider.Product(nil), snapshot.Products...), SyncedAt:snapshot.SyncedAt}
-	return s.persist()
+	return s.persistLocked()
 }
 
 func (s *JSONFileStore) All() []Snapshot {
+	s.mu.RLock(); defer s.mu.RUnlock()
 	names := make([]string,0,len(s.data))
 	for name := range s.data { names = append(names,name) }
 	sort.Strings(names)
 	result := make([]Snapshot,0,len(names))
-	for _, name := range names { v,_:=s.Get(name); result=append(result,v) }
+	for _, name := range names { v:=s.data[name]; v.Products=append([]provider.Product(nil),v.Products...); result=append(result,v) }
 	return result
 }
 
-func (s *JSONFileStore) persist() error {
+func (s *JSONFileStore) persistLocked() error {
 	if err := os.MkdirAll(filepath.Dir(s.path), 0750); err != nil { return err }
 	payload, err := json.MarshalIndent(fileData{Snapshots:s.data},"","  ")
 	if err != nil { return err }
