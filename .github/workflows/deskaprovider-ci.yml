@@ -1,0 +1,25 @@
+name: DesKaProvider CI
+
+on:
+  push:
+    paths:
+      - 'DesKaProvider/**'
+      - '.github/workflows/deskaprovider-ci.yml'
+  pull_request:
+    paths:
+      - 'DesKaProvider/**'
+      - '.github/workflows/deskaprovider-ci.yml'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: DesKaProvider/backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.1'
+          cache-dependency-path: DesKaProvider/backend/go.mod
+      - run: go test ./...
