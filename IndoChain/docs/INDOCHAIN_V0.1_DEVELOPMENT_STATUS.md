@@ -1121,3 +1121,8 @@ This milestone does not define proposer selection, voting power, quorum, vote ag
 **Next execution-authority isolation boundary:** Added `TestResolveProposerAuthorityClonesResolverPublicKey`. The test uses a resolver that returns its backing public-key slice directly, then mutates the resolved result and requires the resolver-owned key to remain unchanged. Implementation commit: `f796757e8f6b70247c09aef859a7f28c097b8002`.
 
 **Next CI gate:** verify `f796757e8f6b70247c09aef859a7f28c097b8002` through the full IndoChain test/tidy/vet workflow before proceeding to the next execution-authority boundary.
+
+
+**Next execution-authority isolation boundary:** Hardened `ResolveProposerAuthority` so the resolver receives a defensive copy of `FinalizedBlockAuthorization.Proposer`, preventing a resolver from mutating caller-owned proposer identity through the shared byte slice. Added `TestResolveProposerAuthorityClonesProposerForResolver`, using a resolver that deliberately mutates its input and verifying the caller's proposer remains unchanged. Implementation commit: `6238744593430fa4fd5789c604ace590782197c6`; regression-test commit: `fb10d92d6c6c835eac59a5c44b98b3d9c971f3c3`.
+
+**Next CI gate:** verify `fb10d92d6c6c835eac59a5c44b98b3d9c971f3c3` through the full IndoChain test/tidy/vet workflow before proceeding to the next execution-authority boundary.
