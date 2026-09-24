@@ -554,3 +554,21 @@ The runtime intentionally does not introduce an HTTP server or admin API yet. It
 1. verify CI for the lifecycle wiring;
 2. add an explicit restart/recovery lifecycle test using the durable JSON store;
 3. then continue toward provider routing using persisted balance and health.
+
+
+
+### 23. Milestone Update — CI #59 Root Cause Fixed
+
+**Date:** 2026-09-24
+
+CI run #59 failed in the `Tidy` step before tests executed.
+
+Root cause from the GitHub Actions log:
+
+- `backend/cmd/deskaprovider/main.go` imported `github.com/DesKaOne/DesKaEcosystem/DesKaProvider/backend/runtime`;
+- the Go module root is `DesKaProvider/backend`, with module path `github.com/DesKaOne/DesKaEcosystem/DesKaProvider`;
+- therefore the runtime package import path must be `github.com/DesKaOne/DesKaEcosystem/DesKaProvider/runtime`.
+
+The import path was corrected in commit `91f688e7bba21480b9fd81f5a21a22029973470b`.
+
+The previous CI failure was an import-path/module-boundary issue, not a runtime test failure. A new CI run is required to verify the correction.
