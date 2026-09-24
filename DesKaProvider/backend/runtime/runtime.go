@@ -134,11 +134,7 @@ func NewFromEnvironment(httpClient *http.Client) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	router, err := routing.New(registry, store, nil)
-	if err != nil {
-		return nil, err
-	}
-	router.Catalog = catalogStore
+	router, err := routing.NewWithCatalog(registry, store, nil, catalogStore)
 	if err != nil {
 		return nil, err
 	}
@@ -165,9 +161,6 @@ func (s *Service) Run(ctx context.Context) error {
 	}
 	if s.catalogSync == nil {
 		return s.syncService.Run(ctx, s.interval)
-	}
-	if ctx == nil {
-		return errors.New("context is required")
 	}
 	_ = s.catalogSync.SyncAll(ctx)
 	ticker := time.NewTicker(s.catalogInterval)
