@@ -778,6 +778,21 @@ func TestConsensusRuntimeNegativeFinalityQuorumNotReached(t *testing.T) {
 	}
 }
 
+func TestConsensusRuntimeNegativeDuplicateFinalityVote(t *testing.T) {
+	n, candidate, certificate, validators, power, ctx, validatorResolver, senderResolver := finalizedHandoffFixture(t)
+	canonicalHead := n.HeadHash
+
+	// Keep the certificate payload/context valid but duplicate the same validator vote.
+	// The finality boundary must reject duplicate sender evidence before quorum can be accepted.
+	certificate.Votes = append(certificate.Votes, certificate.Votes[0])
+	if err := n.CommitFinalizedBlock(ctx, candidate, certificate, validators, power, validatorResolver, senderResolver); !errors.Is(err, consensus.ErrDuplicateVote) {
+		t.Fatalf("duplicate finality vote error = %v, want %v", err, consensus.ErrDuplicateVote)
+	}
+	if n.Head.Header.Height != 0 || n.HeadHash != canonicalHead {
+		t.Fatal("canonical head changed after duplicate finality vote rejection")
+	}
+}
+
 func TestConsensusRuntimeNegativeCrossHeightReplayedCandidate(t *testing.T) {
 	n, candidate1, certificate1, validators, power, ctx1, validatorResolver, senderResolver := finalizedHandoffFixture(t)
 	if err := n.CommitFinalizedBlock(ctx1, candidate1, certificate1, validators, power, validatorResolver, senderResolver); err != nil {
