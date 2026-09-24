@@ -559,6 +559,72 @@ func TestCommitFinalizedBlockRejectsConsensusContextMismatch(t *testing.T) {
 	if !reflect.DeepEqual(n.Head, beforeHead) || n.HeadHash != beforeHash || n.State.Root() != beforeRoot { t.Fatal("node mutated after context mismatch") }
 }
 
+func finalizedBlockFixture(t *testing.T, store storage.ChainStore) (*Node, consensus.BlockProductionContext, block.Block, consensus.FinalityCertificate, validatorAuthorityResolver, senderAuthorityResolver, types.Address) {
+	t.Helper()
+	n, err := NewDevnet(store); if err != nil { t.Fatal(err) }
+	seed := make([]byte, 32); seed[0] = 23
+	keyPair, err := crypto.NewEd25519KeyPair(seed); if err != nil { t.Fatal(err) }
+	signer, err := crypto.NewEd25519Signer(keyPair.PrivateKey); if err != nil { t.Fatal(err) }
+	validatorID := []byte("fixture-validator")
+	validators, err := consensus.NewValidatorSet([][]byte{validatorID}); if err != nil { t.Fatal(err) }
+	power, err := consensus.NewVotingPowerSet([]consensus.ValidatorVotingPower{{ValidatorID: validatorID, Power: 1}}); if err != nil { t.Fatal(err) }
+	ctx := consensus.BlockProductionContext{State: consensus.RoundState{ProtocolVersion: devnet.ProtocolVersion, ChainID: devnet.ChainID, Epoch: 1, Height: 0, Round: 0, Phase: consensus.PhaseProposal}, PreviousHash: n.HeadHash, Proposer: validatorID}
+	sender := types.Address([]byte("fixture-sender")); recipient := types.Address([]byte("fixture-recipient"))
+	n.State.Set(sender, state.Account{Balance: 60, Nonce: 0})
+	tx := transaction.Transaction{Version: devnet.ProtocolVersion, ChainID: devnet.ChainID, Nonce: 0, Sender: sender, Recipient: recipient, Value: 20, GasLimit: 100}
+	tx.Signature, err = transaction.Sign(tx, signer); if err != nil { t.Fatal(err) }
+	rules, err := n.Config.BlockRules(signer.PublicKey()); if err != nil { t.Fatal(err) }
+	working := n.State.Snapshot(); if err := state.ApplyTransaction(working, tx, rules.Transaction); err != nil { t.Fatal(err) }
+	candidate := block.Block{Header: block.Header{Version: devnet.ProtocolVersion, ChainID: devnet.ChainID, Height: 1, Timestamp: n.Head.Header.Timestamp + 1, PreviousHash: n.HeadHash, StateRoot: working.Root(), Proposer: validatorID}, Transactions: []any{tx}}
+	candidate.Header.TransactionsRoot, err = block.TransactionsRoot(candidate.Transactions); if err != nil { t.Fatal(err) }
+	payload, err := consensus.ValidateProducedBlock(ctx, candidate); if err != nil { t.Fatal(err) }
+	vote := consensus.Message{ProtocolVersion: devnet.ProtocolVersion, ChainID: devnet.ChainID, Epoch: 1, Height: 0, Round: 0, Sender: validatorID, Type: consensus.MessageTypeVote, Payload: payload[:]}
+	certificate, err := consensus.NewFinalityCertificate(ctx.State, validators, power, consensus.QuorumThreshold{Numerator: 1, Denominator: 1}, payload[:], []consensus.Message{vote}); if err != nil { t.Fatal(err) }
+	return n, ctx, candidate, certificate, validatorAuthorityResolver{publicKey: signer.PublicKey()}, senderAuthorityResolver{publicKey: signer.PublicKey()}, recipient
+}
+
+func TestCommitFinalizedBlockRejectsValidatorAuthorityFailureWithoutMutation(t *testing.T) {
+	n, ctx, candidate, certificate, _, senderResolver, _ := finalizedBlockFixture(t, storage.NewMemoryStore())
+	beforeHead, beforeHash, beforeRoot := n.Head, n.HeadHash, n.State.Root()
+	errExpected := errors.New("validator authority failure")
+	err := n.CommitFinalizedBlock(ctx, candidate, certificate, mustValidatorSet(t, certificate), mustVotingPowerSet(t, certificate), failingAuthorityResolver{err: errExpected}, senderResolver)
+	if !errors.Is(err, errExpected) { t.Fatalf("error = %v, want %v", err, errExpected) }
+	if !reflect.DeepEqual(n.Head, beforeHead) || n.HeadHash != beforeHash || n.State.Root() != beforeRoot { t.Fatal("node mutated after validator authority failure") }
+}
+
+func TestCommitFinalizedBlockRejectsFinalityMismatchWithoutMutation(t *testing.T) {
+	n, ctx, candidate, certificate, validatorResolver, senderResolver, _ := finalizedBlockFixture(t, storage.NewMemoryStore())
+	certificate.Payload = []byte("wrong-finality-payload")
+	beforeHead, beforeHash, beforeRoot := n.Head, n.HeadHash, n.State.Root()
+	if err := n.CommitFinalizedBlock(ctx, candidate, certificate, mustValidatorSet(t, certificate), mustVotingPowerSet(t, certificate), validatorResolver, senderResolver); err == nil { t.Fatal("expected finality mismatch") }
+	if !reflect.DeepEqual(n.Head, beforeHead) || n.HeadHash != beforeHash || n.State.Root() != beforeRoot { t.Fatal("node mutated after finality mismatch") }
+}
+
+func TestCommitFinalizedBlockRejectsExecutionAuthorityFailureWithoutMutation(t *testing.T) {
+	n, ctx, candidate, certificate, validatorResolver, _, _ := finalizedBlockFixture(t, storage.NewMemoryStore())
+	beforeHead, beforeHash, beforeRoot := n.Head, n.HeadHash, n.State.Root()
+	errExpected := errors.New("sender authority failure")
+	err := n.CommitFinalizedBlock(ctx, candidate, certificate, mustValidatorSet(t, certificate), mustVotingPowerSet(t, certificate), validatorResolver, failingAuthorityResolver{err: errExpected})
+	if !errors.Is(err, errExpected) { t.Fatalf("error = %v, want %v", err, errExpected) }
+	if !reflect.DeepEqual(n.Head, beforeHead) || n.HeadHash != beforeHash || n.State.Root() != beforeRoot { t.Fatal("node mutated after sender authority failure") }
+}
+
+func TestCommitFinalizedBlockRejectsStoreFailureWithoutMutation(t *testing.T) {
+	store := &failingCommitStore{MemoryStore: storage.NewMemoryStore()}
+	n, ctx, candidate, certificate, validatorResolver, senderResolver, _ := finalizedBlockFixture(t, store)
+	beforeHead, beforeHash, beforeRoot := n.Head, n.HeadHash, n.State.Root()
+	store.failCommit = true
+	if err := n.CommitFinalizedBlock(ctx, candidate, certificate, mustValidatorSet(t, certificate), mustVotingPowerSet(t, certificate), validatorResolver, senderResolver); !errors.Is(err, errCommitFailed) { t.Fatalf("error = %v, want %v", err, errCommitFailed) }
+	if !reflect.DeepEqual(n.Head, beforeHead) || n.HeadHash != beforeHash || n.State.Root() != beforeRoot { t.Fatal("node mutated after store failure") }
+}
+
+func mustValidatorSet(t *testing.T, certificate consensus.FinalityCertificate) consensus.ValidatorSet {
+	t.Helper(); validators, err := consensus.NewValidatorSet([][]byte{certificate.Votes[0].Sender}); if err != nil { t.Fatal(err) }; return validators
+}
+func mustVotingPowerSet(t *testing.T, certificate consensus.FinalityCertificate) consensus.VotingPowerSet {
+	t.Helper(); power, err := consensus.NewVotingPowerSet([]consensus.ValidatorVotingPower{{ValidatorID: certificate.Votes[0].Sender, Power: 1}}); if err != nil { t.Fatal(err) }; return power
+}
+
 func TestCommitFinalizedBlockUsesExplicitAuthorityBoundaries(t *testing.T) {
 	store := storage.NewMemoryStore()
 	n, err := NewDevnet(store); if err != nil { t.Fatal(err) }
