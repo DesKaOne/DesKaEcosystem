@@ -783,7 +783,7 @@ When there is a conflict, the implementation and dedicated protocol specificatio
 ## Status
 
 **Snapshot date:** 2026-09-24  
-**Latest verified green CI:** `21e43032f7ed22dc07216f73b173166470c48f08` (IndoChain CI run 556)
+**Latest verified green CI:** `f0e0be0c5ec38a157bfca658ef6ce78e83ba2622` (IndoChain CI run 702)
 **Latest consensus round-state implementation:** `de59cb9d6485165613c5e7111521e27a639f69f6`
 **Latest consensus message ↔ round-state context implementation:** `fbd3e3a7f88cc0fc16e6a73671bb1a02a6454041`
 **Latest consensus validator membership implementation:** `f49385037bf7e22a816eab29a1ceacb49e0a9b4b`  
@@ -805,6 +805,8 @@ When there is a conflict, the implementation and dedicated protocol specificatio
 **Current branch CI after vote aggregation:** previous CI run `584` failed in `TestVoteAggregatorCalculatesPayloadPowerAndQuorum`; the test assertion has been corrected in `705a2cbb5c31c78fa43e5c8362978e4094b469de`.  
 **Current branch CI after finality boundary:** no pull-request workflow run was associated with HEAD `146c2225be2dcaf787bc3f724b50d70e214dfcfc`.  
 **Current branch CI after validator runtime:** IndoChain CI run `610` failed on the pull-request merge ref because `ValidatorRuntime` assigned a `VoteAggregator` value to a `*VoteAggregator` field. The runtime fix is `ac27d456622a6d8b3751832e7a73715b3c807adf`; the resulting branch HEAD later passed IndoChain CI run `622`.  
+**Latest CI failure before current fix:** IndoChain CI run `752` (merge ref `aa12c043bfabae2d2927e483349f87f09ef9c093`) failed during compilation in `IndoChain/internal/node/node_test.go:711` because `proposal.Payload` is a `types.Hash` array while the consensus vote message requires `[]byte`. The production runtime/node implementation was already compiling and the failure was isolated to the finalized runtime handoff test. The test now passes `proposal.Payload[:]` via commit `709215921ac191addeacf9a06549cf0dce244cb1`. CI for that fix is pending.  
+
 **Branch:** `dev/indochain-v0.1`  
 **Stage:** Core Protocol Implementation / Pre-Consensus Integration  
 **Latest block-candidate construction implementation:** `5d57d41ec1a2b901cdb63b38aa8171f07b27e754`  
@@ -825,6 +827,7 @@ When there is a conflict, the implementation and dedicated protocol specificatio
 **Latest node execution-authority documentation:** `3a0d109c1900e6bf74ad1e5094ce779bd8ef972d`  
 **Latest finalized-block → node commit integration:** `3b7bc7e5f6cbe33bd72e84eecc1075cf792ad1e4`  \n**Latest finalized-block commit context guard:** `ec35299e4f6115f0be5e7f46b70962051cb20368`  \n**Latest finalized-block commit failure coverage:** `95c128af32005c53a303a45dc77101c9005506d9`  \
 **Latest canonical consensus-context guard tightening:** `4e11821e796ea769bedbd7a48f6846712c41fffe`  \
+**Latest test fix for finalized runtime handoff:** `709215921ac191addeacf9a06549cf0dce244cb1`  \
 **Latest consensus-runtime → node finalized-commit handoff:** `a9c1a041f6bce7cdb29df2aff11cea4f64e9f508`  
 **Latest finalized-block → node commit implementation:** `f0e0be0c5ec38a157bfca658ef6ce78e83ba2622`  
 **Next major boundary:** Harden the consensus-runtime → node handoff against replay/re-commit and then begin broader multi-node consensus integration  
