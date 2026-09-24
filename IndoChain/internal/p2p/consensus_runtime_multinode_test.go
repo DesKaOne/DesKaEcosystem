@@ -198,6 +198,11 @@ func (runtimeMissingValidatorAuthorityResolver) PublicKeyForValidator([]byte) ([
 	return nil, nil
 }
 
+type runtimeFailingValidatorAuthorityResolver struct{ err error }
+func (r runtimeFailingValidatorAuthorityResolver) PublicKeyForValidator([]byte) ([]byte, error) {
+	return nil, r.err
+}
+
 func TestInMemoryTransportRuntimeFinalizedBlockHandoff(t *testing.T) {
 	store := storage.NewMemoryStore()
 	n, err := node.NewDevnet(store)
@@ -1580,6 +1585,19 @@ func TestConsensusRuntimeNegativeEmptyValidatorIDVotingPower(t *testing.T) {
 	}
 	if n.HeadHash != canonicalHead {
 		t.Fatal("canonical head changed after empty validator id voting power rejection")
+	}
+}
+
+func TestConsensusRuntimeNegativeValidatorAuthorityResolutionError(t *testing.T) {
+	n, candidate, certificate, validators, power, ctx, _, senderResolver := finalizedHandoffFixture(t)
+	canonicalHead := n.HeadHash
+	resolverErr := errors.New("validator authority lookup failed")
+	resolver := runtimeFailingValidatorAuthorityResolver{err: resolverErr}
+	if err := n.CommitFinalizedBlock(ctx, candidate, certificate, validators, power, resolver, senderResolver); !errors.Is(err, resolverErr) {
+		t.Fatalf("validator authority resolver error = %v, want %v", err, resolverErr)
+	}
+	if n.Head.Header.Height != 0 || n.HeadHash != canonicalHead {
+		t.Fatal("canonical head changed after validator authority resolver error")
 	}
 }
 
