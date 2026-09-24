@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/genesis/devnet"
+	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/consensus"
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/block"
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/state"
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/transaction"
