@@ -388,7 +388,12 @@ func TestInMemoryTransportRuntimeFinalizedBlockMultiHeight(t *testing.T) {
 
 	var previousHash = n.HeadHash
 	for height := types.Height(1); height <= 2; height++ {
-		state, err := consensus.NewRoundState(devnet.ProtocolVersion, devnet.ChainID, uint64(height), 0)
+		state, err := consensus.NewRoundState(
+			devnet.ProtocolVersion,
+			devnet.ChainID,
+			0,
+			n.Head.Header.Height,
+		)
 		if err != nil {
 			t.Fatal(err)
 		}
