@@ -1,8 +1,8 @@
 # DesKaProvider v0.1 Development Status
 
-**Branch target:** `dev/deskaprovider-0.1`  
+**Branch target:** `dev/deskaprovider-v0.1`  
 **Architecture baseline:** documented on `main`  
-**Current state:** PLANNED — architecture and documentation only; implementation has not started.
+**Current state:** IN PROGRESS — provider-neutral foundation and DigiFlazz adapter implemented; live credential validation remains pending because credentials are not stored in the repository or exposed to source control.
 
 ## 1. Purpose
 
@@ -164,7 +164,7 @@ Expected controls:
 
 ## 9. Planned Development Sequence
 
-1. Create `dev/deskaprovider-0.1` from the documented baseline.
+1. Create `dev/deskaprovider-v0.1` from the documented baseline.
 2. Establish Go service/module structure.
 3. Define provider-neutral domain contracts.
 4. Implement provider registry.
@@ -199,5 +199,72 @@ The documentation does not authorize:
 No production implementation has been started from this baseline. Implementation should begin on:
 
 ```text
-dev/deskaprovider-0.1
+dev/deskaprovider-v0.1
 ```
+
+
+## 12. Milestone Update — Provider Foundation + DigiFlazz Adapter
+
+**Date:** 2026-09-24
+
+Completed:
+
+- repository secret hygiene baseline:
+  - root `.gitignore`
+  - `DesKaProvider/backend/.env.example`
+- Go CI workflow for `DesKaProvider/backend`
+- provider-neutral PPOB contracts
+- environment-backed DigiFlazz configuration
+- DigiFlazz Buyer topup request mapping
+- MD5 signature generation using `md5(username + apiKey + ref_id)`
+- provider-neutral mapping for `Sukses`, `Pending`, and `Gagal`
+- prepaid status lookup using the same transaction endpoint and original `ref_id`
+- DigiFlazz webhook payload normalization
+- HMAC-SHA1 webhook signature validation when a webhook secret is configured
+- deterministic unit tests using `httptest`
+
+### DigiFlazz contract validation
+
+The official DigiFlazz documentation confirms:
+
+- Buyer topup endpoint: `https://api.digiflazz.com/v1/transaction`
+- required request fields include `username`, `buyer_sku_code`, `customer_no`, `ref_id`, and `sign`
+- signature formula: `md5(username + apiKey + ref_id)`
+- transaction responses expose `status`, `rc`, `message`, `sn`, `buyer_last_saldo`, and `price`
+- prepaid pending status is checked by repeating the topup request with the same `ref_id`
+- webhook requests can be authenticated with `X-Hub-Signature` using HMAC-SHA1
+
+These facts were verified against the official DigiFlazz documentation before implementation.
+
+### CS test case validation
+
+The supplied test tuple:
+
+`buyer_sku_code = xld10`
+`customer_no = 087800001232`
+
+matches DigiFlazz's official prepaid test case for **Gagal**, with expected `rc = 02`. It is therefore not a success test case; the adapter test intentionally verifies the failure mapping.
+
+### Live API validation
+
+Live validation was **not executed in this environment**.
+
+Reason:
+
+- no real DigiFlazz username/API key is committed or embedded in source;
+- the supplied conversation credentials are redacted;
+- the repository now requires `DIGIFLAZZ_USERNAME` and `DIGIFLAZZ_API_KEY` through environment configuration.
+
+A live test must be executed only with credentials supplied through the runtime environment and must use the documented test tuple above.
+
+### Architectural note
+
+The initial baseline interface used `GetStatus(ctx, ref string)` and `HandleWebhook(ctx, payload []byte)`. DigiFlazz's documented prepaid status flow requires the original product code and customer number, while webhook authentication requires request headers/secret context. The implementation therefore uses provider-neutral `StatusRequest` and `WebhookRequest` structures rather than leaking DigiFlazz-specific fields into DesKaCash.
+
+### Next milestone
+
+1. add provider registry;
+2. add deterministic mock provider;
+3. add DigiFlazz integration test harness driven only by environment variables;
+4. validate the CS test case against the real DigiFlazz API;
+5. then continue toward balance synchronization and provider health.
