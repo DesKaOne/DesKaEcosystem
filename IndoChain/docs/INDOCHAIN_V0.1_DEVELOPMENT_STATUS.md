@@ -1131,3 +1131,8 @@ This milestone does not define proposer selection, voting power, quorum, vote ag
 **Verified proposer-authority input-isolation CI:** IndoChain CI #1029 (workflow run `35991014226`) completed successfully for `fb10d92d6c6c835eac59a5c44b98b3d9c971f3c3`; the full test/tidy/vet gate passed. The execution-authority resolver now has verified isolation on both directions of the byte-slice handoff: resolver-owned public-key output cannot mutate through the returned slice, and resolver input cannot mutate caller-owned proposer identity.
 
 **Next execution-to-transaction authority boundary:** review and extend the finalized handoff around the separate `TransactionAuthorityResolver` path. The current architecture intentionally keeps validator/proposer authority distinct from transaction sender authority; the next work should add negative coverage for sender-authority resolution/propagation while preserving canonical-state immutability.
+
+
+**Next execution-to-transaction authority boundary:** Hardened `state.ApplyTransaction` so `PublicKeyResolver.PublicKeyForSender` receives a defensive copy of `tx.Sender`. Added `TestApplyTransactionClonesSenderForAuthorityResolver`, using a resolver that deliberately mutates its input; transaction execution must still verify the original signature, preserve the transaction sender, and commit the expected transfer state. Implementation commit: `83da6a6b07f21d5d5f336e3e40a81a6c69cd4085`; regression-test commit: `5f48ff1ccb2a59203c37c5821caca3fed40d32db`.
+
+**Next CI gate:** verify `5f48ff1ccb2a59203c37c5821caca3fed40d32db` through the full IndoChain test/tidy/vet workflow before proceeding to the next transaction-authority boundary.
