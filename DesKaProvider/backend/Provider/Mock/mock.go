@@ -153,3 +153,11 @@ func (p *Provider) HandleWebhook(ctx context.Context, req provider.WebhookReques
 	}
 	return event, nil
 }
+
+// PurchaseCount reports how many purchase submissions were recorded for a reference ID.
+func (p *Provider) PurchaseCount(referenceID string) int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if _, ok := p.purchases[referenceID]; !ok { return 0 }
+	return 1
+}
