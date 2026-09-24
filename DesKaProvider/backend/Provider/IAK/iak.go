@@ -63,7 +63,7 @@ func (c *Client) GetStatus(ctx context.Context, req provider.StatusRequest)(prov
 
 func (c *Client) GetBalance(ctx context.Context)(int64,error) {
  var d map[string]any
- if err:=c.do(ctx,c.balanceEndpoint,map[string]string{"username":c.username,"sign":c.sig("bl")},&d);err!=nil{return 0,err}; return int64(num(obj(d,"data"),"balance")),nil
+ if err:=c.do(ctx,c.balanceEndpoint,map[string]string{"username":c.username,"sign":c.sig("bl")},&d);err!=nil{return 0,err}; x:=obj(d,"data"); raw,ok:=x["balance"]; if !ok{return 0,errors.New("IAK balance response is missing data.balance")}; switch v:=raw.(type){case float64:return int64(v),nil;case string:n,err:=strconv.ParseInt(strings.TrimSpace(v),10,64);if err!=nil{return 0,fmt.Errorf("invalid IAK balance: %w",err)};return n,nil;default:return 0,fmt.Errorf("invalid IAK balance type %T",raw)}
 }
 
 func (c *Client) HandleWebhook(_ context.Context, req provider.WebhookRequest)(provider.WebhookEvent,error) {
