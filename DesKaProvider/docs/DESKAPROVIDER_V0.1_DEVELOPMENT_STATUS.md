@@ -2304,3 +2304,32 @@ Verification:
 2. add restart-focused administrative lifecycle tests through `ProviderAdminService`;
 3. then add routing eligibility tests combining lifecycle, health, and catalog freshness;
 4. only after those controls are stable, continue toward the internal Admin API.
+
+
+### 68. CI Recovery — Durable Provider Lifecycle State
+
+**Date:** 2026-09-25
+
+CI #398 for `c567f7d5647e38596eb79710f0dc152971c3f9a5` was **RED** in both `test` and `race`.
+
+**ROOT CAUSE**
+
+- `DesKaProvider/backend/Provider/operational/provider_state_json.go` contained a malformed Go struct tag on `providerStateFile.States`;
+- this caused a compile-time syntax error before the operational, routing, runtime, and command packages could build.
+
+**IMPACT**
+
+- no functional test execution for the new durable provider-state implementation;
+- race validation also stopped at compilation;
+- previous CI gate remained green, but the new milestone was not verified.
+
+**FIX**
+
+- corrected the JSON tag to `json:"states"`;
+- no architectural or runtime behavior was changed.
+
+**Verification**
+
+- fix commit: `c339359c68434f730de8ebc80daca4d7aa272ec9`;
+- fresh CI is mandatory before any next milestone;
+- no feature work proceeds until `test`, `vet`, and `race` are green.
