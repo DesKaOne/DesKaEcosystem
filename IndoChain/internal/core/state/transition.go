@@ -26,7 +26,8 @@ func ApplyTransaction(s *State, tx transaction.Transaction, rules ExecutionRules
 	}
 	publicKey := rules.PublicKey
 	if rules.PublicKeyResolver != nil {
-		resolved, err := rules.PublicKeyResolver.PublicKeyForSender(tx.Sender)
+		sender := append([]byte(nil), tx.Sender...)
+		resolved, err := rules.PublicKeyResolver.PublicKeyForSender(sender)
 		if err != nil { return err }
 		publicKey = resolved
 	}
