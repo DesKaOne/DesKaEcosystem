@@ -20,7 +20,10 @@ type Product struct {
 	Name string
 }
 
-type ProductRequest struct{}
+type ProductRequest struct {
+	Category string
+	Active   *bool
+}
 
 type InquiryRequest struct {
 	ProductCode string
