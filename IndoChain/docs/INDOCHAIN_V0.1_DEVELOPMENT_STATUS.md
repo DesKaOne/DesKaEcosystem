@@ -1020,3 +1020,7 @@ The pipeline is intentionally limited to existing invariants. Cryptographic sign
 Tests cover valid messages, context mismatch, unauthorized sender, input purity, and follow-on signature verification. Detailed scope is documented in `IndoChain/docs/consensus-message-validation-pipeline-v0.1.md`.
 
 This milestone does not define proposer selection, voting power, quorum, vote aggregation, locking, timeouts, finality certificates, validator-set transitions, staking, rewards, or slashing.
+
+**CI failure and root cause:** IndoChain CI #955 (workflow run `35981322831`) for `e7c955a9a3e4a57562b784f767f1efc991c5feab` failed during compilation of `internal/p2p/consensus_runtime_multinode_test.go`. The log exposed two scope issues: the finalized-handoff test used `power` without declaring it locally, producing `undefined: power` at lines 215, 226, 234, and 344; the quorum-negative test still used `power, err :=` after `power` was already a function parameter and `err` had been declared, producing `no new variables on left side of :=` at line 765. The correction in `374118ffd82511101f563f9a31db065d82fa7c0a` declares the handoff fixture's voting-power variable locally and reuses the existing `power, err` variables in the quorum-negative test.
+
+**Next CI gate:** verify `374118ffd82511101f563f9a31db065d82fa7c0a` through the full IndoChain test/tidy/vet workflow before proceeding to the next finalized-handoff negative boundary.
