@@ -783,7 +783,7 @@ When there is a conflict, the implementation and dedicated protocol specificatio
 **Latest validator runtime tests:** `810bbaab2b009ab7ba5bcc5f87cd9f8c18291385`  
 **Validator runtime boundary documentation:** `523af557240c5e81c9b54249ccf9f3432c97c010`  
 **Consensus finality boundary documentation:** `72bb276ca17848129d0f9bec0c66554aa604a6b`  
-**Latest status-document update:** `PENDING`    
+**Latest status-document update:** `34f60bd7a05e2d5d518f23bd84e8f018db2bde01`    
 **Current branch CI after vote aggregation:** previous CI run `584` failed in `TestVoteAggregatorCalculatesPayloadPowerAndQuorum`; the test assertion has been corrected in `705a2cbb5c31c78fa43e5c8362978e4094b469de`.  
 **Current branch CI after finality boundary:** no pull-request workflow run was associated with HEAD `146c2225be2dcaf787bc3f724b50d70e214dfcfc`.  
 **Current branch CI after validator runtime:** IndoChain CI run `610` failed on the pull-request merge ref because `ValidatorRuntime` assigned a `VoteAggregator` value to a `*VoteAggregator` field. The runtime fix is `ac27d456622a6d8b3751832e7a73715b3c807adf`; the resulting branch HEAD later passed IndoChain CI run `622`.  
@@ -805,7 +805,7 @@ When there is a conflict, the implementation and dedicated protocol specificatio
 **Latest execution-authority handoff documentation:** `9e35299980a4dbe67d786de27fcde9361cdaa1cf`  
 **Latest node execution-authority integration:** `3a37071d11f4d7e133f7c23736a3c6f81c091e31`  
 **Latest node execution-authority documentation:** `3a0d109c1900e6bf74ad1e5094ce779bd8ef972d`  
-**Latest finalized-block → node commit integration:** `3b7bc7e5f6cbe33bd72e84eecc1075cf792ad1e4`  \n**Latest finalized-block commit context guard:** `ec35299e4f6115f0be5e7f46b70962051cb20368`  
+**Latest finalized-block → node commit integration:** `3b7bc7e5f6cbe33bd72e84eecc1075cf792ad1e4`  \n**Latest finalized-block commit context guard:** `ec35299e4f6115f0be5e7f46b70962051cb20368`  \n**Latest finalized-block commit failure coverage:** `95c128af32005c53a303a45dc77101c9005506d9`  
 **Latest finalized-block → node commit implementation:** `f0e0be0c5ec38a157bfca658ef6ce78e83ba2622`  
 **Next major boundary:** Tighten canonical consensus-to-execution context handling further, then begin broader multi-node consensus integration  
 
