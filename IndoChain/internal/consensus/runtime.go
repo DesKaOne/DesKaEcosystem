@@ -30,7 +30,7 @@ type ValidatorRuntime struct {
 	votingPower VotingPowerSet
 	threshold   QuorumThreshold
 	proposer    ProposerSelector
-	votes       *VoteAggregator
+	votes          *VoteAggregator
 	proposal       []byte
 	lockedProposal []byte
 	certificate    *FinalityCertificate
