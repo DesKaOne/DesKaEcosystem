@@ -1025,3 +1025,28 @@ The durable transaction store records provider transaction correlation and norma
 - CI must be re-run and verified green before continuing.
 
 - CI #157 failed due to a duplicate `path/filepath` import in `routing/service_test.go`; corrected in `136d8c95538732fc2fced5b45152bd48da9bd6c2`.
+
+### CI Fix Follow-up — Restart Recovery Test
+
+**Date:** 2026-09-24
+
+CI #160 failed in both the unit-test and race-detector jobs at `TestServiceRestartRecoversDurableTransactionState`.
+
+Root cause:
+
+- the restart test intentionally creates a fresh Mock provider instance to verify that the durable transaction store prevents a duplicate purchase submission;
+- the fresh Mock instance has no provider-side transaction record for the recovered reference ID;
+- the test then called `Reconcile`, which correctly queried the fresh provider and returned `Mock.ErrTransactionNotFound`;
+- this was a test-fixture mismatch, not a routing production failure.
+
+Fix:
+
+- keep the restart test focused on the durable correlation/idempotency guarantee: the recovered service returns the persisted transaction state and does not resubmit the purchase;
+- remove the reconciliation call from that fresh-provider restart fixture;
+- retain separate reconciliation coverage for provider status queries on a provider instance that owns the transaction state.
+
+The production reconciliation boundary is unchanged.
+
+### Verification gate
+
+CI #160 is red. The fix must reach a complete green CI result, including `test` and `race`, before continuing to the next milestone.
