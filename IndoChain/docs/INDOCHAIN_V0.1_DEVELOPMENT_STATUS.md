@@ -484,6 +484,16 @@ The guard explicitly rejects protocol-version mismatch, chain-ID mismatch, conse
 
 This keeps consensus authorization tied to the exact canonical execution point: the consensus context must describe the node's current chain before a finalized candidate can cross into execution/commit. It does not yet define multi-node state synchronization or production validator authority storage.
 
+### 4.34 Explicit Node-to-Node P2P Transport Boundary
+
+The next multi-node integration boundary is now implemented in `IndoChain/internal/p2p/transport.go`.
+
+A small `Transport` interface now separates node-to-node message delivery from consensus logic. The development `InMemoryTransport` provides deterministic point-to-point delivery between two node transport instances, preserves the sender identity, validates the existing P2P message envelope, and clones payloads at both send and receive boundaries.
+
+Regression tests cover two-node routing, unknown-peer rejection without inbox mutation, and payload isolation. This is intentionally an in-process transport adapter: it does not yet provide sockets, peer discovery, connection lifecycle, backpressure, retransmission, authentication, or a canonical consensus-message codec.
+
+The boundary is therefore ready to become the transport handoff for consensus messages without coupling the consensus engine directly to a concrete network implementation.
+
 ### 4.33 Multi-node Finalized-Commit Convergence Boundary
 
 A first multi-node convergence test is now implemented in `IndoChain/internal/node/node_test.go`.
@@ -850,7 +860,10 @@ When there is a conflict, the implementation and dedicated protocol specificatio
 **Latest finalized-block → node commit implementation:** `7d471998b021b9caa91b5776be37d3aec0fe3e6f`  
 **Latest replay/re-commit guard fix:** `7d471998b021b9caa91b5776be37d3aec0fe3e6f`  
 **Latest multi-node finalized-commit convergence test:** `c2d1de1bb23aff4017843a6cc58c05208b7f5c29`  
-**Next major boundary:** Broaden multi-node consensus integration beyond in-process convergence into explicit node-to-node message/transport boundaries  
+**Latest explicit node-to-node transport implementation:** `624a3ebf0a514dfd80afc6494c46f89f9bc0f497`  
+**Latest explicit node-to-node transport tests:** `a685f8f37e82421f811e4a1eeab93398c3440b41`  
+**Latest transport CI status:** no workflow run is currently associated with `a685f8f37e82421f811e4a1eeab93398c3440b41`; this is not yet a green CI gate.  
+**Next major boundary:** Bind consensus message encoding/decoding to the explicit node-to-node transport boundary  
 
 ### 4.12 Consensus Validator Membership Boundary
 
