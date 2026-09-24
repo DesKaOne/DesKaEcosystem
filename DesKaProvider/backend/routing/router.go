@@ -35,6 +35,14 @@ type candidate struct {
 }
 
 func New(registry *provider.Registry, store operational.Store, priorities map[string]int) (*Router, error) {
+	return newRouter(registry, store, priorities, nil)
+}
+
+func NewWithCatalog(registry *provider.Registry, store operational.Store, priorities map[string]int, catalogStore catalog.Store) (*Router, error) {
+	return newRouter(registry, store, priorities, catalogStore)
+}
+
+func newRouter(registry *provider.Registry, store operational.Store, priorities map[string]int, catalogStore catalog.Store) (*Router, error) {
 	if registry == nil {
 		return nil, errors.New("provider registry is required")
 	}
@@ -45,7 +53,7 @@ func New(registry *provider.Registry, store operational.Store, priorities map[st
 	for name, priority := range priorities {
 		copied[normalize(name)] = priority
 	}
-	return &Router{Registry: registry, Store: store, Priorities: copied}, nil
+	return &Router{Registry: registry, Store: store, Priorities: copied, Catalog: catalogStore}, nil
 }
 
 func (r *Router) Select(ctx context.Context, req Request) (string, error) {
