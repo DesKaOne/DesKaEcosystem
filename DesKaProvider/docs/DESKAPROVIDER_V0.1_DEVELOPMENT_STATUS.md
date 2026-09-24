@@ -832,3 +832,27 @@ Commit: `049b403658023b63f09302c6722fbaa39b7d06a0`.
 ### Verification gate
 
 CI #100 is confirmed red. The new commit must reach a green CI result before transaction correlation/idempotency implementation begins.
+
+
+### 32. Milestone Update — Purchase Reference Correlation / Idempotency
+
+**Date:** 2026-09-24
+
+CI #104 is confirmed green before this milestone.
+
+Implemented a provider-neutral in-process purchase correlation boundary in `routing.Service` using the existing `ReferenceID`:
+
+- first request for a reference executes normally;
+- repeated identical request returns the original execution result without submitting another provider purchase;
+- a different request reusing an existing `ReferenceID` is rejected with `ErrReferenceConflict`;
+- concurrent duplicate requests share the same in-flight completion;
+- no automatic retry or provider failover is introduced after submission;
+- DesKaCash ledger/customer balance remains outside this layer.
+
+Deterministic tests cover successful repeated requests and reference conflicts. The implementation is intentionally an in-process v0.1 boundary; durable PostgreSQL-backed transaction state remains a later deployment-direction concern.
+
+Commits: `cef6f075a21acbaa59dd69904be16d00c125be47`, `357012076274707c760d4e59496e7121da9bce33`, `41c36336e9d090ac8ad78294c77256af3bf2b43c`.
+
+### Verification gate
+
+A fresh CI result for the idempotency implementation is required before moving to the next reliability milestone.
