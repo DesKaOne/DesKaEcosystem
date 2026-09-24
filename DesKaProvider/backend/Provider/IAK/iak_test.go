@@ -38,7 +38,7 @@ func TestIAKAdapter(t *testing.T){
 
 func TestIAKWebhookSignature(t *testing.T){
  c,_:=New(config.IAKConfig{Username:"user",APIKey:"secret",PriceListEndpoint:"https://x",InquiryPLNEndpoint:"https://x",TopUpEndpoint:"https://x",StatusEndpoint:"https://x",BalanceEndpoint:"https://x"},http.DefaultClient)
- body:=[]byte(`{"ref_id":"order-1","status":1,"code":"xld25000","hp":"08123","message":"SUCCESS","rc":"00"}`)
+ body:=[]byte(`{"ref_id":"order-1","status":1,"code":"xld25000","hp":"08123","price":25000,"message":"SUCCESS","rc":"00"}`)
  e:=ts("order-1");event,err:=c.HandleWebhook(context.Background(),provider.WebhookRequest{Body:body,SignatureSecret:"secret",Signature:e});if err!=nil||event.Status!=provider.StatusSuccess{t.Fatalf("event=%#v err=%v",event,err)}
 }
 
@@ -119,7 +119,7 @@ func TestIAKPurchaseResponseValidation(t *testing.T) {
 		{"unknown status", `{"data":{"ref_id":"order-1","customer_id":"08123","product_code":"xld25000","status":9}}`, true},
 		{"missing message", `{"data":{"ref_id":"order-1","customer_id":"08123","product_code":"xld25000","status":0,"price":25000}}`, true},
 		{"missing price", `{"data":{"ref_id":"order-1","customer_id":"08123","product_code":"xld25000","status":0,"message":"PROCESS"}}`, true},
-		{"valid pending", `{"data":{"ref_id":"order-1","customer_id":"08123","product_code":"xld25000","status":0,"message":"PROCESS","rc":"39"}}`, false},
+		{"valid pending", `{"data":{"ref_id":"order-1","customer_id":"08123","product_code":"xld25000","status":0,"price":25000,"message":"PROCESS","rc":"39"}}`, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -150,7 +150,7 @@ func TestIAKStatusResponseValidation(t *testing.T) {
 		{"unknown status", `{"data":{"ref_id":"order-1","customer_id":"08123","product_code":"xld25000","status":"9"}}`, true},
 		{"missing message", `{"data":{"ref_id":"order-1","customer_id":"08123","product_code":"xld25000","status":"1","price":25000}}`, true},
 		{"missing price", `{"data":{"ref_id":"order-1","customer_id":"08123","product_code":"xld25000","status":"1","message":"SUCCESS"}}`, true},
-		{"valid success", `{"data":{"ref_id":"order-1","customer_id":"08123","product_code":"xld25000","status":"1","message":"SUCCESS","rc":"00"}}`, false},
+		{"valid success", `{"data":{"ref_id":"order-1","customer_id":"08123","product_code":"xld25000","status":"1","price":25000,"message":"SUCCESS","rc":"00"}}`, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
