@@ -337,3 +337,141 @@ func TestServiceReconcileRejectsIdentityMismatch(t *testing.T) {
 	_, err = service.Reconcile(context.Background(), "unknown")
 	if !errors.Is(err, ErrWebhookTransactionNotFound) { t.Fatalf("expected unknown reference error, got %v", err) }
 }
+
+
+type mismatchedStatusProvider struct {
+	provider.PPOBProvider
+}
+
+func (p mismatchedStatusProvider) GetStatus(ctx context.Context, req provider.StatusRequest) (provider.PurchaseStatus, error) {
+	status, err := p.PPOBProvider.GetStatus(ctx, req)
+	if err != nil {
+		return provider.PurchaseStatus{}, err
+	}
+	status.CustomerNo = "08999999999"
+	return status, nil
+}
+
+func TestServiceReconcileRejectsIdentityMismatch(t *testing.T) {
+	registry := provider.NewRegistry()
+	mock := Mock.New(Mock.Config{
+		Products:       []provider.Product{{Code: "pln20", Name: "PLN 20"}},
+		ProviderCode:   "00",
+		Message:        "pending",
+		PurchaseStatus: provider.StatusPending,
+	})
+	if err := registry.Register("mock", mismatchedStatusProvider{PPOBProvider: mock}); err != nil {
+		t.Fatal(err)
+	}
+	store := operational.NewMemoryStore()
+	if err := store.Put(operational.Snapshot{ProviderName: "mock", Balance: 100000, Health: operational.HealthHealthy}); err != nil {
+		t.Fatal(err)
+	}
+	router, err := New(registry, store, map[string]int{"mock": 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewService(router)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := PurchaseRequest{ProductCode: "pln20", CustomerNo: "08123456789", ReferenceID: "ref-reconcile-mismatch", Amount: 20000}
+	if _, err := service.Purchase(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	_, err = service.Reconcile(context.Background(), req.ReferenceID)
+	if !errors.Is(err, ErrWebhookReferenceConflict) {
+		t.Fatalf("expected identity mismatch error, got %v", err)
+	}
+}
+
+func TestServiceRestartRecoversDurableTransactionState(t *testing.T) {
+	storePath := filepath.Join(t.TempDir(), "transactions", "state.json")
+	firstRegistry := provider.NewRegistry()
+	firstMock := Mock.New(Mock.Config{
+		Products:       []provider.Product{{Code: "pln20", Name: "PLN 20"}},
+		ProviderCode:   "00",
+		Message:        "pending",
+		PurchaseStatus: provider.StatusPending,
+		Price:          20000,
+	})
+	if err := firstRegistry.Register("mock", firstMock); err != nil {
+		t.Fatal(err)
+	}
+	operationalStore := operational.NewMemoryStore()
+	if err := operationalStore.Put(operational.Snapshot{ProviderName: "mock", Balance: 100000, Health: operational.HealthHealthy}); err != nil {
+		t.Fatal(err)
+	}
+	router, err := New(firstRegistry, operationalStore, map[string]int{"mock": 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	transactionStore, err := NewJSONFileTransactionStore(storePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstService, err := NewServiceWithStore(router, transactionStore)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := PurchaseRequest{ProductCode: "pln20", CustomerNo: "08123456789", ReferenceID: "ref-restart", Amount: 20000}
+	first, err := firstService.Purchase(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Result.Status != provider.StatusPending {
+		t.Fatalf("expected pending purchase, got %q", first.Result.Status)
+	}
+	if got := firstMock.PurchaseCount(req.ReferenceID); got != 1 {
+		t.Fatalf("expected one initial provider submission, got %d", got)
+	}
+
+	secondRegistry := provider.NewRegistry()
+	secondMock := Mock.New(Mock.Config{
+		Products:       []provider.Product{{Code: "pln20", Name: "PLN 20"}},
+		ProviderCode:   "00",
+		Message:        "pending",
+		PurchaseStatus: provider.StatusPending,
+		Price:          20000,
+	})
+	if err := secondRegistry.Register("mock", secondMock); err != nil {
+		t.Fatal(err)
+	}
+	secondOperationalStore := operational.NewMemoryStore()
+	if err := secondOperationalStore.Put(operational.Snapshot{ProviderName: "mock", Balance: 100000, Health: operational.HealthHealthy}); err != nil {
+		t.Fatal(err)
+	}
+	secondRouter, err := New(secondRegistry, secondOperationalStore, map[string]int{"mock": 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	recoveredStore, err := NewJSONFileTransactionStore(storePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recoveredService, err := NewServiceWithStore(secondRouter, recoveredStore)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	recovered, err := recoveredService.Purchase(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recovered != first {
+		t.Fatalf("expected recovered transaction state: %#v != %#v", recovered, first)
+	}
+	if got := secondMock.PurchaseCount(req.ReferenceID); got != 0 {
+		t.Fatalf("expected restart-safe idempotency without resubmission, got %d submissions", got)
+	}
+
+	reconciled, err := recoveredService.Reconcile(context.Background(), req.ReferenceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reconciled != recovered {
+		t.Fatalf("expected recovered reconciliation state to remain pending, got %#v", reconciled)
+	}
+}
