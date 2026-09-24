@@ -1589,3 +1589,12 @@ A fresh CI run for this hardening change is required. `test`, `vet`, and `race` 
 1. verify fresh CI for the IAK response-envelope hardening;
 2. if green, continue only with verified IAK capability gaps;
 3. keep postpaid, OVO, game inquiry, and other capabilities outside the prepaid v0.1 adapter until their neutral contract is explicitly designed and provider documentation is verified.
+
+
+### CI Correction — IAK Response Hardening
+
+CI #275 exposed a compile failure in the response-hardening change before the tests could run. The failure was caused by an incorrectly escaped newline inserted into `iak.go`; the resulting parser error also produced a cascading test-file diagnostic.
+
+Correction committed as `a6aeb2d1af49aa2972e02a239a7db2941fe5ba8d`. No provider behavior was changed by this correction; it only restores valid Go syntax for the helper introduced in the previous milestone.
+
+CI #275 is recorded as **red** and is not accepted as the verification gate. A fresh CI run on the correction commit is required and must be fully green before proceeding.
