@@ -1,9 +1,23 @@
+type mismatchedStatusProvider struct {
+	provider.PPOBProvider
+}
+
+func (p mismatchedStatusProvider) GetStatus(ctx context.Context, req provider.StatusRequest) (provider.PurchaseStatus, error) {
+	status, err := p.PPOBProvider.GetStatus(ctx, req)
+	if err != nil {
+		return provider.PurchaseStatus{}, err
+	}
+	status.CustomerNo = "08999999999"
+	return status, nil
+}
+
 package routing
 
 import (
 	"context"
 	"errors"
 	"testing"
+	"path/filepath"
 
 	provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
 	Mock "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/Mock"
