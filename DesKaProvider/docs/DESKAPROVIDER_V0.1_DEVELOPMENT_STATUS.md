@@ -332,3 +332,26 @@ The repository workflow is now configured to surface test/vet failures through G
 1. add the DigiFlazz environment-driven integration test harness;
 2. run the real CS test tuple only when runtime credentials are supplied through environment variables;
 3. then continue toward provider balance synchronization and provider health.
+
+
+### 15. Milestone Update — DigiFlazz Integration Test Harness
+
+**Date:** 2026-09-24
+
+Completed:
+
+- added an environment-driven live integration test for the documented CS failure tuple `xld10` + `087800001232`;
+- the test requires `DIGIFLAZZ_USERNAME`, `DIGIFLAZZ_API_KEY`, and `DIGIFLAZZ_INTEGRATION=1` at runtime;
+- no DigiFlazz credentials are stored in source control;
+- the integration assertion expects normalized `failed` status and provider code `02`;
+- CI keeps the normal unit-test job credential-free and adds a separate optional integration job;
+- the integration job can run when repository secrets are configured or through manual `workflow_dispatch`.
+
+### Verification
+
+The live integration request has not been executed from this environment because no runtime DigiFlazz credentials are available. The harness is therefore intentionally environment-gated.
+
+### Next milestone
+
+1. execute the live CS test when runtime secrets are available;
+2. then implement provider balance synchronization and provider health state.
