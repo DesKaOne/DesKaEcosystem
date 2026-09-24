@@ -1049,3 +1049,12 @@ This milestone does not define proposer selection, voting power, quorum, vote ag
 **Correction:** Updated `TestConsensusRuntimeNegativeMissingValidatorMembership` to assert the actual sender-membership rejection message while retaining the canonical-head immutability check. Implementation commit: `6c8f1ec6ab61deecd6e94c288376ab56f83301f8`.
 
 **Next CI gate:** verify `6c8f1ec6ab61deecd6e94c288376ab56f83301f8` through the full IndoChain test/tidy/vet workflow before proceeding to the next finalized-handoff negative boundary.
+
+
+**Verified membership-fix CI:** IndoChain CI #975 (workflow run `35983278368`) completed successfully for `6c8f1ec6ab61deecd6e94c288376ab56f83301f8`; the full test/tidy/vet gate passed.
+
+**Next finalized-handoff voting-power integrity boundary:** Added `TestConsensusRuntimeNegativeInvalidVotingPowerSet`. The test supplies a directly constructed voting-power set containing zero power so the finalized handoff exercises `VotingPowerSet.Validate` rather than failing during fixture construction. The handoff must reject the invalid set with `consensus.ErrInvalidVotingPowerSet` and preserve the canonical genesis head/hash. Initial implementation commit: `4b3260775b4277757a0c6e602f2966e0bebdc4a9`.
+
+**Correction:** The test initially used the wrong struct field name for `VotingPowerSet`; corrected to `Validators` in `ff0ea4d59e971f60a3e31e8e51e5eb58d4896bf3` before the CI gate.
+
+**Next CI gate:** verify `ff0ea4d59e971f60a3e31e8e51e5eb58d4896bf3` through the full IndoChain test/tidy/vet workflow before proceeding to the next finalized-handoff negative boundary.
