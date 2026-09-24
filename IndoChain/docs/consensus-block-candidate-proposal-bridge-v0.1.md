@@ -24,7 +24,7 @@ NewBlockProposal
        ValidatorRuntime
 ```
 
-The bridge allows a block candidate to enter the existing `ValidatorRuntime` proposal/vote lifecycle without making the runtime parse or execute an arbitrary block payload.
+The bridge allows a block candidate to enter the existing `ValidatorRuntime` proposal/vote lifecycle through `AcceptBlockProposal`, without making the runtime parse or execute an arbitrary block payload.
 
 ## Implemented invariants
 
@@ -59,4 +59,4 @@ This milestone does not define:
 
 ## Tests
 
-Tests cover candidate-to-payload bridging, rejection of invalid candidates, payload round-trip, and payload cloning.
+Tests cover candidate-to-payload bridging, rejection of invalid candidates, payload round-trip, payload cloning, runtime acceptance of a validated candidate, and runtime rejection of a candidate from an unexpected proposer.
