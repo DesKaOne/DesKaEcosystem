@@ -8,9 +8,18 @@ import (
 	"time"
 
 	provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
-	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/Mock"
+	mock "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/Mock"
 	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/operational"
 )
+
+type balanceMock struct {
+	*mock.Provider
+	balance int64
+}
+
+func (p *balanceMock) GetBalance(context.Context) (int64, error) {
+	return p.balance, nil
+}
 
 func TestLoadConfigDefaults(t *testing.T) {
 	t.Setenv("DESKAPROVIDER_OPERATIONAL_STORE_PATH", "")
@@ -22,17 +31,9 @@ func TestLoadConfigDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.StorePath != defaultStorePath {
-		t.Fatalf("unexpected store path: %q", cfg.StorePath)
-	}
-	if cfg.SyncInterval != defaultSyncInterval {
-		t.Fatalf("unexpected sync interval: %s", cfg.SyncInterval)
-	}
-	if cfg.FailureThreshold != defaultFailureThreshold {
-		t.Fatalf("unexpected failure threshold: %d", cfg.FailureThreshold)
-	}
-	if cfg.Currency != defaultCurrency {
-		t.Fatalf("unexpected currency: %q", cfg.Currency)
+	if cfg.StorePath != defaultStorePath || cfg.SyncInterval != defaultSyncInterval ||
+		cfg.FailureThreshold != defaultFailureThreshold || cfg.Currency != defaultCurrency {
+		t.Fatalf("unexpected defaults: %#v", cfg)
 	}
 }
 
@@ -50,12 +51,15 @@ func TestLoadConfigRejectsInvalidValues(t *testing.T) {
 }
 
 func TestServiceRunStopsOnContextCancellation(t *testing.T) {
-	mock := Mock.New(Mock.Config{
-		Products: map[string]provider.Product{"xld10": {Code: "xld10", Name: "Test"}},
-		PurchaseStatus: provider.StatusSuccess,
-	})
+	mockProvider := &balanceMock{
+		Provider: mock.New(mock.Config{
+			Products:       []provider.Product{{Code: "xld10", Name: "Test"}},
+			PurchaseStatus: provider.StatusSuccess,
+		}),
+		balance: 1500000,
+	}
 	registry := provider.NewRegistry()
-	if err := registry.Register("mock", mock); err != nil {
+	if err := registry.Register("mock", mockProvider); err != nil {
 		t.Fatal(err)
 	}
 	store := operational.NewMemoryStore()
@@ -74,7 +78,10 @@ func TestServiceRunStopsOnContextCancellation(t *testing.T) {
 
 	deadline := time.After(2 * time.Second)
 	for {
-		if _, ok := store.Get("mock"); ok {
+		if snapshot, ok := store.Get("mock"); ok {
+			if snapshot.Balance != 1500000 || snapshot.Health != operational.HealthHealthy {
+				t.Fatalf("unexpected initial snapshot: %#v", snapshot)
+			}
 			break
 		}
 		select {
@@ -108,11 +115,8 @@ func TestNewFromEnvironmentBuildsDurableService(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if service.interval != 45*time.Second {
-		t.Fatalf("unexpected interval: %s", service.interval)
-	}
-	if service.syncService.FailureThreshold != 4 {
-		t.Fatalf("unexpected threshold: %d", service.syncService.FailureThreshold)
+	if service.interval != 45*time.Second || service.syncService.FailureThreshold != 4 {
+		t.Fatalf("unexpected service configuration: interval=%s threshold=%d", service.interval, service.syncService.FailureThreshold)
 	}
 	if _, err := os.Stat(storePath); !os.IsNotExist(err) {
 		t.Fatalf("store should be created on first write, stat error: %v", err)
