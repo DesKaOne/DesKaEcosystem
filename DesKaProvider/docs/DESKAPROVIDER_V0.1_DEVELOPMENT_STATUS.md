@@ -904,3 +904,33 @@ The workflow change and this milestone documentation require a fresh GitHub Acti
 
 1. verify the complete CI run including `go test -race ./...`;
 2. then continue with provider transaction callback/webhook correlation at the neutral routing boundary, without moving ledger semantics into DesKaProvider.
+
+### 35. Milestone Update — Provider Webhook Correlation Boundary
+
+**Date:** 2026-09-24
+
+CI #126 is confirmed green, including the dedicated `go test -race ./...` job, before this milestone.
+
+Implemented a provider-neutral webhook correlation boundary in `routing.Service`:
+
+- webhook events are correlated by the existing `ReferenceID`;
+- product code and customer number must match the original purchase request;
+- unknown references are rejected instead of creating transaction state;
+- pending purchases can transition to success or failed through a normalized webhook event;
+- repeated identical terminal webhook events are idempotent;
+- conflicting terminal events are rejected;
+- invalid webhook status/identity data is rejected;
+- provider-specific signature/authentication remains inside the provider adapter;
+- no DesKaCash ledger mutation, retry, failover, or provider funding is introduced;
+- the implementation remains in-process v0.1 state, so webhook correlation after process restart is not yet durable.
+
+Deterministic tests cover pending-to-success correlation, duplicate webhook delivery, unknown references, and identity conflicts.
+
+### Verification gate
+
+The webhook correlation implementation and documentation require a fresh complete CI run. The test, vet, and race-detector jobs must all be green before the next reliability milestone.
+
+### Next milestone
+
+1. verify the complete CI run for webhook correlation;
+2. then review transaction status reconciliation semantics and durable transaction-state requirements before introducing any retry/failover behavior.
