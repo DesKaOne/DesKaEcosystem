@@ -122,3 +122,83 @@ func TestNewFromEnvironmentBuildsDurableService(t *testing.T) {
 		t.Fatalf("store should be created on first write, stat error: %v", err)
 	}
 }
+
+func TestServiceRestartRecoversPersistedOperationalSnapshot(t *testing.T) {
+	storePath := filepath.Join(t.TempDir(), "operational", "snapshots.json")
+
+	firstProvider := &balanceMock{
+		Provider: mock.New(mock.Config{
+			Products:       []provider.Product{{Code: "xld10", Name: "Test"}},
+			PurchaseStatus: provider.StatusSuccess,
+		}),
+		balance: 1750000,
+	}
+	firstRegistry := provider.NewRegistry()
+	if err := firstRegistry.Register("mock", firstProvider); err != nil {
+		t.Fatal(err)
+	}
+	firstStore, err := operational.NewJSONFileStore(storePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstSync, err := operational.NewSyncService(firstRegistry, firstStore, "IDR", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstService, err := New(firstSync, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	if err := firstSync.SyncAll(ctx); len(err) != 0 {
+		t.Fatalf("initial sync failed: %#v", err)
+	}
+	cancel()
+
+	secondProvider := &balanceMock{
+		Provider: mock.New(mock.Config{
+			Products:       []provider.Product{{Code: "xld10", Name: "Test"}},
+			PurchaseStatus: provider.StatusSuccess,
+		}),
+		balance: 1800000,
+	}
+	secondRegistry := provider.NewRegistry()
+	if err := secondRegistry.Register("mock", secondProvider); err != nil {
+		t.Fatal(err)
+	}
+	secondStore, err := operational.NewJSONFileStore(storePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recovered, ok := secondStore.Get("mock")
+	if !ok {
+		t.Fatal("expected persisted snapshot after restart")
+	}
+	if recovered.Balance != 1750000 || recovered.Health != operational.HealthHealthy {
+		t.Fatalf("unexpected recovered snapshot: %#v", recovered)
+	}
+
+	secondSync, err := operational.NewSyncService(secondRegistry, secondStore, "IDR", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondService, err := New(secondSync, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if firstService == secondService {
+		t.Fatal("expected distinct service instances across restart")
+	}
+
+	if errByProvider := secondSync.SyncAll(context.Background()); len(errByProvider) != 0 {
+		t.Fatalf("recovery sync failed: %#v", errByProvider)
+	}
+	updated, ok := secondStore.Get("mock")
+	if !ok {
+		t.Fatal("expected updated snapshot after recovery sync")
+	}
+	if updated.Balance != 1800000 || updated.Health != operational.HealthHealthy || updated.ConsecutiveFailures != 0 {
+		t.Fatalf("unexpected post-restart snapshot: %#v", updated)
+	}
+}
