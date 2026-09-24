@@ -1030,3 +1030,9 @@ This milestone does not define proposer selection, voting power, quorum, vote ag
 **Next finalized-handoff negative boundary:** Added `TestConsensusRuntimeNegativeDuplicateFinalityVote`. The test keeps the certificate payload/context valid but duplicates the same validator vote, requiring `consensus.ErrDuplicateVote` and preserving the canonical genesis head/hash. Implementation commit: `e5283b45951305a5460fcc472fa56d36406a693a`.
 
 **Next CI gate:** verify `e5283b45951305a5460fcc472fa56d36406a693a` through the full IndoChain test/tidy/vet workflow before proceeding to the next finalized-handoff negative boundary.
+
+**Verified duplicate-finality-vote CI:** IndoChain CI #963 (workflow run `35981869554`) completed successfully for `e5283b45951305a5460fcc472fa56d36406a693a`; the full test/tidy/vet gate passed. The finalized handoff now explicitly rejects duplicate validator vote evidence with `consensus.ErrDuplicateVote` while preserving the canonical genesis head/hash.
+
+**Next finalized-handoff voting-power boundary:** Added `TestConsensusRuntimeNegativeMissingVotingPower`. The test keeps the validator membership and finality certificate structurally valid but supplies an empty voting-power set, so the certificate vote sender has no voting power. The finalized handoff must reject it with `consensus.ErrVoteSenderNotInVotingPower` and leave the canonical genesis head/hash unchanged. Implementation commit: `0d2ccf56dded8db5a12dfb5be55dd39cca3c68d9`.
+
+**Next CI gate:** verify `0d2ccf56dded8db5a12dfb5be55dd39cca3c68d9` through the full IndoChain test/tidy/vet workflow before proceeding to the next finalized-handoff negative boundary.
