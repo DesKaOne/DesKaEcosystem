@@ -1488,3 +1488,54 @@ The live harness deliberately avoids purchase execution. This keeps source-level
 2. if green, review IAK catalog freshness and operational balance semantics against the existing neutral boundaries;
 3. only after that decide whether additional IAK capability work is required before the next roadmap provider;
 4. keep live credentials, commercial activation, and production verification separate from source-level adapter completeness.
+
+
+### 46. Milestone Update — IAK Balance Contract Hardening
+
+**Date:** 2026-09-25
+
+CI #263 for the IAK read-only integration harness is confirmed **green** before this milestone:
+
+- workflow — success;
+- `test` — success;
+- `race` — success.
+
+Reviewed the existing neutral catalog freshness and operational balance boundaries against the IAK adapter. No IAK-specific catalog freshness override is required: IAK product data is stored and routed through the same provider-neutral catalog snapshot and maximum-age policy. IAK balance is likewise an operational snapshot, not customer funds or a ledger balance.
+
+Hardened the IAK balance adapter so malformed or incomplete provider responses cannot silently become a valid zero balance:
+
+- `data.balance` is now required;
+- numeric JSON balances are accepted;
+- numeric string balances are accepted;
+- missing, malformed, or unsupported balance values return an error;
+- added deterministic tests for missing, invalid, and string balance responses;
+- added an explicit capability assertion that the IAK client implements both `PPOBProvider` and `BalanceProvider`.
+
+This prevents a malformed IAK balance response from being persisted as a healthy `0` balance by the operational synchronization layer.
+
+### Safety Boundary
+
+This milestone does not:
+
+- add automatic transaction retry or cross-provider failover;
+- treat IAK balance as customer balance;
+- mutate the DesKaCash ledger;
+- submit live purchases;
+- store provider credentials;
+- bypass the existing catalog freshness boundary.
+
+### Verification Gate
+
+Implementation commits:
+
+- `936df6292567464bb97e572fb800773af4eeddbc` — validate IAK balance responses;
+- `38e03536003ea03fc33f9779b0a1d4bfaece5725` — deterministic balance/capability tests.
+
+A fresh CI run for this hardening change is required. `test`, `vet`, and `race` must all be green before the next provider-development step.
+
+### Next Milestone
+
+1. verify the fresh CI result for IAK balance hardening;
+2. if green, continue IAK contract review only where a verified provider API gap exists;
+3. otherwise keep the adapter stable and avoid speculative provider-specific behavior;
+4. keep live credentials and commercial activation separate from source-level completeness.
