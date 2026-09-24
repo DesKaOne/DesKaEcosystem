@@ -730,6 +730,28 @@ func TestConsensusRuntimeNegativeCrossHeightVoteContextMismatch(t *testing.T) {
 	}
 }
 
+func TestConsensusRuntimeNegativeInvalidFinalityCertificateStructure(t *testing.T) {
+	n, candidate, certificate, validators, power, ctx, validatorResolver, senderResolver := finalizedHandoffFixture(t)
+	canonicalHead := n.HeadHash
+
+	certificate.Payload = nil
+	if err := n.CommitFinalizedBlock(ctx, candidate, certificate, validators, power, validatorResolver, senderResolver); !errors.Is(err, consensus.ErrInvalidFinalityCertificate) {
+		t.Fatalf("empty certificate payload error = %v, want %v", err, consensus.ErrInvalidFinalityCertificate)
+	}
+	if n.Head.Header.Height != 0 || n.HeadHash != canonicalHead {
+		t.Fatal("canonical head changed after empty certificate payload rejection")
+	}
+
+	certificate.Payload = []byte("restored-finality-payload")
+	certificate.Votes = nil
+	if err := n.CommitFinalizedBlock(ctx, candidate, certificate, validators, power, validatorResolver, senderResolver); !errors.Is(err, consensus.ErrInvalidFinalityCertificate) {
+		t.Fatalf("empty certificate votes error = %v, want %v", err, consensus.ErrInvalidFinalityCertificate)
+	}
+	if n.Head.Header.Height != 0 || n.HeadHash != canonicalHead {
+		t.Fatal("canonical head changed after empty certificate votes rejection")
+	}
+}
+
 func TestConsensusRuntimeNegativeCrossHeightReplayedCandidate(t *testing.T) {
 	n, candidate1, certificate1, validators, power, ctx1, validatorResolver, senderResolver := finalizedHandoffFixture(t)
 	if err := n.CommitFinalizedBlock(ctx1, candidate1, certificate1, validators, power, validatorResolver, senderResolver); err != nil {
