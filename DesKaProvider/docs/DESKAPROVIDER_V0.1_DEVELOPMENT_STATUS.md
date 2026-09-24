@@ -1023,3 +1023,5 @@ The durable transaction store records provider transaction correlation and norma
 - CI #153 failed because the reconciliation test helper was accidentally placed before the Go `package` declaration.
 - Fixed in `a5e37a6996bb5b1acdfe16d5145051b0a4216059`.
 - CI must be re-run and verified green before continuing.
+
+- CI #157 failed due to a duplicate `path/filepath` import in `routing/service_test.go`; corrected in `136d8c95538732fc2fced5b45152bd48da9bd6c2`.
