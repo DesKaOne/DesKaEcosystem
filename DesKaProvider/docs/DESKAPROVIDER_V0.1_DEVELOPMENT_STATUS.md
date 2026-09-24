@@ -1836,3 +1836,51 @@ No live XP transaction, credential handling, retry/failover, ledger mutation, pr
 4. add credential-gated read-only integration checks where the verified API supports them;
 5. require fresh CI `test`, `vet`, and `race` green before moving to the next provider.
 
+### 53. Milestone Update — XP SINDONESIA API Entry Point Identified, Contract Still Unverified
+
+**Date:** 2026-09-25
+
+After the CI gate was re-verified green, the XP SINDONESIA public site was inspected beyond the product catalog.
+
+The public homepage explicitly exposes an **API** navigation entry pointing to:
+
+`https://xp.sindonesia.net/api/`
+
+This confirms that an API-facing area exists on the provider site. citeturn3view0
+
+However, the API page itself could not be retrieved by the available web source because the page returned a cache/fetch miss. Therefore the following contract elements remain unverified:
+
+- API endpoint(s) and HTTP method(s);
+- authentication/credential format;
+- signature or hashing formula;
+- product/pricelist request and response schema;
+- transaction request/response schema;
+- transaction status semantics;
+- callback/webhook endpoint and authentication;
+- balance endpoint and response schema.
+
+An older third-party search result also mentions `xp.sindonesia.net/api.php`, but it is historical, external material and does not establish the current provider contract. It is therefore **not** used as implementation evidence.
+
+### Implementation Decision
+
+The XP adapter remains intentionally unimplemented. The newly identified `/api/` entry point is a lead for contract acquisition, not sufficient authorization to invent or infer the protocol.
+
+No speculative endpoint, credential, signature, request schema, status mapping, webhook parser, or balance adapter was added.
+
+### Verification Gate
+
+- CI run **#313 — GREEN** for status-document commit `b625b000f71cbc47890dd01be484e2b4a6a85f4e`;
+- `test` — **GREEN**;
+- `race` — **GREEN**;
+- XP API entry point — **identified**;
+- XP H2H contract — **still not sufficiently verified for implementation**.
+
+### Next Milestone
+
+1. obtain the actual XP API documentation/content or provider-issued integration specification;
+2. verify authentication, transaction, status, callback, and balance contracts;
+3. implement only the minimum existing `PPOBProvider` mapping supported by verified documentation;
+4. add deterministic HTTP tests;
+5. add credential-gated read-only integration checks where supported;
+6. require fresh CI `test`, `vet`, and `race` green.
+
