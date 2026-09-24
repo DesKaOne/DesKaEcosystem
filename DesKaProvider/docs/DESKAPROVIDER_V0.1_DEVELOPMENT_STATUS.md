@@ -2354,3 +2354,46 @@ CI #402 remained **RED** after the previous JSON-tag fix.
 
 - fix commit: `434ab26fd1208da60f3363f7420f37361a60d2f`;
 - CI must return green for `test`, `vet`, and `race` before the next milestone.
+
+### 70. Milestone Update — Durable Lifecycle Restart Preservation
+
+**Date:** 2026-09-25
+
+CI gate:
+
+- CI #406 for commit `8208856d4d709bc254adff70bfb12d6f3f901e06` is **GREEN**;
+- `test`, `vet`, and `race` completed successfully.
+
+Issue found before the next feature milestone:
+
+- runtime provider registration loaded the durable provider-state store correctly, but then recreated every registered provider state with the default `DISABLED` lifecycle;
+- this overwrote an administratively enabled lifecycle during process restart.
+
+ROOT CAUSE:
+
+- `runtime.NewFromEnvironment` unconditionally called `NewProviderState(name)` before refreshing capabilities;
+- durable state recovery therefore did not actually preserve the lifecycle field.
+
+FIX:
+
+- runtime now first reads the persisted provider state;
+- a new state is created only when the provider has no persisted state;
+- runtime still refreshes the explicit provider-neutral capability set;
+- lifecycle and capabilities remain separate.
+
+Regression coverage:
+
+- added a runtime restart test that enables `digiflazz` through `ProviderAdminService`;
+- creates a second runtime using the same provider-state file;
+- verifies the provider remains enabled and retains PPOB/balance/webhook capabilities.
+
+Verification gate:
+
+- the implementation commit below requires a fresh CI run;
+- `test`, `vet`, and `race` must all be **GREEN** before continuing to routing eligibility work.
+
+Next milestone:
+
+1. verify fresh CI for lifecycle restart preservation;
+2. if green, add routing eligibility tests for disabled/unhealthy/degraded/stale/fresh provider states;
+3. keep Admin API authorization deferred until requirements are explicit.
