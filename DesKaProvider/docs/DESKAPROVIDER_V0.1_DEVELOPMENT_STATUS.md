@@ -1000,7 +1000,7 @@ Completed:
   - `5ff980f9de690894ec3ec3ea7695faab7f2ecebf`
   - `15fa727fac4b04b75cea715e31ab17e79e559ad7`
   - `8da3eecce2e511aa47dd2d68d576cc3e605bd466`
-- Final CI verification for the docs commit is required before treating this milestone as green.
+- CI #149 exposed a test-build regression in `service_test.go` (missing `filepath` import and reconciliation test helper). Fixed in commit `0cec25cc6791f0fdf1093c984ec56d3640b1511b`. The milestone remains pending until the subsequent CI run is green.
 
 ### Safety Boundary
 
