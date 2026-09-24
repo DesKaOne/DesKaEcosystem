@@ -985,7 +985,7 @@ This remains development-only and does not introduce production BFT timing, roun
 
 **Next finalized-handoff quorum boundary:** Added `TestConsensusRuntimeNegativeFinalityQuorumNotReached`. The test uses a structurally valid certificate but raises its threshold to `2/3` while the fixture contains only one unit of voting power, requiring `consensus.ErrFinalityQuorumNotReached` and preserving the canonical genesis head/hash. Implementation commits: `4812dfa3b7812e3253cb5fd893088c99d5a769d1`, refined to isolate this boundary in `ec7d81c03d545eb034af9db87ecfb52f928e7893`.
 
-**Next CI gate:** verify `ec7d81c03d545eb034af9db87ecfb52f928e7893` through the full IndoChain test/tidy/vet workflow.
+**CI failure and root cause:** IndoChain CI #943 (workflow run `35980739983`) failed in `TestConsensusRuntimeNegativeFinalityQuorumNotReached`: the test changed a one-validator certificate threshold to `2/3`, but that validator held 100% of the supplied voting power, so the quorum was correctly reached and the test received nil. The correction in `03aaedf70745e48f1dcd9e80ae3f86deffc76213` keeps the certificate's single vote at 1/2 of total voting power by adding a second validator with equal power, making the `2/3` threshold genuinely unreachable while preserving the same finalized candidate/context.\n\n**Next CI gate:** verify `03aaedf70745e48f1dcd9e80ae3f86deffc76213` through the full IndoChain test/tidy/vet workflow before proceeding to the next finalized-handoff negative boundary.
 
 ### 4.38 Consensus Transport → Runtime → Finalized Node Handoff Boundary
 
