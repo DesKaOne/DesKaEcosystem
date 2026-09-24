@@ -1749,3 +1749,42 @@ Correction committed as `01501cb25d1bd5435908dd2fb2b672515aad09f0`:
 - no production adapter behavior was changed by this correction.
 
 CI #303 is recorded as **red** and is not accepted as the verification gate. A fresh CI run for the correction commit must be fully green before proceeding.
+### 51. Milestone Update — IAK Gate Cleared / XP SINDONESIA Contract Discovery
+
+**Date:** 2026-09-25
+
+CI run **#307 is confirmed GREEN** for correction commit `01501cb25d1bd5435908dd2fb2b672515aad09f0`. The previous IAK hardening fixture failure is therefore cleared.
+
+IAK v0.1 is kept stable after the verified response-field hardening. No further neutral-contract expansion is justified by the currently verified IAK gaps.
+
+Next roadmap provider review: **XP SINDONESIA**.
+
+External research confirms the public XP SINDONESIA site exposes live product/catalog pages and public product codes/pricing, including prepaid products and other PPOB categories. However, the public pages reviewed do not provide a sufficiently concrete H2H API contract for safely implementing an adapter: no verified request endpoint, authentication/signature formula, transaction request schema, status schema, or webhook authentication contract was established from the public material reviewed. The public catalog is therefore treated as product evidence, not API authorization.
+
+The repository currently contains only the XP adapter placeholder `DesKaProvider/backend/Provider/XPSindonesia/xp_sindonesia.go`; it contains no implementation contract to preserve or extend.
+
+### Implementation Decision
+
+- do **not** invent XP endpoints, credentials, signatures, or JSON schemas from the public catalog;
+- do **not** implement a speculative `PPOBProvider` adapter;
+- do **not** add provider-specific fields to the neutral contract just to accommodate an unverified API;
+- keep XP adapter implementation pending until official/API-access documentation or concrete provider credentials/documentation establish the H2H contract;
+- continue using deterministic tests and the existing provider-neutral boundary once the contract is verified.
+
+### Safety Boundary
+
+No live XP transaction, credential handling, retry/failover, ledger mutation, provider funding, or speculative API integration was added.
+
+### Verification Gate
+
+- CI #307 — **success**;
+- IAK hardening gate — **cleared**;
+- XP SINDONESIA API contract — **not yet sufficiently verified for implementation**.
+
+### Next Milestone
+
+1. obtain/verify the concrete XP SINDONESIA H2H API documentation or provider-issued integration specification;
+2. define only the minimum neutral mapping required by the existing `PPOBProvider` contract;
+3. implement XP adapter + deterministic HTTP tests;
+4. add credential-gated read-only integration checks where the verified API supports them;
+5. require fresh CI `test`, `vet`, and `race` green before moving to the next provider.
