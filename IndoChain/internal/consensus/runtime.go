@@ -7,9 +7,10 @@ import (
 )
 
 var (
-	ErrInvalidConsensusRuntime = errors.New("invalid consensus runtime")
-	ErrUnexpectedProposer      = errors.New("unexpected consensus proposer")
-	ErrInvalidRuntimePhase     = errors.New("invalid consensus runtime phase")
+	ErrInvalidConsensusRuntime   = errors.New("invalid consensus runtime")
+	ErrUnexpectedProposer        = errors.New("unexpected consensus proposer")
+	ErrInvalidRuntimePhase       = errors.New("invalid consensus runtime phase")
+	ErrConflictingLockedProposal = errors.New("conflicting locked proposal")
 )
 
 type RuntimeConfig struct {
@@ -29,8 +30,9 @@ type ValidatorRuntime struct {
 	threshold   QuorumThreshold
 	proposer    ProposerSelector
 	votes       *VoteAggregator
-	proposal    []byte
-	certificate *FinalityCertificate
+	proposal       []byte
+	lockedProposal []byte
+	certificate    *FinalityCertificate
 }
 
 func NewValidatorRuntime(config RuntimeConfig) (*ValidatorRuntime, error) {
@@ -170,6 +172,9 @@ func (r *ValidatorRuntime) AddVote(msg Message) error {
 	if len(r.proposal) == 0 {
 		return ErrInvalidConsensusRuntime
 	}
+	if len(r.lockedProposal) > 0 && !bytes.Equal(r.lockedProposal, msg.Payload) {
+		return fmt.Errorf("%w: locked=%q received=%q", ErrConflictingLockedProposal, r.lockedProposal, msg.Payload)
+	}
 	if err := r.votes.AddVote(msg); err != nil {
 		return err
 	}
@@ -179,6 +184,7 @@ func (r *ValidatorRuntime) AddVote(msg Message) error {
 			return err
 		}
 		if reached {
+			r.lockedProposal = append([]byte(nil), r.proposal...)
 			r.state.Phase = PhasePrecommit
 		}
 	}
@@ -191,6 +197,9 @@ func (r *ValidatorRuntime) FinalizeProposal() (FinalityCertificate, error) {
 	}
 	if r.state.Phase != PhasePrecommit {
 		return FinalityCertificate{}, ErrInvalidRuntimePhase
+	}
+	if len(r.lockedProposal) == 0 || !bytes.Equal(r.lockedProposal, r.proposal) {
+		return FinalityCertificate{}, ErrConflictingLockedProposal
 	}
 	certificate, err := NewFinalityCertificate(
 		r.state,
