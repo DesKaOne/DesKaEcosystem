@@ -34,7 +34,7 @@ func (c *Client) GetProducts(ctx context.Context, req provider.ProductRequest)([
  if req.Active!=nil { if *req.Active {p["status"]="active"} else {p["status"]="non active"} }
  var d map[string]any
  if err:=c.do(ctx,c.priceListEndpoint,p,&d);err!=nil{return nil,err}
- data:=obj(d,"data"); list,_:=data["pricelist"].([]any); out:=make([]provider.Product,0,len(list))
+ data:=obj(d,"data"); list,ok:=data["pricelist"].([]any); if !ok { return nil, iakResponseError(d, "pricelist") }; out:=make([]provider.Product,0,len(list))
  for _,v:=range list { x,_:=v.(map[string]any); cat:=str(x,"product_category"); active:=strings.EqualFold(str(x,"status"),"active"); if req.Category!=""&&!strings.EqualFold(strings.TrimSpace(cat),strings.TrimSpace(req.Category)){continue}; if req.Active!=nil&&active!=*req.Active{continue}; out=append(out,provider.Product{Code:str(x,"product_code"),Name:str(x,"product_description")}) }
  return out,nil
 }
@@ -44,7 +44,7 @@ func (c *Client) Inquiry(ctx context.Context, req provider.InquiryRequest)(provi
  if req.CustomerNo==""{return provider.InquiryResult{},errors.New("customer number is required for IAK PLN inquiry")}
  var d map[string]any
  if err:=c.do(ctx,c.inquiryPLNEndpoint,map[string]string{"username":c.username,"customer_id":req.CustomerNo,"sign":c.sig(req.CustomerNo)},&d);err!=nil{return provider.InquiryResult{},err}
- x:=obj(d,"data"); return provider.InquiryResult{Status:mapInquiry(str(x,"status")),ProviderCode:str(x,"rc"),Message:str(x,"message")},nil
+ x:=obj(d,"data"); status:=mapInquiry(str(x,"status")); if status=="" { return provider.InquiryResult{}, errors.New("IAK inquiry response is missing data.status") }; return provider.InquiryResult{Status:status,ProviderCode:str(x,"rc"),Message:str(x,"message")},nil
 }
 
 func (c *Client) Purchase(ctx context.Context, req provider.PurchaseRequest)(provider.PurchaseResult,error) {
@@ -84,5 +84,5 @@ func obj(m map[string]any,k string)map[string]any{x,_:=m[k].(map[string]any);ret
 func str(m map[string]any,k string)string{x,_:=m[k].(string);return x}
 func num(m map[string]any,k string)float64{switch x:=m[k].(type){case float64:return x;case string:n,_:=strconv.ParseFloat(x,64);return n};return 0}
 func status(n float64)provider.TransactionStatus{switch int(n){case 1:return provider.StatusSuccess;case 0:return provider.StatusPending;case 2:return provider.StatusFailed;default:return provider.TransactionStatus(strconv.Itoa(int(n)))}}
-func mapInquiry(s string)provider.TransactionStatus{switch strings.TrimSpace(s){case "1":return provider.StatusSuccess;case "2":return provider.StatusFailed;default:return provider.TransactionStatus(s)}}
+func mapInquiry(s string)provider.TransactionStatus{switch strings.TrimSpace(s){case "1":return provider.StatusSuccess;case "2":return provider.StatusFailed;default:return provider.TransactionStatus("")}}\nfunc iakResponseError(d map[string]any, field string) error { x:=obj(d,"data"); if msg:=str(d,"message"); msg!="" { return fmt.Errorf("IAK response missing data.%s: %s",field,msg) }; if msg:=str(x,"message"); msg!="" { return fmt.Errorf("IAK response missing data.%s: %s",field,msg) }; return fmt.Errorf("IAK response missing data.%s",field) }
 func purchase(d map[string]any)provider.PurchaseResult{x:=obj(d,"data");return provider.PurchaseResult{ReferenceID:str(x,"ref_id"),CustomerNo:str(x,"customer_id"),ProductCode:str(x,"product_code"),Status:status(num(x,"status")),ProviderCode:str(x,"rc"),Message:str(x,"message"),SerialNumber:str(x,"sn"),Price:int64(num(x,"price"))}}
