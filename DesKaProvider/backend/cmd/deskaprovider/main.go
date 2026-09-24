@@ -7,7 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/backend/runtime"
+	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/runtime"
 )
 
 func main() {
