@@ -306,7 +306,7 @@ func (n *Node) CommitFinalizedBlock(
 	// A finalized block is append-only at the node boundary. Reject a block
 	// whose height is already at or below the canonical head before authority
 	// resolution or execution work can occur.
-	if candidate.Header.Height <= n.Head.Header.Height {
+	if candidate.Header.Height > 0 && candidate.Header.Height <= n.Head.Header.Height {
 		return ErrFinalizedBlockAlreadyCommitted
 	}
 	if _, err := consensus.ValidateFinalizedBlock(ctx, candidate, certificate, validators, votingPower); err != nil {
