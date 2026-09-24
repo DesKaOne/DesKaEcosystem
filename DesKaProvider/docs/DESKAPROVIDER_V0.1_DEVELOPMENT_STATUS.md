@@ -809,3 +809,26 @@ Commit: `3e633a5d40bee515a58d52e92f1d9146d042ef54`.
 ### Verification gate
 
 CI run #98 is confirmed red. A fresh CI result for the constructor fix is mandatory before transaction correlation/idempotency work begins.
+
+
+### 31. Milestone Update — CI Failure Follow-up: No-Fallback Test Assertion
+
+**Date:** 2026-09-24
+
+CI run #100 reached the routing tests successfully but failed in `TestServicePurchaseDoesNotFallbackAfterProviderError`.
+
+Root cause:
+
+- the test expected the second provider to return a pending transaction when no fallback occurred;
+- the deterministic Mock provider correctly returns `ErrTransactionNotFound` because it never received a purchase.
+
+Fix applied:
+
+- changed the assertion to require `Mock.ErrTransactionNotFound` from the second provider;
+- this directly verifies that no fallback purchase was submitted.
+
+Commit: `049b403658023b63f09302c6722fbaa39b7d06a0`.
+
+### Verification gate
+
+CI #100 is confirmed red. The new commit must reach a green CI result before transaction correlation/idempotency implementation begins.
