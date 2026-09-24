@@ -6,6 +6,7 @@ import (
 
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/genesis/devnet"
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/config"
+	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/consensus"
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/block"
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/state"
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/types"
@@ -20,6 +21,10 @@ var (
 	ErrStoreCorrupt      = errors.New("chain store consistency check failed")
 	ErrHistoryMismatch   = errors.New("chain history consistency check failed")
 )
+
+type ValidatorAuthorityResolver interface {
+	PublicKeyForValidator(validatorID []byte) ([]byte, error)
+}
 
 type TransactionAuthorityResolver interface {
 	PublicKeyForSender(sender []byte) ([]byte, error)
@@ -233,4 +238,46 @@ func (n *Node) ImportBlockWithAuthority(b block.Block, resolver TransactionAutho
 	if err := n.Store.CommitBlockState(b, hash, working); err != nil { return fmt.Errorf("commit block: %w", err) }
 	n.State = working.Snapshot(); n.Head = b; n.HeadHash = hash
 	return nil
+}
+
+// CommitFinalizedBlock validates the consensus finality binding and explicit
+// proposer authority before executing and committing the block. Transaction
+// sender authority remains separately resolved by senderResolver; validator
+// identity is never treated as a transaction address.
+func (n *Node) CommitFinalizedBlock(
+	candidate block.Block,
+	certificate consensus.FinalityCertificate,
+	validators consensus.ValidatorSet,
+	votingPower consensus.VotingPowerSet,
+	validatorResolver ValidatorAuthorityResolver,
+	senderResolver TransactionAuthorityResolver,
+) error {
+	if n == nil || n.Store == nil || n.State == nil {
+		return ErrNilStore
+	}
+	if validatorResolver == nil || senderResolver == nil {
+		return errors.New("missing finalized-block authority resolver")
+	}
+	ctx := consensus.BlockProductionContext{
+		State: state.RoundState{
+			ProtocolVersion: candidate.Header.Version,
+			ChainID: candidate.Header.ChainID,
+			Height: candidate.Header.Height - 1,
+			Phase: state.PhaseProposal,
+			Round: 0,
+		},
+		PreviousHash: candidate.Header.PreviousHash,
+		Proposer: candidate.Header.Proposer,
+	}
+	// Finalized-block validation must use the actual consensus round-state
+	// context. The node cannot safely invent epoch/round state, so callers must
+	// use ValidateFinalizedBlock before this commit boundary until that context
+	// is supplied explicitly by the consensus runtime.
+	_, err := consensus.ResolveProposerAuthority(consensus.FinalizedBlockAuthorization{
+		BlockHash: func() types.Hash { h, _ := block.Hash(candidate); return h }(),
+		Proposer: candidate.Header.Proposer,
+		Certificate: certificate,
+	}, validatorResolver)
+	if err != nil { return err }
+	return n.ImportBlockWithAuthority(candidate, senderResolver)
 }
