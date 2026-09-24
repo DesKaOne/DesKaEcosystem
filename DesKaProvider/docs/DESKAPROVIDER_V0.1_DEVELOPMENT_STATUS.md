@@ -1539,3 +1539,16 @@ A fresh CI run for this hardening change is required. `test`, `vet`, and `race` 
 2. if green, continue IAK contract review only where a verified provider API gap exists;
 3. otherwise keep the adapter stable and avoid speculative provider-specific behavior;
 4. keep live credentials and commercial activation separate from source-level completeness.
+
+
+### Verification Follow-up — IAK Balance Hardening CI
+
+CI run #267 for the IAK balance hardening implementation is confirmed **green**:
+
+- workflow — success;
+- `test` — success (`go test ./...` and `go vet ./...`);
+- `race` — success (`go test -race ./...`).
+
+The verified implementation commit for the code change is `38e03536003ea03fc33f9779b0a1d4bfaece5725`. The status-document-only follow-up commit does not change executable code.
+
+The IAK balance hardening milestone is therefore cleared for the next development step.
