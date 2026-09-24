@@ -360,6 +360,145 @@ func TestInMemoryTransportRuntimeFinalizedBlockHandoff(t *testing.T) {
 }
 
 
+func TestInMemoryTransportRuntimeFinalizedBlockMultiHeight(t *testing.T) {
+	store := storage.NewMemoryStore()
+	n, err := node.NewDevnet(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	validatorID := []byte("validator-a")
+	validators, err := consensus.NewValidatorSet([][]byte{validatorID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	power, err := consensus.NewVotingPowerSet([]consensus.ValidatorVotingPower{{ValidatorID: validatorID, Power: 1}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyPair, err := crypto.NewEd25519KeyPair(bytes.Repeat([]byte{0x45}, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer, err := crypto.NewEd25519Signer(keyPair.PrivateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	validatorResolver := runtimeValidatorAuthorityResolver{}
+	senderResolver := runtimeSenderAuthorityResolver{}
+
+	var previousHash = n.HeadHash
+	for height := types.Height(1); height <= 2; height++ {
+		state, err := consensus.NewRoundState(devnet.ProtocolVersion, devnet.ChainID, height, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx := consensus.BlockProductionContext{
+			State: state, PreviousHash: previousHash, Proposer: append([]byte(nil), validatorID...),
+		}
+		rules, err := n.Config.BlockRules(nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		candidate, err := consensus.BuildBlockCandidate(consensus.BlockCandidateInput{
+			Context: ctx, Timestamp: n.Head.Header.Timestamp + 1, Transactions: []any{}, Rules: rules,
+		}, n.State)
+		if err != nil {
+			t.Fatal(err)
+		}
+		proposal, err := consensus.NewBlockProposal(ctx, candidate)
+		if err != nil {
+			t.Fatal(err)
+		}
+		messageRules := consensus.ValidationRules{
+			ProtocolVersion: state.ProtocolVersion, ChainID: state.ChainID,
+			RequireSender: true, RequireSignature: true,
+		}
+		runtimeA, err := consensus.NewValidatorRuntime(consensus.RuntimeConfig{
+			Rules: messageRules, State: state, Validators: validators, VotingPower: power,
+			Threshold: consensus.QuorumThreshold{Numerator: 1, Denominator: 1},
+			Proposer: consensus.RoundRobinProposer{},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		runtimeB, err := consensus.NewValidatorRuntime(consensus.RuntimeConfig{
+			Rules: messageRules, State: state, Validators: validators, VotingPower: power,
+			Threshold: consensus.QuorumThreshold{Numerator: 1, Denominator: 1},
+			Proposer: consensus.RoundRobinProposer{},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		proposalMsg := consensus.Message{
+			ProtocolVersion: state.ProtocolVersion, ChainID: state.ChainID,
+			Epoch: state.Epoch, Height: state.Height, Round: state.Round,
+			Sender: append([]byte(nil), validatorID...), Type: consensus.MessageTypeProposal,
+			Payload: proposal.MessagePayload(),
+		}
+		proposalMsg, err = proposalMsg.Sign(signer)
+		if err != nil {
+			t.Fatal(err)
+		}
+		nodeA := NewInMemoryTransport(PeerID("node-a"), 4096)
+		nodeB := NewInMemoryTransport(PeerID("node-b"), 4096)
+		if err := nodeA.Connect(PeerID("node-b"), nodeB); err != nil {
+			t.Fatal(err)
+		}
+		if err := nodeB.Connect(PeerID("node-a"), nodeA); err != nil {
+			t.Fatal(err)
+		}
+		if err := nodeA.SendConsensus(PeerID("node-b"), proposalMsg, messageRules); err != nil {
+			t.Fatal(err)
+		}
+		if _, received, err := nodeB.ReceiveConsensus(messageRules); err != nil {
+			t.Fatal(err)
+		} else if err := runtimeB.AcceptProposal(received); err != nil {
+			t.Fatal(err)
+		}
+		vote := consensus.Message{
+			ProtocolVersion: state.ProtocolVersion, ChainID: state.ChainID,
+			Epoch: state.Epoch, Height: state.Height, Round: state.Round,
+			Sender: append([]byte(nil), validatorID...), Type: consensus.MessageTypeVote,
+			Payload: proposal.MessagePayload(),
+		}
+		vote, err = vote.Sign(signer)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := runtimeB.AddVote(vote); err != nil {
+			t.Fatal(err)
+		}
+		if err := nodeB.SendConsensus(PeerID("node-a"), vote, messageRules); err != nil {
+			t.Fatal(err)
+		}
+		if _, received, err := nodeA.ReceiveConsensus(messageRules); err != nil {
+			t.Fatal(err)
+		} else if err := runtimeA.AcceptProposal(proposalMsg); err != nil {
+			t.Fatal(err)
+		} else if err := runtimeA.AddVote(received); err != nil {
+			t.Fatal(err)
+		}
+		certificate, err := runtimeA.FinalizeProposal()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := n.CommitFinalizedBlock(ctx, candidate, certificate, validators, power, validatorResolver, senderResolver); err != nil {
+			t.Fatalf("height %d finalized commit: %v", height, err)
+		}
+		if n.Head.Header.Height != height {
+			t.Fatalf("node head height = %d, want %d", n.Head.Header.Height, height)
+		}
+		stored, storedHash, err := store.Head()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if stored.Header.Height != height || storedHash != n.HeadHash {
+			t.Fatalf("height %d store head mismatch", height)
+		}
+		previousHash = n.HeadHash
+	}
+}
+
 func TestConsensusRuntimeNegativeMismatchedProposalPayload(t *testing.T) {
 	state, err := consensus.NewRoundState(devnet.ProtocolVersion, devnet.ChainID, 1, 0)
 	if err != nil {
