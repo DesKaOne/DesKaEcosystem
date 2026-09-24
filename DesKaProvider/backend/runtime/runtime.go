@@ -13,6 +13,7 @@ import (
 	digiflazz "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/DigiFlazz"
 	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/operational"
 	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/config"
+	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/routing"
 )
 
 const (
@@ -24,6 +25,7 @@ const (
 
 type Config struct {
 	StorePath        string
+	TransactionStorePath string
 	SyncInterval     time.Duration
 	FailureThreshold int
 	Currency         string
@@ -31,18 +33,23 @@ type Config struct {
 
 type Service struct {
 	syncService *operational.SyncService
+	purchaseService *routing.Service
 	interval    time.Duration
 }
 
 func LoadConfig() (Config, error) {
 	cfg := Config{
 		StorePath:        os.Getenv("DESKAPROVIDER_OPERATIONAL_STORE_PATH"),
+		TransactionStorePath: os.Getenv("DESKAPROVIDER_TRANSACTION_STORE_PATH"),
 		SyncInterval:     defaultSyncInterval,
 		FailureThreshold: defaultFailureThreshold,
 		Currency:         os.Getenv("DESKAPROVIDER_OPERATIONAL_CURRENCY"),
 	}
 	if cfg.StorePath == "" {
 		cfg.StorePath = defaultStorePath
+	}
+	if cfg.TransactionStorePath == "" {
+		cfg.TransactionStorePath = defaultTransactionStorePath
 	}
 	if cfg.Currency == "" {
 		cfg.Currency = defaultCurrency
@@ -90,7 +97,19 @@ func NewFromEnvironment(httpClient *http.Client) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Service{syncService: syncService, interval: cfg.SyncInterval}, nil
+	transactionStore, err := routing.NewJSONFileTransactionStore(cfg.TransactionStorePath)
+	if err != nil {
+		return nil, err
+	}
+	router, err := routing.New(registry, store, nil)
+	if err != nil {
+		return nil, err
+	}
+	purchaseService, err := routing.NewServiceWithStore(router, transactionStore)
+	if err != nil {
+		return nil, err
+	}
+	return &Service{syncService: syncService, purchaseService: purchaseService, interval: cfg.SyncInterval}, nil
 }
 
 func New(syncService *operational.SyncService, interval time.Duration) (*Service, error) {
@@ -108,4 +127,10 @@ func (s *Service) Run(ctx context.Context) error {
 		return errors.New("context is required")
 	}
 	return s.syncService.Run(ctx, s.interval)
+}
+
+
+func (s *Service) PurchaseService() *routing.Service {
+	if s == nil { return nil }
+	return s.purchaseService
 }
