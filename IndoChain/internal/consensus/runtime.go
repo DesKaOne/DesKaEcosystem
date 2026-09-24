@@ -211,6 +211,14 @@ func (r *ValidatorRuntime) AddVote(msg Message) error {
 	if len(r.proposal) == 0 {
 		return ErrInvalidConsensusRuntime
 	}
+	if err := ValidateConsensusMessage(msg, MessageValidationContext{
+		Rules: r.rules, State: r.state, Validators: r.validators,
+	}); err != nil {
+		return err
+	}
+	if _, ok := r.votingPower.PowerOf(msg.Sender); !ok {
+		return ErrVoteSenderNotInVotingPower
+	}
 	if len(r.lockedProposal) > 0 && !bytes.Equal(r.lockedProposal, msg.Payload) {
 		return fmt.Errorf("%w: locked=%q received=%q", ErrConflictingLockedProposal, r.lockedProposal, msg.Payload)
 	}
