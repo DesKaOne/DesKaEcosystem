@@ -95,7 +95,7 @@ Operational snapshots currently contain:
 - last synchronization error
 - consecutive failure count
 
-The current implementation uses a thread-safe in-memory store as the deterministic operational-state boundary. It is intentionally not presented as the final persistence layer.
+The current implementation provides both a thread-safe in-memory store for deterministic tests and a durable JSON file store with atomic replacement for single-process development/runtime persistence. The JSON store is an interim v0.1 persistence implementation; PostgreSQL remains the deployment-direction persistence target.
 
 Health transitions are deterministic:
 
