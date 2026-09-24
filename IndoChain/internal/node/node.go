@@ -20,6 +20,7 @@ var (
 	ErrBlockHashMismatch = errors.New("block hash mismatch")
 	ErrStoreCorrupt      = errors.New("chain store consistency check failed")
 	ErrHistoryMismatch   = errors.New("chain history consistency check failed")
+	ErrConsensusContextMismatch = errors.New("consensus execution context mismatch")
 )
 
 type ValidatorAuthorityResolver interface {
@@ -258,6 +259,13 @@ func (n *Node) CommitFinalizedBlock(
 	}
 	if validatorResolver == nil || senderResolver == nil {
 		return errors.New("missing finalized-block authority resolver")
+	}
+	if err := ctx.State.Validate(); err != nil {
+		return err
+	}
+	if ctx.State.ProtocolVersion != n.Config.ProtocolVersion || ctx.State.ChainID != n.Config.ChainID ||
+		ctx.State.Height != n.Head.Header.Height || ctx.PreviousHash != n.HeadHash {
+		return ErrConsensusContextMismatch
 	}
 	if _, err := consensus.ValidateFinalizedBlock(ctx, candidate, certificate, validators, votingPower); err != nil {
 		return err
