@@ -466,6 +466,14 @@ The store-failure path continues to exercise the node's atomic working-state →
 
 Detailed implementation coverage is in `IndoChain/internal/node/node_test.go`. The next work remains tightening canonical consensus-to-execution context handling and then moving toward broader multi-node consensus integration.
 
+### 4.31 Canonical Consensus-to-Execution Context Guard Tightening
+
+The node consensus-to-execution boundary is now centralized through `validateCanonicalConsensusContext`. Finalized-block commit validates the supplied consensus context against the live node configuration and canonical head before finality or execution authority is resolved.
+
+The guard explicitly rejects protocol-version mismatch, chain-ID mismatch, consensus height mismatch, and previous-hash mismatch. Tests cover each variant and assert that canonical node state remains unchanged on rejection.
+
+This keeps consensus authorization tied to the exact canonical execution point: the consensus context must describe the node's current chain before a finalized candidate can cross into execution/commit. It does not yet define multi-node state synchronization or production validator authority storage.
+
 ## 5. Protocol Documentation Progress
 
 Documentation has advanced into more formal protocol specification work, including:
@@ -764,7 +772,7 @@ When there is a conflict, the implementation and dedicated protocol specificatio
 
 ## Status
 
-**Snapshot date:** 2026-09-23  
+**Snapshot date:** 2026-09-24  
 **Latest verified green CI:** `21e43032f7ed22dc07216f73b173166470c48f08` (IndoChain CI run 556)
 **Latest consensus round-state implementation:** `de59cb9d6485165613c5e7111521e27a639f69f6`
 **Latest consensus message ↔ round-state context implementation:** `fbd3e3a7f88cc0fc16e6a73671bb1a02a6454041`
@@ -783,7 +791,7 @@ When there is a conflict, the implementation and dedicated protocol specificatio
 **Latest validator runtime tests:** `810bbaab2b009ab7ba5bcc5f87cd9f8c18291385`  
 **Validator runtime boundary documentation:** `523af557240c5e81c9b54249ccf9f3432c97c010`  
 **Consensus finality boundary documentation:** `72bb276ca17848129d0f9bec0c66554aa604a6b`  
-**Latest status-document update:** `34f60bd7a05e2d5d518f23bd84e8f018db2bde01`    
+**Latest status-document update:** `PENDING`    
 **Current branch CI after vote aggregation:** previous CI run `584` failed in `TestVoteAggregatorCalculatesPayloadPowerAndQuorum`; the test assertion has been corrected in `705a2cbb5c31c78fa43e5c8362978e4094b469de`.  
 **Current branch CI after finality boundary:** no pull-request workflow run was associated with HEAD `146c2225be2dcaf787bc3f724b50d70e214dfcfc`.  
 **Current branch CI after validator runtime:** IndoChain CI run `610` failed on the pull-request merge ref because `ValidatorRuntime` assigned a `VoteAggregator` value to a `*VoteAggregator` field. The runtime fix is `ac27d456622a6d8b3751832e7a73715b3c807adf`; the resulting branch HEAD later passed IndoChain CI run `622`.  
@@ -805,9 +813,10 @@ When there is a conflict, the implementation and dedicated protocol specificatio
 **Latest execution-authority handoff documentation:** `9e35299980a4dbe67d786de27fcde9361cdaa1cf`  
 **Latest node execution-authority integration:** `3a37071d11f4d7e133f7c23736a3c6f81c091e31`  
 **Latest node execution-authority documentation:** `3a0d109c1900e6bf74ad1e5094ce779bd8ef972d`  
-**Latest finalized-block → node commit integration:** `3b7bc7e5f6cbe33bd72e84eecc1075cf792ad1e4`  \n**Latest finalized-block commit context guard:** `ec35299e4f6115f0be5e7f46b70962051cb20368`  \n**Latest finalized-block commit failure coverage:** `95c128af32005c53a303a45dc77101c9005506d9`  
+**Latest finalized-block → node commit integration:** `3b7bc7e5f6cbe33bd72e84eecc1075cf792ad1e4`  \n**Latest finalized-block commit context guard:** `ec35299e4f6115f0be5e7f46b70962051cb20368`  \n**Latest finalized-block commit failure coverage:** `95c128af32005c53a303a45dc77101c9005506d9`  \
+**Latest canonical consensus-context guard tightening:** `4e11821e796ea769bedbd7a48f6846712c41fffe`  
 **Latest finalized-block → node commit implementation:** `f0e0be0c5ec38a157bfca658ef6ce78e83ba2622`  
-**Next major boundary:** Tighten canonical consensus-to-execution context handling further, then begin broader multi-node consensus integration  
+**Next major boundary:** Integrate canonical consensus runtime with node finalized-block commit as an explicit multi-stage handoff, then begin broader multi-node consensus integration  
 
 ### 4.12 Consensus Validator Membership Boundary
 
