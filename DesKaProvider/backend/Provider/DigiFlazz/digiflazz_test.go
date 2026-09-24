@@ -7,6 +7,7 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -138,4 +139,28 @@ func TestDigiFlazzGetProductsUsesOfficialPriceListEndpoint(t *testing.T) {
 	got, err := c.GetProducts(context.Background(), provider.ProductRequest{Category:"Pulsa", Active:&active})
 	if err != nil { t.Fatal(err) }
 	if len(got) != 1 || got[0].Code != "xld10" || got[0].Name != "XL 10K" { t.Fatalf("unexpected products: %#v", got) }
+}
+
+func TestDigiFlazzInquiryPLNUsesOfficialEndpoint(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/inquiry-pln" { t.Fatalf("unexpected path: %s", r.URL.Path) }
+		var got map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil { t.Fatal(err) }
+		if got["username"] != "buyer" || got["customer_no"] != "1234554321" { t.Fatalf("unexpected request: %#v", got) }
+		h := md5.Sum([]byte("buyersecret1234554321"))
+		if got["sign"] != hex.EncodeToString(h[:]) { t.Fatalf("unexpected signature: %v", got["sign"]) }
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"message":"Transaksi Sukses","status":"Sukses","rc":"00"}})
+	}))
+	defer server.Close()
+	c, err := New(config.DigiFlazzConfig{Username:"buyer", APIKey:"secret", InquiryPLNEndpoint:server.URL + "/v1/inquiry-pln"}, server.Client())
+	if err != nil { t.Fatal(err) }
+	got, err := c.Inquiry(context.Background(), provider.InquiryRequest{ProductCode:"pln", CustomerNo:"1234554321", ReferenceID:"ref-1"})
+	if err != nil { t.Fatal(err) }
+	if got.Status != provider.StatusSuccess || got.ProviderCode != "00" { t.Fatalf("unexpected inquiry result: %#v", got) }
+}
+func TestDigiFlazzInquiryRejectsUnsupportedProduct(t *testing.T) {
+	c, err := New(config.DigiFlazzConfig{Username:"buyer", APIKey:"secret"}, nil)
+	if err != nil { t.Fatal(err) }
+	_, err = c.Inquiry(context.Background(), provider.InquiryRequest{ProductCode:"xld10", CustomerNo:"123"})
+	if !errors.Is(err, provider.ErrUnsupportedOperation) { t.Fatalf("expected unsupported operation, got %v", err) }
 }
