@@ -21,6 +21,10 @@ var (
 	ErrHistoryMismatch   = errors.New("chain history consistency check failed")
 )
 
+type TransactionAuthorityResolver interface {
+	PublicKeyForSender(sender []byte) ([]byte, error)
+}
+
 type Node struct {
 	Config   config.ChainConfig
 	Genesis  devnet.Genesis
@@ -203,3 +207,30 @@ func (n *Node) ImportBlock(b block.Block, publicKey []byte) error {
 	return nil
 }
 
+
+// ImportBlockWithAuthority validates and executes a block using a sender-key
+// resolver owned by the execution/node layer. The canonical state and block
+// commit remain atomic at the node boundary.
+func (n *Node) ImportBlockWithAuthority(b block.Block, resolver TransactionAuthorityResolver) error {
+	if n == nil || n.Store == nil || n.State == nil {
+		return ErrNilStore
+	}
+	if resolver == nil {
+		return errors.New("nil transaction authority resolver")
+	}
+	rules, err := n.Config.BlockRules(nil)
+	if err != nil { return err }
+	rules.Transaction.PublicKeyResolver = resolver
+	expectedHeight := n.Head.Header.Height + 1
+	if err := block.ValidateHeader(b, expectedHeight, n.HeadHash, rules); err != nil { return err }
+	working := n.State.Snapshot()
+	if err := block.ExecuteBlock(working, b, expectedHeight, n.HeadHash, rules); err != nil {
+		return fmt.Errorf("execute block: %w", err)
+	}
+	hash, err := block.Hash(b)
+	if err != nil { return fmt.Errorf("hash block: %w", err) }
+	if hash == (types.Hash{}) { return ErrBlockHashMismatch }
+	if err := n.Store.CommitBlockState(b, hash, working); err != nil { return fmt.Errorf("commit block: %w", err) }
+	n.State = working.Snapshot(); n.Head = b; n.HeadHash = hash
+	return nil
+}
