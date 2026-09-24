@@ -1115,3 +1115,9 @@ This milestone does not define proposer selection, voting power, quorum, vote ag
 **Next execution-authority resolution boundary:** Added `TestResolveProposerAuthorityRejectsEmptyResolvedPublicKey`. The test supplies valid finalized authorization but a resolver that returns an empty public key, requiring `consensus.ErrExecutionAuthorityMissing`. Implementation commit: `49f045f2c6727c9fd603cc24358f8d29237dd51d`.
 
 **Next CI gate:** verify `49f045f2c6727c9fd603cc24358f8d29237dd51d` through the full IndoChain test/tidy/vet workflow before proceeding to the next execution-authority boundary.
+
+**Verified empty-resolved-authority CI:** IndoChain CI #1020 (workflow run `35988090467`) completed successfully for `49f045f2c6727c9fd603cc24358f8d29237dd51d`; the full test/tidy/vet gate passed. Empty resolved proposer authority is now explicitly covered.
+
+**Next execution-authority isolation boundary:** Added `TestResolveProposerAuthorityClonesResolverPublicKey`. The test uses a resolver that returns its backing public-key slice directly, then mutates the resolved result and requires the resolver-owned key to remain unchanged. Implementation commit: `f796757e8f6b70247c09aef859a7f28c097b8002`.
+
+**Next CI gate:** verify `f796757e8f6b70247c09aef859a7f28c097b8002` through the full IndoChain test/tidy/vet workflow before proceeding to the next execution-authority boundary.
