@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/consensus"
+	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/crypto"
 )
 
 func TestInMemoryTransportConsensusRuntimeIntegration(t *testing.T) {
@@ -51,6 +52,15 @@ func TestInMemoryTransportConsensusRuntimeIntegration(t *testing.T) {
 
 	nodeA := NewInMemoryTransport(PeerID("node-a"), 4096)
 	nodeB := NewInMemoryTransport(PeerID("node-b"), 4096)
+
+	keyPair, err := crypto.NewEd25519KeyPair(bytes.Repeat([]byte{0x24}, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer, err := crypto.NewEd25519Signer(keyPair.PrivateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := nodeA.Connect(PeerID("node-b"), nodeB); err != nil {
 		t.Fatal(err)
 	}
@@ -69,6 +79,10 @@ func TestInMemoryTransportConsensusRuntimeIntegration(t *testing.T) {
 		Payload:         []byte("deterministic-block-9"),
 	}
 
+	proposal, err = proposal.Sign(signer)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := nodeARuntime.AcceptProposal(proposal); err != nil {
 		t.Fatalf("node A local proposal processing: %v", err)
 	}
@@ -113,6 +127,10 @@ func TestInMemoryTransportConsensusRuntimeIntegration(t *testing.T) {
 		Sender:          []byte("validator-b"),
 		Type:            consensus.MessageTypeVote,
 		Payload:         append([]byte(nil), proposal.Payload...),
+	}
+	voteB, err = voteB.Sign(signer)
+	if err != nil {
+		t.Fatal(err)
 	}
 	if err := nodeBRuntime.AddVote(voteB); err != nil {
 		t.Fatalf("node B local vote processing: %v", err)
