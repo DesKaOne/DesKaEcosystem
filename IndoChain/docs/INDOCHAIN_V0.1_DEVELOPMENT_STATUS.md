@@ -959,7 +959,7 @@ This remains development-only and does not introduce production BFT timing, roun
 
 **Next finalized-handoff boundary:** Added `TestConsensusRuntimeNegativeCrossHeightVoteContextMismatch`. After a valid height-1 commit and valid height-2 finality certificate, the test mutates one certificate vote's height to the prior canonical height. `Node.CommitFinalizedBlock` must reject the certificate with `consensus.ErrStateContextMismatch`, and the canonical height-1 head/hash must remain unchanged. Initial implementation commit: `2ea0d463a9101565543a4bd07038cddd2e47d64e2`. The canonical-head assertion was tightened in `025eeb255ede6615c248c3620ff56bfd3acaeae8`.
 
-**Next CI gate:** verify `025eeb255ede6615c248c3620ff56bfd3acaeae8` and its status-document follow-up workflow before proceeding.
+**CI failure and root cause:** IndoChain CI #903 (workflow run `35978524876`) failed in `TestConsensusRuntimeNegativeCrossHeightVoteContextMismatch`. The test expected `ErrStateContextMismatch`, but the mutated certificate vote is validated first by the consensus message/context boundary and correctly returns `ErrConsensusMessageContextMismatch` wrapped by finality validation. The implementation was corrected in `ea3040ccdf7fc830d92a934e7446efa82fd05361` to assert the actual message-context error without weakening the node-level canonical-context guard.
 
 ### 4.38 Consensus Transport → Runtime → Finalized Node Handoff Boundary
 
