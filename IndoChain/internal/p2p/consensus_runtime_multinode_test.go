@@ -212,7 +212,7 @@ func TestInMemoryTransportRuntimeFinalizedBlockHandoff(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	power, err := consensus.NewVotingPowerSet([]consensus.ValidatorVotingPower{{ValidatorID: validatorID, Power: 1}})
+	power, err = consensus.NewVotingPowerSet([]consensus.ValidatorVotingPower{{ValidatorID: validatorID, Power: 1}})
 	if err != nil {
 		t.Fatal(err)
 	}
