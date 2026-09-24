@@ -934,3 +934,34 @@ The webhook correlation implementation and documentation require a fresh complet
 
 1. verify the complete CI run for webhook correlation;
 2. then review transaction status reconciliation semantics and durable transaction-state requirements before introducing any retry/failover behavior.
+
+### 36. Milestone Update — Provider Status Reconciliation Boundary
+
+**Date:** 2026-09-24
+
+CI #132 is confirmed green, including the race-detector job, before this milestone.
+
+Implemented an explicit provider-status reconciliation operation in `routing.Service`:
+
+- reconciliation uses the existing transaction `ReferenceID`;
+- the selected provider is queried through the neutral `GetStatus` contract;
+- returned reference ID, product code, and customer number must match the original request;
+- reconciliation updates only the in-process provider transaction result;
+- terminal states remain idempotent when the provider returns the same terminal result;
+- conflicting terminal state is rejected rather than silently overwritten;
+- reconciliation never resubmits the purchase;
+- unknown references are rejected;
+- provider-specific status semantics remain inside adapters;
+- no DesKaCash ledger mutation or automatic retry/failover is introduced.
+
+The current implementation remains intentionally in-memory. A process restart loses the transaction correlation state, so durable transaction persistence is still required before production-grade recovery or automatic retry/failover can be designed safely.
+
+### Verification gate
+
+The reconciliation implementation and documentation require a fresh complete CI run. The unit test, vet, and race-detector jobs must all be green before the next milestone.
+
+### Next milestone
+
+1. verify the complete CI run for status reconciliation;
+2. define the minimum durable transaction-state model needed for restart-safe correlation/reconciliation;
+3. defer automatic retry/failover until that durable state and provider-specific idempotency semantics are explicitly established.
