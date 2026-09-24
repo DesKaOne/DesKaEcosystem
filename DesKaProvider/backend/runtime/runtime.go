@@ -55,6 +55,7 @@ func LoadConfig() (Config, error) {
 		Currency:             os.Getenv("DESKAPROVIDER_OPERATIONAL_CURRENCY"),
 		CatalogStorePath:     os.Getenv("DESKAPROVIDER_CATALOG_STORE_PATH"),
 		CatalogSyncInterval:  defaultCatalogSyncInterval,
+		CatalogMaxAge:        defaultCatalogMaxAge,
 	}
 	if cfg.StorePath == "" {
 		cfg.StorePath = defaultStorePath
@@ -76,6 +77,13 @@ func LoadConfig() (Config, error) {
 		cfg.CatalogSyncInterval = interval
 	}
 
+	if raw := os.Getenv("DESKAPROVIDER_CATALOG_MAX_AGE"); raw != "" {
+		maxAge, err := time.ParseDuration(raw)
+		if err != nil || maxAge <= 0 {
+			return Config{}, fmt.Errorf("invalid DESKAPROVIDER_CATALOG_MAX_AGE: %q", raw)
+		}
+		cfg.CatalogMaxAge = maxAge
+	}
 	if raw := os.Getenv("DESKAPROVIDER_BALANCE_SYNC_INTERVAL"); raw != "" {
 		interval, err := time.ParseDuration(raw)
 		if err != nil || interval <= 0 {
@@ -134,7 +142,7 @@ func NewFromEnvironment(httpClient *http.Client) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	router, err := routing.NewWithCatalog(registry, store, nil, catalogStore)
+	router, err := routing.NewWithCatalogMaxAge(registry, store, nil, catalogStore, cfg.CatalogMaxAge)
 	if err != nil {
 		return nil, err
 	}
