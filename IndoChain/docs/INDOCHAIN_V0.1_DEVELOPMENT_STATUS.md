@@ -1083,3 +1083,8 @@ This milestone does not define proposer selection, voting power, quorum, vote ag
 **Next finalized-handoff voting-power integrity boundary:** Added `TestConsensusRuntimeNegativeVotingPowerTotalOverflow`. The test supplies two distinct valid-looking voting-power entries whose uint64 powers overflow during total-power calculation, requiring `consensus.ErrInvalidVotingPowerSet` and preserving the canonical genesis head/hash. Implementation commit: `d5153827889828eafa3779c9e7cbc00cf638ac0d`.
 
 **Next CI gate:** verify `d5153827889828eafa3779c9e7cbc00cf638ac0d` through the full IndoChain test/tidy/vet workflow before proceeding to the next finalized-handoff negative boundary.
+
+
+**Next finalized-handoff proposer-authority boundary:** Added `TestConsensusRuntimeNegativeMissingValidatorAuthority`. The test keeps the finalized certificate, validator membership, and voting power valid, but supplies a validator authority resolver that returns no public key. `Node.CommitFinalizedBlock` must reject the explicit consensus-to-execution authority handoff with `consensus.ErrExecutionAuthorityMissing` and preserve the canonical genesis head/hash. Implementation commit: `b784de94227ebd98af8b0b9898f8f0482c049a25`.
+
+**Next CI gate:** verify `b784de94227ebd98af8b0b9898f8f0482c049a25` through the full IndoChain test/tidy/vet workflow before proceeding to the next finalized-handoff negative boundary.
