@@ -969,6 +969,10 @@ This remains development-only and does not introduce production BFT timing, roun
 
 **Next finalized-certificate context boundary:** Completed the certificate context matrix by independently mutating certificate height after restoring protocol version and chain ID. The mutation must fail with `consensus.ErrStateContextMismatch`, while the canonical height-1 head/hash remains unchanged. Implementation commit: `3d5b34200dd196c9a6d146da76daf51bca3ab8ec`.
 
+**CI failure and root cause:** IndoChain CI #923 (workflow run `35979425254`) failed during `go test ./...` for `3d5b34200dd196c9a6d146da76daf51bca3ab8ec`. The newly added certificate-height assertion block was accidentally placed outside `TestConsensusRuntimeNegativeCrossHeightVoteContextMismatch`, leaving `certificate2` at package scope and causing the Go parser error `expected declaration, found certificate2` at line 715. The correction in `7b2ad926d638c1c7f2bee66842bab601fad90b1d` moves the height-mismatch block back inside the test function without changing the intended assertion.
+
+**Next CI gate:** verify `7b2ad926d638c1c7f2bee66842bab601fad90b1d` through the full IndoChain test/tidy/vet workflow before proceeding to the next finalized-handoff negative boundary.
+
 ### 4.38 Consensus Transport → Runtime → Finalized Node Handoff Boundary
 
 The multi-node consensus integration now crosses the full development handoff from explicit P2P transport into `ValidatorRuntime` finalization and then into the canonical node commit boundary.
