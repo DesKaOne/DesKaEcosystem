@@ -44,6 +44,14 @@ func New(registry *provider.Registry, store operational.Store, priorities map[st
 	return newRouter(registry, store, priorities, nil, 0, nil)
 }
 
+func NewWithState(registry *provider.Registry, store operational.Store, priorities map[string]int, stateStore *operational.ProviderStateStore) (*Router, error) {
+	return newRouter(registry, store, priorities, nil, 0, stateStore)
+}
+
+func NewWithCatalogAndState(registry *provider.Registry, store operational.Store, priorities map[string]int, catalogStore catalog.Store, stateStore *operational.ProviderStateStore) (*Router, error) {
+	return newRouter(registry, store, priorities, catalogStore, defaultCatalogMaxAge, stateStore)
+}
+
 func NewWithCatalog(registry *provider.Registry, store operational.Store, priorities map[string]int, catalogStore catalog.Store) (*Router, error) {
 	return newRouter(registry, store, priorities, catalogStore, defaultCatalogMaxAge, nil)
 }
