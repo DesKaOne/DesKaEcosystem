@@ -240,3 +240,24 @@ The current source API catalog lists provider documentation URLs but does not de
 - the future worker will invoke only providers that implement `BalanceProvider`.
 
 This preserves the separation between verified provider API behavior and the provider-neutral operational model.
+
+
+## 12. v0.1 Provider Roadmap Update
+
+**Date:** 2026-09-24
+
+The implementation sequence is now fixed for the current v0.1 scope:
+
+```text
+DigiFlazz → IAK → XP SINDONESIA → Midtrans → RCB
+```
+
+DigiFlazz is the current implementation focus. It may be considered sufficient to move forward at either a stable **50% checkpoint** or **100% completion**. PortalPulsa is explicitly skipped for this sequence.
+
+Provider verification is tracked independently from adapter implementation:
+
+- **Verified/active:** IAK, Midtrans, XP SINDONESIA
+- **Verification pending:** RCB
+- **Verification deferred until the application is running / required business evidence is available:** DOKU, Ezeelink, Digiflazz
+
+The provider-neutral architecture remains unchanged: provider-specific protocols stay inside adapters, while DesKaCash consumes a stable provider-neutral boundary.
