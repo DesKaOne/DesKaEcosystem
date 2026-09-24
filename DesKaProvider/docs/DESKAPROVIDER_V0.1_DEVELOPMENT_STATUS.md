@@ -1087,3 +1087,28 @@ Runtime wiring only composes existing boundaries. It does not introduce automati
 
 1. verify the CI result for runtime wiring;
 2. then continue with the next reliability/provider boundary without introducing automatic retry/failover prematurely.
+
+
+### CI Fix Follow-up — Runtime Transaction Store Default
+
+**Date:** 2026-09-24
+
+CI #170 failed in both `test` and `race` for the runtime wiring commit series.
+
+Root cause:
+
+- `runtime.LoadConfig()` referenced `defaultTransactionStorePath`;
+- the runtime implementation patch had added the new configuration field and environment handling but omitted the constant declaration;
+- the failure is a compile-time wiring omission, not a transaction-store behavior failure.
+
+Fix:
+
+- restored the missing `defaultTransactionStorePath = "data/provider-transactions.json"` constant;
+- normalized `runtime.go` formatting while preserving the existing runtime composition;
+- no retry/failover, ledger mutation, or provider-specific behavior was changed.
+
+Fix commit: `274df50f624426746324108e6ec6f8ba37a5d03b`.
+
+### Verification Gate
+
+CI #170 is **failure**. The branch must not advance to the next milestone until a fresh CI run verifies both `test` and `race` green.
