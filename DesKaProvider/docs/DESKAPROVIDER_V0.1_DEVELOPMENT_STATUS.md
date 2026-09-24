@@ -1999,163 +1999,43 @@ No credentials or secret values are committed.
 
 ### Next Milestone
 
-Implement the minimum XP SINDONESIA PPOB adapter from the supplied contract, beginning with deterministic HTTP form encoding, saldo/read-only product discovery, and order mapping. Add tests before any credential-gated integration check.
 
-### 57. Milestone Update — XP Core Purchase/Balance Adapter Added
-
-**Date:** 2026-09-25
-
-CI **#325 — GREEN** was verified on the previous commit `21274ef42a265acfbcee89d2a1c54ceebfd1392e`:
-
-- `test` — success;
-- `vet` — success;
-- `race` — success.
-
-Using `docs/XP_SINDONESIA_API_DOC.md` as the source contract, the first XP adapter core has been implemented.
-
-Implemented:
-
-- POST `/api/order.php` using form-encoded `id`, `key`, `api`, `trx`, `kod`, `isi`, `sms`, and callback `url`;
-- order response identity validation;
-- mapping of `proses` to pending, `sukses` to success, `gagal` to failed;
-- order price/SN/error mapping;
-- POST `/api/saldo.php`;
-- saldo parsing from the documented JSON response;
-- callback parsing for the documented GET parameters represented as query data;
-- constant-time callback key validation when a callback secret is configured;
-- explicit `ErrUnsupportedOperation` for catalog, inquiry, and status because the supplied documentation does not provide a safe list-response schema, inquiry contract, or non-resubmitting status endpoint.
-
-The last point is intentional. The documentation shows `daftar_harga.php`, `harga.php`, and order callback behavior, but it does not define a complete response schema for `daftar_harga.php` nor a dedicated transaction-status API. Reusing `order.php` for status could resubmit a transaction, which is unsafe under the provider-neutral routing rules.
-
-Deterministic HTTP tests were added for purchase, balance, callback validation, and explicit unsupported operations.
-
-### Verification Gate
-
-- Previous CI #325 — **GREEN**;
-- XP adapter core — implemented;
-- deterministic tests — added;
-- **new adapter commit CI — pending**.
-
-### Next Milestone
-
-After the new commit is green, verify whether the supplied XP documentation contains an additional `daftar_harga.php` response schema or status mechanism that can safely map to the existing `PPOBProvider`. If not, keep those capabilities explicitly unsupported rather than inventing provider behavior.
-
-
-### 58. Milestone Update — Operational/Admin & Treasury Requirements Captured
-
-**Date:** 2026-09-25
-
-A dedicated requirements document was added to preserve the operational architecture decisions from the DesKaProvider planning session:
-
-- `docs/DESKAPROVIDER_V0.1_OPERATIONAL_ADMIN_REQUIREMENTS.md`
-
-The document records the following required directions:
-
-- DesKaProvider must include an Admin Web / Control Panel, not only service APIs;
-- Admin Web manages external-provider lifecycle, including enable/disable;
-- provider capability state is separate from provider health and lifecycle state;
-- provider routing remains inside DesKaProvider;
-- provider balance is cached operational data and remains distinct from customer balance and treasury;
-- DesKaProvider gains a Treasury domain for settlement, provider funding, deposits, reconciliation, and audit;
-- Midtrans is treated primarily as a payment/collection/settlement rail in the initial architecture, not as a PPOB provider;
-- provider funding should use a provider deposit API when a verified API exists, so administrators do not have to operate each provider dashboard manually;
-- manual provider funding remains available when no provider deposit API exists;
-- funding must use an explicit authorization workflow and must not silently move money because a liquidity warning exists;
-- RCB may expose multiple capabilities only after the relevant production capability and verification state are confirmed;
-- Admin Web must operate through service/domain layers and must not directly mutate financial database state;
-- webhook, credential, ledger, audit, KYC, and security boundaries are preserved;
-- public Open API remains a later phase after internal infrastructure is stable.
-
-### Safety / Scope Boundary
-
-This milestone is documentation-only. No provider funding execution, automatic money movement, new provider credential handling, or financial ledger mutation was added.
-
-### Verification Gate
-
-- Documentation commit: `2db8cf99025ddd539a43c59cd7e29b210572b6e4`
-- No production behavior changed by this milestone.
-- Existing CI status remains governed by the current branch head and subsequent CI run.
-
-### Next Milestone
-
-Continue the current provider implementation track only after its CI gate is green, while using the new operational/admin requirements document as the architectural reference for the future Admin Web and Treasury implementation.
-
-
-### 59. Milestone Update — Operational Persistence Atomicity & Sync Worker Lifecycle
+### 61. Milestone Update — Owned Sync Worker Lifecycle & Restart Recovery
 
 **Date:** 2026-09-25
 
 Completed:
 
-- hardened the durable operational snapshot store so a failed filesystem persistence operation does not leave an uncommitted snapshot visible in the in-memory state;
-- JSONFileStore.Put now prepares the next snapshot map, persists it successfully, and only then swaps the in-memory state;
-- added a deterministic regression test for persistence failure and in-memory rollback behavior;
-- added a lifecycle test for SyncService.Run covering immediate first synchronization and clean shutdown through context.Context cancellation;
-- preserved the existing worker behavior of continuing periodic synchronization while individual provider sync failures remain isolated in the per-provider error map.
+- added `SyncWorkerLifecycle` as the explicit owner of the operational sync worker goroutine;
+- startup creates a child cancellation context and starts the existing `SyncService.Run` worker;
+- duplicate startup is rejected with `ErrSyncWorkerRunning`;
+- shutdown explicitly cancels the owned worker and waits for clean termination;
+- normal `context.Canceled` termination is treated as a clean shutdown result;
+- lifecycle ownership remains outside `SyncService`, preserving `SyncService.Run` as the synchronization primitive;
+- added deterministic lifecycle tests for immediate startup synchronization, duplicate-start protection, idempotent shutdown, and durable snapshot recovery across service restart;
+- restart coverage verifies that a persisted operational balance is loaded first and then refreshed by a new worker instance.
 
-### Verification
+### Verification Gate
 
-- current branch head before this milestone was verified by GitHub Actions run #336 — GREEN;
-- test — success;
-- vet — success;
-- race — success;
-- new persistence and lifecycle tests are now committed and require a fresh CI run before the next milestone;
-- no external provider request or credential was used.
-
-### Safety Boundary
-
-- provider balance remains an operational snapshot, not customer balance or ledger state;
-- persistence failure cannot silently commit a snapshot only in memory;
-- worker cancellation is explicit through context.Context;
-- no retry, failover, automatic funding, or financial ledger mutation was introduced.
-
-### Known Limitations
-
-- JSON file persistence remains an interim single-process v0.1 boundary; PostgreSQL remains the deployment target;
-- SyncService.Run is the current worker lifecycle primitive, but it is not yet wired into a broader application/service startup and shutdown coordinator;
-- provider lifecycle state (enabled/disabled) and capability state are not yet modeled in the operational package;
-- routing has not yet been implemented.
-
-### Next Milestone
-
-1. verify fresh CI test, vet, and race for this milestone;
-2. wire the sync worker into the application service lifecycle with explicit startup/shutdown ownership;
-3. add recovery/restart behavior tests against durable operational snapshots;
-4. then implement production-oriented provider lifecycle and health state separation before provider routing.
-
-
-### 60. Milestone Update — CI Failure Fix: Deterministic Operational Persistence Test
-
-**Date:** 2026-09-25
-
-Completed:
-
-- investigated the latest CI failure before adding any new feature;
-- CI run #344 failed in both test and race because the new persistence regression test constructed the JSON store through NewJSONFileStore using a path whose parent was intentionally a regular file;
-- the constructor correctly rejected that invalid path before the test reached Put, so the test was testing constructor validation rather than the intended invariant;
-- changed the regression test to construct the already-initialized store directly inside the same package, then force persistence failure during Put;
-- production persistence logic was not weakened or bypassed.
-
-### Verification
-
-- CI run #344: RED;
-- root cause isolated from GitHub Actions logs;
-- fix committed at 992f45eb4e055aa9ae9b11240ae71e6f130dc9ca;
-- fresh CI for this fix is now required and must be green before any next feature milestone.
+- prior HEAD `f1b5ad0dff82fb884dd5dce5aa7c00455996b222` — CI #348 **GREEN** (`test`, `vet`, `race`);
+- lifecycle implementation and tests are committed in the current branch;
+- a fresh CI run for the new implementation is required and must be **GREEN** before the next feature milestone;
+- no provider request, credential, retry/failover, automatic funding, or ledger mutation was added.
 
 ### Safety Boundary
 
-- no provider adapter, routing, financial, treasury, or webhook behavior was changed;
-- the production invariant remains: persistence must succeed before the new operational snapshot becomes visible in memory;
-- the test now verifies that invariant at the Put boundary.
+- lifecycle cancellation is explicit and owned by the service lifecycle wrapper;
+- worker shutdown does not mutate financial state beyond the already-defined operational snapshot synchronization;
+- persisted provider balance remains an operational snapshot and is not customer balance or treasury state.
 
 ### Known Limitations
 
-- current HEAD CI is pending after the fix;
-- no lifecycle or routing feature will be advanced until test, vet, and race are green.
+- the lifecycle wrapper currently owns only the provider balance synchronization worker;
+- broader application startup/shutdown coordination for HTTP/Admin API and future workers is not yet implemented;
+- PostgreSQL remains the documented production persistence target; JSON persistence remains the interim v0.1 runtime boundary.
 
 ### Next Milestone
 
-1. verify CI for 992f45e;
-2. if green, continue the planned operational lifecycle integration and recovery tests;
-3. only after that proceed to provider lifecycle/health separation and routing.
+1. verify fresh CI `test`, `vet`, and `race` for this milestone;
+2. if green, add the production-oriented separation of provider lifecycle (`ENABLED`/`DISABLED`) from health (`HEALTHY`/`DEGRADED`/`UNHEALTHY`) and capabilities;
+3. then use those states as prerequisites for provider routing.
