@@ -55,3 +55,24 @@ func TestJSONFileStoreRejectsCorruptState(t *testing.T) {
 func writeFile(path string, data []byte) error {
 	return os.WriteFile(path, data, 0o600)
 }
+
+
+func TestJSONFileStoreDoesNotMutateMemoryWhenPersistenceFails(t *testing.T) {
+	blocked := filepath.Join(t.TempDir(), "blocked")
+	if err := os.WriteFile(blocked, []byte("not a directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err := NewJSONFileStore(filepath.Join(blocked, "snapshots.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = store.Put(Snapshot{ProviderName: "mock", Balance: 1000, Currency: "IDR"})
+	if err == nil {
+		t.Fatal("expected persistence failure")
+	}
+	if _, ok := store.Get("mock"); ok {
+		t.Fatal("snapshot must not remain in memory after persistence failure")
+	}
+}
+
