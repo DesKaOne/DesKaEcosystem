@@ -18,6 +18,7 @@ const (
 	MessageTypeBlock
 	MessageTypeBlockRequest
 	MessageTypeBlockResponse
+	MessageTypeConsensus
 )
 
 type Message struct {
@@ -26,7 +27,7 @@ type Message struct {
 }
 
 func ValidateMessage(msg Message, maxPayload uint32) error {
-	if msg.Type < MessageTypeHandshake || msg.Type > MessageTypeBlockResponse {
+	if msg.Type < MessageTypeHandshake || msg.Type > MessageTypeConsensus {
 		return ErrUnknownMessage
 	}
 	if len(msg.Payload) == 0 || uint32(len(msg.Payload)) > maxPayload {
