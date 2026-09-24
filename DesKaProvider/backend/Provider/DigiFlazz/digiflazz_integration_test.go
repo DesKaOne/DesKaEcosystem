@@ -13,6 +13,9 @@ func TestLiveCSFailureCase(t *testing.T) {
 	if os.Getenv("DIGIFLAZZ_INTEGRATION") != "1" {
 		t.Skip("set DIGIFLAZZ_INTEGRATION=1 to run the live DigiFlazz integration test")
 	}
+	if os.Getenv("DIGIFLAZZ_USERNAME") == "" || os.Getenv("DIGIFLAZZ_API_KEY") == "" {
+		t.Skip("DigiFlazz runtime credentials are not configured")
+	}
 
 	cfg, err := config.LoadDigiFlazzConfig()
 	if err != nil {
