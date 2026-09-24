@@ -128,12 +128,27 @@ func (s *ProviderStateStore) Put(state ProviderState) error {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if err := s.putMemory(state); err != nil {
-		return err
+	state.ProviderName = strings.TrimSpace(strings.ToLower(state.ProviderName))
+	capabilities := append([]Capability(nil), state.Capabilities...)
+	sort.Slice(capabilities, func(i, j int) bool { return capabilities[i] < capabilities[j] })
+	state.Capabilities = capabilities
+	next := make(map[string]ProviderState, len(s.states)+1)
+	for name, existing := range s.states {
+		next[name] = existing
 	}
+	next[state.ProviderName] = state
 	if s.persistence != nil {
-		return s.persistence.Save(s.allMemory())
+		states := make([]ProviderState, 0, len(next))
+		for _, value := range next {
+			value.Capabilities = append([]Capability(nil), value.Capabilities...)
+			states = append(states, value)
+		}
+		sort.Slice(states, func(i, j int) bool { return states[i].ProviderName < states[j].ProviderName })
+		if err := s.persistence.Save(states); err != nil {
+			return err
+		}
 	}
+	s.states = next
 	return nil
 }
 
