@@ -229,3 +229,62 @@ func TestServicePurchaseConcurrentDuplicatesSubmitOnce(t *testing.T) {
 		t.Fatalf("expected exactly one provider purchase submission, got %d", got)
 	}
 }
+
+
+func TestServiceHandleWebhookCorrelatesPendingTransaction(t *testing.T) {
+	registry := provider.NewRegistry()
+	mock := Mock.New(Mock.Config{
+		Products: []provider.Product{{Code: "pln20", Name: "PLN 20"}},
+		ProviderCode: "00", Message: "pending", PurchaseStatus: provider.StatusPending, Price: 20000,
+	})
+	if err := registry.Register("mock", mock); err != nil { t.Fatal(err) }
+	store := operational.NewMemoryStore()
+	if err := store.Put(operational.Snapshot{ProviderName: "mock", Balance: 100000, Health: operational.HealthHealthy}); err != nil { t.Fatal(err) }
+	router, err := New(registry, store, map[string]int{"mock": 1})
+	if err != nil { t.Fatal(err) }
+	service, err := NewService(router)
+	if err != nil { t.Fatal(err) }
+
+	req := PurchaseRequest{ProductCode: "pln20", CustomerNo: "08123456789", ReferenceID: "ref-webhook", Amount: 20000}
+	execution, err := service.Purchase(context.Background(), req)
+	if err != nil { t.Fatal(err) }
+	if execution.Result.Status != provider.StatusPending { t.Fatalf("expected pending purchase, got %q", execution.Result.Status) }
+
+	event := provider.WebhookEvent{
+		ReferenceID: req.ReferenceID, CustomerNo: req.CustomerNo, ProductCode: req.ProductCode,
+		Status: provider.StatusSuccess, ProviderCode: "00", Message: "success", SerialNumber: "SN-1", Price: 20000,
+	}
+	updated, err := service.HandleWebhook(context.Background(), event)
+	if err != nil { t.Fatal(err) }
+	if updated.ProviderName != "mock" || updated.Result.Status != provider.StatusSuccess || updated.Result.SerialNumber != "SN-1" {
+		t.Fatalf("unexpected webhook result: %#v", updated)
+	}
+
+	duplicate, err := service.HandleWebhook(context.Background(), event)
+	if err != nil { t.Fatal(err) }
+	if duplicate != updated { t.Fatalf("expected idempotent webhook result: %#v != %#v", duplicate, updated) }
+}
+
+func TestServiceHandleWebhookRejectsUnknownAndConflictingReferences(t *testing.T) {
+	registry := provider.NewRegistry()
+	mock := Mock.New(Mock.Config{Products: []provider.Product{{Code: "pln20", Name: "PLN 20"}}, ProviderCode: "00", PurchaseStatus: provider.StatusPending})
+	if err := registry.Register("mock", mock); err != nil { t.Fatal(err) }
+	store := operational.NewMemoryStore()
+	if err := store.Put(operational.Snapshot{ProviderName: "mock", Balance: 100000, Health: operational.HealthHealthy}); err != nil { t.Fatal(err) }
+	router, err := New(registry, store, map[string]int{"mock": 1})
+	if err != nil { t.Fatal(err) }
+	service, err := NewService(router)
+	if err != nil { t.Fatal(err) }
+
+	_, err = service.HandleWebhook(context.Background(), provider.WebhookEvent{
+		ReferenceID: "unknown", CustomerNo: "08123456789", ProductCode: "pln20", Status: provider.StatusSuccess,
+	})
+	if !errors.Is(err, ErrWebhookTransactionNotFound) { t.Fatalf("expected unknown reference error, got %v", err) }
+
+	req := PurchaseRequest{ProductCode: "pln20", CustomerNo: "08123456789", ReferenceID: "ref-webhook-conflict", Amount: 20000}
+	if _, err := service.Purchase(context.Background(), req); err != nil { t.Fatal(err) }
+	_, err = service.HandleWebhook(context.Background(), provider.WebhookEvent{
+		ReferenceID: req.ReferenceID, CustomerNo: "08987654321", ProductCode: req.ProductCode, Status: provider.StatusSuccess,
+	})
+	if !errors.Is(err, ErrWebhookReferenceConflict) { t.Fatalf("expected webhook reference conflict, got %v", err) }
+}
