@@ -644,6 +644,32 @@ func mustVotingPowerSet(t *testing.T, certificate consensus.FinalityCertificate)
 	t.Helper(); power, err := consensus.NewVotingPowerSet([]consensus.ValidatorVotingPower{{ValidatorID: certificate.Votes[0].Sender, Power: 1}}); if err != nil { t.Fatal(err) }; return power
 }
 
+
+func TestCommitFinalizedBlockRejectsEachCanonicalConsensusContextMismatch(t *testing.T) {
+	cases := []struct {
+		name string
+		mutate func(*consensus.BlockProductionContext, *Node)
+	}{
+		{"protocol", func(ctx *consensus.BlockProductionContext, _ *Node) { ctx.State.ProtocolVersion++ }},
+		{"chain", func(ctx *consensus.BlockProductionContext, _ *Node) { ctx.State.ChainID++ }},
+		{"height", func(ctx *consensus.BlockProductionContext, _ *Node) { ctx.State.Height++ }},
+		{"previous-hash", func(ctx *consensus.BlockProductionContext, _ *Node) { ctx.PreviousHash = types.Hash{99} }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			n, ctx, _, _, _, _, _ := finalizedBlockFixture(t, storage.NewMemoryStore())
+			beforeHead, beforeHash, beforeRoot := n.Head, n.HeadHash, n.State.Root()
+			tc.mutate(&ctx, n)
+			if err := validateCanonicalConsensusContext(n, ctx); err != ErrConsensusContextMismatch {
+				t.Fatalf("error = %v, want %v", err, ErrConsensusContextMismatch)
+			}
+			if !reflect.DeepEqual(n.Head, beforeHead) || n.HeadHash != beforeHash || n.State.Root() != beforeRoot {
+				t.Fatal("node mutated after canonical context rejection")
+			}
+		})
+	}
+}
+
 func TestCommitFinalizedBlockUsesExplicitAuthorityBoundaries(t *testing.T) {
 	store := storage.NewMemoryStore()
 	n, err := NewDevnet(store); if err != nil { t.Fatal(err) }
