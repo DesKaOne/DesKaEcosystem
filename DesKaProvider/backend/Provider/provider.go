@@ -86,7 +86,7 @@ type WebhookEvent struct {
 	ProductCode  string
 	Status       TransactionStatus
 	ProviderCode string
-	Message      string
+	Message       string
 	SerialNumber string
 	Price        int64
 }
@@ -97,4 +97,10 @@ type PPOBProvider interface {
 	Purchase(context.Context, PurchaseRequest) (PurchaseResult, error)
 	GetStatus(context.Context, StatusRequest) (PurchaseStatus, error)
 	HandleWebhook(context.Context, WebhookRequest) (WebhookEvent, error)
+}
+
+// BalanceProvider is an optional capability implemented by providers that
+// expose an operational account balance endpoint.
+type BalanceProvider interface {
+	GetBalance(context.Context) (int64, error)
 }
