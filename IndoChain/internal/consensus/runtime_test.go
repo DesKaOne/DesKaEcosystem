@@ -3,6 +3,9 @@ package consensus
 import (
 	"errors"
 	"testing"
+
+	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/block"
+	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/types"
 )
 
 func runtimeFixture(t *testing.T) (*ValidatorRuntime, RoundState, ValidatorSet, VotingPowerSet) {
@@ -109,5 +112,57 @@ func TestValidatorRuntimeDoesNotFinalizeWithoutQuorum(t *testing.T) {
 	_, err := runtime.FinalizeProposal()
 	if !errors.Is(err, ErrInvalidRuntimePhase) {
 		t.Fatalf("expected invalid runtime phase, got %v", err)
+	}
+}
+
+func TestValidatorRuntimeAcceptsValidatedBlockProposal(t *testing.T) {
+	runtime, state, _, _ := runtimeFixture(t)
+	ctx := BlockProductionContext{
+		State: state,
+		PreviousHash: types.Hash{5},
+		Proposer: []byte("validator-a"),
+	}
+	candidate := block.Block{Header: block.Header{
+		Version: state.ProtocolVersion,
+		ChainID: state.ChainID,
+		Height: state.Height + 1,
+		PreviousHash: ctx.PreviousHash,
+		Proposer: append([]byte(nil), ctx.Proposer...),
+	}}
+	proposal, err := NewBlockProposal(ctx, candidate)
+	if err != nil {
+		t.Fatalf("NewBlockProposal() error = %v", err)
+	}
+	if err := runtime.AcceptBlockProposal(proposal); err != nil {
+		t.Fatalf("AcceptBlockProposal() error = %v", err)
+	}
+	if runtime.State().Phase != PhasePrevote {
+		t.Fatalf("expected prevote phase, got %v", runtime.State().Phase)
+	}
+}
+
+func TestValidatorRuntimeRejectsBlockProposalFromWrongContext(t *testing.T) {
+	runtime, state, _, _ := runtimeFixture(t)
+	ctx := BlockProductionContext{
+		State: state,
+		PreviousHash: types.Hash{5},
+		Proposer: []byte("validator-b"),
+	}
+	candidate := block.Block{Header: block.Header{
+		Version: state.ProtocolVersion,
+		ChainID: state.ChainID,
+		Height: state.Height + 1,
+		PreviousHash: ctx.PreviousHash,
+		Proposer: append([]byte(nil), ctx.Proposer...),
+	}}
+	proposal, err := NewBlockProposal(ctx, candidate)
+	if err != nil {
+		t.Fatalf("NewBlockProposal() error = %v", err)
+	}
+	if err := runtime.AcceptBlockProposal(proposal); !errors.Is(err, ErrUnexpectedProposer) {
+		t.Fatalf("expected unexpected proposer, got %v", err)
+	}
+	if runtime.State().Phase != PhaseProposal {
+		t.Fatalf("runtime phase changed after rejected block proposal")
 	}
 }
