@@ -245,6 +245,7 @@ func (n *Node) ImportBlockWithAuthority(b block.Block, resolver TransactionAutho
 // sender authority remains separately resolved by senderResolver; validator
 // identity is never treated as a transaction address.
 func (n *Node) CommitFinalizedBlock(
+	ctx consensus.BlockProductionContext,
 	candidate block.Block,
 	certificate consensus.FinalityCertificate,
 	validators consensus.ValidatorSet,
@@ -258,26 +259,16 @@ func (n *Node) CommitFinalizedBlock(
 	if validatorResolver == nil || senderResolver == nil {
 		return errors.New("missing finalized-block authority resolver")
 	}
-	ctx := consensus.BlockProductionContext{
-		State: state.RoundState{
-			ProtocolVersion: candidate.Header.Version,
-			ChainID: candidate.Header.ChainID,
-			Height: candidate.Header.Height - 1,
-			Phase: state.PhaseProposal,
-			Round: 0,
-		},
-		PreviousHash: candidate.Header.PreviousHash,
-		Proposer: candidate.Header.Proposer,
+	if _, err := consensus.ValidateFinalizedBlock(ctx, candidate, certificate, validators, votingPower); err != nil {
+		return err
 	}
-	// Finalized-block validation must use the actual consensus round-state
-	// context. The node cannot safely invent epoch/round state, so callers must
-	// use ValidateFinalizedBlock before this commit boundary until that context
-	// is supplied explicitly by the consensus runtime.
-	_, err := consensus.ResolveProposerAuthority(consensus.FinalizedBlockAuthorization{
+	authorization := consensus.FinalizedBlockAuthorization{
 		BlockHash: func() types.Hash { h, _ := block.Hash(candidate); return h }(),
 		Proposer: candidate.Header.Proposer,
 		Certificate: certificate,
-	}, validatorResolver)
-	if err != nil { return err }
+	}
+	if _, err := consensus.ResolveProposerAuthority(authorization, validatorResolver); err != nil {
+		return err
+	}
 	return n.ImportBlockWithAuthority(candidate, senderResolver)
 }
