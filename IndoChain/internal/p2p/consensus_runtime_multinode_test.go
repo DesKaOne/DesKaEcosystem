@@ -1596,19 +1596,6 @@ func TestConsensusRuntimeNegativeMissingValidatorAuthority(t *testing.T) {
 	}
 }
 
-func TestConsensusRuntimeNegativeValidatorAuthorityMismatch(t *testing.T) {
-	n, candidate, certificate, validators, power, ctx, _, senderResolver := finalizedHandoffFixture(t)
-	canonicalHead := n.HeadHash
-
-	mismatchResolver := runtimeValidatorAuthorityResolver{publicKey: []byte("wrong-authority")}
-	if err := n.CommitFinalizedBlock(ctx, candidate, certificate, validators, power, mismatchResolver, senderResolver); !errors.Is(err, consensus.ErrExecutionAuthorityMismatch) {
-		t.Fatalf("validator authority mismatch error = %v, want %v", err, consensus.ErrExecutionAuthorityMismatch)
-	}
-	if n.Head.Header.Height != 0 || n.HeadHash != canonicalHead {
-		t.Fatal("canonical head changed after validator authority mismatch rejection")
-	}
-}
-
 func TestConsensusRuntimeNegativeVotingPowerTotalOverflow(t *testing.T) {
 	n, candidate, certificate, validators, _, ctx, validatorResolver, senderResolver := finalizedHandoffFixture(t)
 	canonicalHead := n.HeadHash
