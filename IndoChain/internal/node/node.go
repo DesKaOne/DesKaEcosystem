@@ -9,7 +9,6 @@ import (
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/block"
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/state"
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/types"
-	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/consensus"
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/storage"
 )
 
@@ -204,25 +203,3 @@ func (n *Node) ImportBlock(b block.Block, publicKey []byte) error {
 	return nil
 }
 
-
-func (n *Node) CommitFinalizedBlock(candidate block.Block, certificate consensus.FinalityCertificate) error {
-	if n == nil || n.Store == nil || n.State == nil {
-		return ErrNilStore
-	}
-	consensusState := consensus.RoundState{
-		ProtocolVersion: n.Config.ProtocolVersion,
-		ChainID: n.Config.ChainID,
-		Height: n.Head.Header.Height,
-	}
-	ctx := consensus.BlockProductionContext{
-		State: consensusState,
-		PreviousHash: n.HeadHash,
-		Proposer: append([]byte(nil), candidate.Header.Proposer...),
-	}
-	validators := consensus.ValidatorSet{Validators: [][]byte{append([]byte(nil), candidate.Header.Proposer...)}}
-	votingPower := consensus.VotingPowerSet{Validators: []consensus.ValidatorVotingPower{{ValidatorID: append([]byte(nil), candidate.Header.Proposer...), Power: 1}}}
-	if _, err := consensus.ValidateFinalizedBlock(ctx, candidate, certificate, validators, votingPower); err != nil {
-		return err
-	}
-	return n.ImportBlock(candidate, nil)
-}
