@@ -48,7 +48,6 @@ jobs:
         run: go vet ./...
 
   integration:
-    if: ${{ secrets.DIGIFLAZZ_USERNAME != '' && secrets.DIGIFLAZZ_API_KEY != '' }}
     runs-on: ubuntu-latest
 
     defaults:
