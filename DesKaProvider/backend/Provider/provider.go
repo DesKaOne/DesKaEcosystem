@@ -1,6 +1,6 @@
 package provider
 
-import "context"
+import (\n\t"context"\n\t"errors"\n)\n\nvar ErrUnsupportedOperation = errors.New("provider operation is not supported")
 
 type TransactionStatus string
 
