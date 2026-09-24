@@ -670,3 +670,63 @@ The implementation and deterministic tests are committed on `dev/deskaprovider-v
 1. verify CI for the routed purchase execution boundary;
 2. design and implement provider transaction correlation/idempotency state around the existing reference ID;
 3. ensure repeated requests cannot create unintended duplicate provider purchases before considering controlled failover.
+
+
+## 27. Provider Verification and Implementation Sequence
+
+**Date:** 2026-09-24
+
+The v0.1 provider roadmap is now explicitly separated into implementation progress and provider verification status.
+
+### Provider implementation status
+
+| Provider | v0.1 target | Current direction |
+|---|---:|---|
+| DigiFlazz | 50% or 100% completion is acceptable before moving on | **Current work** |
+| IAK | 100% | Next after DigiFlazz checkpoint |
+| XP SINDONESIA | 100% | After IAK |
+| Midtrans | 100% | After XP SINDONESIA |
+| RCB | 100% | After Midtrans |
+| PortalPulsa | Skip | Not planned for the current sequence |
+
+The DigiFlazz milestone does not need to reach 100% before the next provider begins. Once the DigiFlazz implementation reaches a stable **50% checkpoint**, or is completed to 100%, development may continue to IAK.
+
+### Agreed implementation order
+
+```text
+DigiFlazz
+    ↓
+IAK
+    ↓
+XP SINDONESIA
+    ↓
+Midtrans
+    ↓
+RCB
+```
+
+PortalPulsa is explicitly skipped for this v0.1 provider sequence.
+
+### Provider verification status
+
+Current verified/active providers:
+
+- IAK — verified/active
+- Midtrans — verified/active
+- XP SINDONESIA — verified/active
+
+Verification pending:
+
+- RCB — verification pending
+
+Deferred verification until the application is running and can satisfy the provider's business/application evidence requirements:
+
+- DOKU
+- Ezeelink
+- Digiflazz
+
+This verification status must not be confused with adapter implementation status. A provider can have development work underway while production verification remains pending.
+
+### Scope note
+
+The immediate engineering focus remains DigiFlazz. After the agreed 50% checkpoint or 100% completion, development moves to IAK, then XP SINDONESIA, Midtrans, and RCB. Provider-specific credentials must remain outside source control.
