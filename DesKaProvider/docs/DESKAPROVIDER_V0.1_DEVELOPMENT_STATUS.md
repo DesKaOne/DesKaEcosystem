@@ -384,3 +384,33 @@ The new operational package is designed for `go test ./...` and `go vet ./...`. 
 3. replace/integrate the in-memory operational store with the documented persistence layer;
 4. add the periodic 30–60 second worker;
 5. then continue toward provider routing using cached balance and health.
+
+
+### 17. Milestone Update — Verified DigiFlazz Balance Adapter + Sync Worker
+
+**Date:** 2026-09-24
+
+Completed:
+
+- verified the official DigiFlazz Buyer "Cek Deposit" API documentation;
+- verified balance endpoint `POST https://api.digiflazz.com/v1/cek-saldo`;
+- verified request fields `cmd=deposit`, `username`, and signature `md5(username + apiKey + "depo")`;
+- verified response field `data.deposit`;
+- implemented `DigiFlazz.Client.GetBalance` using that contract;
+- added configurable `DIGIFLAZZ_BALANCE_ENDPOINT` with the official endpoint as default;
+- added deterministic `httptest` coverage for request path, payload, signature, and parsed deposit balance;
+- added the periodic operational sync worker with immediate first synchronization and configurable interval;
+- documented the new balance endpoint configuration in `.env.example`.
+
+### Verification
+
+The DigiFlazz balance contract is supported by the official documentation. urlDigiFlazz Cek Deposit documentationhttps://developer.digiflazz.com/api/buyer/cek-saldo/
+
+No live balance request was executed because runtime DigiFlazz credentials are not available. The adapter is covered by deterministic HTTP tests.
+
+### Next milestone
+
+1. define the production persistence implementation for operational snapshots;
+2. wire the periodic worker into the service lifecycle;
+3. add persistence tests and recovery behavior;
+4. then continue toward provider routing using cached balance and health.
