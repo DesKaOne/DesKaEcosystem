@@ -2130,3 +2130,41 @@ The state-aware routing changes are committed, but a **fresh CI run for the new 
 1. verify fresh CI for state-aware routing;
 2. if green, integrate the state-aware router into the existing purchase service construction path without bypassing the state gate;
 3. then add deterministic routing eligibility tests covering health degradation and stale operational snapshots.
+
+
+### 64. Milestone Update — Runtime State Gate Integration
+
+**Date:** 2026-09-25
+
+CI prerequisite verified:
+
+- CI #368 — **GREEN** for commit `d974976586600b27d4c5dfb43b879709f0760b4c`;
+- `test` — success;
+- `vet` — success;
+- `race` — success.
+
+Completed:
+
+- `runtime.NewFromEnvironment` now creates a `ProviderStateStore` and passes it into the catalog-aware Router;
+- every runtime-registered provider receives an explicit capability declaration for the currently supported PPOB, balance, and webhook interfaces;
+- providers remain `DISABLED` by default and are therefore not routable until an administrative enablement mechanism exists;
+- runtime tests verify the state store is present, capabilities are declared, and automatic enablement does not occur;
+- existing provider-neutral routing, operational health, catalog freshness, and transaction persistence remain intact.
+
+Safety boundary:
+
+- runtime registration is not equivalent to administrative enablement;
+- no automatic provider activation was introduced;
+- no provider-specific routing condition was introduced;
+- no retry/failover or financial ledger mutation was introduced.
+
+Verification gate:
+
+- fresh CI is required for the new runtime integration before the next milestone;
+- `test`, `vet`, and `race` must all be GREEN.
+
+Next milestone:
+
+1. verify fresh CI for runtime state-gate integration;
+2. then define the minimal administrative state mutation boundary needed to enable/disable providers safely;
+3. only after that, continue with routing health/freshness eligibility and Admin API integration.
