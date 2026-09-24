@@ -981,7 +981,11 @@ This remains development-only and does not introduce production BFT timing, roun
 
 **Next finalized-handoff certificate-integrity boundary:** Added `TestConsensusRuntimeNegativeInvalidFinalityCertificateStructure`. The test independently clears the certificate payload and then the certificate vote set, requiring `consensus.ErrInvalidFinalityCertificate` in both cases while preserving the canonical genesis head/hash. Implementation commit: `2875efe14d56e9031389c11c1a8999a65764c5da`.
 
-**Next CI gate:** verify `2875efe14d56e9031389c11c1a8999a65764c5da` through the full IndoChain test/tidy/vet workflow.
+**Verified certificate-structure CI:** IndoChain CI #937 (workflow run `35980379291`) completed successfully for `2875efe14d56e9031389c11c1a8999a65764c5da`; test, tidy, and vet all passed.
+
+**Next finalized-handoff quorum boundary:** Added `TestConsensusRuntimeNegativeFinalityQuorumNotReached`. The test uses a structurally valid certificate but raises its threshold to `2/3` while the fixture contains only one unit of voting power, requiring `consensus.ErrFinalityQuorumNotReached` and preserving the canonical genesis head/hash. Implementation commits: `4812dfa3b7812e3253cb5fd893088c99d5a769d1`, refined to isolate this boundary in `ec7d81c03d545eb034af9db87ecfb52f928e7893`.
+
+**Next CI gate:** verify `ec7d81c03d545eb034af9db87ecfb52f928e7893` through the full IndoChain test/tidy/vet workflow.
 
 ### 4.38 Consensus Transport → Runtime → Finalized Node Handoff Boundary
 
