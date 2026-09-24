@@ -109,10 +109,7 @@ func (s *SyncService) SyncAll(ctx context.Context) map[string]error {
 // happens immediately, followed by the configured interval.
 func (s *SyncService) Run(ctx context.Context, interval time.Duration) error {
 	if interval <= 0 { return errors.New("sync interval must be greater than zero") }
-	if _, err := s.SyncAll(ctx); err != nil {
-		// SyncAll reports per-provider errors; the worker remains alive so a
-		// transient provider outage does not stop synchronization for others.
-	}
+	_ = s.SyncAll(ctx)
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
@@ -120,7 +117,7 @@ func (s *SyncService) Run(ctx context.Context, interval time.Duration) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			s.SyncAll(ctx)
+			_ = s.SyncAll(ctx)
 		}
 	}
 }
