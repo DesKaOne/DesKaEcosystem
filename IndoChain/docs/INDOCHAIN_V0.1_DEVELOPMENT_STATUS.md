@@ -1147,4 +1147,8 @@ This milestone does not define proposer selection, voting power, quorum, vote ag
 
 **Next transaction-authority resolution boundary:** Added `TestApplyTransactionRejectsEmptyResolvedSenderAuthority`. The injected sender-authority resolver returns an empty public key; transaction validation must reject it with `transaction.ErrInvalidPublicKey` and preserve the canonical sender state without creating the recipient. Implementation/test commit: `d5ad56d18e6779b7fffda6831c503cefe35a3f81`.
 
-**Next CI gate:** verify `d5ad56d18e6779b7fffda6831c503cefe35a3f81` through the full IndoChain test/tidy/vet workflow before proceeding to the next transaction-authority boundary.
+**Verified empty-resolved-authority CI:** IndoChain CI #1044 (workflow run `35992475424`) completed successfully for `d5ad56d18e6779b7fffda6831c503cefe35a3f81`; the full test/tidy/vet gate passed. The transaction execution boundary now explicitly rejects an empty resolved sender public key with `transaction.ErrInvalidPublicKey` while preserving canonical state.
+
+**Next transaction-authority precedence boundary:** Hardened `state.ApplyTransaction` so structural transaction validation runs before injected sender-authority resolution. Added `TestApplyTransactionValidatesBeforeSenderAuthorityResolver`, which supplies an invalid transaction version together with a resolver error and requires `transaction.ErrInvalidVersion`, proving malformed transactions are rejected before external authority lookup and canonical state remains unchanged. Implementation commit: `8cf77d9c7cd8a46de63df563b34c6353e225b627`; regression-test commit: `16c2144b43fdb7e11663483bd2764cd71f148597`.
+
+**Next CI gate:** verify `16c2144b43fdb7e11663483bd2764cd71f148597` through the full IndoChain test/tidy/vet workflow before proceeding to the next transaction-authority boundary.
