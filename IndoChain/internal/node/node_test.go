@@ -670,6 +670,21 @@ func TestCommitFinalizedBlockRejectsEachCanonicalConsensusContextMismatch(t *tes
 	}
 }
 
+
+func TestCommitFinalizedBlockRejectsAlreadyCommittedBlockWithoutMutation(t *testing.T) {
+	n, ctx, candidate, certificate, validatorResolver, senderResolver, _ := finalizedBlockFixture(t, storage.NewMemoryStore())
+	if err := n.CommitFinalizedBlock(ctx, candidate, certificate, mustValidatorSet(t, certificate), mustVotingPowerSet(t, certificate), validatorResolver, senderResolver); err != nil {
+		t.Fatal(err)
+	}
+	beforeHead, beforeHash, beforeRoot := n.Head, n.HeadHash, n.State.Root()
+	if err := n.CommitFinalizedBlock(ctx, candidate, certificate, mustValidatorSet(t, certificate), mustVotingPowerSet(t, certificate), validatorResolver, senderResolver); err != ErrFinalizedBlockAlreadyCommitted {
+		t.Fatalf("error = %v, want %v", err, ErrFinalizedBlockAlreadyCommitted)
+	}
+	if !reflect.DeepEqual(n.Head, beforeHead) || n.HeadHash != beforeHash || n.State.Root() != beforeRoot {
+		t.Fatal("node mutated after rejecting replayed finalized block")
+	}
+}
+
 func TestCommitFinalizedBlockUsesExplicitAuthorityBoundaries(t *testing.T) {
 	store := storage.NewMemoryStore()
 	n, err := NewDevnet(store); if err != nil { t.Fatal(err) }
