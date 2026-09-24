@@ -785,3 +785,27 @@ The failure is confirmed in CI run #94. The source fix is committed on `dev/desk
 
 1. verify CI after the import-alias fix;
 2. only after CI is healthy, implement provider transaction correlation/idempotency state around the neutral reference ID.
+
+
+### 30. Milestone Update — CI Failure Follow-up: Mock Construction Boundary
+
+**Date:** 2026-09-24
+
+CI run #98 passed the import-alias issue but failed compiling `routing/service_test.go` because the test attempted to initialize unexported fields of `mock.Provider` from another package.
+
+Root cause:
+
+- `Provider/Mock` exposes configuration through `mock.Config` and constructor `mock.New`;
+- the routing test used a direct struct literal with fields that are intentionally private inside the Mock package.
+
+Fix applied:
+
+- changed routing tests to construct mocks through `Mock.New(Mock.Config{...})`;
+- no production routing behavior changed;
+- the provider encapsulation boundary is preserved.
+
+Commit: `3e633a5d40bee515a58d52e92f1d9146d042ef54`.
+
+### Verification gate
+
+CI run #98 is confirmed red. A fresh CI result for the constructor fix is mandatory before transaction correlation/idempotency work begins.
