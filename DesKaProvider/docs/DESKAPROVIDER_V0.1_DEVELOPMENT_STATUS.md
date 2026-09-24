@@ -1164,3 +1164,57 @@ The documented price-list rate limitation is an explicit reason not to treat thi
 1. verify CI for the DigiFlazz product-catalog implementation;
 2. if green, design the minimum catalog-cache/synchronization boundary so routing does not repeatedly hit a rate-limited provider price-list endpoint;
 3. keep automatic retry/failover deferred until provider-specific idempotency semantics are explicitly established.
+
+### 40. Milestone Update — DigiFlazz Product Catalog Cache Boundary
+
+**Date:** 2026-09-25
+
+CI run #180 for the previous DigiFlazz product-catalog implementation is confirmed **green** before this milestone:
+
+- test — success;
+- vet — success;
+- race — success.
+
+Implemented the minimum catalog-cache boundary needed to avoid repeatedly calling the DigiFlazz rate-limited price-list endpoint during provider routing:
+
+- added DigiFlazz.CachedClient as a provider-adapter wrapper;
+- caches successful GetProducts results in memory by neutral category + active filter;
+- uses a 15-minute runtime TTL;
+- returns defensive product slices so callers cannot mutate cached state;
+- serializes concurrent cache misses per client, preventing duplicate price-list requests during the same refresh;
+- preserves provider-specific price-list behavior inside the DigiFlazz adapter;
+- leaves purchase, status, webhook, and balance operations delegated directly to the underlying DigiFlazz client;
+- cache refresh failures are returned to the caller and do not silently serve expired catalog data;
+- wired the cached client into runtime composition;
+- documented the 15-minute cache TTL in backend/.env.example;
+- added deterministic HTTP tests proving repeated product lookups within the TTL issue only one provider request and that distinct active-filter requests have separate cache entries.
+
+The cache is intentionally in-memory and non-durable for v0.1. The current scope is to prevent repeated price-list calls inside a running process; a future durable catalog synchronization boundary can be introduced if deployment requirements require restart persistence or scheduled refresh independent of routing traffic.
+
+### Safety Boundary
+
+This milestone does not:
+
+- introduce automatic retry or failover for transactions;
+- mutate the DesKaCash ledger;
+- fund providers;
+- move DigiFlazz-specific protocol behavior outside the adapter;
+- treat the cached product list as a transaction result or customer balance.
+
+### Verification Gate
+
+The cache implementation commits are:
+
+- 4ed7a7feaedc96771ecd6b3bd11d9c713b47c442
+- 9e4a1d08acd490ca48370c061de399d4ceba8039
+- 3b408764e3d0c3284e414a0bc07164450f8ae2ac
+- eaa2f8c866abd52754028f9438f3124dee978cb2
+- 3dad3977fdcf5a66eaa35c3cba72c57f45c2c00e
+
+A fresh complete CI run for the cache implementation is required before the next development step. The branch must not advance until test, vet, and race are all green.
+
+### Next Milestone
+
+1. verify the complete CI result for the cache boundary;
+2. if green, review whether a neutral durable catalog synchronization layer is required before adding the next provider;
+3. keep transaction retry/failover deferred until provider-specific idempotency semantics are explicitly established.
