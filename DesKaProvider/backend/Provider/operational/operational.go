@@ -31,7 +31,7 @@ type Snapshot struct {
 
 type Store interface {
 	Get(string) (Snapshot, bool)
-	Put(Snapshot)
+	Put(Snapshot) error
 	All() []Snapshot
 }
 
@@ -48,9 +48,13 @@ func (s *MemoryStore) Get(name string) (Snapshot, bool) {
 	return v, ok
 }
 
-func (s *MemoryStore) Put(snapshot Snapshot) {
+func (s *MemoryStore) Put(snapshot Snapshot) error {
+	if snapshot.ProviderName == "" {
+		return errors.New("provider name is required")
+	}
 	s.mu.Lock(); defer s.mu.Unlock()
 	s.snapshots[snapshot.ProviderName] = snapshot
+	return nil
 }
 
 func (s *MemoryStore) All() []Snapshot {
@@ -89,11 +93,15 @@ func (s *SyncService) SyncProvider(ctx context.Context, name string) (Snapshot, 
 		health := HealthDegraded
 		if failures >= s.FailureThreshold { health = HealthUnhealthy }
 		snapshot := Snapshot{ProviderName:name, Balance:previous.Balance, Currency:s.Currency, Health:health, LastCheckedAt:now, LastSuccessAt:previous.LastSuccessAt, LastError:err.Error(), ConsecutiveFailures:failures}
-		s.Store.Put(snapshot)
+		if storeErr := s.Store.Put(snapshot); storeErr != nil {
+			return Snapshot{}, errors.Join(err, storeErr)
+		}
 		return snapshot, err
 	}
 	snapshot := Snapshot{ProviderName:name, Balance:balance, Currency:s.Currency, Health:HealthHealthy, LastCheckedAt:now, LastSuccessAt:now, ConsecutiveFailures:0}
-	s.Store.Put(snapshot)
+	if storeErr := s.Store.Put(snapshot); storeErr != nil {
+		return Snapshot{}, storeErr
+	}
 	return snapshot, nil
 }
 
