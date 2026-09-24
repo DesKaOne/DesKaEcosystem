@@ -166,3 +166,16 @@ func TestValidatorRuntimeRejectsBlockProposalFromWrongContext(t *testing.T) {
 		t.Fatalf("runtime phase changed after rejected block proposal")
 	}
 }
+
+func TestValidatorRuntimeExposesClonedFinalityCertificate(t *testing.T) {
+	runtime, state, _, _ := runtimeFixture(t)
+	if err := runtime.AcceptProposal(runtimeMessage(state, "validator-a", MessageTypeProposal, "block-8")); err != nil { t.Fatal(err) }
+	if err := runtime.AddVote(runtimeMessage(state, "validator-a", MessageTypeVote, "block-8")); err != nil { t.Fatal(err) }
+	if err := runtime.AddVote(runtimeMessage(state, "validator-b", MessageTypeVote, "block-8")); err != nil { t.Fatal(err) }
+	if _, err := runtime.FinalizeProposal(); err != nil { t.Fatal(err) }
+	certificate, err := runtime.FinalizedCertificate(); if err != nil { t.Fatal(err) }
+	certificate.Payload[0] = 'X'
+	certificate.Votes[0].Payload[0] = 'Y'
+	fresh, err := runtime.FinalizedCertificate(); if err != nil { t.Fatal(err) }
+	if string(fresh.Payload) != "block-8" || string(fresh.Votes[0].Payload) != "block-8" { t.Fatal("runtime certificate was not cloned") }
+}
