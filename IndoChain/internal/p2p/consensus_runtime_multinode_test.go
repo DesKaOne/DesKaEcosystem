@@ -176,6 +176,16 @@ func TestInMemoryTransportConsensusRuntimeIntegration(t *testing.T) {
 }
 
 
+type runtimeValidatorAuthorityResolver struct{}
+func (runtimeValidatorAuthorityResolver) PublicKeyForValidator([]byte) ([]byte, error) {
+	return []byte("validator-public-key"), nil
+}
+
+type runtimeSenderAuthorityResolver struct{}
+func (runtimeSenderAuthorityResolver) PublicKeyForSender([]byte) ([]byte, error) {
+	return nil, nil
+}
+
 func TestInMemoryTransportRuntimeFinalizedBlockHandoff(t *testing.T) {
 	store := storage.NewMemoryStore()
 	n, err := node.NewDevnet(store)
@@ -314,8 +324,8 @@ func TestInMemoryTransportRuntimeFinalizedBlockHandoff(t *testing.T) {
 		t.Fatal("runtime A did not reach finalized phase")
 	}
 
-	validatorResolver := validatorAuthorityResolver{publicKey: []byte("validator-public-key")}
-	senderResolver := senderAuthorityResolver{}
+	validatorResolver := runtimeValidatorAuthorityResolver{}
+	senderResolver := runtimeSenderAuthorityResolver{}
 	if err := n.CommitFinalizedBlock(ctx, candidate, certificate, validators, power, validatorResolver, senderResolver); err != nil {
 		t.Fatal(err)
 	}
