@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"sort"
 
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/types"
 )
@@ -102,7 +103,7 @@ func NewTimeoutCertificate(
 		return TimeoutCertificate{}, ErrTimeoutQuorumNotReached
 	}
 
-	sortValidatorIDs(cloned)
+	sort.Slice(cloned, func(i, j int) bool { return bytes.Compare(cloned[i], cloned[j]) < 0 })
 	return TimeoutCertificate{
 		ProtocolVersion: state.ProtocolVersion,
 		ChainID:         state.ChainID,
@@ -176,7 +177,7 @@ func ValidateTimeoutCertificate(
 	}
 
 	sorted := cloneByteSlices(certificate.Validators)
-	sortValidatorIDs(sorted)
+	sort.Slice(sorted, func(i, j int) bool { return bytes.Compare(sorted[i], sorted[j]) < 0 })
 	if !byteSlicesEqual(sorted, certificate.Validators) {
 		return ErrInvalidTimeoutCertificate
 	}
