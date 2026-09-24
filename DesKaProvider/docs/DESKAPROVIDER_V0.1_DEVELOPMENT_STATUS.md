@@ -1337,3 +1337,58 @@ Fix applied in commit `909ebb5fe013179cea9682818982cab0ef8944af`:
 - preserved the existing environment parsing and router wiring.
 
 CI must be re-verified green, including `test`, `vet`, and `race`, before continuing.
+
+
+### 43. Milestone Update — DigiFlazz PLN Inquiry Capability
+
+**Date:** 2026-09-25
+
+CI run #235 for the previous catalog-freshness configuration fix is confirmed **green** before this milestone:
+
+- `test` — success;
+- `race` — success;
+- the workflow completed successfully.
+
+Reviewed the official DigiFlazz Buyer documentation before extending the adapter. The documentation exposes a dedicated PLN inquiry endpoint and defines the request signature as `md5(username + apiKey + customer_no)`. The response provides normalized status, response code, and message fields. citeturn3view0
+
+Implemented the minimum provider-specific Inquiry capability supported by that documented contract:
+
+- added `DIGIFLAZZ_INQUIRY_PLN_ENDPOINT` configuration with the documented endpoint as default;
+- implemented `DigiFlazz.Client.Inquiry` for the explicit neutral product code `pln` only;
+- sends `username`, `customer_no`, and the documented MD5 signature;
+- maps the documented response status/code/message into `provider.InquiryResult`;
+- leaves unsupported product inquiry operations as `provider.ErrUnsupportedOperation` rather than inventing a generic DigiFlazz inquiry protocol;
+- added deterministic HTTP coverage for endpoint, payload, signature, successful mapping, and unsupported-product behavior;
+- documented the endpoint override in `.env.example`.
+
+This milestone is intentionally scoped to the verified PLN inquiry operation. It does not claim that every DigiFlazz product supports a generic inquiry operation.
+
+### Safety Boundary
+
+This milestone does not:
+
+- introduce transaction retry or automatic failover;
+- resubmit ambiguous transactions;
+- mutate the DesKaCash ledger;
+- treat inquiry success as purchase success;
+- infer unsupported inquiry protocols for other product types.
+
+The official DigiFlazz status documentation also warns against repeated status calls for the same transaction within less than one minute and states that prepaid status is obtained by repeating the topup with the same `ref_id`; therefore the existing transaction correlation and no-automatic-retry boundary remains unchanged. citeturn2view0
+
+### Verification Gate
+
+The implementation commits are:
+
+- `d7c2d0c850e4acb6b511e5b658851e36fc805597` — configuration;
+- `071b413f821335ba8fdb8845dbf9a66c73ba7d0f` — adapter;
+- `926b00e76e9895dde1d8b31d962490fc953ee4c3` — tests;
+- `4443b4fa65b85b81ddec4c1b60d4e66af8a72a09` — environment documentation.
+
+A fresh CI run is required and must be green (`test`, `vet`, and `race`) before continuing to the next provider-readiness milestone.
+
+### Next Milestone
+
+1. verify the fresh CI result for the PLN inquiry capability;
+2. if green, review DigiFlazz adapter readiness against the documented v0.1 roadmap checkpoint;
+3. decide whether DigiFlazz has enough verified coverage to move to IAK, without claiming live production verification;
+4. keep live credential validation separate from source-level adapter completeness.
