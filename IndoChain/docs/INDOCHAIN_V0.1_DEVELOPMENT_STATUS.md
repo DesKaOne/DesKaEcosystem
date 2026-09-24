@@ -1209,4 +1209,4 @@ Commits:
 - canonical ordering fix: `1652ecff8c3d721bc2c1c46ca4af30ff537cc853`
 - timeout regression tests: `1c969c2576f9f8e00a2c8146d74d94f8cb69c000`
 
-CI must be verified green on the latest implementation before this milestone is considered complete.
+CI gate verified green: IndoChain CI #1078 (run `36065754434`) completed successfully for timeout regression-test commit `1c969c2576f9f8e00a2c8146d74d94f8cb69c000`.
