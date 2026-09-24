@@ -31,7 +31,7 @@ const (
 )
 
 type Config struct{StorePath,TransactionStorePath string;SyncInterval time.Duration;FailureThreshold int;Currency,CatalogStorePath string;CatalogSyncInterval,CatalogMaxAge time.Duration}
-type Service struct{syncService *operational.SyncService;purchaseService *routing.Service;catalogSync *catalog.SyncService;interval,catalogInterval time.Duration}
+type Service struct{syncService *operational.SyncService;purchaseService *routing.Service;catalogSync *catalog.SyncService;providerState *operational.ProviderStateStore;interval,catalogInterval time.Duration}
 
 func LoadConfig()(Config,error){
  cfg:=Config{StorePath:os.Getenv("DESKAPROVIDER_OPERATIONAL_STORE_PATH"),TransactionStorePath:os.Getenv("DESKAPROVIDER_TRANSACTION_STORE_PATH"),SyncInterval:defaultSyncInterval,FailureThreshold:defaultFailureThreshold,Currency:os.Getenv("DESKAPROVIDER_OPERATIONAL_CURRENCY"),CatalogStorePath:os.Getenv("DESKAPROVIDER_CATALOG_STORE_PATH"),CatalogSyncInterval:defaultCatalogSyncInterval,CatalogMaxAge:defaultCatalogMaxAge}
@@ -59,9 +59,11 @@ func NewFromEnvironment(httpClient *http.Client)(*Service,error){
  catalogStore,e:=catalog.NewJSONFileStore(cfg.CatalogStorePath);if e!=nil{return nil,e}
  catalogSync,e:=catalog.NewSyncService(registry,catalogStore);if e!=nil{return nil,e}
  transactionStore,e:=routing.NewJSONFileTransactionStore(cfg.TransactionStorePath);if e!=nil{return nil,e}
- router,e:=routing.NewWithCatalogMaxAge(registry,store,nil,catalogStore,cfg.CatalogMaxAge);if e!=nil{return nil,e}
+ stateStore:=operational.NewProviderStateStore()
+ for _, name:=range registry.Names(){state,e:=operational.NewProviderState(name);if e!=nil{return nil,e};state.Capabilities=[]operational.Capability{operational.CapabilityPPOB,operational.CapabilityBalance,operational.CapabilityWebhook};if e=stateStore.Put(state);e!=nil{return nil,e}}
+ router,e:=routing.NewWithCatalogAndState(registry,store,nil,catalogStore,stateStore);if e!=nil{return nil,e}
  purchaseService,e:=routing.NewServiceWithStore(router,transactionStore);if e!=nil{return nil,e}
- return &Service{syncService:syncService,purchaseService:purchaseService,catalogSync:catalogSync,interval:cfg.SyncInterval,catalogInterval:cfg.CatalogSyncInterval},nil
+ return &Service{syncService:syncService,purchaseService:purchaseService,catalogSync:catalogSync,providerState:stateStore,interval:cfg.SyncInterval,catalogInterval:cfg.CatalogSyncInterval},nil
 }
 
 func New(syncService *operational.SyncService,interval time.Duration)(*Service,error){if syncService==nil{return nil,errors.New("sync service is required")};if interval<=0{return nil,errors.New("sync interval must be greater than zero")};return &Service{syncService:syncService,interval:interval},nil}
