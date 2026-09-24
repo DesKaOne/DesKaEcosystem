@@ -1562,6 +1562,22 @@ func TestConsensusRuntimeNegativeUnsortedVotingPowerSet(t *testing.T) {
 	}
 }
 
+func TestConsensusRuntimeNegativeEmptyValidatorIDVotingPower(t *testing.T) {
+	n, candidate, certificate, validators, _, ctx, validatorResolver, senderResolver := finalizedHandoffFixture(t)
+	canonicalHead := n.HeadHash
+	invalidPower := consensus.VotingPowerSet{
+		Validators: []consensus.ValidatorVotingPower{
+			{ValidatorID: nil, Power: 1},
+		},
+	}
+	if err := n.CommitFinalizedBlock(ctx, candidate, certificate, validators, invalidPower, validatorResolver, senderResolver); !errors.Is(err, consensus.ErrInvalidVotingPowerSet) {
+		t.Fatalf("error = %v, want ErrInvalidVotingPowerSet", err)
+	}
+	if n.HeadHash != canonicalHead {
+		t.Fatal("canonical head changed after empty validator id voting power rejection")
+	}
+}
+
 func finalizedHandoffFixture(t *testing.T) (*node.Node, block.Block, consensus.FinalityCertificate, consensus.ValidatorSet, consensus.VotingPowerSet, consensus.BlockProductionContext, node.ValidatorAuthorityResolver, node.TransactionAuthorityResolver) {
 	t.Helper()
 	store := storage.NewMemoryStore()
