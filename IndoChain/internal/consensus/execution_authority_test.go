@@ -45,6 +45,37 @@ func TestResolveProposerAuthorityRequiresResolver(t *testing.T) {
 	}
 }
 
+func TestResolveProposerAuthorityRejectsInvalidAuthorization(t *testing.T) {
+	resolver := testAuthorityResolver{
+		validator: []byte("validator-a"),
+		publicKey: []byte("public-key"),
+	}
+	cases := []struct {
+		name          string
+		authorization FinalizedBlockAuthorization
+	}{
+		{
+			name:          "missing block hash",
+			authorization: FinalizedBlockAuthorization{Proposer: []byte("validator-a"), Certificate: FinalityCertificate{Payload: []byte{1}}},
+		},
+		{
+			name:          "missing proposer",
+			authorization: FinalizedBlockAuthorization{BlockHash: types.Hash{1}, Certificate: FinalityCertificate{Payload: []byte{1}}},
+		},
+		{
+			name:          "missing certificate payload",
+			authorization: FinalizedBlockAuthorization{BlockHash: types.Hash{1}, Proposer: []byte("validator-a")},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := ResolveProposerAuthority(tc.authorization, resolver); !errors.Is(err, ErrInvalidExecutionAuthority) {
+				t.Fatalf("ResolveProposerAuthority() error = %v, want %v", err, ErrInvalidExecutionAuthority)
+			}
+		})
+	}
+}
+
 func TestFinalizedBlockAuthorizationRejectsMismatchedPayload(t *testing.T) {
 	hash := types.Hash{1}
 	other := types.Hash{2}
