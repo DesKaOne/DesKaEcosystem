@@ -758,11 +758,11 @@ func TestConsensusRuntimeNegativeFinalityQuorumNotReached(t *testing.T) {
 
 	// Keep the certificate structurally valid but make one vote insufficient:
 	// validator-a has 1/2 of total voting power while the threshold is 2/3.
-	validators, err = consensus.NewValidatorSet([][]byte{[]byte("validator-a"), []byte("validator-b")})
+	validators, err := consensus.NewValidatorSet([][]byte{[]byte("validator-a"), []byte("validator-b")})
 	if err != nil {
 		t.Fatal(err)
 	}
-	power, err = consensus.NewVotingPowerSet([]consensus.ValidatorVotingPower{
+	power, err := consensus.NewVotingPowerSet([]consensus.ValidatorVotingPower{
 		{ValidatorID: []byte("validator-a"), Power: 1},
 		{ValidatorID: []byte("validator-b"), Power: 1},
 	})
