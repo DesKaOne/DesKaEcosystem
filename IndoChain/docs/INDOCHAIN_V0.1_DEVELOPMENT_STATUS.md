@@ -930,7 +930,7 @@ This remains development-only and does not introduce production BFT timing, roun
 
 **Latest multi-height finalized handoff test:** `34e3b4e5880228cd38872d8db7d0454c3f10fc6e`. The new deterministic integration commits two consecutive finalized blocks at heights 1 and 2 through the same transport → runtime → certificate → node-commit boundary, verifying that each block uses the previous canonical head hash and that the persistent store head follows the node head after each commit.
 
-**CI status for multi-height implementation:** workflow result was not yet published when this status entry was recorded; verify branch HEAD before treating this milestone as a CI gate.
+**CI failure and root cause:** IndoChain CI run `848` / validation run `849` failed during `go test ./...` because the multi-height test passed `types.Height` directly to `consensus.NewRoundState`, whose height parameter is `uint64`. This was corrected in `717cb3acb35554eb2a8915fe63e81862d5a7ed12` with an explicit `uint64(height)` conversion. The status-doc follow-up also ran red as runs `850`/`851` because it inherited the failing implementation commit; the fix commit is now the CI gate.
 
 **Next major boundary:** verify multi-height finalization in CI, then add a deterministic negative-path check for cross-height context/replay rejection so a height-2 handoff cannot be committed against the height-0/height-1 canonical context.
 
