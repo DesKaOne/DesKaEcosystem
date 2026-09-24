@@ -508,3 +508,26 @@ func TestImportBlockCommitFailureWithoutMutation(t *testing.T) {
 		t.Fatal("store state mutated after failed block commit")
 	}
 }
+
+
+type senderAuthorityResolver struct { publicKey []byte }
+func (r senderAuthorityResolver) PublicKeyForSender(sender []byte) ([]byte, error) { return append([]byte(nil), r.publicKey...), nil }
+
+func TestImportBlockWithAuthorityResolvesSenderKey(t *testing.T) {
+	store := storage.NewMemoryStore()
+	n, err := NewDevnet(store); if err != nil { t.Fatal(err) }
+	seed := make([]byte, 32); seed[0] = 17
+	keyPair, err := crypto.NewEd25519KeyPair(seed); if err != nil { t.Fatal(err) }
+	signer, err := crypto.NewEd25519Signer(keyPair.PrivateKey); if err != nil { t.Fatal(err) }
+	sender := types.Address([]byte("resolver-sender")); recipient := types.Address([]byte("resolver-recipient"))
+	n.State.Set(sender, state.Account{Balance: 50, Nonce: 0})
+	tx := transaction.Transaction{Version: devnet.ProtocolVersion, ChainID: devnet.ChainID, Nonce: 0, Sender: sender, Recipient: recipient, Value: 10, GasLimit: 100}
+	tx.Signature, err = transaction.Sign(tx, signer); if err != nil { t.Fatal(err) }
+	rules, err := n.Config.BlockRules(nil); if err != nil { t.Fatal(err) }
+	rules.Transaction.PublicKeyResolver = senderAuthorityResolver{publicKey: signer.PublicKey()}
+	working := n.State.Snapshot(); if err := state.ApplyTransaction(working, tx, rules.Transaction); err != nil { t.Fatal(err) }
+	b := block.Block{Header: block.Header{Version: devnet.ProtocolVersion, ChainID: devnet.ChainID, Height: 1, Timestamp: n.Head.Header.Timestamp + 1, PreviousHash: n.HeadHash, StateRoot: working.Root()}, Transactions: []any{tx}}
+	b.Header.TransactionsRoot, err = block.TransactionsRoot(b.Transactions); if err != nil { t.Fatal(err) }
+	if err := n.ImportBlockWithAuthority(b, senderAuthorityResolver{publicKey: signer.PublicKey()}); err != nil { t.Fatal(err) }
+	if got, ok := n.State.Get(recipient); !ok || got.Balance != 10 { t.Fatalf("recipient = %+v, want balance 10", got) }
+}
