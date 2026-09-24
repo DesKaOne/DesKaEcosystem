@@ -91,3 +91,28 @@ Tests cover:
 ## Next Integration
 
 The next step is to define the production consensus state machine and block-production interface explicitly before connecting this runtime to canonical block execution or P2P message transport.
+
+
+## Timeout / Round-Change Boundary
+
+The development runtime now exposes `ValidatorRuntime.AdvanceRound(next)` for a deterministic timeout/round-change transition.
+
+The transition:
+- requires a strictly newer round;
+- resets the runtime phase to Proposal;
+- clears the current round proposal;
+- replaces the vote aggregator with one bound to the new round;
+- preserves the previously locked proposal;
+- rejects round changes after Finalized.
+
+A preserved lock constrains the next-round proposal: the same locked payload remains acceptable, while a conflicting proposal is rejected. This is intentionally a development invariant rather than a claim of full production BFT locking.
+
+Vote messages are validated against the current round and validator set before the lock-conflict check, preserving the existing validation boundary and preventing malformed messages from bypassing it.
+
+### Tests
+
+Coverage includes successful round advancement, round-local state reset, lock preservation, conflicting proposal rejection, and finalized-state round-change rejection.
+
+### Non-goals
+
+This boundary does not yet define timeout certificates, dedicated timeout messages, prevote/precommit wire types, lock-carrying evidence, multi-node round synchronization, or a production BFT timeout algorithm.
