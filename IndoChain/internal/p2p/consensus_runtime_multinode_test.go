@@ -504,6 +504,72 @@ func TestInMemoryTransportRuntimeFinalizedBlockMultiHeight(t *testing.T) {
 	}
 }
 
+func TestConsensusRuntimeNegativeCrossHeightInvalidFinalityEvidence(t *testing.T) {
+	n, candidate1, certificate1, validators, power, ctx1, validatorResolver, senderResolver := finalizedHandoffFixture(t)
+	if err := n.CommitFinalizedBlock(ctx1, candidate1, certificate1, validators, power, validatorResolver, senderResolver); err != nil {
+		t.Fatal(err)
+	}
+	canonicalHeight1Hash := n.HeadHash
+
+	state2, err := consensus.NewRoundState(devnet.ProtocolVersion, devnet.ChainID, 0, n.Head.Header.Height)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx2 := consensus.BlockProductionContext{State: state2, PreviousHash: canonicalHeight1Hash, Proposer: append([]byte(nil), candidate1.Header.Proposer...)}
+	rules, err := n.Config.BlockRules(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate2, err := consensus.BuildBlockCandidate(consensus.BlockCandidateInput{Context: ctx2, Timestamp: n.Head.Header.Timestamp + 1, Transactions: []any{}, Rules: rules}, n.State)
+	if err != nil {
+		t.Fatal(err)
+	}
+	messageRules := consensus.ValidationRules{ProtocolVersion: state2.ProtocolVersion, ChainID: state2.ChainID, RequireSender: true, RequireSignature: true}
+	runtime, err := consensus.NewValidatorRuntime(consensus.RuntimeConfig{Rules: messageRules, State: state2, Validators: validators, VotingPower: power, Threshold: consensus.QuorumThreshold{Numerator: 1, Denominator: 1}, Proposer: consensus.RoundRobinProposer{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	proposal, err := consensus.NewBlockProposal(ctx2, candidate2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyPair, err := crypto.NewEd25519KeyPair(bytes.Repeat([]byte{0x58}, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer, err := crypto.NewEd25519Signer(keyPair.PrivateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proposalMsg := consensus.Message{ProtocolVersion: state2.ProtocolVersion, ChainID: state2.ChainID, Epoch: state2.Epoch, Height: state2.Height, Round: state2.Round, Sender: append([]byte(nil), candidate2.Header.Proposer...), Type: consensus.MessageTypeProposal, Payload: proposal.MessagePayload()}
+	proposalMsg, err = proposalMsg.Sign(signer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.AcceptProposal(proposalMsg); err != nil {
+		t.Fatal(err)
+	}
+	vote := consensus.Message{ProtocolVersion: state2.ProtocolVersion, ChainID: state2.ChainID, Epoch: state2.Epoch, Height: state2.Height, Round: state2.Round, Sender: append([]byte(nil), candidate2.Header.Proposer...), Type: consensus.MessageTypeVote, Payload: proposal.MessagePayload()}
+	vote, err = vote.Sign(signer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.AddVote(vote); err != nil {
+		t.Fatal(err)
+	}
+	certificate2, err := runtime.FinalizeProposal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	certificate2.Payload = []byte("tampered-cross-height-finality")
+	if err := n.CommitFinalizedBlock(ctx2, candidate2, certificate2, validators, power, validatorResolver, senderResolver); err == nil {
+		t.Fatal("tampered cross-height finality evidence was accepted")
+	}
+	if n.Head.Header.Height != 1 || n.HeadHash != canonicalHeight1Hash {
+		t.Fatal("canonical head changed after cross-height finality evidence rejection")
+	}
+}
+
 func TestConsensusRuntimeNegativeCrossHeightReplayedCandidate(t *testing.T) {
 	n, candidate1, certificate1, validators, power, ctx1, validatorResolver, senderResolver := finalizedHandoffFixture(t)
 	if err := n.CommitFinalizedBlock(ctx1, candidate1, certificate1, validators, power, validatorResolver, senderResolver); err != nil {
