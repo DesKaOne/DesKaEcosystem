@@ -300,14 +300,14 @@ func (n *Node) CommitFinalizedBlock(
 	if validatorResolver == nil || senderResolver == nil {
 		return errors.New("missing finalized-block authority resolver")
 	}
-	// A finalized block is append-only at the node boundary. Reject a block
-	// whose height is already at or below the canonical head before any
-	// authority resolution or execution work can occur.
-	if candidate.Header.Height <= n.Head.Header.Height {
-		return ErrFinalizedBlockAlreadyCommitted
-	}
 	if err := validateCanonicalConsensusContext(n, ctx); err != nil {
 		return err
+	}
+	// A finalized block is append-only at the node boundary. Reject a block
+	// whose height is already at or below the canonical head before authority
+	// resolution or execution work can occur.
+	if candidate.Header.Height <= n.Head.Header.Height {
+		return ErrFinalizedBlockAlreadyCommitted
 	}
 	if _, err := consensus.ValidateFinalizedBlock(ctx, candidate, certificate, validators, votingPower); err != nil {
 		return err
