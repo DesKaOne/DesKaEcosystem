@@ -53,10 +53,10 @@ func (s *Service) Purchase(ctx context.Context, req PurchaseRequest) (PurchaseEx
 	if err := ctx.Err(); err != nil { return PurchaseExecution{}, err }
 
 	call, owner := s.startPurchase(req)
+	if call == nil {
+		return PurchaseExecution{}, ErrReferenceConflict
+	}
 	if !owner {
-		if call.err != nil {
-			return PurchaseExecution{}, call.err
-		}
 		select {
 		case <-call.done:
 			return call.result, call.err
@@ -75,7 +75,7 @@ func (s *Service) startPurchase(req PurchaseRequest) (*purchaseCall, bool) {
 	defer s.mu.Unlock()
 	if existing, ok := s.transactions[req.ReferenceID]; ok {
 		if existing.request != req {
-			return &purchaseCall{err: ErrReferenceConflict}, false
+			return nil, false
 		}
 		return existing, false
 	}
