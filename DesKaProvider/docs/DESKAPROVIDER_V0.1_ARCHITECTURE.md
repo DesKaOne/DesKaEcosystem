@@ -74,6 +74,37 @@ DesKaCash and the router can read the cached snapshot without repeatedly calling
 
 The sync interval is configurable per provider. Initial target: 30–60 seconds.
 
+The v0.1 foundation separates the balance capability from the transaction contract:
+
+```go
+type BalanceProvider interface {
+    GetBalance(context.Context) (int64, error)
+}
+```
+
+This is an optional provider capability. Providers that do not expose a verified balance operation remain valid `PPOBProvider` implementations.
+
+Operational snapshots currently contain:
+
+- provider name
+- balance
+- currency
+- health state
+- last checked time
+- last successful synchronization time
+- last synchronization error
+- consecutive failure count
+
+The current implementation uses a thread-safe in-memory store as the deterministic operational-state boundary. It is intentionally not presented as the final persistence layer.
+
+Health transitions are deterministic:
+
+- successful synchronization -> `healthy`, failures reset to zero;
+- synchronization failure before the configured threshold -> `degraded`;
+- synchronization failure at or above the configured threshold -> `unhealthy`.
+
+A failed synchronization does not erase the last known balance.
+
 ## 4. Routing Model
 
 Routing is provider-neutral:
@@ -179,7 +210,6 @@ External Providers / DesKa Infrastructure
 
 This is a future direction, not part of the initial v0.1 implementation.
 
-
 ## 10. v0.1 Provider Contract Notes
 
 The provider-neutral PPOB contract intentionally carries the minimum transaction identity required to preserve correlation across external providers:
@@ -196,3 +226,17 @@ For status checks, the neutral `StatusRequest` retains the original product code
 For webhooks, the neutral `WebhookRequest` carries body and authentication context so provider adapters can validate signatures before normalizing the event. DigiFlazz currently uses `X-Hub-Signature` with HMAC-SHA1 when a webhook secret is configured.
 
 These fields are provider-neutral at the DesKaProvider boundary; DigiFlazz-specific JSON field names, signature construction, response codes, and HTTP behavior remain inside the adapter.
+
+## 11. Balance Adapter Boundary
+
+A concrete balance adapter must only be implemented after the provider's balance endpoint and response contract are verified from its API documentation.
+
+The current source API catalog lists provider documentation URLs but does not define a verified balance endpoint for the active v0.1 provider set. Therefore:
+
+- the balance capability is defined now;
+- operational state and health handling are implemented now;
+- provider-specific balance HTTP calls remain pending;
+- no provider balance is fabricated from transaction responses;
+- the future worker will invoke only providers that implement `BalanceProvider`.
+
+This preserves the separation between verified provider API behavior and the provider-neutral operational model.
