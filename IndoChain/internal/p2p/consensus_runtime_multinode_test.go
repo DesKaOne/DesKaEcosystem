@@ -575,6 +575,7 @@ func TestConsensusRuntimeNegativeCrossHeightVoteContextMismatch(t *testing.T) {
 	if err := n.CommitFinalizedBlock(ctx1, candidate1, certificate1, validators, power, validatorResolver, senderResolver); err != nil {
 		t.Fatal(err)
 	}
+	canonicalHeight1Hash := n.HeadHash
 
 	state2, err := consensus.NewRoundState(devnet.ProtocolVersion, devnet.ChainID, 0, n.Head.Header.Height)
 	if err != nil {
@@ -669,7 +670,7 @@ func TestConsensusRuntimeNegativeCrossHeightVoteContextMismatch(t *testing.T) {
 	if err := n.CommitFinalizedBlock(ctx2, candidate2, certificate2, validators, power, validatorResolver, senderResolver); !errors.Is(err, consensus.ErrStateContextMismatch) {
 		t.Fatalf("cross-height vote context error = %v, want %v", err, consensus.ErrStateContextMismatch)
 	}
-	if n.Head.Header.Height != 1 || n.HeadHash != n.HeadHash {
+	if n.Head.Header.Height != 1 || n.HeadHash != canonicalHeight1Hash {
 		t.Fatal("canonical head changed after cross-height vote context rejection")
 	}
 }
