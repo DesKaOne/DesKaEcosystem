@@ -1126,3 +1126,8 @@ This milestone does not define proposer selection, voting power, quorum, vote ag
 **Next execution-authority isolation boundary:** Hardened `ResolveProposerAuthority` so the resolver receives a defensive copy of `FinalizedBlockAuthorization.Proposer`, preventing a resolver from mutating caller-owned proposer identity through the shared byte slice. Added `TestResolveProposerAuthorityClonesProposerForResolver`, using a resolver that deliberately mutates its input and verifying the caller's proposer remains unchanged. Implementation commit: `6238744593430fa4fd5789c604ace590782197c6`; regression-test commit: `fb10d92d6c6c835eac59a5c44b98b3d9c971f3c3`.
 
 **Next CI gate:** verify `fb10d92d6c6c835eac59a5c44b98b3d9c971f3c3` through the full IndoChain test/tidy/vet workflow before proceeding to the next execution-authority boundary.
+
+
+**Verified proposer-authority input-isolation CI:** IndoChain CI #1029 (workflow run `35991014226`) completed successfully for `fb10d92d6c6c835eac59a5c44b98b3d9c971f3c3`; the full test/tidy/vet gate passed. The execution-authority resolver now has verified isolation on both directions of the byte-slice handoff: resolver-owned public-key output cannot mutate through the returned slice, and resolver input cannot mutate caller-owned proposer identity.
+
+**Next execution-to-transaction authority boundary:** review and extend the finalized handoff around the separate `TransactionAuthorityResolver` path. The current architecture intentionally keeps validator/proposer authority distinct from transaction sender authority; the next work should add negative coverage for sender-authority resolution/propagation while preserving canonical-state immutability.
