@@ -856,3 +856,26 @@ Commits: `cef6f075a21acbaa59dd69904be16d00c125be47`, `357012076274707c760d4e5949
 ### Verification gate
 
 A fresh CI result for the idempotency implementation is required before moving to the next reliability milestone.
+
+
+### 33. Milestone Update — Concurrent Idempotency Verification
+
+**Date:** 2026-09-24
+
+CI #112 is confirmed green before this follow-up.
+
+Strengthened the in-process purchase idempotency boundary with deterministic concurrency coverage:
+
+- the Mock provider now records purchase submission counts for test verification;
+- 16 concurrent identical requests using the same `ReferenceID` are exercised together;
+- the test requires all callers to receive the same execution result;
+- the test requires exactly one provider purchase submission;
+- the shared transaction state remains protected by the service mutex and completion channel.
+
+This milestone validates the duplicate-submission safety property before any controlled retry/failover design is considered.
+
+Commits: `a0e65e33d30b6f0435e8a7652ddf2b1265b6df5b`, `cda41646425f09a6192e856f832502f4222bb17f`.
+
+### Verification gate
+
+A fresh CI result for the concurrent idempotency test and documentation update is required before the next reliability milestone.
