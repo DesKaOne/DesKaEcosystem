@@ -15,7 +15,7 @@ import (
 	"strings"
 
 	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/config"
-	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
+	provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
 )
 
 var ErrInvalidWebhookSignature = errors.New("invalid DigiFlazz webhook signature")
@@ -70,17 +70,17 @@ type transactionResponse struct {
 	} `json:"data"`
 }
 
-func (c *Client) GetProducts(context.Context, Provider.ProductRequest) ([]Provider.Product, error) {
-	return nil, Provider.ErrUnsupportedOperation
+func (c *Client) GetProducts(context.Context, provider.ProductRequest) ([]provider.Product, error) {
+	return nil, provider.ErrUnsupportedOperation
 }
 
-func (c *Client) Inquiry(context.Context, Provider.InquiryRequest) (Provider.InquiryResult, error) {
-	return Provider.InquiryResult{}, Provider.ErrUnsupportedOperation
+func (c *Client) Inquiry(context.Context, provider.InquiryRequest) (provider.InquiryResult, error) {
+	return provider.InquiryResult{}, provider.ErrUnsupportedOperation
 }
 
-func (c *Client) Purchase(ctx context.Context, req Provider.PurchaseRequest) (Provider.PurchaseResult, error) {
+func (c *Client) Purchase(ctx context.Context, req provider.PurchaseRequest) (provider.PurchaseResult, error) {
 	if err := validateTransactionRequest(req.ProductCode, req.CustomerNo, req.ReferenceID); err != nil {
-		return Provider.PurchaseResult{}, err
+		return provider.PurchaseResult{}, err
 	}
 	data, err := c.transaction(ctx, transactionRequest{
 		Username:     c.username,
@@ -91,14 +91,14 @@ func (c *Client) Purchase(ctx context.Context, req Provider.PurchaseRequest) (Pr
 		Testing:      req.Testing,
 	})
 	if err != nil {
-		return Provider.PurchaseResult{}, err
+		return provider.PurchaseResult{}, err
 	}
 	return mapPurchaseResult(data), nil
 }
 
-func (c *Client) GetStatus(ctx context.Context, req Provider.StatusRequest) (Provider.PurchaseStatus, error) {
+func (c *Client) GetStatus(ctx context.Context, req provider.StatusRequest) (provider.PurchaseStatus, error) {
 	if err := validateTransactionRequest(req.ProductCode, req.CustomerNo, req.ReferenceID); err != nil {
-		return Provider.PurchaseStatus{}, err
+		return provider.PurchaseStatus{}, err
 	}
 	data, err := c.transaction(ctx, transactionRequest{
 		Username:     c.username,
@@ -108,18 +108,18 @@ func (c *Client) GetStatus(ctx context.Context, req Provider.StatusRequest) (Pro
 		Sign:         c.signature(req.ReferenceID),
 	})
 	if err != nil {
-		return Provider.PurchaseStatus{}, err
+		return provider.PurchaseStatus{}, err
 	}
 	return mapPurchaseStatus(data), nil
 }
 
-func (c *Client) HandleWebhook(_ context.Context, req Provider.WebhookRequest) (Provider.WebhookEvent, error) {
+func (c *Client) HandleWebhook(_ context.Context, req provider.WebhookRequest) (provider.WebhookEvent, error) {
 	if req.SignatureSecret != "" {
 		expected := hmac.New(sha1.New, []byte(req.SignatureSecret))
 		_, _ = expected.Write(req.Body)
 		expectedHeader := "sha1=" + hex.EncodeToString(expected.Sum(nil))
 		if subtle.ConstantTimeCompare([]byte(strings.TrimSpace(req.Signature)), []byte(expectedHeader)) != 1 {
-			return Provider.WebhookEvent{}, ErrInvalidWebhookSignature
+			return provider.WebhookEvent{}, ErrInvalidWebhookSignature
 		}
 	}
 
@@ -136,9 +136,9 @@ func (c *Client) HandleWebhook(_ context.Context, req Provider.WebhookRequest) (
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(req.Body, &payload); err != nil {
-		return Provider.WebhookEvent{}, fmt.Errorf("decode DigiFlazz webhook: %w", err)
+		return provider.WebhookEvent{}, fmt.Errorf("decode DigiFlazz webhook: %w", err)
 	}
-	return Provider.WebhookEvent{
+	return provider.WebhookEvent{
 		ReferenceID:  payload.Data.ReferenceID,
 		CustomerNo:   payload.Data.CustomerNo,
 		ProductCode:  payload.Data.BuyerSKUCode,
@@ -194,8 +194,8 @@ func validateTransactionRequest(productCode, customerNo, referenceID string) err
 	return nil
 }
 
-func mapPurchaseResult(data transactionResponse) Provider.PurchaseResult {
-	return Provider.PurchaseResult{
+func mapPurchaseResult(data transactionResponse) provider.PurchaseResult {
+	return provider.PurchaseResult{
 		ReferenceID:  data.Data.ReferenceID,
 		CustomerNo:   data.Data.CustomerNo,
 		ProductCode:  data.Data.BuyerSKUCode,
@@ -207,8 +207,8 @@ func mapPurchaseResult(data transactionResponse) Provider.PurchaseResult {
 	}
 }
 
-func mapPurchaseStatus(data transactionResponse) Provider.PurchaseStatus {
-	return Provider.PurchaseStatus{
+func mapPurchaseStatus(data transactionResponse) provider.PurchaseStatus {
+	return provider.PurchaseStatus{
 		ReferenceID:  data.Data.ReferenceID,
 		CustomerNo:   data.Data.CustomerNo,
 		ProductCode:  data.Data.BuyerSKUCode,
@@ -220,15 +220,15 @@ func mapPurchaseStatus(data transactionResponse) Provider.PurchaseStatus {
 	}
 }
 
-func mapStatus(status string) Provider.TransactionStatus {
+func mapStatus(status string) provider.TransactionStatus {
 	switch strings.ToLower(strings.TrimSpace(status)) {
 	case "sukses":
-		return Provider.StatusSuccess
+		return provider.StatusSuccess
 	case "pending":
-		return Provider.StatusPending
+		return provider.StatusPending
 	case "gagal":
-		return Provider.StatusFailed
+		return provider.StatusFailed
 	default:
-		return Provider.TransactionStatus(strings.ToLower(strings.TrimSpace(status)))
+		return provider.TransactionStatus(strings.ToLower(strings.TrimSpace(status)))
 	}
 }
