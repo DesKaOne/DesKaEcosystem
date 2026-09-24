@@ -1,7 +1,8 @@
 package operational
 
 import (
-	"os"\n\t"path/filepath"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -13,12 +14,12 @@ func TestJSONFileStorePersistsAndRecovers(t *testing.T) {
 		t.Fatal(err)
 	}
 	snapshot := Snapshot{
-		ProviderName: "digiflazz",
-		Balance: 1500000,
-		Currency: "IDR",
-		Health: HealthHealthy,
-		LastCheckedAt: time.Date(2026, 9, 24, 12, 0, 0, 0, time.UTC),
-		LastSuccessAt: time.Date(2026, 9, 24, 12, 0, 0, 0, time.UTC),
+		ProviderName:       "digiflazz",
+		Balance:            1500000,
+		Currency:           "IDR",
+		Health:             HealthHealthy,
+		LastCheckedAt:      time.Date(2026, 9, 24, 12, 0, 0, 0, time.UTC),
+		LastSuccessAt:      time.Date(2026, 9, 24, 12, 0, 0, 0, time.UTC),
 		ConsecutiveFailures: 0,
 	}
 	if err := first.Put(snapshot); err != nil {
