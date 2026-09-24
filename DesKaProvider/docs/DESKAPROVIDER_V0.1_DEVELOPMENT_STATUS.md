@@ -305,3 +305,30 @@ The registry tests are designed for `go test ./...`. CI status for the latest br
 2. add DigiFlazz environment-driven integration test harness;
 3. validate the CS test tuple against the real DigiFlazz API;
 4. then implement provider balance synchronization and provider health.
+
+
+### 14. Milestone Update — Deterministic Mock Provider + CI
+
+**Date:** 2026-09-24
+
+Completed:
+
+- added Provider/Mock as a provider-neutral deterministic test implementation;
+- supports the full PPOBProvider contract;
+- deterministic configurable purchase status, provider code, message, and price;
+- records purchase results so status lookup can be tested without an external API;
+- deterministic unknown-product and webhook parsing tests;
+- repaired the registry test imports so the package compiles under CI;
+- standardized the GitHub Actions workflow at .github/workflows/deskaprovider.yml;
+- CI now runs on pushes and pull requests targeting main and dev/** when DesKaProvider/** or the workflow changes;
+- CI uses the module-declared Go 1.25.1 and runs go mod tidy, go test ./..., and go vet ./....
+
+### Verification
+
+The repository workflow is now configured to surface test/vet failures through GitHub Actions. The next check is the CI result for this branch/PR.
+
+### Next milestone
+
+1. add the DigiFlazz environment-driven integration test harness;
+2. run the real CS test tuple only when runtime credentials are supplied through environment variables;
+3. then continue toward provider balance synchronization and provider health.
