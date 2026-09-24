@@ -618,6 +618,25 @@ func TestCommitFinalizedBlockRejectsStoreFailureWithoutMutation(t *testing.T) {
 	if !reflect.DeepEqual(n.Head, beforeHead) || n.HeadHash != beforeHash || n.State.Root() != beforeRoot { t.Fatal("node mutated after store failure") }
 }
 
+
+func TestCommitFinalizedBlockRejectsTransactionExecutionFailureWithoutMutation(t *testing.T) {
+	n, ctx, candidate, _, validatorResolver, senderResolver, _ := finalizedBlockFixture(t, storage.NewMemoryStore())
+	tx := candidate.Transactions[0].(transaction.Transaction)
+	tx.Signature = []byte("invalid-signature")
+	candidate.Transactions[0] = tx
+	var err error
+	candidate.Header.TransactionsRoot, err = block.TransactionsRoot(candidate.Transactions); if err != nil { t.Fatal(err) }
+	payload, err := consensus.ValidateProducedBlock(ctx, candidate); if err != nil { t.Fatal(err) }
+	validatorID := candidate.Header.Proposer
+	validators, err := consensus.NewValidatorSet([][]byte{validatorID}); if err != nil { t.Fatal(err) }
+	power, err := consensus.NewVotingPowerSet([]consensus.ValidatorVotingPower{{ValidatorID: validatorID, Power: 1}}); if err != nil { t.Fatal(err) }
+	vote := consensus.Message{ProtocolVersion: devnet.ProtocolVersion, ChainID: devnet.ChainID, Epoch: 1, Height: 0, Round: 0, Sender: validatorID, Type: consensus.MessageTypeVote, Payload: payload[:]}
+	certificate, err := consensus.NewFinalityCertificate(ctx.State, validators, power, consensus.QuorumThreshold{Numerator: 1, Denominator: 1}, payload[:], []consensus.Message{vote}); if err != nil { t.Fatal(err) }
+	beforeHead, beforeHash, beforeRoot := n.Head, n.HeadHash, n.State.Root()
+	if err := n.CommitFinalizedBlock(ctx, candidate, certificate, validatorResolver, power, validatorResolver, senderResolver); err == nil { t.Fatal("expected transaction execution failure") }
+	if !reflect.DeepEqual(n.Head, beforeHead) || n.HeadHash != beforeHash || n.State.Root() != beforeRoot { t.Fatal("node mutated after transaction execution failure") }
+}
+
 func mustValidatorSet(t *testing.T, certificate consensus.FinalityCertificate) consensus.ValidatorSet {
 	t.Helper(); validators, err := consensus.NewValidatorSet([][]byte{certificate.Votes[0].Sender}); if err != nil { t.Fatal(err) }; return validators
 }
