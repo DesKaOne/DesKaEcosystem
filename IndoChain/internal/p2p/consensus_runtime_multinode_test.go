@@ -492,12 +492,12 @@ func finalizedHandoffFixture(t *testing.T) (*node.Node, block.Block, consensus.F
 	if err != nil {
 		t.Fatal(err)
 	}
-	rules := consensus.ValidationRules{
+	consensusRules := consensus.ValidationRules{
 		ProtocolVersion: state.ProtocolVersion, ChainID: state.ChainID,
 		RequireSender: true, RequireSignature: true,
 	}
 	runtime, err := consensus.NewValidatorRuntime(consensus.RuntimeConfig{
-		Rules: rules, State: state, Validators: validators, VotingPower: power,
+		Rules: consensusRules, State: state, Validators: validators, VotingPower: power,
 		Threshold: consensus.QuorumThreshold{Numerator: 1, Denominator: 1},
 		Proposer: consensus.RoundRobinProposer{},
 	})
