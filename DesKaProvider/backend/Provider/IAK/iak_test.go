@@ -44,29 +44,26 @@ func TestIAKWebhookSignature(t *testing.T){
 
 func TestIAKUnsupportedInquiry(t *testing.T){c,_:=New(config.IAKConfig{Username:"u",APIKey:"k"},http.DefaultClient);_,err:=c.Inquiry(context.Background(),provider.InquiryRequest{ProductCode:"foo",CustomerNo:"1"});if err!=provider.ErrUnsupportedOperation{t.Fatalf("err=%v",err)}}
 
+func newIAKJSONServer(body string) (*httptest.Server, *http.Client) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(body))
+	}))
+	return srv, srv.Client()
+}
 
 func TestIAKBalanceResponseValidation(t *testing.T) {
-	cases := []struct {
-		name string
-		body string
-		wantErr bool
-	}{
-		{name: "missing balance", body: `{"data":{}}`, wantErr: true},
-		{name: "invalid balance", body: `{"data":{"balance":"not-a-number"}}`, wantErr: true},
-		{name: "string balance", body: `{"data":{"balance":"123456"}}`, wantErr: false},
+	cases := []struct{name, body string; wantErr bool}{
+		{"missing balance", `{"data":{}}`, true},
+		{"invalid balance", `{"data":{"balance":"not-a-number"}}`, true},
+		{"string balance", `{"data":{"balance":"123456"}}`, false},
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write([]byte(testCase.body))
-			}))
+			srv, client := newIAKJSONServer(testCase.body)
 			defer srv.Close()
-			cfg := config.IAKConfig{
-				Username: "user", APIKey: "secret",
-				BalanceEndpoint: srv.URL,
-			}
-			c, err := New(cfg, srv.Client())
+			cfg := config.IAKConfig{Username:"user", APIKey:"secret", BalanceEndpoint:srv.URL}
+			c, err := New(cfg, client)
 			if err != nil { t.Fatal(err) }
 			balance, err := c.GetBalance(context.Background())
 			if testCase.wantErr && err == nil { t.Fatalf("expected error, balance=%d", balance) }
@@ -77,48 +74,41 @@ func TestIAKBalanceResponseValidation(t *testing.T) {
 
 func TestIAKImplementsProviderCapabilities(t *testing.T) {
 	c, err := New(config.IAKConfig{
-		Username: "user", APIKey: "secret",
-		PriceListEndpoint: "https://example.invalid/pricelist",
-		InquiryPLNEndpoint: "https://example.invalid/inquiry",
-		TopUpEndpoint: "https://example.invalid/top-up",
-		StatusEndpoint: "https://example.invalid/status",
-		BalanceEndpoint: "https://example.invalid/balance",
+		Username:"user", APIKey:"secret",
+		PriceListEndpoint:"https://example.invalid/pricelist",
+		InquiryPLNEndpoint:"https://example.invalid/inquiry",
+		TopUpEndpoint:"https://example.invalid/top-up",
+		StatusEndpoint:"https://example.invalid/status",
+		BalanceEndpoint:"https://example.invalid/balance",
 	}, http.DefaultClient)
 	if err != nil { t.Fatal(err) }
 	if _, ok := any(c).(provider.PPOBProvider); !ok { t.Fatal("IAK client must implement PPOBProvider") }
 	if _, ok := any(c).(provider.BalanceProvider); !ok { t.Fatal("IAK client must implement BalanceProvider") }
 }
 
-
 func TestIAKProductListRequiresPricelist(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r) {
-		_, _ = w.Write([]byte(`{"data":{"message":"FAILED","rc":"XX"}}`))
-	}))
+	srv, client := newIAKJSONServer(`{"data":{"message":"FAILED","rc":"XX"}}`)
 	defer srv.Close()
-	c, err := New(iakTestConfig(srv.URL), srv.Client())
+	c, err := New(iakTestConfig(srv.URL), client)
 	if err != nil { t.Fatal(err) }
 	_, err = c.GetProducts(context.Background(), provider.ProductRequest{})
 	if err == nil { t.Fatal("expected malformed product-list response error") }
 }
 
 func TestIAKInquiryRequiresStatus(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r) {
-		_, _ = w.Write([]byte(`{"data":{"message":"FAILED","rc":"XX"}}`))
-	}))
+	srv, client := newIAKJSONServer(`{"data":{"message":"FAILED","rc":"XX"}}`)
 	defer srv.Close()
-	c, err := New(iakTestConfig(srv.URL), srv.Client())
+	c, err := New(iakTestConfig(srv.URL), client)
 	if err != nil { t.Fatal(err) }
-	_, err = c.Inquiry(context.Background(), provider.InquiryRequest{ProductCode: "pln", CustomerNo: "12345678901"})
+	_, err = c.Inquiry(context.Background(), provider.InquiryRequest{ProductCode:"pln", CustomerNo:"12345678901"})
 	if err == nil { t.Fatal("expected missing inquiry status error") }
 }
 
 func TestIAKInquiryUnknownStatusIsRejected(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r) {
-		_, _ = w.Write([]byte(`{"data":{"status":"9","message":"UNKNOWN","rc":"XX"}}`))
-	}))
+	srv, client := newIAKJSONServer(`{"data":{"status":"9","message":"UNKNOWN","rc":"XX"}}`)
 	defer srv.Close()
-	c, err := New(iakTestConfig(srv.URL), srv.Client())
+	c, err := New(iakTestConfig(srv.URL), client)
 	if err != nil { t.Fatal(err) }
-	_, err = c.Inquiry(context.Background(), provider.InquiryRequest{ProductCode: "pln", CustomerNo: "12345678901"})
+	_, err = c.Inquiry(context.Background(), provider.InquiryRequest{ProductCode:"pln", CustomerNo:"12345678901"})
 	if err == nil { t.Fatal("expected unknown inquiry status error") }
 }
