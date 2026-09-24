@@ -190,3 +190,42 @@ func TestServicePurchaseRejectsReferenceConflict(t *testing.T) {
 	_, err = service.Purchase(context.Background(), PurchaseRequest{ProductCode: "pln20", CustomerNo: "08987654321", ReferenceID: "ref-conflict", Amount: 20000})
 	if !errors.Is(err, ErrReferenceConflict) { t.Fatalf("expected reference conflict, got %v", err) }
 }
+
+func TestServicePurchaseConcurrentDuplicatesSubmitOnce(t *testing.T) {
+	registry := provider.NewRegistry()
+	mock := Mock.New(Mock.Config{Products: []provider.Product{{Code: "pln20", Name: "PLN 20"}}, ProviderCode: "00", PurchaseStatus: provider.StatusSuccess, Price: 20000})
+	if err := registry.Register("mock", mock); err != nil { t.Fatal(err) }
+	store := operational.NewMemoryStore()
+	if err := store.Put(operational.Snapshot{ProviderName: "mock", Balance: 100000, Health: operational.HealthHealthy}); err != nil { t.Fatal(err) }
+	router, err := New(registry, store, map[string]int{"mock": 1})
+	if err != nil { t.Fatal(err) }
+	service, err := NewService(router)
+	if err != nil { t.Fatal(err) }
+
+	req := PurchaseRequest{ProductCode: "pln20", CustomerNo: "08123456789", ReferenceID: "ref-concurrent", Amount: 20000}
+	const callers = 16
+	results := make(chan PurchaseExecution, callers)
+	errs := make(chan error, callers)
+	start := make(chan struct{})
+	for i := 0; i < callers; i++ {
+		go func() {
+			<-start
+			result, err := service.Purchase(context.Background(), req)
+			results <- result
+			errs <- err
+		}()
+	}
+	close(start)
+	for i := 0; i < callers; i++ {
+		if err := <-errs; err != nil { t.Fatal(err) }
+	}
+	var first PurchaseExecution
+	for i := 0; i < callers; i++ {
+		result := <-results
+		if i == 0 { first = result; continue }
+		if result != first { t.Fatalf("duplicate execution mismatch: %#v != %#v", result, first) }
+	}
+	if got := mock.PurchaseCount(req.ReferenceID); got != 1 {
+		t.Fatalf("expected exactly one provider purchase submission, got %d", got)
+	}
+}
