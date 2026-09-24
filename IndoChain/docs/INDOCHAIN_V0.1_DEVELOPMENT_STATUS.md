@@ -1036,3 +1036,9 @@ This milestone does not define proposer selection, voting power, quorum, vote ag
 **Next finalized-handoff voting-power boundary:** Added `TestConsensusRuntimeNegativeMissingVotingPower`. The test keeps the validator membership and finality certificate structurally valid but supplies an empty voting-power set, so the certificate vote sender has no voting power. The finalized handoff must reject it with `consensus.ErrVoteSenderNotInVotingPower` and leave the canonical genesis head/hash unchanged. Implementation commit: `0d2ccf56dded8db5a12dfb5be55dd39cca3c68d9`.
 
 **Next CI gate:** verify `0d2ccf56dded8db5a12dfb5be55dd39cca3c68d9` through the full IndoChain test/tidy/vet workflow before proceeding to the next finalized-handoff negative boundary.
+
+**Verified missing-voting-power CI:** IndoChain CI #967 (workflow run `35982129267`) completed successfully for `0d2ccf56dded8db5a12dfb5be55dd39cca3c68d9`; the full test/tidy/vet gate passed. The finalized handoff now explicitly rejects finality evidence whose vote sender has no supplied voting power with `consensus.ErrVoteSenderNotInVotingPower`.
+
+**Next finalized-handoff validator-membership boundary:** Added `TestConsensusRuntimeNegativeMissingValidatorMembership`. The test keeps the certificate and voting-power evidence intact but supplies an empty validator membership set, requiring `consensus.ErrValidatorNotFound` and preserving the canonical genesis head/hash. Implementation commit: `8ce3e1f4c754505f0e1acfe2625ac65d312b447e`.
+
+**Next CI gate:** verify `8ce3e1f4c754505f0e1acfe2625ac65d312b447e` through the full IndoChain test/tidy/vet workflow before proceeding to the next finalized-handoff negative boundary.
