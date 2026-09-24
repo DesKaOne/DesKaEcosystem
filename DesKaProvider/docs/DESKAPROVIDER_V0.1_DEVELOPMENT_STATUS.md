@@ -2220,3 +2220,44 @@ Provider lifecycle remains separate from:
 2. determine the durable persistence boundary for administrative provider lifecycle state before exposing an Admin API;
 3. then add routing eligibility tests for degraded/unhealthy and stale operational snapshots;
 4. only after those controls are stable, proceed toward the internal Admin API/control plane.
+
+
+### 66. Milestone Update — CI Failure Fix: Provider Admin Return Contract
+
+**Date:** 2026-09-25
+
+CI run #380 for milestone 65 was **RED** in both `test` and `race`.
+
+ROOT CAUSE:
+
+- `ProviderAdminService.SetLifecycle` returned `s.states.Get(name)` directly;
+- `ProviderStateStore.Get` returns `(ProviderState, bool)`, while the service method requires `(ProviderState, error)`;
+- this produced a compile error and prevented downstream packages from building.
+
+IMPACT:
+
+- provider lifecycle admin boundary could not compile;
+- `test` and `race` failed before executing the new administrative tests;
+- `vet` was skipped because the test job failed.
+
+FIX:
+
+- retrieve the updated state explicitly;
+- return the state with a nil error after successful persistence.
+
+VERIFICATION:
+
+- fix committed as `6ef962736d1d3fb311c74baa41e7ed9101bc2bc8`;
+- a fresh CI run is required;
+- development remains blocked until `test`, `vet`, and `race` are all **GREEN**.
+
+REMAINING RISK:
+
+- no durable provider lifecycle persistence has been added yet;
+- Admin API remains intentionally deferred until lifecycle persistence and authorization boundaries are defined.
+
+### Next Milestone
+
+1. verify fresh CI for the compile fix;
+2. only after GREEN, continue with durable lifecycle-state persistence design/implementation;
+3. then proceed toward internal Admin API integration.
