@@ -1210,3 +1210,22 @@ Commits:
 - timeout regression tests: `1c969c2576f9f8e00a2c8146d74d94f8cb69c000`
 
 CI gate verified green: IndoChain CI #1078 (run `36065754434`) completed successfully for timeout regression-test commit `1c969c2576f9f8e00a2c8146d74d94f8cb69c000`.
+
+### 4.25 Consensus Signed Timeout Message Boundary
+
+A signed timeout-message boundary is now implemented in `IndoChain/internal/consensus/timeout_message.go`.
+
+`MessageTypeTimeout` is added to the consensus message model. A timeout message binds the current protocol/chain/epoch/height/round context to a canonical 8-byte big-endian target round and is signed through the existing INDOCHAIN-CONSENSUS signing domain.
+
+`ValidateTimeoutMessage` composes structural message validation, exact round-state context validation, validator membership, strictly newer target-round validation, external validator public-key resolution, and Ed25519 signature verification. Resolver input and returned public-key material are defensively copied at the authority boundary.
+
+`NewTimeoutCertificateFromMessages` authenticates each timeout message, requires every message to target the same newer round, clones sender identifiers, and delegates quorum/canonical-order enforcement to the existing `TimeoutCertificate` boundary. Failed validation does not advance `RoundState` or mutate the supplied message set.
+
+Regression tests cover successful signed timeout evidence, tampered payload/signature rejection, mismatched target rounds, and stale target-round rejection.
+
+Commits:
+- timeout message type: `c03674a8531db480ca3177f85000a102986fe47a`
+- signed timeout boundary: `bc0003f57f3919ac3c5a8a17a92da703bef9b6a3`
+- signed timeout regression tests: `eb3e4b9a3df23aff8ec68878a01712394c9b356e`
+
+CI gate for this milestone must be verified against the latest timeout-message test commit before this status is considered complete.
