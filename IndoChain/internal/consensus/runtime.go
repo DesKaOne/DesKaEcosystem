@@ -136,8 +136,16 @@ func (r *ValidatorRuntime) AcceptBlockProposal(proposal BlockProposal) error {
 	if !bytes.Equal(proposal.Candidate.Header.Proposer, expected) {
 		return fmt.Errorf("%w: expected %q got %q", ErrUnexpectedProposer, expected, proposal.Candidate.Header.Proposer)
 	}
+	expectedPayload, err := ValidateProducedBlock(BlockProductionContext{
+		State:        r.state,
+		PreviousHash: proposal.Candidate.Header.PreviousHash,
+		Proposer:     proposal.Candidate.Header.Proposer,
+	}, proposal.Candidate)
+	if err != nil {
+		return err
+	}
 	payload := proposal.MessagePayload()
-	if !proposal.SamePayload(payload) {
+	if !proposal.SamePayload(expectedPayload[:]) || !bytes.Equal(payload, expectedPayload[:]) {
 		return ErrInvalidConsensusRuntime
 	}
 	return r.AcceptProposal(Message{
