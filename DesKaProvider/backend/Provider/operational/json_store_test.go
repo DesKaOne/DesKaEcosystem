@@ -63,11 +63,11 @@ func TestJSONFileStoreDoesNotMutateMemoryWhenPersistenceFails(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	store, err := NewJSONFileStore(filepath.Join(blocked, "snapshots.json"))
-	if err != nil {
-		t.Fatal(err)
+	store := &JSONFileStore{
+		path: filepath.Join(blocked, "snapshots.json"),
+		snapshots: make(map[string]Snapshot),
 	}
-	err = store.Put(Snapshot{ProviderName: "mock", Balance: 1000, Currency: "IDR"})
+	err := store.Put(Snapshot{ProviderName: "mock", Balance: 1000, Currency: "IDR"})
 	if err == nil {
 		t.Fatal("expected persistence failure")
 	}
