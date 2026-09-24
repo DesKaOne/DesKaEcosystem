@@ -1024,3 +1024,9 @@ This milestone does not define proposer selection, voting power, quorum, vote ag
 **CI failure and root cause:** IndoChain CI #955 (workflow run `35981322831`) for `e7c955a9a3e4a57562b784f767f1efc991c5feab` failed during compilation of `internal/p2p/consensus_runtime_multinode_test.go`. The log exposed two scope issues: the finalized-handoff test used `power` without declaring it locally, producing `undefined: power` at lines 215, 226, 234, and 344; the quorum-negative test still used `power, err :=` after `power` was already a function parameter and `err` had been declared, producing `no new variables on left side of :=` at line 765. The correction in `374118ffd82511101f563f9a31db065d82fa7c0a` declares the handoff fixture's voting-power variable locally and reuses the existing `power, err` variables in the quorum-negative test.
 
 **Next CI gate:** verify `374118ffd82511101f563f9a31db065d82fa7c0a` through the full IndoChain test/tidy/vet workflow before proceeding to the next finalized-handoff negative boundary.
+
+**Verified CI recovery:** IndoChain CI #959 (workflow run `35981696453`) completed successfully for `374118ffd82511101f563f9a31db065d82fa7c0a`; the full test/tidy/vet gate passed. The finalized-handoff quorum fixture scope issue is therefore resolved.
+
+**Next finalized-handoff negative boundary:** Added `TestConsensusRuntimeNegativeDuplicateFinalityVote`. The test keeps the certificate payload/context valid but duplicates the same validator vote, requiring `consensus.ErrDuplicateVote` and preserving the canonical genesis head/hash. Implementation commit: `e5283b45951305a5460fcc472fa56d36406a693a`.
+
+**Next CI gate:** verify `e5283b45951305a5460fcc472fa56d36406a693a` through the full IndoChain test/tidy/vet workflow before proceeding to the next finalized-handoff negative boundary.
