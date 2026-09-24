@@ -973,6 +973,12 @@ This remains development-only and does not introduce production BFT timing, roun
 
 **Next CI gate:** verify `7b2ad926d638c1c7f2bee66842bab601fad90b1d` through the full IndoChain test/tidy/vet workflow before proceeding to the next finalized-handoff negative boundary.
 
+**Verified CI recovery:** IndoChain CI #927 (workflow run `35979759960`) completed successfully for `7b2ad926d638c1c7f2bee66842bab601fad90b1d`; test, tidy, and vet all passed.
+
+**Next finalized-handoff protocol boundary:** Extended `TestConsensusRuntimeNegativeCrossHeightVoteContextMismatch` to restore the completed certificate context and independently mutate the certificate quorum threshold to an invalid `2/1` ratio. `Node.CommitFinalizedBlock` must reject the certificate with `consensus.ErrInvalidQuorumThreshold`, and the canonical height-1 head/hash must remain unchanged. Implementation commit: `a3ec645018431cf444bfafb1f0e519edaf04479d`.
+
+**Next CI gate:** verify `a3ec645018431cf444bfafb1f0e519edaf04479d` through the full IndoChain test/tidy/vet workflow.
+
 ### 4.38 Consensus Transport → Runtime → Finalized Node Handoff Boundary
 
 The multi-node consensus integration now crosses the full development handoff from explicit P2P transport into `ValidatorRuntime` finalization and then into the canonical node commit boundary.
