@@ -4092,3 +4092,42 @@ Milestone #99: runtime ownership transfer and initialization/shutdown lifecycle 
 ### Next Milestone
 
 **#112 — Runtime Lifecycle Restart & Post-Shutdown Re-entry Review**: verify restart behavior after a completed `Run()`/shutdown cycle, including worker state reset, database ownership state, and repeated service execution without stale lifecycle state.
+
+
+### Milestone #112 — Runtime Lifecycle Restart & Post-Shutdown Re-entry Review
+
+**Date:** 2026-09-26
+
+### Completed
+
+- verified that the same `Service` instance can restart its owned balance worker after a completed `Run()` shutdown without leaving the worker lifecycle in a stale running state;
+- added deterministic regression coverage that executes the same `Service` instance through two complete Run/shutdown cycles;
+- verified the lifecycle resets to a stopped state after each completed shutdown and accepts the next worker start;
+- preserved the database ownership boundary: a completed runtime shutdown closes owned database resources once, and a later worker restart does not reopen or reuse a closed database ownership handle;
+- retained the explicit-close protection introduced in #111 and the duplicate-run guard introduced in #108;
+- no provider retry, failover, resubmission, transaction-state, audit-authority, customer-ledger, treasury, or automatic provider-funding behavior was changed.
+
+### Verification
+
+- implementation HEAD: `05ae537bd94d4a755b9d417ddd516c88489ba21f`;
+- CI #857 / run `36203053997`: **GREEN** for exact HEAD `05ae537bd94d4a755b9d417ddd516c88489ba21f`;
+- CI jobs `test`: success;
+- CI jobs `race`: success.
+
+### Safety Boundary
+
+- worker lifecycle restart is an infrastructure orchestration concern only;
+- restarting a worker lifecycle does not imply reopening database ownership or changing transaction authority;
+- closed runtime-owned database handles remain closed and are not silently recreated by `Run()` re-entry;
+- transaction persistence remains the authoritative transaction state and audit persistence remains operational evidence;
+- lifecycle restart cannot authorize provider retry, failover, resubmission, ledger mutation, treasury movement, or provider funding.
+
+### Known Limitations
+
+- restart coverage verifies the balance worker lifecycle; a complete process-level runtime restart still constructs a new `Service` and acquires fresh ownership as part of initialization;
+- `databaseCloser.Close()` remains non-context-aware;
+- process termination, driver-specific failure timing, and network partitions remain outside the deterministic restart test boundary.
+
+### Next Milestone
+
+**#113 — Runtime Construction/Ownership Freshness Review**: verify that a newly constructed runtime instance acquires fresh database ownership and lifecycle state after a prior instance has completed shutdown, without reusing closed handles or stale worker state.
