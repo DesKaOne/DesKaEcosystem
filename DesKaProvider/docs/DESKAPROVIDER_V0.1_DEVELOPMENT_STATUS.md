@@ -2503,3 +2503,46 @@ Next milestone:
 1. verify and stabilize the transaction execution boundary against the routing eligibility gate;
 2. review purchase idempotency persistence semantics before any retry/failover behavior;
 3. preserve provider-neutral transaction correlation and do not mutate financial ledger state from provider execution results.
+
+
+
+### 74. Milestone Update — Pre-Submission Transaction Idempotency Boundary
+
+**Date:** 2026-09-25
+
+CI gate:
+
+- CI #434 for commit `342f5daf43b14c2f1e00623726261e64a0af52d7` is **GREEN**;
+- `test` and `race` completed successfully;
+- `vet` completed successfully as part of the test job.
+
+Completed:
+
+- transaction execution now selects and validates the provider before external submission;
+- the selected provider plus a neutral `pending` transaction state is persisted before calling the provider;
+- if pending-state persistence fails, the external provider is not called;
+- if provider result persistence fails after submission, the durable pending state is retained;
+- provider errors no longer erase the durable pending boundary;
+- restart recovery can therefore return the persisted pending transaction instead of silently resubmitting it;
+- added regression tests for pre-submit persistence failure and result-persistence failure;
+- existing concurrent duplicate protection and provider no-fallback behavior remain covered.
+
+Safety boundary:
+
+- this milestone strengthens idempotency and crash consistency only;
+- no retry/failover was introduced;
+- no automatic resubmission is performed after provider errors or restart;
+- financial ledger mutation remains outside provider execution;
+- reconciliation remains the explicit path for resolving durable pending transactions.
+
+Known limitation:
+
+- the current transaction store is still an interim in-memory/JSON persistence implementation;
+- atomic database uniqueness/locking semantics are still required before multi-process production deployment;
+- a pending state means provider submission outcome may remain unknown until webhook/status reconciliation.
+
+Next milestone:
+
+1. harden restart/reconciliation behavior for durable pending transactions;
+2. add explicit persistence semantics for transaction state transitions and concurrent process safety;
+3. only after those boundaries are stable evaluate controlled retry/failover policies.
