@@ -217,7 +217,7 @@ func (s *Service) Run(ctx context.Context) error {
 
 	catalogCtx, catalogStartErr := s.catalogLifecycle.Start(ctx)
 	if catalogStartErr != nil {
-		workerErr := s.balanceLifecycle.Shutdown(context.Background())
+		workerErr := s.rollbackStartedLifecycles(workerShutdownCtx)
 		return shutdown(catalogStartErr, workerErr)
 	}
 	_ = s.catalogSync.SyncAll(catalogCtx)
@@ -239,6 +239,16 @@ func (s *Service) PurchaseService()*routing.Service{if s==nil{return nil};return
 func (s *Service) Close() error { if s==nil { return nil }; return s.closeOwnedDatabases() }
 
 func (s *Service) closeOwnedDatabases() error { if s==nil || s.databaseOwnership==nil { return nil }; return s.databaseOwnership.closeOwned() }
+
+func (s *Service) rollbackStartedLifecycles(ctx context.Context) error {
+	if s == nil { return nil }
+	var err error
+	if s.balanceLifecycle != nil {
+		err = s.balanceLifecycle.Shutdown(ctx)
+	}
+	s.catalogLifecycle.Shutdown()
+	return err
+}
 
 func checkRuntimeInitializationContext(ctx context.Context) error {
 	if ctx == nil { return errors.New("initialization context is required") }
