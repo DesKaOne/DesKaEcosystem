@@ -24,7 +24,7 @@ func TestPostgresTransactionAuditStoreValidation(t *testing.T) {
 }
 
 func TestPostgresTransactionAuditStoreAppendContextPropagatesCancellation(t *testing.T) {
-	store, err := NewPostgresTransactionAuditStore(&fakeDB{})
+	store, err := NewPostgresTransactionAuditStore(&postgresStoreDBStub{})
 	if err != nil {
 		t.Fatal(err)
 	}
