@@ -89,7 +89,7 @@ func (o *runtimeDatabaseOwnership) closeOwned() error {
 	return o.closeErr
 }
 
-type Service struct{syncService *operational.SyncService;purchaseService *routing.Service;catalogSync *catalog.SyncService;providerState *operational.ProviderStateStore;databaseOwnership *runtimeDatabaseOwnership;interval,catalogInterval time.Duration}
+type Service{syncService *operational.SyncService;purchaseService *routing.Service;catalogSync *catalog.SyncService;providerState *operational.ProviderStateStore;databaseOwnership *runtimeDatabaseOwnership;balanceLifecycle *operational.SyncWorkerLifecycle;interval,catalogInterval time.Duration}
 
 func (s *Service) runBalanceSync(ctx context.Context, done chan<- error) {
 	if s == nil || s.syncService == nil {
@@ -146,40 +146,47 @@ stateStore,e:=operational.NewPersistentProviderStateStore(statePersistence);if e
 for _, name:=range registry.Names(){state,ok:=stateStore.Get(name);if !ok{state,e=operational.NewProviderState(name);if e!=nil{return nil,e}};state.Capabilities=[]operational.Capability{operational.CapabilityPPOB,operational.CapabilityBalance,operational.CapabilityWebhook};if e=stateStore.Put(state);e!=nil{return nil,e}} // persist provider lifecycle/capability state before router construction
 router,e:=routing.NewWithCatalogAndStateAndOperationalMaxAge(registry,store,nil,catalogStore,stateStore,cfg.OperationalSnapshotMaxAge);if e!=nil{return nil,e}
 purchaseService,e:=routing.NewServiceWithStoreContextAndAudit(ctx,router,transactionStore,auditStore);if e!=nil{return nil,e}
-service=&Service{syncService:syncService,purchaseService:purchaseService,catalogSync:catalogSync,providerState:stateStore,databaseOwnership:ownership,interval:cfg.SyncInterval,catalogInterval:cfg.CatalogSyncInterval}
+ balanceLifecycle,e:=operational.NewSyncWorkerLifecycle(syncService,cfg.SyncInterval);if e!=nil{return nil,e}
+service=&Service{syncService:syncService,purchaseService:purchaseService,catalogSync:catalogSync,providerState:stateStore,databaseOwnership:ownership,balanceLifecycle:balanceLifecycle,interval:cfg.SyncInterval,catalogInterval:cfg.CatalogSyncInterval}
 ownership.transferToService()
 return service,nil
 }
 
-func New(syncService *operational.SyncService,interval time.Duration)(*Service,error){if syncService==nil{return nil,errors.New("sync service is required")};if interval<=0{return nil,errors.New("sync interval must be greater than zero")};return &Service{syncService:syncService,interval:interval},nil}
+func New(syncService *operational.SyncService,interval time.Duration)(*Service,error){if syncService==nil{return nil,errors.New("sync service is required")};if interval<=0{return nil,errors.New("sync interval must be greater than zero")};balanceLifecycle,err:=operational.NewSyncWorkerLifecycle(syncService,interval);if err!=nil{return nil,err};return &Service{syncService:syncService,balanceLifecycle:balanceLifecycle,interval:interval},nil}
 func (s *Service) Run(ctx context.Context) error {
 	if ctx == nil { return errors.New("context is required") }
 	if s.catalogSync == nil {
+		if s.balanceLifecycle != nil {
+			if err := s.balanceLifecycle.Start(ctx); err != nil { return combineRuntimeShutdownError(err, s.Close()) }
+			shutdownCtx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			runErr := s.balanceLifecycle.Shutdown(shutdownCtx)
+			return combineRuntimeShutdownError(runErr, s.Close())
+		}
 		runErr := s.syncService.Run(ctx, s.interval)
 		return combineRuntimeShutdownError(runErr, s.Close())
 	}
 
 	_ = s.catalogSync.SyncAll(ctx)
+	workerShutdownCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if s.balanceLifecycle != nil {
+		if err := s.balanceLifecycle.Start(ctx); err != nil { return combineRuntimeShutdownError(err, s.Close()) }
+	}
 	ticker := time.NewTicker(s.catalogInterval)
 	defer ticker.Stop()
 
-	workerDone := make(chan error, 1)
-	go s.runBalanceSync(ctx, workerDone)
-
-	var shutdownErr error
 	for {
 		select {
-		case err := <-workerDone:
-			shutdownErr = err
-			return combineRuntimeShutdownError(shutdownErr, s.Close())
 		case <-ctx.Done():
-			workerErr := <-workerDone
+			workerErr := s.balanceLifecycle.Shutdown(workerShutdownCtx)
 			return combineRuntimeShutdownError(combineRuntimeShutdownError(ctx.Err(), workerErr), s.Close())
 		case <-ticker.C:
 			_ = s.catalogSync.SyncAll(ctx)
 		}
 	}
 }
+
 func (s *Service) PurchaseService()*routing.Service{if s==nil{return nil};return s.purchaseService}
 func (s *Service) Close() error { if s==nil { return nil }; return s.closeOwnedDatabases() }
 

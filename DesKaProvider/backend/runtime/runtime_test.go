@@ -501,6 +501,38 @@ func TestServiceClosePreservesCloseErrorAcrossRepeatedCalls(t *testing.T) {
 	}
 }
 
+func TestServiceRunUsesOwnedBalanceWorkerLifecycle(t *testing.T) {
+	mockProvider := &balanceMock{Provider: mock.New(mock.Config{Products: []provider.Product{{Code: "xld10", Name: "Test"}}}), balance: 1600000}
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", mockProvider); err != nil { t.Fatal(err) }
+	store := operational.NewMemoryStore()
+	syncService, err := operational.NewSyncService(registry, store, "IDR", 3)
+	if err != nil { t.Fatal(err) }
+	service, err := New(syncService, time.Hour)
+	if err != nil { t.Fatal(err) }
+	if service.balanceLifecycle == nil { t.Fatal("expected runtime service to own balance worker lifecycle") }
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func(){ done <- service.Run(ctx) }()
+	deadline := time.After(time.Second)
+	for {
+		if snapshot, ok := store.Get("mock"); ok {
+			if snapshot.Balance != 1600000 || snapshot.Health != operational.HealthHealthy { t.Fatalf("unexpected startup snapshot: %#v", snapshot) }
+			break
+		}
+		select { case <-deadline: t.Fatal("runtime balance worker did not start"); default: time.Sleep(time.Millisecond) }
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if err != context.Canceled { t.Fatalf("unexpected shutdown error: %v", err) }
+	case <-time.After(time.Second):
+		t.Fatal("runtime service did not shut down")
+	}
+	if err := service.balanceLifecycle.Shutdown(context.Background()); err != nil { t.Fatalf("repeated lifecycle shutdown failed: %v", err) }
+}
+
 func TestServiceRunPropagatesDatabaseCloseError(t *testing.T) {
 	mockProvider := &balanceMock{
 		Provider: mock.New(mock.Config{
