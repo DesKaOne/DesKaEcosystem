@@ -178,6 +178,11 @@ func New(syncService *operational.SyncService,interval time.Duration)(*Service,e
 func (s *Service) Run(ctx context.Context) error {
 	if ctx == nil { return errors.New("context is required") }
 
+	shutdown := func(primary, workerErr error) error {
+		s.catalogLifecycle.Shutdown()
+		return combineRuntimeShutdownError(combineRuntimeShutdownError(primary, workerErr), s.Close())
+	}
+
 	if s.balanceLifecycle == nil {
 		if s.catalogSync == nil {
 			runErr := s.syncService.Run(ctx, s.interval)
@@ -205,15 +210,14 @@ func (s *Service) Run(ctx context.Context) error {
 	if s.catalogSync == nil {
 		<-ctx.Done()
 		workerErr := s.balanceLifecycle.Shutdown(workerShutdownCtx)
-		return combineRuntimeShutdownError(combineRuntimeShutdownError(ctx.Err(), workerErr), s.Close())
+		return shutdown(ctx.Err(), workerErr)
 	}
 
 	catalogCtx, catalogStartErr := s.catalogLifecycle.Start(ctx)
 	if catalogStartErr != nil {
 		workerErr := s.balanceLifecycle.Shutdown(context.Background())
-		return combineRuntimeShutdownError(combineRuntimeShutdownError(workerErr, catalogStartErr), s.Close())
+		return shutdown(catalogStartErr, workerErr)
 	}
-	defer s.catalogLifecycle.Shutdown()
 	_ = s.catalogSync.SyncAll(catalogCtx)
 	ticker := time.NewTicker(s.catalogInterval)
 	defer ticker.Stop()
@@ -222,7 +226,7 @@ func (s *Service) Run(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			workerErr := s.balanceLifecycle.Shutdown(workerShutdownCtx)
-			return combineRuntimeShutdownError(combineRuntimeShutdownError(ctx.Err(), workerErr), s.Close())
+			return shutdown(ctx.Err(), workerErr)
 		case <-ticker.C:
 			_ = s.catalogSync.SyncAll(catalogCtx)
 		}
