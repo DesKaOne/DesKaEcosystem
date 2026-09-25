@@ -264,3 +264,61 @@ func databaseCloserIsNil(value databaseCloser) bool {
 		return false
 	}
 }
+
+func openAuditStore(ctx context.Context, cfg Config, transactionDB *sql.DB) (routing.TransactionAuditStore, *sql.DB, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
+	if cfg.AuditStoreDriver != "postgres" {
+		store := routing.NewMemoryTransactionAuditStore()
+		return store, nil, nil
+	}
+	if transactionDB != nil {
+		store, err := routing.NewPostgresTransactionAuditStore(transactionDB)
+		if err != nil {
+			return nil, nil, err
+		}
+		return store, nil, nil
+	}
+	db, err := sql.Open("pgx", cfg.PostgresDSN)
+	if err != nil {
+		return nil, nil, fmt.Errorf("open PostgreSQL audit store: %w", err)
+	}
+	if err := db.PingContext(ctx); err != nil {
+		_ = db.Close()
+		return nil, nil, fmt.Errorf("ping PostgreSQL audit store: %w", err)
+	}
+	store, err := routing.NewPostgresTransactionAuditStore(db)
+	if err != nil {
+		_ = db.Close()
+		return nil, nil, err
+	}
+	return store, db, nil
+}
+
+func openTransactionStore(ctx context.Context, cfg Config) (routing.TransactionStore, *sql.DB, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
+	if cfg.TransactionStoreDriver == "postgres" {
+		db, err := sql.Open("pgx", cfg.PostgresDSN)
+		if err != nil {
+			return nil, nil, fmt.Errorf("open PostgreSQL transaction store: %w", err)
+		}
+		if err := db.PingContext(ctx); err != nil {
+			_ = db.Close()
+			return nil, nil, fmt.Errorf("ping PostgreSQL transaction store: %w", err)
+		}
+		store, err := routing.NewPostgresTransactionStore(db)
+		if err != nil {
+			_ = db.Close()
+			return nil, nil, err
+		}
+		return store, db, nil
+	}
+	store, err := routing.NewJSONFileTransactionStore(cfg.TransactionStorePath)
+	if err != nil {
+		return nil, nil, err
+	}
+	return store, nil, nil
+}
