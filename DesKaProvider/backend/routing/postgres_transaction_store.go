@@ -29,8 +29,8 @@ const postgresAllSQL = "SELECT reference_id, product_code, customer_no, amount, 
 const postgresInsertSQL = "INSERT INTO provider_transactions (reference_id, product_code, customer_no, amount, testing, provider_name, status, provider_code, message, serial_number, price, version) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)"
 const postgresTransitionSQL = "UPDATE provider_transactions SET status=$2, provider_code=$3, message=$4, serial_number=$5, price=$6, version=version+1, updated_at=CURRENT_TIMESTAMP WHERE reference_id=$1 AND version=$7 AND product_code=$8 AND customer_no=$9 AND provider_name=$10 AND status='pending'"
 
-func (s *PostgresTransactionStore) Get(ctx context.Context, referenceID string) (TransactionState, bool) {
- row := s.db.QueryRowContext(ctx, postgresGetSQL, referenceID)
+func (s *PostgresTransactionStore) Get(referenceID string) (TransactionState, bool) {
+ row := s.db.QueryRowContext(context.Background(), postgresGetSQL, referenceID)
  state, err := scanPostgresState(row)
  if errors.Is(err, sql.ErrNoRows) { return TransactionState{}, false }
  if err != nil { return TransactionState{}, false }
@@ -98,5 +98,5 @@ func scanPostgresState(s postgresScanner) (TransactionState, error) {
  var testing bool
  var createdAt, updatedAt any
  if err := s.Scan(&ref,&productCode,&customerNo,&amount,&testing,&providerName,&status,&providerCode,&message,&serial,&price,&version,&createdAt,&updatedAt); err != nil { return TransactionState{}, err }
- return TransactionState{Request: PurchaseRequest{ReferenceID:ref,ProductCode:productCode,CustomerNo:customerNo,Amount:amount,Testing:testing},Execution:PurchaseExecution{ProviderName:providerName,Result:provider.PurchaseResult{ReferenceID:ref,ProductCode:productCode,CustomerNo:customerNo,Status:status,ProviderCode:providerCode,Message:message,SerialNumber:serial,Price:price}}}, nil
+ return TransactionState{Request: PurchaseRequest{ReferenceID:ref,ProductCode:productCode,CustomerNo:customerNo,Amount:amount,Testing:testing},Execution:PurchaseExecution{ProviderName:providerName,Result:provider.PurchaseResult{ReferenceID:ref,ProductCode:productCode,CustomerNo:customerNo,Status:provider.TransactionStatus(status),ProviderCode:providerCode,Message:message,SerialNumber:serial,Price:price}}}, nil
 }
