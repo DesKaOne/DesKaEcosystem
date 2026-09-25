@@ -566,3 +566,68 @@ func TestServiceRunPropagatesDatabaseCloseError(t *testing.T) {
 		t.Fatalf("expected context cancellation and close error, got %v", err)
 	}
 }
+
+
+func TestCatalogWorkerLifecycleStartAndShutdownAreDeterministic(t *testing.T) {
+	lifecycle := newCatalogWorkerLifecycle()
+	ctx, err := lifecycle.Start(context.Background())
+	if err != nil { t.Fatal(err) }
+	if ctx == nil { t.Fatal("expected derived catalog context") }
+	if _, err := lifecycle.Start(context.Background()); err == nil { t.Fatal("expected duplicate catalog worker start to fail") }
+	lifecycle.Shutdown()
+	lifecycle.Shutdown()
+	ctx2, err := lifecycle.Start(context.Background())
+	if err != nil { t.Fatal(err) }
+	select {
+	case <-ctx2.Done():
+		t.Fatal("new catalog lifecycle context canceled before shutdown")
+	default:
+	}
+	lifecycle.Shutdown()
+	select {
+	case <-ctx2.Done():
+	default:
+		t.Fatal("expected shutdown to cancel catalog lifecycle context")
+	}
+}
+
+func TestServiceRunUsesOwnedCatalogWorkerLifecycle(t *testing.T) {
+	mockProvider := mock.New(mock.Config{Products: []provider.Product{{Code: "xld10", Name: "Test"}}})
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", mockProvider); err != nil { t.Fatal(err) }
+	catalogStore := catalog.NewMemoryStore()
+	catalogSync, err := catalog.NewSyncService(registry, catalogStore)
+	if err != nil { t.Fatal(err) }
+	operationalStore := operational.NewMemoryStore()
+	syncService, err := operational.NewSyncService(registry, operationalStore, "IDR", 3)
+	if err != nil { t.Fatal(err) }
+	service, err := New(syncService, time.Hour)
+	if err != nil { t.Fatal(err) }
+	service.catalogSync = catalogSync
+	service.catalogLifecycle = newCatalogWorkerLifecycle()
+	service.catalogInterval = time.Hour
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func(){ done <- service.Run(ctx) }()
+	deadline := time.After(time.Second)
+	for {
+		if snapshot, ok := catalogStore.Get("mock"); ok {
+			if len(snapshot.Products) != 1 || snapshot.Products[0].Code != "xld10" { t.Fatalf("unexpected catalog snapshot: %#v", snapshot) }
+			break
+		}
+		select { case <-deadline: t.Fatal("runtime catalog worker did not perform initial sync"); default: time.Sleep(time.Millisecond) }
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if err != context.Canceled { t.Fatalf("unexpected shutdown error: %v", err) }
+	case <-time.After(time.Second):
+		t.Fatal("runtime catalog lifecycle did not shut down")
+	}
+	select {
+	case <-ctx.Done():
+	default:
+		t.Fatal("expected service context to be canceled")
+	}
+}
