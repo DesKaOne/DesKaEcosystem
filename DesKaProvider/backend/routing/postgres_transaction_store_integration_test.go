@@ -1,0 +1,208 @@
+package routing
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	_ "github.com/jackc/pgx/v5/stdlib"
+
+	provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
+)
+
+func postgresIntegrationDB(t *testing.T) *sql.DB {
+	t.Helper()
+
+	dsn := os.Getenv("DESKAPROVIDER_POSTGRES_DSN")
+	if dsn == "" {
+		t.Skip("DESKAPROVIDER_POSTGRES_DSN is not configured")
+	}
+
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		t.Fatalf("open postgres: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := db.PingContext(ctx); err != nil {
+		t.Fatalf("ping postgres: %v", err)
+	}
+
+	return db
+}
+
+func postgresMigrationSQL(t *testing.T) string {
+	t.Helper()
+
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve integration test path")
+	}
+	path := filepath.Join(filepath.Dir(file), "..", "migrations", "001_provider_transactions.sql")
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read postgres migration: %v", err)
+	}
+	return string(content)
+}
+
+func applyPostgresMigration(t *testing.T, db *sql.DB) {
+	t.Helper()
+
+	sqlText := postgresMigrationSQL(t)
+	var statements []string
+	for _, raw := range strings.Split(sqlText, ";") {
+		lines := strings.Split(raw, "
+")
+		var body []string
+		for _, line := range lines {
+			if idx := strings.Index(line, "--"); idx >= 0 {
+				line = line[:idx]
+			}
+			body = append(body, line)
+		}
+		statement := strings.TrimSpace(strings.Join(body, "
+"))
+		if statement != "" {
+			statements = append(statements, statement)
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	for _, statement := range statements {
+		if _, err := db.ExecContext(ctx, statement); err != nil {
+			t.Fatalf("apply postgres migration statement %q: %v", statement, err)
+		}
+	}
+}
+
+func postgresIntegrationReference() string {
+	return fmt.Sprintf("pg-it-%d", time.Now().UnixNano())
+}
+
+func TestPostgresTransactionStoreIntegration(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	applyPostgresMigration(t, db)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if _, err := db.ExecContext(ctx, "TRUNCATE provider_transactions"); err != nil {
+		t.Fatalf("truncate provider transactions: %v", err)
+	}
+
+	store, err := NewPostgresTransactionStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pending := postgresPendingState()
+	pending.Request.ReferenceID = postgresIntegrationReference()
+	pending.Execution.Result.ReferenceID = pending.Request.ReferenceID
+	if err := store.Put(pending); err != nil {
+		t.Fatalf("insert pending transaction: %v", err)
+	}
+
+	current, ok := store.Get(pending.Request.ReferenceID)
+	if !ok {
+		t.Fatal("pending transaction was not persisted")
+	}
+	if current.Request != pending.Request || current.Execution.ProviderName != pending.Execution.ProviderName {
+		t.Fatalf("persisted identity mismatch: %#v", current)
+	}
+
+	success := current
+	success.Execution.Result.Status = provider.StatusSuccess
+	success.Execution.Result.ProviderCode = "00"
+	success.Execution.Result.Message = "ok"
+	success.Execution.Result.Price = 20000
+
+	const workers = 2
+	results := make(chan error, workers)
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			results <- store.PutIfCurrent(pending.Request.ReferenceID, pending, success)
+		}()
+	}
+	wg.Wait()
+	close(results)
+
+	var successCount, conflictCount int
+	for err := range results {
+		switch {
+		case err == nil:
+			successCount++
+		case err == ErrTransactionStateConflict:
+			conflictCount++
+		default:
+			t.Fatalf("unexpected concurrent transition error: %v", err)
+		}
+	}
+	if successCount != 1 || conflictCount != 1 {
+		t.Fatalf("expected one success and one conflict, got success=%d conflict=%d", successCount, conflictCount)
+	}
+
+	terminal, ok := store.Get(pending.Request.ReferenceID)
+	if !ok {
+		t.Fatal("terminal transaction disappeared after concurrent transition")
+	}
+	if terminal.Execution.Result.Status != provider.StatusSuccess {
+		t.Fatalf("expected success after concurrent transition, got %s", terminal.Execution.Result.Status)
+	}
+
+	_ = db.Close()
+	db, err = sql.Open("pgx", os.Getenv("DESKAPROVIDER_POSTGRES_DSN"))
+	if err != nil {
+		t.Fatalf("reopen postgres: %v", err)
+	}
+	defer db.Close()
+	if err := db.PingContext(ctx); err != nil {
+		t.Fatalf("ping reopened postgres: %v", err)
+	}
+
+	restarted, err := NewPostgresTransactionStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recovered, ok := restarted.Get(pending.Request.ReferenceID)
+	if !ok {
+		t.Fatal("terminal transaction was not recoverable after reconnect")
+	}
+	if recovered.Execution.Result.Status != provider.StatusSuccess {
+		t.Fatalf("expected recovered success, got %s", recovered.Execution.Result.Status)
+	}
+
+	if err := restarted.PutIfCurrent(pending.Request.ReferenceID, pending, success); err != nil && err != ErrTransactionStateConflict {
+		t.Fatalf("unexpected stale transition result after restart: %v", err)
+	}
+}
+
+func TestPostgresMigrationVerification(t *testing.T) {
+	sqlText := postgresMigrationSQL(t)
+	required := []string{
+		"CREATE TABLE IF NOT EXISTS provider_transactions",
+		"reference_id TEXT PRIMARY KEY",
+		"status TEXT NOT NULL CHECK (status IN ('pending', 'success', 'failed'))",
+		"version BIGINT NOT NULL DEFAULT 1",
+		"AND version = $7",
+		"AND status = 'pending'",
+		"RETURNING *",
+	}
+	for _, fragment := range required {
+		if !strings.Contains(sqlText, fragment) {
+			t.Fatalf("migration missing required fragment %q", fragment)
+		}
+	}
+}
