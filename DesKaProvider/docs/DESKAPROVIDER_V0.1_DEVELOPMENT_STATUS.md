@@ -3272,3 +3272,54 @@ Next milestone:
 1. wire transaction lifecycle, webhook, reconciliation, and terminal-conflict events into the audit boundary;
 2. verify audit failures cannot trigger provider resubmission and do not mutate financial state;
 3. add PostgreSQL audit adapter integration only after the event semantics are stable.
+
+
+### 91. Milestone Update — Transaction Lifecycle Audit Event Wiring
+
+**Date:** 2026-09-26
+
+Completed:
+
+- wired the provider-neutral TransactionAuditStore into Service lifecycle paths;
+- added audit observations for durable purchase pending state, provider result, provider error/pending recovery, result-persistence failure, webhook pending/terminal transitions, reconciliation transitions, and terminal conflict observations;
+- added additive service constructors for explicit audit-store injection while preserving existing constructors;
+- kept MemoryTransactionAuditStore as the default deterministic/local audit boundary;
+- verified audit failure behavior on the purchase path: durable terminal transaction state remains unchanged and provider PurchaseCount remains exactly one;
+- verified repeated Purchase after a terminal audit failure returns the existing durable result/error without resubmitting the provider;
+- verified lifecycle audit events and terminal webhook conflict audit events;
+- verified reconciliation transition audit event and no-resubmission behavior.
+
+Safety boundary:
+
+- audit records are operational history only, never financial ledger postings;
+- audit persistence cannot authorize provider retry, failover, or resubmission;
+- audit failure cannot revert a durable terminal transaction to pending;
+- no customer-ledger mutation was introduced;
+- no provider balance or treasury mutation was introduced;
+- no automatic provider funding was introduced;
+- provider-specific credentials and protocol details remain outside the audit boundary.
+
+Verification:
+
+- CI run #646 / 36170321352 initially **FAILED** because the new reconciliation test used the wrong Mock.SetTransactionStatus signature;
+- CI run #648 / 36170498148 initially **FAILED** because the test referenced a non-existent provider.TransactionStatusSuccess constant;
+- both failures were test-only issues; production transaction/audit behavior was not changed by those fixes;
+- CI run #650 / 36170688487: **GREEN**;
+- test: PASS;
+- vet: PASS;
+- race: PASS;
+- PostgreSQL integration service active and the full suite passed.
+
+Known limitations:
+
+- audit persistence is still in-memory by default;
+- PostgreSQL audit adapter and production runtime selection are not implemented yet;
+- audit failure behavior is explicitly tested on the purchase path; webhook/reconciliation paths implement the same commit-before-audit safety ordering but require dedicated failure-injection coverage in a later hardening step;
+- audit history remains separate from the financial ledger and cannot be used as financial source of truth.
+
+Next milestone:
+
+1. implement the PostgreSQL TransactionAuditStore adapter against provider_transaction_audit;
+2. add PostgreSQL integration coverage for append-only audit durability and restart/reconnect reads;
+3. add failure-injection coverage for webhook/reconciliation audit writes before selecting PostgreSQL audit persistence at runtime;
+4. keep retry/failover/resubmission deferred.
