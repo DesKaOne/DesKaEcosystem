@@ -140,7 +140,7 @@ func TestRuntimeDatabaseOwnershipSuccessPathSharedResourceClosesOnce(t *testing.
 	if err := ownership.closeOwned(); err != nil { t.Fatalf("shutdown close failed: %v", err) }
 	if shared.closeCount != 1 { t.Fatalf("expected shared resource to close once, got %d", shared.closeCount) }
 	if err := ownership.closeOwned(); err != nil { t.Fatalf("second shutdown close returned unexpected error: %v", err) }
-	if shared.closeCount != 1 { t.Fatalf("shared resource double-closed on repeated shutdown: %d", shared.closeCount) }
+	if shared.closeCount != 1 { t.Fatalf("repeated shutdown double-closed shared resource: %d", shared.closeCount) }
 }
 
 func TestRuntimeDatabaseOwnershipSuccessPathDedicatedAuditResource(t *testing.T) {
@@ -162,18 +162,12 @@ func TestServiceRunStopsOnContextCancellation(t *testing.T) {
 		balance: 1500000,
 	}
 	registry := provider.NewRegistry()
-	if err := registry.Register("mock", mockProvider); err != nil {
-		t.Fatal(err)
-	}
+	if err := registry.Register("mock", mockProvider); err != nil { t.Fatal(err) }
 	store := operational.NewMemoryStore()
 	syncService, err := operational.NewSyncService(registry, store, "IDR", 3)
-	if err != nil {
-		t.Fatal(err)
-	}
+	if err != nil { t.Fatal(err) }
 	service, err := New(syncService, time.Hour)
-	if err != nil {
-		t.Fatal(err)
-	}
+	if err != nil { t.Fatal(err) }
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -182,24 +176,18 @@ func TestServiceRunStopsOnContextCancellation(t *testing.T) {
 	deadline := time.After(2 * time.Second)
 	for {
 		if snapshot, ok := store.Get("mock"); ok {
-			if snapshot.Balance != 1500000 || snapshot.Health != operational.HealthHealthy {
-				t.Fatalf("unexpected initial snapshot: %#v", snapshot)
-			}
+			if snapshot.Balance != 1500000 || snapshot.Health != operational.HealthHealthy { t.Fatalf("unexpected initial snapshot: %#v", snapshot) }
 			break
 		}
 		select {
-		case <-deadline:
-			t.Fatal("initial synchronization did not occur")
+		case <-deadline: t.Fatal("initial synchronization did not occur")
 		case <-time.After(10 * time.Millisecond):
 		}
 	}
 	cancel()
-
 	select {
 	case err := <-done:
-		if err != context.Canceled {
-			t.Fatalf("unexpected shutdown error: %v", err)
-		}
+		if err != context.Canceled { t.Fatalf("unexpected shutdown error: %v", err) }
 	case <-time.After(time.Second):
 		t.Fatal("service did not stop after cancellation")
 	}
@@ -219,28 +207,14 @@ func TestNewFromEnvironmentBuildsDurableService(t *testing.T) {
 	t.Setenv("DESKAPROVIDER_OPERATIONAL_CURRENCY", "IDR")
 
 	service, err := NewFromEnvironment(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if service.interval != 45*time.Second || service.syncService.FailureThreshold != 4 || service.PurchaseService() == nil {
-		t.Fatalf("unexpected service configuration: interval=%s threshold=%d", service.interval, service.syncService.FailureThreshold)
-	}
-	if service.providerState == nil {
-		t.Fatal("expected provider state store")
-	}
+	if err != nil { t.Fatal(err) }
+	if service.interval != 45*time.Second || service.syncService.FailureThreshold != 4 || service.PurchaseService() == nil { t.Fatalf("unexpected service configuration: interval=%s threshold=%d", service.interval, service.syncService.FailureThreshold) }
+	if service.providerState == nil { t.Fatal("expected provider state store") }
 	state, ok := service.providerState.Get("digiflazz")
-	if !ok {
-		t.Fatal("expected registered provider state")
-	}
-	if state.Enabled() {
-		t.Fatal("provider must remain disabled until explicit administrative enablement")
-	}
-	if !state.Supports(operational.CapabilityPPOB) || !state.Supports(operational.CapabilityBalance) || !state.Supports(operational.CapabilityWebhook) {
-		t.Fatalf("unexpected provider capabilities: %#v", state.Capabilities)
-	}
-	if _, err := os.Stat(storePath); !os.IsNotExist(err) {
-		t.Fatalf("store should be created on first write, stat error: %v", err)
-	}
+	if !ok { t.Fatal("expected registered provider state") }
+	if state.Enabled() { t.Fatal("provider must remain disabled until explicit administrative enablement") }
+	if !state.Supports(operational.CapabilityPPOB) || !state.Supports(operational.CapabilityBalance) || !state.Supports(operational.CapabilityWebhook) { t.Fatalf("unexpected provider capabilities: %#v", state.Capabilities) }
+	if _, err := os.Stat(storePath); !os.IsNotExist(err) { t.Fatalf("store should be created on first write, stat error: %v", err) }
 }
 
 func TestNewFromEnvironmentPreservesEnabledProviderLifecycleAcrossRestart(t *testing.T) {
@@ -252,173 +226,115 @@ func TestNewFromEnvironmentPreservesEnabledProviderLifecycleAcrossRestart(t *tes
 	t.Setenv("DESKAPROVIDER_TRANSACTION_STORE_PATH", filepath.Join(root, "transactions", "state.json"))
 
 	first, err := NewFromEnvironment(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	if err != nil { t.Fatal(err) }
 	admin, err := operational.NewProviderAdminService(first.providerState)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := admin.Enable("digiflazz"); err != nil {
-		t.Fatal(err)
-	}
+	if err != nil { t.Fatal(err) }
+	if _, err := admin.Enable("digiflazz"); err != nil { t.Fatal(err) }
 
 	second, err := NewFromEnvironment(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	if err != nil { t.Fatal(err) }
 	state, ok := second.providerState.Get("digiflazz")
-	if !ok {
-		t.Fatal("expected digiflazz state after restart")
-	}
-	if !state.Enabled() {
-		t.Fatal("expected enabled lifecycle to survive runtime restart")
-	}
-	if !state.Supports(operational.CapabilityPPOB) || !state.Supports(operational.CapabilityBalance) || !state.Supports(operational.CapabilityWebhook) {
-		t.Fatalf("unexpected capabilities after restart: %#v", state.Capabilities)
-	}
+	if !ok { t.Fatal("expected digiflazz state after restart") }
+	if !state.Enabled() { t.Fatal("expected enabled lifecycle to survive runtime restart") }
+	if !state.Supports(operational.CapabilityPPOB) || !state.Supports(operational.CapabilityBalance) || !state.Supports(operational.CapabilityWebhook) { t.Fatalf("unexpected capabilities after restart: %#v", state.Capabilities) }
 }
 
 func TestServiceRestartRecoversPersistedOperationalSnapshot(t *testing.T) {
 	storePath := filepath.Join(t.TempDir(), "operational", "snapshots.json")
-
-	firstProvider := &balanceMock{
-		Provider: mock.New(mock.Config{
-			Products:       []provider.Product{{Code: "xld10", Name: "Test"}},
-			PurchaseStatus: provider.StatusSuccess,
-		}),
-		balance: 1750000,
-	}
+	firstProvider := &balanceMock{Provider: mock.New(mock.Config{Products: []provider.Product{{Code: "xld10", Name: "Test"}}, PurchaseStatus: provider.StatusSuccess}), balance: 1750000}
 	firstRegistry := provider.NewRegistry()
-	if err := firstRegistry.Register("mock", firstProvider); err != nil {
-		t.Fatal(err)
-	}
+	if err := firstRegistry.Register("mock", firstProvider); err != nil { t.Fatal(err) }
 	firstStore, err := operational.NewJSONFileStore(storePath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	if err != nil { t.Fatal(err) }
 	firstSync, err := operational.NewSyncService(firstRegistry, firstStore, "IDR", 3)
-	if err != nil {
-		t.Fatal(err)
-	}
+	if err != nil { t.Fatal(err) }
 	firstService, err := New(firstSync, time.Hour)
-	if err != nil {
-		t.Fatal(err)
-	}
-
+	if err != nil { t.Fatal(err) }
 	ctx, cancel := context.WithCancel(context.Background())
-	if err := firstSync.SyncAll(ctx); len(err) != 0 {
-		t.Fatalf("initial sync failed: %#v", err)
-	}
+	if err := firstSync.SyncAll(ctx); len(err) != 0 { t.Fatalf("initial sync failed: %#v", err) }
 	cancel()
-
-	secondProvider := &balanceMock{
-		Provider: mock.New(mock.Config{
-			Products:       []provider.Product{{Code: "xld10", Name: "Test"}},
-			PurchaseStatus: provider.StatusSuccess,
-		}),
-		balance: 1800000,
-	}
+	secondProvider := &balanceMock{Provider: mock.New(mock.Config{Products: []provider.Product{{Code: "xld10", Name: "Test"}}, PurchaseStatus: provider.StatusSuccess}), balance: 1800000}
 	secondRegistry := provider.NewRegistry()
-	if err := secondRegistry.Register("mock", secondProvider); err != nil {
-		t.Fatal(err)
-	}
+	if err := secondRegistry.Register("mock", secondProvider); err != nil { t.Fatal(err) }
 	secondStore, err := operational.NewJSONFileStore(storePath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	if err != nil { t.Fatal(err) }
 	recovered, ok := secondStore.Get("mock")
-	if !ok {
-		t.Fatal("expected persisted snapshot after restart")
-	}
-	if recovered.Balance != 1750000 || recovered.Health != operational.HealthHealthy {
-		t.Fatalf("unexpected recovered snapshot: %#v", recovered)
-	}
-
+	if !ok { t.Fatal("expected persisted snapshot after restart") }
+	if recovered.Balance != 1750000 || recovered.Health != operational.HealthHealthy { t.Fatalf("unexpected recovered snapshot: %#v", recovered) }
 	secondSync, err := operational.NewSyncService(secondRegistry, secondStore, "IDR", 3)
-	if err != nil {
-		t.Fatal(err)
-	}
+	if err != nil { t.Fatal(err) }
 	secondService, err := New(secondSync, time.Hour)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if firstService == secondService {
-		t.Fatal("expected distinct service instances across restart")
-	}
-
-	if errByProvider := secondSync.SyncAll(context.Background()); len(errByProvider) != 0 {
-		t.Fatalf("recovery sync failed: %#v", errByProvider)
-	}
+	if err != nil { t.Fatal(err) }
+	if firstService == secondService { t.Fatal("expected distinct service instances across restart") }
+	if errByProvider := secondSync.SyncAll(context.Background()); len(errByProvider) != 0 { t.Fatalf("recovery sync failed: %#v", errByProvider) }
 	updated, ok := secondStore.Get("mock")
-	if !ok {
-		t.Fatal("expected updated snapshot after recovery sync")
-	}
-	if updated.Balance != 1800000 || updated.Health != operational.HealthHealthy || updated.ConsecutiveFailures != 0 {
-		t.Fatalf("unexpected post-restart snapshot: %#v", updated)
-	}
+	if !ok { t.Fatal("expected updated snapshot after recovery sync") }
+	if updated.Balance != 1800000 || updated.Health != operational.HealthHealthy || updated.ConsecutiveFailures != 0 { t.Fatalf("unexpected post-restart snapshot: %#v", updated) }
 }
-
 
 func TestNewFromEnvironmentContextRejectsCanceledInitialization(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-
-	if _, err := NewFromEnvironmentContext(ctx, nil); err != context.Canceled {
-		t.Fatalf("expected context.Canceled, got %v", err)
-	}
+	if _, err := NewFromEnvironmentContext(ctx, nil); err != context.Canceled { t.Fatalf("expected context.Canceled, got %v", err) }
 }
 
 func TestNewFromEnvironmentContextRequiresContext(t *testing.T) {
-	if _, err := NewFromEnvironmentContext(nil, nil); err == nil {
-		t.Fatal("expected initialization context error")
-	}
+	if _, err := NewFromEnvironmentContext(nil, nil); err == nil { t.Fatal("expected initialization context error") }
 }
 
+func TestNewFromEnvironmentContextCleansSharedDatabaseAfterPostInitializationFailure(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	root := t.TempDir()
+	t.Setenv("DIGIFLAZZ_USERNAME", "test-user")
+	t.Setenv("DIGIFLAZZ_API_KEY", "test-key")
+	t.Setenv("DESKAPROVIDER_OPERATIONAL_STORE_PATH", filepath.Join(root, "operational", "snapshots.json"))
+	t.Setenv("DESKAPROVIDER_PROVIDER_STATE_STORE_PATH", filepath.Join(root, "provider-state", "state.json"))
+	t.Setenv("DESKAPROVIDER_TRANSACTION_STORE_PATH", filepath.Join(root, "transactions", "state.json"))
+	t.Setenv("DESKAPROVIDER_TRANSACTION_STORE_DRIVER", "postgres")
+	t.Setenv("DESKAPROVIDER_AUDIT_STORE_DRIVER", "postgres")
+	t.Setenv("DESKAPROVIDER_POSTGRES_DSN", "postgres://invalid")
+
+	_, err := NewFromEnvironmentContext(ctx, nil)
+	if err == nil {
+		t.Fatal("expected PostgreSQL initialization failure")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected cancellation to remain discoverable: %v", err)
+	}
+}
 
 func TestLoadConfigPostgresRequiresDSN(t *testing.T) {
 	t.Setenv("DESKAPROVIDER_TRANSACTION_STORE_DRIVER", "postgres")
 	t.Setenv("DESKAPROVIDER_POSTGRES_DSN", "")
-	if _, err := LoadConfig(); err == nil {
-		t.Fatal("expected PostgreSQL DSN requirement")
-	}
+	if _, err := LoadConfig(); err == nil { t.Fatal("expected PostgreSQL DSN requirement") }
 }
 
 func TestLoadConfigRejectsUnknownTransactionStoreDriver(t *testing.T) {
 	t.Setenv("DESKAPROVIDER_TRANSACTION_STORE_DRIVER", "sqlite")
-	if _, err := LoadConfig(); err == nil {
-		t.Fatal("expected unknown transaction store driver error")
-	}
+	if _, err := LoadConfig(); err == nil { t.Fatal("expected unknown transaction store driver error") }
 }
 
 func TestLoadConfigAcceptsPostgresTransactionStore(t *testing.T) {
 	t.Setenv("DESKAPROVIDER_TRANSACTION_STORE_DRIVER", "postgres")
 	t.Setenv("DESKAPROVIDER_POSTGRES_DSN", "postgres://test")
 	cfg, err := LoadConfig()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.TransactionStoreDriver != "postgres" || cfg.PostgresDSN != "postgres://test" {
-		t.Fatalf("unexpected PostgreSQL config: %#v", cfg)
-	}
+	if err != nil { t.Fatal(err) }
+	if cfg.TransactionStoreDriver != "postgres" || cfg.PostgresDSN != "postgres://test" { t.Fatalf("unexpected PostgreSQL config: %#v", cfg) }
 }
-
 
 func TestOpenTransactionStoreCanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	cfg := Config{TransactionStoreDriver: "postgres", PostgresDSN: "postgres://invalid"}
-	if _, _, err := openTransactionStore(ctx, cfg); err != context.Canceled {
-		t.Fatalf("expected context.Canceled, got %v", err)
-	}
+	if _, _, err := openTransactionStore(ctx, cfg); err != context.Canceled { t.Fatalf("expected context.Canceled, got %v", err) }
 }
 
 func TestLoadConfigPostgresAuditRequiresDSN(t *testing.T) {
 	t.Setenv("DESKAPROVIDER_AUDIT_STORE_DRIVER", "postgres")
 	t.Setenv("DESKAPROVIDER_POSTGRES_DSN", "")
-	if _, err := LoadConfig(); err == nil {
-		t.Fatal("expected PostgreSQL DSN requirement for audit store")
-	}
+	if _, err := LoadConfig(); err == nil { t.Fatal("expected PostgreSQL DSN requirement for audit store") }
 }
 
 func TestLoadConfigAcceptsPostgresAuditStore(t *testing.T) {
@@ -433,7 +349,6 @@ func TestLoadConfigRejectsUnknownAuditStoreDriver(t *testing.T) {
 	t.Setenv("DESKAPROVIDER_AUDIT_STORE_DRIVER", "sqlite")
 	if _, err := LoadConfig(); err == nil { t.Fatal("expected unknown audit store driver error") }
 }
-
 
 type closeErrorDB struct {
 	err error
@@ -452,25 +367,16 @@ func TestCloseRuntimeDatabasesPropagatesCloseErrors(t *testing.T) {
 	auditErr := errors.New("audit close failed")
 	transactionDB := &closeErrorDB{err: transactionErr}
 	auditDB := &closeErrorDB{err: auditErr}
-
 	err := closeRuntimeDatabases(transactionDB, auditDB)
-	if !errors.Is(err, transactionErr) || !errors.Is(err, auditErr) {
-		t.Fatalf("expected both close errors, got %v", err)
-	}
-	if !transactionDB.closed || !auditDB.closed {
-		t.Fatal("expected both database handles to be closed")
-	}
+	if !errors.Is(err, transactionErr) || !errors.Is(err, auditErr) { t.Fatalf("expected both close errors, got %v", err) }
+	if !transactionDB.closed || !auditDB.closed { t.Fatal("expected both database handles to be closed") }
 }
 
 func TestCloseRuntimeDatabasesDoesNotDoubleCloseSharedHandle(t *testing.T) {
 	transactionDB := &closeErrorDB{}
 	err := closeRuntimeDatabases(transactionDB, transactionDB)
-	if err != nil {
-		t.Fatalf("unexpected close error: %v", err)
-	}
-	if !transactionDB.closed {
-		t.Fatal("expected shared database handle to be closed")
-	}
+	if err != nil { t.Fatalf("unexpected close error: %v", err) }
+	if !transactionDB.closed { t.Fatal("expected shared database handle to be closed") }
 }
 
 func TestServiceCloseIsIdempotent(t *testing.T) {
@@ -478,12 +384,9 @@ func TestServiceCloseIsIdempotent(t *testing.T) {
 	auditDB := &closeErrorDB{}
 	service := &Service{databaseOwnership: newRuntimeDatabaseOwnership(transactionDB, auditDB)}
 	service.databaseOwnership.transferToService()
-
 	if err := service.Close(); err != nil { t.Fatalf("first close failed: %v", err) }
 	if err := service.Close(); err != nil { t.Fatalf("second close failed: %v", err) }
-	if transactionDB.closeCount != 1 || auditDB.closeCount != 1 {
-		t.Fatalf("expected Close to release each resource once: tx=%d audit=%d", transactionDB.closeCount, auditDB.closeCount)
-	}
+	if transactionDB.closeCount != 1 || auditDB.closeCount != 1 { t.Fatalf("expected Close to release each resource once: tx=%d audit=%d", transactionDB.closeCount, auditDB.closeCount) }
 }
 
 func TestServiceClosePreservesCloseErrorAcrossRepeatedCalls(t *testing.T) {
@@ -491,15 +394,10 @@ func TestServiceClosePreservesCloseErrorAcrossRepeatedCalls(t *testing.T) {
 	transactionDB := &closeErrorDB{err: closeErr}
 	service := &Service{databaseOwnership: newRuntimeDatabaseOwnership(transactionDB, nil)}
 	service.databaseOwnership.transferToService()
-
 	first := service.Close()
 	second := service.Close()
-	if !errors.Is(first, closeErr) || !errors.Is(second, closeErr) {
-		t.Fatalf("expected close error to remain discoverable: first=%v second=%v", first, second)
-	}
-	if transactionDB.closeCount != 1 {
-		t.Fatalf("expected one underlying close, got %d", transactionDB.closeCount)
-	}
+	if !errors.Is(first, closeErr) || !errors.Is(second, closeErr) { t.Fatalf("expected close error to remain discoverable: first=%v second=%v", first, second) }
+	if transactionDB.closeCount != 1 { t.Fatalf("expected one underlying close, got %d", transactionDB.closeCount) }
 }
 
 func TestServiceRunUsesOwnedBalanceWorkerLifecycle(t *testing.T) {
@@ -512,7 +410,6 @@ func TestServiceRunUsesOwnedBalanceWorkerLifecycle(t *testing.T) {
 	service, err := New(syncService, time.Hour)
 	if err != nil { t.Fatal(err) }
 	if service.balanceLifecycle == nil { t.Fatal("expected runtime service to own balance worker lifecycle") }
-
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func(){ done <- service.Run(ctx) }()
@@ -528,46 +425,28 @@ func TestServiceRunUsesOwnedBalanceWorkerLifecycle(t *testing.T) {
 	select {
 	case err := <-done:
 		if err != context.Canceled { t.Fatalf("unexpected shutdown error: %v", err) }
-	case <-time.After(time.Second):
-		t.Fatal("runtime service did not shut down")
+	case <-time.After(time.Second): t.Fatal("runtime service did not shut down")
 	}
 	if err := service.balanceLifecycle.Shutdown(context.Background()); err != nil { t.Fatalf("repeated lifecycle shutdown failed: %v", err) }
 }
 
 func TestServiceRunPropagatesDatabaseCloseError(t *testing.T) {
-	mockProvider := &balanceMock{
-		Provider: mock.New(mock.Config{
-			Products:       []provider.Product{{Code: "xld10", Name: "Test"}},
-			PurchaseStatus: provider.StatusSuccess,
-		}),
-		balance: 1500000,
-	}
+	mockProvider := &balanceMock{Provider: mock.New(mock.Config{Products: []provider.Product{{Code: "xld10", Name: "Test"}}, PurchaseStatus: provider.StatusSuccess}), balance: 1500000}
 	registry := provider.NewRegistry()
-	if err := registry.Register("mock", mockProvider); err != nil {
-		t.Fatal(err)
-	}
+	if err := registry.Register("mock", mockProvider); err != nil { t.Fatal(err) }
 	store := operational.NewMemoryStore()
 	syncService, err := operational.NewSyncService(registry, store, "IDR", 3)
-	if err != nil {
-		t.Fatal(err)
-	}
+	if err != nil { t.Fatal(err) }
 	closeErr := errors.New("shutdown database close failed")
 	service, err := New(syncService, time.Hour)
-	if err != nil {
-		t.Fatal(err)
-	}
+	if err != nil { t.Fatal(err) }
 	service.databaseOwnership = newRuntimeDatabaseOwnership(&closeErrorDB{err: closeErr}, nil)
 	service.databaseOwnership.transferToService()
-
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-
 	err = service.Run(ctx)
-	if !errors.Is(err, context.Canceled) || !errors.Is(err, closeErr) {
-		t.Fatalf("expected context cancellation and close error, got %v", err)
-	}
+	if !errors.Is(err, context.Canceled) || !errors.Is(err, closeErr) { t.Fatalf("expected context cancellation and close error, got %v", err) }
 }
-
 
 func TestCatalogWorkerLifecycleStartAndShutdownAreDeterministic(t *testing.T) {
 	lifecycle := newCatalogWorkerLifecycle()
@@ -575,21 +454,12 @@ func TestCatalogWorkerLifecycleStartAndShutdownAreDeterministic(t *testing.T) {
 	if err != nil { t.Fatal(err) }
 	if ctx == nil { t.Fatal("expected derived catalog context") }
 	if _, err := lifecycle.Start(context.Background()); err == nil { t.Fatal("expected duplicate catalog worker start to fail") }
-	lifecycle.Shutdown()
-	lifecycle.Shutdown()
+	lifecycle.Shutdown(); lifecycle.Shutdown()
 	ctx2, err := lifecycle.Start(context.Background())
 	if err != nil { t.Fatal(err) }
-	select {
-	case <-ctx2.Done():
-		t.Fatal("new catalog lifecycle context canceled before shutdown")
-	default:
-	}
+	select { case <-ctx2.Done(): t.Fatal("new catalog lifecycle context canceled before shutdown"); default: }
 	lifecycle.Shutdown()
-	select {
-	case <-ctx2.Done():
-	default:
-		t.Fatal("expected shutdown to cancel catalog lifecycle context")
-	}
+	select { case <-ctx2.Done(): default: t.Fatal("expected shutdown to cancel catalog lifecycle context") }
 }
 
 func TestServiceRunUsesOwnedCatalogWorkerLifecycle(t *testing.T) {
@@ -607,7 +477,6 @@ func TestServiceRunUsesOwnedCatalogWorkerLifecycle(t *testing.T) {
 	service.catalogSync = catalogSync
 	service.catalogLifecycle = newCatalogWorkerLifecycle()
 	service.catalogInterval = time.Hour
-
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func(){ done <- service.Run(ctx) }()
@@ -623,16 +492,10 @@ func TestServiceRunUsesOwnedCatalogWorkerLifecycle(t *testing.T) {
 	select {
 	case err := <-done:
 		if err != context.Canceled { t.Fatalf("unexpected shutdown error: %v", err) }
-	case <-time.After(time.Second):
-		t.Fatal("runtime catalog lifecycle did not shut down")
+	case <-time.After(time.Second): t.Fatal("runtime catalog lifecycle did not shut down")
 	}
-	select {
-	case <-ctx.Done():
-	default:
-		t.Fatal("expected service context to be canceled")
-	}
+	select { case <-ctx.Done(): default: t.Fatal("expected service context to be canceled") }
 }
-
 
 func TestServiceRunWithBalanceAndCatalogLifecyclesClosesDeterministically(t *testing.T) {
 	mockProvider := &balanceMock{Provider: mock.New(mock.Config{Products: []provider.Product{{Code: "xld10", Name: "Test"}}}), balance: 1700000}
@@ -649,11 +512,9 @@ func TestServiceRunWithBalanceAndCatalogLifecyclesClosesDeterministically(t *tes
 	service.catalogSync = catalogSync
 	service.catalogLifecycle = newCatalogWorkerLifecycle()
 	service.catalogInterval = time.Hour
-
 	closeDB := &closeErrorDB{}
 	service.databaseOwnership = newRuntimeDatabaseOwnership(closeDB, nil)
 	service.databaseOwnership.transferToService()
-
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- service.Run(ctx) }()
@@ -666,8 +527,7 @@ func TestServiceRunWithBalanceAndCatalogLifecyclesClosesDeterministically(t *tes
 	select {
 	case err := <-done:
 		if err != context.Canceled { t.Fatalf("unexpected shutdown error: %v", err) }
-	case <-time.After(time.Second):
-		t.Fatal("service did not shut down")
+	case <-time.After(time.Second): t.Fatal("service did not shut down")
 	}
 	if closeDB.closeCount != 1 { t.Fatalf("expected database close exactly once, got %d", closeDB.closeCount) }
 	if err := service.Close(); err != nil { t.Fatalf("repeated service close failed: %v", err) }
