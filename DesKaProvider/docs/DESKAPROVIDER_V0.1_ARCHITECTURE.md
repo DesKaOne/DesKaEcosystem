@@ -859,3 +859,54 @@ lifecycle result
 A database close failure is not a provider response, transaction result, or authorization signal. It therefore cannot trigger retry, failover, resubmission, ledger mutation, treasury movement, or provider funding.
 
 Deterministic runtime tests verify close-error propagation, preservation of primary cancellation identity, and no double-close for shared handles. PostgreSQL integration continues to verify actual resource closure; deterministic injection covers the error-propagation semantics that a real database shutdown cannot reliably force on demand.
+
+
+## 35. Runtime Initialization Cleanup Error Observability & Explicit Ownership Diagnostics
+
+**Date:** 2026-09-26
+
+Milestone #98 makes the runtime initialization cleanup boundary observable after PostgreSQL transaction/audit resources have been acquired.
+
+The ownership sequence is:
+
+```
+open transaction DB
+        |
+        +--> open audit DB
+        |
+        +--> remaining initialization
+        |       |
+        |       +--> failure -> close acquired resources
+        |                       |
+        |                       +--> cleanup error observable
+        |                       +--> primary init error preserved
+        |
+        +--> success -> transfer DB ownership to Service
+```
+
+### Error semantics
+
+Initialization cleanup uses the same error-composition boundary as shutdown. When initialization fails and cleanup also fails, the returned error preserves both signals so callers can discover the original initialization error and the cleanup error. When cleanup succeeds, the original initialization error remains unchanged.
+
+This distinction is intentional: a cleanup failure does not become a provider transaction result and does not alter transaction authorization semantics.
+
+### Ownership semantics
+
+The deferred initialization guard is active only until runtime construction succeeds. On success, ownership transfers to the runtime Service, which closes the database resources during shutdown. Shared transaction/audit database usage remains de-duplicated so one underlying handle is never closed twice.
+
+### Safety invariant
+
+```
+initialization failure
+      |
+      +--> cleanup acquired resources
+      |
+      +--> cleanup error (if any) is observable
+      |
+      +--> no provider retry/failover/resubmission
+      +--> no ledger mutation
+      +--> no treasury movement
+      +--> no provider funding
+```
+
+Deterministic tests verify primary-error preservation, cleanup-error observability, and shared-handle de-duplication. PostgreSQL integration continues to verify the underlying resource closure boundary.
