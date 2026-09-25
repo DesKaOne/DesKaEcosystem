@@ -352,3 +352,27 @@ The adapter does not retry a failed transition, resubmit a provider purchase, mu
 Because the existing TransactionStore interface is intentionally context-free, the concrete adapter currently uses context.Background() for store operations. A future contract revision may introduce explicit context propagation if the repository standard requires it.
 
 The adapter's unit tests use a deterministic database stub to verify successful atomic transition, zero-row conflict behavior, and request-identity rejection. Live PostgreSQL integration remains a separate verification boundary.
+
+
+## 16. PostgreSQL Integration Harness & Real Concurrency Verification Boundary
+
+**Date:** 2026-09-25
+
+Milestone #79 adds an isolated PostgreSQL integration harness for the concrete transaction store.
+
+The harness:
+
+- uses github.com/jackc/pgx/v5/stdlib only from the integration-test package to exercise the existing database/sql adapter boundary;
+- reads DESKAPROVIDER_POSTGRES_DSN at runtime and skips when no database is configured;
+- loads and verifies the repository migration artifact before database execution;
+- applies the migration to the isolated test database;
+- verifies durable pending insertion and reconstruction;
+- runs two concurrent PutIfCurrent calls against the same pending state and requires exactly one success plus one ErrTransactionStateConflict;
+- reconnects to PostgreSQL and verifies terminal-state recovery after the original database handle is closed;
+- verifies the migration contains the required primary key, status constraint, optimistic-concurrency version, and conditional-transition predicates.
+
+CI provisions a dedicated PostgreSQL service for both the normal test and race jobs and supplies only an ephemeral test DSN. No production credentials or provider secrets are involved.
+
+The harness is verification infrastructure only. It does not change provider routing, retry/failover policy, transaction resubmission behavior, customer-ledger mutation, or provider funding.
+
+The current adapter still has the context-free TransactionStore contract and therefore uses context.Background(). Explicit context propagation remains a separate contract decision.
