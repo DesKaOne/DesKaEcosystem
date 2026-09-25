@@ -3522,3 +3522,34 @@ The integration test verifies database-handle closure rather than simulating an 
 ### Next milestone
 
 **Milestone #97:** runtime shutdown error propagation and ownership observability hardening, with explicit verification that resource-close failures cannot be confused with transaction/provider outcomes.
+
+## Milestone #97 — Runtime Shutdown Error Propagation & Ownership Observability Hardening
+
+**Date:** 2026-09-26
+
+Milestone #97 hardens runtime shutdown error semantics so database-close failures are observable without being confused with transaction/provider outcomes.
+
+### Completed
+
+- runtime database ownership now uses a close-error-aware boundary;
+- transaction and audit PostgreSQL close failures are surfaced from Service.Run;
+- shared transaction/audit handles are still closed only once;
+- when shutdown has a primary lifecycle error such as context cancellation and database close also fails, both errors remain discoverable with errors.Is;
+- when no database close error exists, the original primary error identity is preserved exactly for compatibility;
+- deterministic tests cover propagation of both transaction/audit close errors and the no-double-close shared-handle rule.
+
+### Verification
+
+CI #726 / run `36186740152` is GREEN: test, vet, race, and PostgreSQL integration service passed.
+
+### Safety boundary
+
+Shutdown errors are lifecycle/observability signals only. They do not authorize transaction retry, provider resubmission, failover, ledger mutation, treasury movement, or provider funding. A database close error cannot be interpreted as a provider transaction result.
+
+### Limitation
+
+The test boundary uses deterministic close-error injection; it does not claim to reproduce every operating-system, driver, or network failure mode during database shutdown.
+
+### Next milestone
+
+**Milestone #98:** runtime initialization cleanup error observability and explicit ownership diagnostics, while preserving the primary initialization failure and financial safety boundaries.
