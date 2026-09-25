@@ -240,6 +240,11 @@ func (s *Service) Close() error { if s==nil { return nil }; return s.closeOwnedD
 
 func (s *Service) closeOwnedDatabases() error { if s==nil || s.databaseOwnership==nil { return nil }; return s.databaseOwnership.closeOwned() }
 
+func checkRuntimeInitializationContext(ctx context.Context) error {
+	if ctx == nil { return errors.New("initialization context is required") }
+	return ctx.Err()
+}
+
 func combineRuntimeShutdownError(primary,closeErr error) error{if primary==nil{return closeErr};if closeErr==nil{return primary};return errors.Join(primary,closeErr)}
 
 func withRuntimeInitializationCleanupError(primary error,transactionDB,auditDB databaseCloser) error{if primary==nil{return closeRuntimeDatabases(transactionDB,auditDB)};return combineRuntimeShutdownError(primary,closeRuntimeDatabases(transactionDB,auditDB))}
