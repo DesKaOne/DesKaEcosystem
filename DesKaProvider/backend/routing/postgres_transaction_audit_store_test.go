@@ -8,7 +8,7 @@ import (
 )
 
 func TestPostgresTransactionAuditStoreValidation(t *testing.T) {
-	store, err := NewPostgresTransactionAuditStore(&fakeDB{})
+	store, err := NewPostgresTransactionAuditStore(&postgresStoreDBStub{})
 	if err != nil {
 		t.Fatal(err)
 	}
