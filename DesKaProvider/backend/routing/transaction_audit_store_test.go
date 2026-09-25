@@ -13,8 +13,8 @@ func TestMemoryTransactionAuditStoreIsAppendOnly(t *testing.T) {
 	event := TransactionAuditEvent{
 		ReferenceID:  "ref-1",
 		Action:       "PURCHASE_TERMINAL",
-		Previous:     provider.StatusPending,
-		Next:         provider.StatusSuccess,
+		Previous:     string(provider.StatusPending),
+		Next:         string(provider.StatusSuccess),
 		ProviderName: "mock",
 		Message:      "success",
 		CreatedAt:    now,
