@@ -69,8 +69,7 @@ func applyPostgresMigration(t *testing.T, db *sql.DB) {
 			}
 			body = append(body, line)
 		}
-		statement := strings.TrimSpace(strings.Join(body, "
-"))
+		statement := strings.TrimSpace(strings.Join(body, "\n"))
 		if statement != "" {
 			statements = append(statements, statement)
 		}
