@@ -3004,3 +3004,43 @@ Next milestone:
 1. define the production PostgreSQL transaction-store selection boundary without leaking database details into routing;
 2. add PostgreSQL-backed runtime startup failure/cancellation integration coverage through that composition boundary;
 3. keep retry/failover deferred until production persistence startup and reconciliation remain unambiguous.
+
+
+### 85. Milestone Update — Production PostgreSQL Transaction-Store Selection
+
+**Date:** 2026-09-25
+
+Completed:
+
+- added explicit DESKAPROVIDER_TRANSACTION_STORE_DRIVER selection with json as the compatibility default;
+- added DESKAPROVIDER_POSTGRES_DSN configuration required only when the PostgreSQL transaction store is selected;
+- isolated transaction-store construction behind the runtime composition helper openTransactionStore;
+- PostgreSQL runtime selection uses the existing provider-neutral PostgresTransactionStore adapter and database/sql;
+- production startup pings the selected PostgreSQL database with the initialization context before service construction continues;
+- the production Service retains the database handle and closes it during shutdown;
+- added deterministic configuration/cancellation tests and a PostgreSQL runtime composition integration test using the existing migration artifact.
+
+Safety boundary:
+
+- selecting PostgreSQL changes persistence only; it does not alter provider routing or provider-specific contracts;
+- database startup failure stops service construction and never authorizes provider retry/failover/resubmission;
+- no customer-ledger mutation or automatic provider funding was introduced;
+- JSON remains the default to preserve existing deployments;
+- no credentials are logged or embedded in source.
+
+Verification:
+
+- CI test/vet/race must be GREEN before milestone closure;
+- when DESKAPROVIDER_POSTGRES_DSN is present, the runtime composition integration test exercises the real PostgreSQL service.
+
+Known limitations:
+
+- migration execution remains a separate deployment concern; the runtime integration test applies the repository migration only inside its isolated test database;
+- PostgreSQL is opt-in and is not yet the default production persistence backend;
+- provider state, operational snapshots, and catalog persistence remain on their existing stores.
+
+Next milestone:
+
+1. harden PostgreSQL runtime restart recovery with durable pending-state reconstruction through the production composition path;
+2. add integration coverage for startup recovery of pending transactions and clean reconstruction after reconnect;
+3. keep retry/failover deferred until production restart/reconciliation behavior is fully verified.
