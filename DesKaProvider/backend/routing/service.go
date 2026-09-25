@@ -49,7 +49,21 @@ func NewService(router *Router) (*Service, error) {
 	return NewServiceWithStore(router, NewMemoryTransactionStore())
 }
 
+// NewServiceWithStoreContext constructs a service using the caller's initialization
+// context when the configured transaction store supports error-aware context reads.
+// This prevents startup database failures from being mistaken for an empty store.
+func NewServiceWithStoreContext(ctx context.Context, router *Router, store TransactionStore) (*Service, error) {
+	if ctx == nil {
+		return nil, errors.New("initialization context is required")
+	}
+	return newServiceWithStoreContext(ctx, router, store)
+}
+
 func NewServiceWithStore(router *Router, store TransactionStore) (*Service, error) {
+	return newServiceWithStoreContext(context.Background(), router, store)
+}
+
+func newServiceWithStoreContext(ctx context.Context, router *Router, store TransactionStore) (*Service, error) {
 	if router == nil {
 		return nil, errors.New("provider router is required")
 	}
@@ -57,12 +71,31 @@ func NewServiceWithStore(router *Router, store TransactionStore) (*Service, erro
 		return nil, errors.New("transaction store is required")
 	}
 
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	service := &Service{
 		Router:       router,
 		Store:        store,
 		transactions: make(map[string]*purchaseCall),
 	}
-	for _, state := range store.All() {
+	var states []TransactionState
+	var err error
+	if scoped, ok := store.(ContextReadTransactionStore); ok {
+		states, err = scoped.AllContextE(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("load persisted transaction state: %w", err)
+		}
+	} else if scoped, ok := store.(ContextTransactionStore); ok {
+		states = scoped.AllContext(ctx)
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+	} else {
+		states = store.All()
+	}
+	for _, state := range states {
 		if state.Request.ReferenceID == "" || state.Execution.ProviderName == "" {
 			return nil, errors.New("invalid persisted transaction state")
 		}
