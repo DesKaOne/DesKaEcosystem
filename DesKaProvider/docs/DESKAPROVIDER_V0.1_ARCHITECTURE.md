@@ -829,3 +829,33 @@ open transaction DB
 Cleanup does not participate in transaction-state authorization. A close failure is not a provider result and must not trigger retry, failover, resubmission, ledger mutation, treasury movement, or provider funding. Audit persistence remains separate from the financial source of truth.
 
 Real PostgreSQL integration coverage verifies that both shared and dedicated database handles become unusable after the runtime cleanup helper closes them. This is a resource-lifecycle verification boundary, not a claim about physical process termination or network-partition behavior.
+
+## 34. Runtime Shutdown Error Propagation & Ownership Observability Hardening
+
+**Date:** 2026-09-26
+
+Milestone #97 makes PostgreSQL resource shutdown failures explicit at the runtime lifecycle boundary.
+
+Service.Run now closes runtime-owned transaction/audit database handles through a close-error-aware helper. A close failure is returned to the caller rather than silently discarded. When shutdown already has a primary error, such as context.Canceled, runtime combines the errors so both remain discoverable through errors.Is. If cleanup succeeds, the original primary error is returned unchanged.
+
+Shared transaction/audit database ownership remains deduplicated: one underlying handle is closed once. Dedicated audit storage remains independently owned and closed.
+
+The semantic boundary is:
+
+shutdown trigger
+      |
+      +--> primary lifecycle error (if any)
+      |
+      +--> close transaction DB
+      |
+      +--> close audit DB
+      |
+      v
+lifecycle result
+  - primary error preserved
+  - close error observable
+  - no provider/financial action
+
+A database close failure is not a provider response, transaction result, or authorization signal. It therefore cannot trigger retry, failover, resubmission, ledger mutation, treasury movement, or provider funding.
+
+Deterministic runtime tests verify close-error propagation, preservation of primary cancellation identity, and no double-close for shared handles. PostgreSQL integration continues to verify actual resource closure; deterministic injection covers the error-propagation semantics that a real database shutdown cannot reliably force on demand.
