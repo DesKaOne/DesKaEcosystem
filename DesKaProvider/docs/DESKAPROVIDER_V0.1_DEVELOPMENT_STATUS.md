@@ -2629,3 +2629,44 @@ Next milestone:
 1. define the concrete PostgreSQL transaction-store schema and conditional update/locking semantics;
 2. add persistence-level failure/recovery tests around atomic transitions;
 3. keep retry/failover deferred until database-backed idempotency and transaction correlation are production-ready.
+
+
+### 77. Milestone Update — PostgreSQL Transaction-Store Schema & Conditional Transition Contract
+
+**Date:** 2026-09-25
+
+Completed:
+
+- added `DesKaProvider/backend/migrations/001_provider_transactions.sql` as the concrete PostgreSQL transaction-store schema contract;
+- defined durable transaction identity, original purchase request identity, selected provider identity, provider result fields, status constraint, optimistic-concurrency `version`, and persistence timestamps;
+- defined the atomic compare-and-transition SQL shape using `reference_id`, `version`, request identity, provider identity, and `status = 'pending'` as the conditional boundary;
+- documented zero-row conditional updates as stale-state/concurrency conflicts that must reload state and reconcile rather than resubmit a provider purchase;
+- documented PostgreSQL persistence semantics and the relationship between the schema and the existing `AtomicTransactionStore` contract;
+- retained existing deterministic persistence failure/recovery coverage for pending-before-submit, result-persistence failure, restart recovery, pending reconciliation, and concurrent reconciliation.
+
+Verification scope:
+
+- the repository currently has no PostgreSQL driver, migration runner, or live PostgreSQL test harness in `DesKaProvider/backend/go.mod`;
+- therefore this milestone intentionally delivers the schema and conditional-update contract without adding an unverified database dependency or pretending that live PostgreSQL integration has been tested;
+- existing in-memory/JSON tests remain the executable contract for transition and persistence-failure behavior until the database adapter is introduced.
+
+Safety boundary:
+
+- no provider retry/failover/resubmission was introduced;
+- no customer-ledger mutation was introduced;
+- no automatic treasury/provider funding was introduced;
+- a stale database transition is a conflict, not a reason to call provider purchase again;
+- terminal transaction state remains immutable except for idempotent identical observations.
+
+Known limitations:
+
+- PostgreSQL adapter/connection management is not implemented yet;
+- migration execution is not wired into runtime startup;
+- live PostgreSQL concurrency, rollback, and recovery tests remain pending;
+- JSON transaction storage remains single-process and is not a production cross-process substitute.
+
+Next milestone:
+
+1. implement the PostgreSQL `AtomicTransactionStore` adapter behind the existing provider-neutral contract;
+2. add isolated PostgreSQL integration tests for conditional transition, concurrent reconciliation, rollback, and restart recovery;
+3. keep retry/failover deferred until the database-backed idempotency boundary is proven.
