@@ -38,7 +38,8 @@ const (
 )
 
 type Config struct{StorePath,TransactionStorePath,ProviderStateStorePath,TransactionStoreDriver,AuditStoreDriver,PostgresDSN string;SyncInterval time.Duration;FailureThreshold int;Currency,CatalogStorePath string;CatalogSyncInterval,CatalogMaxAge,OperationalSnapshotMaxAge time.Duration}
-type Service struct{syncService *operational.SyncService;purchaseService *routing.Service;catalogSync *catalog.SyncService;providerState *operational.ProviderStateStore;transactionDB *sql.DB;auditDB *sql.DB;interval,catalogInterval time.Duration}
+type databaseCloser interface { Close() error }
+type Service struct{syncService *operational.SyncService;purchaseService *routing.Service;catalogSync *catalog.SyncService;providerState *operational.ProviderStateStore;transactionDB databaseCloser;auditDB databaseCloser;interval,catalogInterval time.Duration}
 
 func LoadConfig()(Config,error){
  cfg:=Config{StorePath:os.Getenv("DESKAPROVIDER_OPERATIONAL_STORE_PATH"),TransactionStoreDriver:os.Getenv("DESKAPROVIDER_TRANSACTION_STORE_DRIVER"),AuditStoreDriver:os.Getenv("DESKAPROVIDER_AUDIT_STORE_DRIVER"),PostgresDSN:os.Getenv("DESKAPROVIDER_POSTGRES_DSN"),ProviderStateStorePath:os.Getenv("DESKAPROVIDER_PROVIDER_STATE_STORE_PATH"),TransactionStorePath:os.Getenv("DESKAPROVIDER_TRANSACTION_STORE_PATH"),SyncInterval:defaultSyncInterval,FailureThreshold:defaultFailureThreshold,Currency:os.Getenv("DESKAPROVIDER_OPERATIONAL_CURRENCY"),CatalogStorePath:os.Getenv("DESKAPROVIDER_CATALOG_STORE_PATH"),CatalogSyncInterval:defaultCatalogSyncInterval,CatalogMaxAge:defaultCatalogMaxAge,OperationalSnapshotMaxAge:defaultOperationalSnapshotMaxAge}
@@ -87,10 +88,10 @@ func NewFromEnvironmentContext(ctx context.Context,httpClient *http.Client)(*Ser
 }
 
 func New(syncService *operational.SyncService,interval time.Duration)(*Service,error){if syncService==nil{return nil,errors.New("sync service is required")};if interval<=0{return nil,errors.New("sync interval must be greater than zero")};return &Service{syncService:syncService,interval:interval},nil}
-func (s *Service) Run(ctx context.Context)error{if ctx==nil{return errors.New("context is required")};if s.catalogSync==nil{err:=s.syncService.Run(ctx,s.interval);if s.transactionDB!=nil{_ = s.transactionDB.Close()};if s.auditDB!=nil{_ = s.auditDB.Close()};return err};_=s.catalogSync.SyncAll(ctx);ticker:=time.NewTicker(s.catalogInterval);defer ticker.Stop();go func(){_=s.syncService.Run(ctx,s.interval)}();for{select{case<-ctx.Done():if s.transactionDB!=nil{_ = s.transactionDB.Close()};if s.auditDB!=nil{_ = s.auditDB.Close()};return ctx.Err();case<-ticker.C:_=s.catalogSync.SyncAll(ctx)}}}
+func (s *Service) Run(ctx context.Context)error{if ctx==nil{return errors.New("context is required")};if s.catalogSync==nil{err:=s.syncService.Run(ctx,s.interval);return errors.Join(err,closeRuntimeDatabases(s.transactionDB,s.auditDB))};_=s.catalogSync.SyncAll(ctx);ticker:=time.NewTicker(s.catalogInterval);defer ticker.Stop();go func(){_=s.syncService.Run(ctx,s.interval)}();for{select{case<-ctx.Done():return errors.Join(ctx.Err(),closeRuntimeDatabases(s.transactionDB,s.auditDB));case<-ticker.C:_=s.catalogSync.SyncAll(ctx)}}}
 func (s *Service) PurchaseService()*routing.Service{if s==nil{return nil};return s.purchaseService}
 
-func closeRuntimeDatabases(transactionDB,auditDB *sql.DB){if transactionDB!=nil{_ = transactionDB.Close()};if auditDB!=nil && auditDB!=transactionDB{_ = auditDB.Close()}}
+func closeRuntimeDatabases(transactionDB,auditDB databaseCloser) error{var errs []error;if transactionDB!=nil{if err:=transactionDB.Close();err!=nil{errs=append(errs,fmt.Errorf("close transaction database: %w",err))}};if auditDB!=nil && auditDB!=transactionDB{if err:=auditDB.Close();err!=nil{errs=append(errs,fmt.Errorf("close audit database: %w",err))}};return errors.Join(errs...)}
 
 func openAuditStore(ctx context.Context, cfg Config, transactionDB *sql.DB) (routing.TransactionAuditStore, *sql.DB, error) {
 	if err := ctx.Err(); err != nil { return nil, nil, err }
