@@ -393,3 +393,28 @@ The PostgreSQL adapter now passes the caller context to database/sql operations 
 Cancellation and deadlines therefore reach PostgreSQL persistence operations on purchase, webhook, and reconciliation paths. Context cancellation does not authorize retry, failover, provider resubmission, ledger mutation, or provider funding.
 
 The constructor startup All() recovery path remains context-free because it is initialization work rather than a request-scoped operation. Explicit startup lifecycle context can be considered separately if runtime startup/shutdown requires it.
+
+
+## 18. Context Cancellation & Deadline Persistence Hardening
+
+**Date:** 2026-09-25
+
+Milestone #81 verifies the behavioral safety of the ContextTransactionStore boundary under canceled and expired request contexts.
+
+The deterministic tests establish that:
+
+- canceled memory-store reads do not expose transaction state through GetContext or AllContext;
+- canceled/expired memory-store mutation calls return the context error before changing transaction state;
+- PostgreSQL PutIfCurrentContext receives the caller context at the database/sql boundary;
+- a canceled persistence operation does not become a successful state transition.
+
+The cancellation boundary does not authorize any second provider submission. A caller receiving context.Canceled or context.DeadlineExceeded must continue to treat the transaction reference as requiring the existing durable-state/reconciliation rules, not as permission to retry the provider purchase.
+
+The current context-aware read signatures remain a known observability limitation:
+
+    GetContext(ctx context.Context, referenceID string) (TransactionState, bool)
+    AllContext(ctx context.Context) []TransactionState
+
+These signatures cannot distinguish cancellation/database failure from not-found/empty results. This is intentionally documented as a follow-up contract decision rather than silently changing the provider-neutral interface in the hardening milestone.
+
+The PostgreSQL write path already propagates context to database/sql; future contract work may add explicit read errors if required by service/recovery semantics.
