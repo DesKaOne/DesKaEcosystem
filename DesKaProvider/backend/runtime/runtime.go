@@ -71,15 +71,7 @@ func NewFromEnvironmentContext(ctx context.Context,httpClient *http.Client)(*Ser
  syncService,e:=operational.NewSyncService(registry,store,cfg.Currency,cfg.FailureThreshold);if e!=nil{return nil,e}
  catalogStore,e:=catalog.NewJSONFileStore(cfg.CatalogStorePath);if e!=nil{return nil,e}
  catalogSync,e:=catalog.NewSyncService(registry,catalogStore);if e!=nil{return nil,e}
- var transactionStore routing.TransactionStore
- var transactionDB *sql.DB
- if cfg.TransactionStoreDriver=="postgres" {
-  transactionDB,e=sql.Open("pgx",cfg.PostgresDSN);if e!=nil{return nil,fmt.Errorf("open PostgreSQL transaction store: %w",e)}
-  if e=transactionDB.PingContext(ctx);e!=nil{transactionDB.Close();return nil,fmt.Errorf("ping PostgreSQL transaction store: %w",e)}
-  transactionStore,e=routing.NewPostgresTransactionStore(transactionDB);if e!=nil{transactionDB.Close();return nil,e}
- } else {
-  transactionStore,e=routing.NewJSONFileTransactionStore(cfg.TransactionStorePath);if e!=nil{return nil,e}
- }
+ transactionStore,transactionDB,e:=openTransactionStore(ctx,cfg);if e!=nil{return nil,e}
  statePersistence,e:=operational.NewJSONFileProviderStateStore(cfg.ProviderStateStorePath);if e!=nil{return nil,e}
  stateStore,e:=operational.NewPersistentProviderStateStore(statePersistence);if e!=nil{return nil,e}
  for _, name:=range registry.Names(){state,ok:=stateStore.Get(name);if !ok{state,e=operational.NewProviderState(name);if e!=nil{return nil,e}};state.Capabilities=[]operational.Capability{operational.CapabilityPPOB,operational.CapabilityBalance,operational.CapabilityWebhook};if e=stateStore.Put(state);e!=nil{return nil,e}}
@@ -91,3 +83,31 @@ func NewFromEnvironmentContext(ctx context.Context,httpClient *http.Client)(*Ser
 func New(syncService *operational.SyncService,interval time.Duration)(*Service,error){if syncService==nil{return nil,errors.New("sync service is required")};if interval<=0{return nil,errors.New("sync interval must be greater than zero")};return &Service{syncService:syncService,interval:interval},nil}
 func (s *Service) Run(ctx context.Context)error{if ctx==nil{return errors.New("context is required")};if s.catalogSync==nil{err:=s.syncService.Run(ctx,s.interval);if s.transactionDB!=nil{_ = s.transactionDB.Close()};return err};_=s.catalogSync.SyncAll(ctx);ticker:=time.NewTicker(s.catalogInterval);defer ticker.Stop();go func(){_=s.syncService.Run(ctx,s.interval)}();for{select{case<-ctx.Done():if s.transactionDB!=nil{_ = s.transactionDB.Close()};return ctx.Err();case<-ticker.C:_=s.catalogSync.SyncAll(ctx)}}}
 func (s *Service) PurchaseService()*routing.Service{if s==nil{return nil};return s.purchaseService}
+
+
+func openTransactionStore(ctx context.Context, cfg Config) (routing.TransactionStore, *sql.DB, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
+	if cfg.TransactionStoreDriver == "postgres" {
+		db, err := sql.Open("pgx", cfg.PostgresDSN)
+		if err != nil {
+			return nil, nil, fmt.Errorf("open PostgreSQL transaction store: %w", err)
+		}
+		if err := db.PingContext(ctx); err != nil {
+			_ = db.Close()
+			return nil, nil, fmt.Errorf("ping PostgreSQL transaction store: %w", err)
+		}
+		store, err := routing.NewPostgresTransactionStore(db)
+		if err != nil {
+			_ = db.Close()
+			return nil, nil, err
+		}
+		return store, db, nil
+	}
+	store, err := routing.NewJSONFileTransactionStore(cfg.TransactionStorePath)
+	if err != nil {
+		return nil, nil, err
+	}
+	return store, nil, nil
+}
