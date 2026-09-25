@@ -210,7 +210,7 @@ func (s *Service) Purchase(ctx context.Context, req PurchaseRequest) (PurchaseEx
 	}
 	if auditErr := s.appendAudit(TransactionAuditEvent{
 		ReferenceID: req.ReferenceID,
-		Action: "PURCHASE_TERMINAL",
+		Action: "PURCHASE_RESULT",
 		Previous: string(provider.StatusPending),
 		Next: string(result.Result.Status),
 		ProviderName: providerName,
