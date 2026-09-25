@@ -59,17 +59,16 @@ func applyPostgresMigration(t *testing.T, db *sql.DB) {
 	t.Helper()
 
 	sqlText := postgresMigrationSQL(t)
-	var statements []string
-	for _, raw := range strings.Split(sqlText, ";") {
-		lines := strings.Split(raw, "\n")
-		var body []string
-		for _, line := range lines {
-			if idx := strings.Index(line, "--"); idx >= 0 {
-				line = line[:idx]
-			}
-			body = append(body, line)
+	var uncommented []string
+	for _, line := range strings.Split(sqlText, "\n") {
+		if idx := strings.Index(line, "--"); idx >= 0 {
+			line = line[:idx]
 		}
-		statement := strings.TrimSpace(strings.Join(body, "\n"))
+		uncommented = append(uncommented, line)
+	}
+	var statements []string
+	for _, raw := range strings.Split(strings.Join(uncommented, "\n"), ";") {
+		statement := strings.TrimSpace(raw)
 		if statement != "" {
 			statements = append(statements, statement)
 		}
