@@ -2670,3 +2670,37 @@ Next milestone:
 1. implement the PostgreSQL `AtomicTransactionStore` adapter behind the existing provider-neutral contract;
 2. add isolated PostgreSQL integration tests for conditional transition, concurrent reconciliation, rollback, and restart recovery;
 3. keep retry/failover deferred until the database-backed idempotency boundary is proven.
+
+
+### 78. Milestone Update — PostgreSQL AtomicTransactionStore Adapter
+
+**Date:** 2026-09-25
+
+Completed:
+
+- added DesKaProvider/backend/routing/postgres_transaction_store.go implementing the existing provider-neutral AtomicTransactionStore contract;
+- added durable Get/All reconstruction paths and transition-safe Put behavior;
+- implemented atomic PutIfCurrent using PostgreSQL conditional UPDATE semantics;
+- added deterministic adapter tests for successful transition, zero-row concurrency conflict, and request-identity mismatch;
+- kept the adapter database-driver neutral through the standard library database/sql boundary;
+- did not introduce retry, failover, provider resubmission, ledger mutation, or automatic provider funding.
+
+Verification:
+
+- CI is required to pass test, vet, and race before this milestone is closed;
+- live PostgreSQL integration is intentionally not claimed because the repository does not yet select a PostgreSQL driver or provide a live database test environment;
+- unit coverage verifies the adapter's atomic transition contract with a deterministic database stub.
+
+Known limitations:
+
+- Store operations inherit the existing context-free TransactionStore interface and therefore currently use context.Background();
+- no PostgreSQL driver, connection lifecycle, migration runner, or live integration harness is wired yet;
+- PostgreSQL version state is represented by the database row and conditional predicate; TransactionState itself does not expose a version field;
+- JSON persistence remains single-process and is not a cross-process production substitute.
+
+Next milestone:
+
+1. add an isolated PostgreSQL integration harness and migration verification;
+2. verify rollback and concurrent transition behavior against a real PostgreSQL instance;
+3. then evaluate explicit context propagation in the persistence contract;
+4. keep retry/failover deferred until database-backed idempotency is proven.
