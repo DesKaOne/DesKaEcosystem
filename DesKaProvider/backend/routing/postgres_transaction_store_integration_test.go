@@ -61,8 +61,7 @@ func applyPostgresMigration(t *testing.T, db *sql.DB) {
 	sqlText := postgresMigrationSQL(t)
 	var statements []string
 	for _, raw := range strings.Split(sqlText, ";") {
-		lines := strings.Split(raw, "
-")
+		lines := strings.Split(raw, "\n")
 		var body []string
 		for _, line := range lines {
 			if idx := strings.Index(line, "--"); idx >= 0 {
