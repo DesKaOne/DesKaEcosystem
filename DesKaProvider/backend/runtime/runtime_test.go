@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -345,4 +346,74 @@ func TestLoadConfigAcceptsPostgresAuditStore(t *testing.T) {
 func TestLoadConfigRejectsUnknownAuditStoreDriver(t *testing.T) {
 	t.Setenv("DESKAPROVIDER_AUDIT_STORE_DRIVER", "sqlite")
 	if _, err := LoadConfig(); err == nil { t.Fatal("expected unknown audit store driver error") }
+}
+
+
+type closeErrorDB struct {
+	err error
+	closed bool
+}
+
+func (d *closeErrorDB) Close() error {
+	d.closed = true
+	return d.err
+}
+
+func TestCloseRuntimeDatabasesPropagatesCloseErrors(t *testing.T) {
+	transactionErr := errors.New("transaction close failed")
+	auditErr := errors.New("audit close failed")
+	transactionDB := &closeErrorDB{err: transactionErr}
+	auditDB := &closeErrorDB{err: auditErr}
+
+	err := closeRuntimeDatabases(transactionDB, auditDB)
+	if !errors.Is(err, transactionErr) || !errors.Is(err, auditErr) {
+		t.Fatalf("expected both close errors, got %v", err)
+	}
+	if !transactionDB.closed || !auditDB.closed {
+		t.Fatal("expected both database handles to be closed")
+	}
+}
+
+func TestCloseRuntimeDatabasesDoesNotDoubleCloseSharedHandle(t *testing.T) {
+	transactionDB := &closeErrorDB{}
+	err := closeRuntimeDatabases(transactionDB, transactionDB)
+	if err != nil {
+		t.Fatalf("unexpected close error: %v", err)
+	}
+	if !transactionDB.closed {
+		t.Fatal("expected shared database handle to be closed")
+	}
+}
+
+func TestServiceRunPropagatesDatabaseCloseError(t *testing.T) {
+	mockProvider := &balanceMock{
+		Provider: mock.New(mock.Config{
+			Products:       []provider.Product{{Code: "xld10", Name: "Test"}},
+			PurchaseStatus: provider.StatusSuccess,
+		}),
+		balance: 1500000,
+	}
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", mockProvider); err != nil {
+		t.Fatal(err)
+	}
+	store := operational.NewMemoryStore()
+	syncService, err := operational.NewSyncService(registry, store, "IDR", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	closeErr := errors.New("shutdown database close failed")
+	service, err := New(syncService, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.transactionDB = &closeErrorDB{err: closeErr}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err = service.Run(ctx)
+	if !errors.Is(err, context.Canceled) || !errors.Is(err, closeErr) {
+		t.Fatalf("expected context cancellation and close error, got %v", err)
+	}
 }
