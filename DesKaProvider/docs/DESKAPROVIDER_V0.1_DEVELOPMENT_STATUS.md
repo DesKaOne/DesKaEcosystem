@@ -3323,3 +3323,47 @@ Next milestone:
 2. add PostgreSQL integration coverage for append-only audit durability and restart/reconnect reads;
 3. add failure-injection coverage for webhook/reconciliation audit writes before selecting PostgreSQL audit persistence at runtime;
 4. keep retry/failover/resubmission deferred.
+
+
+### 92. Milestone Update — PostgreSQL Transaction Audit Store Adapter
+
+**Date:** 2026-09-26
+
+Completed:
+
+- added provider-neutral PostgreSQL TransactionAuditStore adapter;
+- added append-only INSERT boundary and reference-scoped ordered reads;
+- propagated context cancellation/deadline errors through context-aware audit persistence;
+- added deterministic validation/cancellation tests;
+- added real PostgreSQL integration coverage for append-only durability and restart/reconnect reads;
+- verified audit data remains separate from TransactionState and does not authorize provider operations;
+- verified canceled audit append does not mutate an already durable terminal transaction or authorize provider resubmission.
+
+Safety boundary:
+
+- audit rows are append-only operational history;
+- no UPDATE/DELETE audit API was introduced;
+- no retry/failover/resubmission behavior was introduced;
+- audit failure cannot revert durable transaction state;
+- no customer-ledger, provider-balance, treasury, or automatic-funding mutation was introduced.
+
+Verification:
+
+- PostgreSQL integration verifies two durable audit events survive adapter reconstruction;
+- ordering is deterministic by created_at, audit_id;
+- unrelated references return no events;
+- canceled audit append is rejected before database mutation;
+- full CI verification is required before milestone closure.
+
+Known limitations:
+
+- PostgreSQL audit adapter is not yet selected by production runtime;
+- webhook/reconciliation audit failure injection needs dedicated coverage before runtime selection;
+- audit remains separate from the financial ledger.
+
+Next milestone:
+
+1. add dedicated webhook audit-failure injection coverage;
+2. add dedicated reconciliation audit-failure injection coverage;
+3. verify committed transaction state remains authoritative in both paths;
+4. only then wire PostgreSQL audit-store selection into production runtime.
