@@ -314,3 +314,13 @@ func TestLoadConfigAcceptsPostgresTransactionStore(t *testing.T) {
 		t.Fatalf("unexpected PostgreSQL config: %#v", cfg)
 	}
 }
+
+
+func TestOpenTransactionStoreCanceledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	cfg := Config{TransactionStoreDriver: "postgres", PostgresDSN: "postgres://invalid"}
+	if _, _, err := openTransactionStore(ctx, cfg); err != context.Canceled {
+		t.Fatalf("expected context.Canceled, got %v", err)
+	}
+}
