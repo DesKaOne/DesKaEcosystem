@@ -418,3 +418,24 @@ The current context-aware read signatures remain a known observability limitatio
 These signatures cannot distinguish cancellation/database failure from not-found/empty results. This is intentionally documented as a follow-up contract decision rather than silently changing the provider-neutral interface in the hardening milestone.
 
 The PostgreSQL write path already propagates context to database/sql; future contract work may add explicit read errors if required by service/recovery semantics.
+
+
+## 19. Context-Aware Read Error Observability
+
+**Date:** 2026-09-25
+
+Milestone #82 adds an additive read-error-aware extension:
+
+    type ContextReadTransactionStore interface {
+        ContextTransactionStore
+        GetContextE(ctx context.Context, referenceID string) (TransactionState, bool, error)
+        AllContextE(ctx context.Context) ([]TransactionState, error)
+    }
+
+The existing ContextTransactionStore remains unchanged for compatibility. Memory and PostgreSQL stores implement the extension.
+
+The PostgreSQL adapter now preserves database read failures on the new methods instead of collapsing them into not-found/empty results. The existing GetContext and AllContext methods remain compatibility wrappers and retain their original state-only behavior.
+
+Service reconciliation conflict recovery uses the error-aware read path when available. If the durable reload fails because of cancellation or a database error, reconciliation returns that error rather than interpreting the missing state as a reference conflict. This distinction is important for recovery safety: a read failure never authorizes a second provider purchase.
+
+Startup recovery remains on the context-free All() constructor path. This is the next explicit boundary to harden so startup database failures cannot be mistaken for an empty transaction set.
