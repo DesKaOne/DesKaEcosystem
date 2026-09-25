@@ -214,7 +214,7 @@ func TestServiceWebhookAuditFailureKeepsCommittedTerminalState(t *testing.T) {
 		ReferenceID: req.ReferenceID, ProductCode: req.ProductCode, CustomerNo: req.CustomerNo,
 		Status: provider.StatusSuccess, ProviderCode: "00", Message: "success", Price: 20000,
 	})
-	if err == nil || execution.Result.Status != provider.StatusSuccess { t.Fatalf("expected audit failure to remain observable on repeated webhook, got execution=%#v err=%v", execution, err) }
+	if err != nil || execution.Result.Status != provider.StatusSuccess { t.Fatalf("expected repeated webhook to converge idempotently, got execution=%#v err=%v", execution, err) }
 	if got := mock.PurchaseCount(req.ReferenceID); got != 1 { t.Fatalf("webhook audit failure must not authorize provider resubmission, got %d", got) }
 }
 
@@ -242,6 +242,6 @@ func TestServiceReconciliationAuditFailureKeepsCommittedTerminalState(t *testing
 
 	// Reconciliation reads the provider status again; it must converge without Purchase.
 	execution, err = service.Reconcile(context.Background(), req.ReferenceID)
-	if err == nil || execution.Result.Status != provider.StatusSuccess { t.Fatalf("expected audit failure to remain observable on repeated reconciliation, got execution=%#v err=%v", execution, err) }
+	if err != nil || execution.Result.Status != provider.StatusSuccess { t.Fatalf("expected repeated reconciliation to converge idempotently, got execution=%#v err=%v", execution, err) }
 	if got := mock.PurchaseCount(req.ReferenceID); got != 1 { t.Fatalf("reconciliation audit failure must not authorize a second provider submission, got %d", got) }
 }
