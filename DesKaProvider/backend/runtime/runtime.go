@@ -90,7 +90,7 @@ func (s *Service) PurchaseService()*routing.Service{if s==nil{return nil};return
 func openAuditStore(ctx context.Context, cfg Config, transactionDB *sql.DB) (routing.TransactionAuditStore, *sql.DB, error) {
 	if err := ctx.Err(); err != nil { return nil, nil, err }
 	if cfg.AuditStoreDriver != "postgres" { store, err := routing.NewMemoryTransactionAuditStore(); return store, nil, err }
-	if transactionDB != nil { return routing.NewPostgresTransactionAuditStore(transactionDB) }
+	if transactionDB != nil {\n\t\tstore, err := routing.NewPostgresTransactionAuditStore(transactionDB)\n\t\tif err != nil { return nil, nil, err }\n\t\treturn store, nil, nil\n\t}
 	db, err := sql.Open("pgx", cfg.PostgresDSN)
 	if err != nil { return nil, nil, fmt.Errorf("open PostgreSQL audit store: %w", err) }
 	if err := db.PingContext(ctx); err != nil { _ = db.Close(); return nil, nil, fmt.Errorf("ping PostgreSQL audit store: %w", err) }
