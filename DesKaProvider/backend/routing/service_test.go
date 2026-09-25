@@ -597,7 +597,9 @@ func TestServiceRestartReconcilesPendingWithoutResubmission(t *testing.T) {
 	req := PurchaseRequest{ProductCode: "pln20", CustomerNo: "08123456789", ReferenceID: "ref-restart-reconcile", Amount: 20000}
 	if _, err := service.Purchase(context.Background(), req); err != nil { t.Fatal(err) }
 
-	initialMock.SetPurchaseStatus(provider.StatusSuccess, "success after reconciliation")
+	if ok := initialMock.SetTransactionStatus(req.ReferenceID, provider.StatusSuccess, "success after reconciliation"); !ok {
+		t.Fatal("expected pending transaction to exist in mock provider")
+	}
 
 	recoveredRegistry := provider.NewRegistry()
 	if err := recoveredRegistry.Register("mock", initialMock); err != nil { t.Fatal(err) }
