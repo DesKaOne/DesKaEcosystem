@@ -23,6 +23,21 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: deskaprovider
+          POSTGRES_PASSWORD: deskaprovider
+          POSTGRES_DB: deskaprovider_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U deskaprovider -d deskaprovider_test"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=12
+
     defaults:
       run:
         working-directory: DesKaProvider/backend
@@ -42,6 +57,8 @@ jobs:
         run: go mod tidy
 
       - name: Test
+        env:
+          DESKAPROVIDER_POSTGRES_DSN: postgres://deskaprovider:deskaprovider@localhost:5432/deskaprovider_test?sslmode=disable
         run: go test ./...
 
       - name: Vet
@@ -49,6 +66,21 @@ jobs:
 
   race:
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: deskaprovider
+          POSTGRES_PASSWORD: deskaprovider
+          POSTGRES_DB: deskaprovider_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U deskaprovider -d deskaprovider_test"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=12
 
     defaults:
       run:
@@ -66,4 +98,6 @@ jobs:
           cache-dependency-path: DesKaProvider/backend/go.mod
 
       - name: Race test
+        env:
+          DESKAPROVIDER_POSTGRES_DSN: postgres://deskaprovider:deskaprovider@localhost:5432/deskaprovider_test?sslmode=disable
         run: go test -race ./...
