@@ -222,7 +222,6 @@ func (s *Service) Reconcile(ctx context.Context, referenceID string) (PurchaseEx
 	}
 	request := call.request
 	providerName := call.result.ProviderName
-	previous := TransactionState{Request: request, Execution: call.result}
 	if providerName == "" {
 		s.mu.Unlock()
 		return PurchaseExecution{}, ErrWebhookReferenceConflict
