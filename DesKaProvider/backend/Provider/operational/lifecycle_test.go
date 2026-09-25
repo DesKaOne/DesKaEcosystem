@@ -58,6 +58,46 @@ func TestSyncWorkerLifecycleStartsAndStopsOwnedWorker(t *testing.T) {
 	}
 }
 
+func TestSyncWorkerLifecycleTimeoutDoesNotReleaseOwnership(t *testing.T) {
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", balanceStub{balance: 2200000}); err != nil {
+		t.Fatal(err)
+	}
+	store := NewMemoryStore()
+	svc, err := NewSyncService(registry, store, "IDR", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lifecycle, err := NewSyncWorkerLifecycle(svc, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := lifecycle.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	shutdownCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := lifecycle.Shutdown(shutdownCtx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected canceled shutdown context to be returned, got %v", err)
+	}
+	if !lifecycle.Running() {
+		t.Fatal("shutdown timeout/cancellation must not release lifecycle ownership while worker is still active")
+	}
+	if err := lifecycle.Start(context.Background()); !errors.Is(err, ErrSyncWorkerRunning) {
+		t.Fatalf("expected active worker to keep duplicate start rejected, got %v", err)
+	}
+
+	finalCtx, finalCancel := context.WithTimeout(context.Background(), time.Second)
+	defer finalCancel()
+	if err := lifecycle.Shutdown(finalCtx); err != nil {
+		t.Fatal(err)
+	}
+	if lifecycle.Running() {
+		t.Fatal("expected lifecycle to stop after successful shutdown")
+	}
+}
+
 func TestSyncWorkerLifecycleRecoversPersistedSnapshotAcrossRestart(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "provider-operational.json")
 
