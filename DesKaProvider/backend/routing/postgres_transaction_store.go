@@ -24,18 +24,25 @@ func NewPostgresTransactionStore(db DBTX) (*PostgresTransactionStore, error) {
 
 var _ AtomicTransactionStore = (*PostgresTransactionStore)(nil)
 var _ ContextTransactionStore = (*PostgresTransactionStore)(nil)
+var _ ContextReadTransactionStore = (*PostgresTransactionStore)(nil)
 
 const postgresGetSQL = "SELECT reference_id, product_code, customer_no, amount, testing, provider_name, status, provider_code, message, serial_number, price, version, created_at, updated_at FROM provider_transactions WHERE reference_id = $1"
 const postgresAllSQL = "SELECT reference_id, product_code, customer_no, amount, testing, provider_name, status, provider_code, message, serial_number, price, version, created_at, updated_at FROM provider_transactions ORDER BY created_at, reference_id"
 const postgresInsertSQL = "INSERT INTO provider_transactions (reference_id, product_code, customer_no, amount, testing, provider_name, status, provider_code, message, serial_number, price, version) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)"
 const postgresTransitionSQL = "UPDATE provider_transactions SET status=$2, provider_code=$3, message=$4, serial_number=$5, price=$6, version=version+1, updated_at=CURRENT_TIMESTAMP WHERE reference_id=$1 AND version=$7 AND product_code=$8 AND customer_no=$9 AND provider_name=$10 AND status='pending'"
 
-func (s *PostgresTransactionStore) GetContext(ctx context.Context, referenceID string) (TransactionState, bool) {
+func (s *PostgresTransactionStore) GetContextE(ctx context.Context, referenceID string) (TransactionState, bool, error) {
  row := s.db.QueryRowContext(ctx, postgresGetSQL, referenceID)
  state, err := scanPostgresState(row)
- if errors.Is(err, sql.ErrNoRows) { return TransactionState{}, false }
+ if errors.Is(err, sql.ErrNoRows) { return TransactionState{}, false, nil }
+ if err != nil { return TransactionState{}, false, fmt.Errorf("get transaction: %w", err) }
+ return state, true, nil
+}
+
+func (s *PostgresTransactionStore) GetContext(ctx context.Context, referenceID string) (TransactionState, bool) {
+ state, ok, err := s.GetContextE(ctx, referenceID)
  if err != nil { return TransactionState{}, false }
- return state, true
+ return state, ok
 }
 
 func (s *PostgresTransactionStore) Get(referenceID string) (TransactionState, bool) {
@@ -94,13 +101,23 @@ func (s *PostgresTransactionStore) PutIfCurrent(referenceID string, previous, ne
  return s.PutIfCurrentContext(context.Background(), referenceID, previous, next)
 }
 
-func (s *PostgresTransactionStore) AllContext(ctx context.Context) []TransactionState {
+func (s *PostgresTransactionStore) AllContextE(ctx context.Context) ([]TransactionState, error) {
  rows, err := s.db.QueryContext(ctx, postgresAllSQL)
- if err != nil { return nil }
+ if err != nil { return nil, fmt.Errorf("list transactions: %w", err) }
  defer rows.Close()
  var result []TransactionState
- for rows.Next() { state, err := scanPostgresState(rows); if err != nil { return nil }; result = append(result, state) }
- if err := rows.Err(); err != nil { return nil }
+ for rows.Next() {
+  state, err := scanPostgresState(rows)
+  if err != nil { return nil, fmt.Errorf("scan transaction: %w", err) }
+  result = append(result, state)
+ }
+ if err := rows.Err(); err != nil { return nil, fmt.Errorf("iterate transactions: %w", err) }
+ return result, nil
+}
+
+func (s *PostgresTransactionStore) AllContext(ctx context.Context) []TransactionState {
+ result, err := s.AllContextE(ctx)
+ if err != nil { return nil }
  return result
 }
 
