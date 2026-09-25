@@ -632,3 +632,44 @@ func TestServiceRunUsesOwnedCatalogWorkerLifecycle(t *testing.T) {
 		t.Fatal("expected service context to be canceled")
 	}
 }
+
+
+func TestServiceRunWithBalanceAndCatalogLifecyclesClosesDeterministically(t *testing.T) {
+	mockProvider := &balanceMock{Provider: mock.New(mock.Config{Products: []provider.Product{{Code: "xld10", Name: "Test"}}}), balance: 1700000}
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", mockProvider); err != nil { t.Fatal(err) }
+	operationalStore := operational.NewMemoryStore()
+	syncService, err := operational.NewSyncService(registry, operationalStore, "IDR", 3)
+	if err != nil { t.Fatal(err) }
+	catalogStore := catalog.NewMemoryStore()
+	catalogSync, err := catalog.NewSyncService(registry, catalogStore)
+	if err != nil { t.Fatal(err) }
+	service, err := New(syncService, time.Hour)
+	if err != nil { t.Fatal(err) }
+	service.catalogSync = catalogSync
+	service.catalogLifecycle = newCatalogWorkerLifecycle()
+	service.catalogInterval = time.Hour
+
+	closeDB := &closeErrorDB{}
+	service.databaseOwnership = newRuntimeDatabaseOwnership(closeDB, nil)
+	service.databaseOwnership.transferToService()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- service.Run(ctx) }()
+	deadline := time.After(time.Second)
+	for {
+		if _, ok := catalogStore.Get("mock"); ok { break }
+		select { case <-deadline: t.Fatal("catalog worker did not start"); default: time.Sleep(time.Millisecond) }
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if err != context.Canceled { t.Fatalf("unexpected shutdown error: %v", err) }
+	case <-time.After(time.Second):
+		t.Fatal("service did not shut down")
+	}
+	if closeDB.closeCount != 1 { t.Fatalf("expected database close exactly once, got %d", closeDB.closeCount) }
+	if err := service.Close(); err != nil { t.Fatalf("repeated service close failed: %v", err) }
+	if closeDB.closeCount != 1 { t.Fatalf("expected repeated service close to remain single-shot, got %d", closeDB.closeCount) }
+}
