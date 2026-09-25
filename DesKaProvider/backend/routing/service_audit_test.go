@@ -22,7 +22,7 @@ func (s failTransactionAuditStore) All(string) []TransactionAuditEvent {
 	return nil
 }
 
-func newAuditTestService(t *testing.T, mock *Mock.Provider, audit TransactionAuditStore) *Service {
+func newAuditTestService(t *testing.T, mock provider.PPOBProvider, audit TransactionAuditStore) *Service {
 	t.Helper()
 	registry := provider.NewRegistry()
 	if err := registry.Register("mock", mock); err != nil {
