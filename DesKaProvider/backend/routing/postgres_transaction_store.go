@@ -39,7 +39,7 @@ func (s *PostgresTransactionStore) Get(referenceID string) (TransactionState, bo
 
 func (s *PostgresTransactionStore) Put(state TransactionState) error {
  if err := validatePostgresState(state); err != nil { return err }
- current, ok := s.Get(context.Background(), state.Request.ReferenceID)
+ current, ok := s.Get(state.Request.ReferenceID)
  if !ok {
   _, err := s.db.ExecContext(context.Background(), postgresInsertSQL, state.Request.ReferenceID, state.Request.ProductCode, state.Request.CustomerNo, state.Request.Amount, state.Request.Testing, state.Execution.ProviderName, state.Execution.Result.Status, state.Execution.Result.ProviderCode, state.Execution.Result.Message, state.Execution.Result.SerialNumber, state.Execution.Result.Price, 1)
   if err != nil { return fmt.Errorf("insert transaction: %w", err) }
