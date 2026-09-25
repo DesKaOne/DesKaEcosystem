@@ -11,13 +11,13 @@ import (
 )
 
 func main() {
-	service, err := runtime.NewFromEnvironment(nil)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	service, err := runtime.NewFromEnvironmentContext(ctx, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
 	if err := service.Run(ctx); err != nil && ctx.Err() == nil {
 		log.Fatal(err)
