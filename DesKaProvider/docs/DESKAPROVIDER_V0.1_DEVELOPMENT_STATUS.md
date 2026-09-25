@@ -2883,3 +2883,46 @@ Next milestone:
 1. continue restart/reconciliation hardening with explicit read-error observability where the current context-aware interface is insufficient;
 2. evaluate whether the persistence contract should expose read errors without breaking provider-neutral callers;
 3. keep retry/failover deferred until transaction persistence and reconciliation semantics are fully hardened.
+
+
+### 82. Milestone Update — Context-Aware Read Error Observability
+
+**Date:** 2026-09-25
+
+Completed:
+
+- added optional ContextReadTransactionStore extension with error-aware GetContextE and AllContextE methods;
+- preserved the existing TransactionStore and ContextTransactionStore contracts for compatibility;
+- implemented error-aware reads in MemoryTransactionStore and PostgresTransactionStore;
+- retained compatibility wrappers that preserve the previous state-only read behavior for legacy callers;
+- updated reconciliation conflict reload to surface context/database read errors instead of silently treating them as not-found;
+- added deterministic cancellation and database-read-error tests at the persistence boundary.
+
+Safety boundary:
+
+- no provider retry/failover/resubmission was introduced;
+- a read error during reconciliation conflict handling does not authorize another provider purchase;
+- no customer-ledger mutation was introduced;
+- no automatic provider funding was introduced;
+- the new interface is additive and does not alter provider-specific contracts.
+
+Verification:
+
+- CI run #544 / 36140677155: **GREEN**;
+- CI run #543 / 36140677155: **GREEN**;
+- test: PASS;
+- vet: PASS;
+- race: PASS;
+- PostgreSQL service remained active for the test/race jobs.
+
+Known limitations:
+
+- GetContext and AllContext remain compatibility methods with their original state-only signatures;
+- Service startup recovery still uses the context-free All() path because startup lifecycle context is not yet part of the constructor contract;
+- Postgres GetContextE deterministic unit coverage is limited by the database/sql Row API; AllContextE provides direct read-error coverage.
+
+Next milestone:
+
+1. harden startup/restart recovery with explicit initialization context and read-error propagation;
+2. evaluate constructor/API changes needed to make startup database failures distinguishable from an empty transaction set;
+3. keep retry/failover deferred until startup/reconciliation recovery remains unambiguous.
