@@ -47,6 +47,12 @@ func LoadConfig()(Config,error){
 }
 
 func NewFromEnvironment(httpClient *http.Client)(*Service,error){
+ return NewFromEnvironmentContext(context.Background(),httpClient)
+}
+
+func NewFromEnvironmentContext(ctx context.Context,httpClient *http.Client)(*Service,error){
+ if ctx==nil{return nil,errors.New("initialization context is required")}
+ if err:=ctx.Err();err!=nil{return nil,err}
  cfg,e:=LoadConfig();if e!=nil{return nil,e}
  digiCfg,e:=config.LoadDigiFlazzConfig();if e!=nil{return nil,e}
  client,e:=digiflazz.New(digiCfg,httpClient);if e!=nil{return nil,e}
@@ -66,7 +72,7 @@ func NewFromEnvironment(httpClient *http.Client)(*Service,error){
  stateStore,e:=operational.NewPersistentProviderStateStore(statePersistence);if e!=nil{return nil,e}
  for _, name:=range registry.Names(){state,ok:=stateStore.Get(name);if !ok{state,e=operational.NewProviderState(name);if e!=nil{return nil,e}};state.Capabilities=[]operational.Capability{operational.CapabilityPPOB,operational.CapabilityBalance,operational.CapabilityWebhook};if e=stateStore.Put(state);e!=nil{return nil,e}}
  router,e:=routing.NewWithCatalogAndStateAndOperationalMaxAge(registry,store,nil,catalogStore,stateStore,cfg.OperationalSnapshotMaxAge);if e!=nil{return nil,e}
- purchaseService,e:=routing.NewServiceWithStore(router,transactionStore);if e!=nil{return nil,e}
+ purchaseService,e:=routing.NewServiceWithStoreContext(ctx,router,transactionStore);if e!=nil{return nil,e}
  return &Service{syncService:syncService,purchaseService:purchaseService,catalogSync:catalogSync,providerState:stateStore,interval:cfg.SyncInterval,catalogInterval:cfg.CatalogSyncInterval},nil
 }
 
