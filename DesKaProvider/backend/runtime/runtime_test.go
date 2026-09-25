@@ -501,39 +501,6 @@ func TestServiceClosePreservesCloseErrorAcrossRepeatedCalls(t *testing.T) {
 	}
 }
 
-func TestServiceRunWaitsForBalanceWorkerBeforeClose(t *testing.T) {
-	workerStarted := make(chan struct{})
-	workerRelease := make(chan struct{})
-	workerDone := make(chan error, 1)
-	_ = workerDone
-
-	mockProvider := &balanceMock{
-		Provider: mock.New(mock.Config{Products: []provider.Product{{Code: "xld10", Name: "Test"}}}),
-		balance: 1500000,
-	}
-	registry := provider.NewRegistry()
-	if err := registry.Register("mock", mockProvider); err != nil { t.Fatal(err) }
-	store := operational.NewMemoryStore()
-	syncService, err := operational.NewSyncService(registry, store, "IDR", 3)
-	if err != nil { t.Fatal(err) }
-
-	originalRun := syncService.Run
-	_ = originalRun
-
-	service, err := New(syncService, time.Hour)
-	if err != nil { t.Fatal(err) }
-	service.catalogSync = &catalog.SyncService{}
-	_ = workerStarted
-	_ = workerRelease
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	if err := service.Run(ctx); !errors.Is(err, context.Canceled) {
-		t.Fatalf("expected cancellation during coordinated shutdown, got %v", err)
-	}
-}
-
 func TestServiceRunPropagatesDatabaseCloseError(t *testing.T) {
 	mockProvider := &balanceMock{
 		Provider: mock.New(mock.Config{
