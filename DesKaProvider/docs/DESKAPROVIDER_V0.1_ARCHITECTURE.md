@@ -486,3 +486,18 @@ Runtime composition performs sql.Open followed by PingContext using the same ini
 The routing/service layer remains dependent only on the provider-neutral TransactionStore and its context-aware extensions. PostgreSQL-specific connection lifecycle is contained in runtime composition.
 
 The runtime service closes the database handle on shutdown. No retry or automatic reconnection policy is introduced in this milestone.
+
+
+## 23. PostgreSQL Restart Recovery & Reconciliation Verification
+
+**Date:** 2026-09-25
+
+Milestone #86 verifies the durable pending transaction boundary end-to-end through the routing service.
+
+A real PostgreSQL store is populated by Service.Purchase, leaving the provider result pending. A new Service instance is then constructed from the same PostgreSQL store. Startup reconstruction uses AllContextE, recreates the pending transaction call state, and Reconcile queries the selected provider status without invoking Purchase again.
+
+The integration assertion requires the mock provider purchase count to remain exactly one across the reconstruction and reconciliation step. This establishes the intended restart invariant:
+
+durable pending state -> reconstruct -> reconcile -> no second provider submission
+
+No retry, failover, customer-ledger mutation, or automatic funding behavior is implied by this boundary.
