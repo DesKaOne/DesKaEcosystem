@@ -543,6 +543,10 @@ func TestServiceRollbackStartedLifecyclesBeforeDatabaseClose(t *testing.T) {
 	service.catalogLifecycle = newCatalogWorkerLifecycle()
 	service.catalogSync = &catalog.SyncService{}
 	service.catalogInterval = time.Hour
+	catalogStartErr := errors.New("injected catalog lifecycle start failure")
+	service.catalogStart = func(context.Context) (context.Context, error) {
+		return nil, catalogStartErr
+	}
 
 	type orderedCloseDB struct {
 		service *Service
@@ -556,8 +560,8 @@ func TestServiceRollbackStartedLifecyclesBeforeDatabaseClose(t *testing.T) {
 	cancel()
 
 	err = service.Run(ctx)
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("expected context.Canceled, got %v", err)
+	if !errors.Is(err, catalogStartErr) {
+		t.Fatalf("expected injected catalog start failure, got %v", err)
 	}
 	if !db.closed {
 		t.Fatal("expected database to be closed during rollback")
