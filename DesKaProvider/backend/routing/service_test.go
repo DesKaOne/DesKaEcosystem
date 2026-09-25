@@ -597,12 +597,10 @@ func TestServiceRestartReconcilesPendingWithoutResubmission(t *testing.T) {
 	req := PurchaseRequest{ProductCode: "pln20", CustomerNo: "08123456789", ReferenceID: "ref-restart-reconcile", Amount: 20000}
 	if _, err := service.Purchase(context.Background(), req); err != nil { t.Fatal(err) }
 
+	initialMock.SetPurchaseStatus(provider.StatusSuccess, "success after reconciliation")
+
 	recoveredRegistry := provider.NewRegistry()
-	recoveredMock := Mock.New(Mock.Config{
-		Products: []provider.Product{{Code: "pln20", Name: "PLN 20"}},
-		ProviderCode: "00", Message: "success after reconciliation", PurchaseStatus: provider.StatusSuccess, Price: 20000,
-	})
-	if err := recoveredRegistry.Register("mock", recoveredMock); err != nil { t.Fatal(err) }
+	if err := recoveredRegistry.Register("mock", initialMock); err != nil { t.Fatal(err) }
 	recoveredOps := operational.NewMemoryStore()
 	if err := recoveredOps.Put(operational.Snapshot{ProviderName: "mock", Balance: 100000, Health: operational.HealthHealthy}); err != nil { t.Fatal(err) }
 	recoveredRouter, err := New(recoveredRegistry, recoveredOps, map[string]int{"mock": 1})
@@ -617,7 +615,7 @@ func TestServiceRestartReconcilesPendingWithoutResubmission(t *testing.T) {
 	if result.Result.Status != provider.StatusSuccess {
 		t.Fatalf("expected reconciled success, got %#v", result)
 	}
-	if got := recoveredMock.PurchaseCount(req.ReferenceID); got != 0 {
+	if got := initialMock.PurchaseCount(req.ReferenceID); got != 1 {
 		t.Fatalf("expected reconciliation not to resubmit purchase, got %d submissions", got)
 	}
 
