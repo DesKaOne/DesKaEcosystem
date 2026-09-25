@@ -462,6 +462,56 @@ func TestServiceReconcileRejectsIdentityMismatch(t *testing.T) {
 	}
 }
 
+func TestServiceConcurrentReconcileIsIdempotent(t *testing.T) {
+	registry := provider.NewRegistry()
+	mock := Mock.New(Mock.Config{
+		Products: []provider.Product{{Code: "pln20", Name: "PLN 20"}},
+		ProviderCode: "00", Message: "pending", PurchaseStatus: provider.StatusPending, Price: 20000,
+	})
+	if err := registry.Register("mock", mock); err != nil { t.Fatal(err) }
+	ops := operational.NewMemoryStore()
+	if err := ops.Put(operational.Snapshot{ProviderName: "mock", Balance: 100000, Health: operational.HealthHealthy}); err != nil { t.Fatal(err) }
+	router, err := New(registry, ops, map[string]int{"mock": 1})
+	if err != nil { t.Fatal(err) }
+	store := NewMemoryTransactionStore()
+	firstService, err := NewServiceWithStore(router, store)
+	if err != nil { t.Fatal(err) }
+
+	req := PurchaseRequest{ProductCode: "pln20", CustomerNo: "08123456789", ReferenceID: "ref-concurrent-reconcile", Amount: 20000}
+	if _, err := firstService.Purchase(context.Background(), req); err != nil { t.Fatal(err) }
+	mock.SetTransactionStatus(req.ReferenceID, provider.StatusSuccess, "success")
+
+	secondService, err := NewServiceWithStore(router, store)
+	if err != nil { t.Fatal(err) }
+
+	type result struct {
+		execution PurchaseExecution
+		err       error
+	}
+	results := make(chan result, 2)
+	go func() {
+		execution, err := firstService.Reconcile(context.Background(), req.ReferenceID)
+		results <- result{execution: execution, err: err}
+	}()
+	go func() {
+		execution, err := secondService.Reconcile(context.Background(), req.ReferenceID)
+		results <- result{execution: execution, err: err}
+	}()
+
+	for i := 0; i < 2; i++ {
+		got := <-results
+		if got.err != nil {
+			t.Fatalf("concurrent reconciliation failed: %v", got.err)
+		}
+		if got.execution.Result.Status != provider.StatusSuccess {
+			t.Fatalf("expected concurrent reconciliation success, got %#v", got.execution)
+		}
+	}
+	if got := mock.PurchaseCount(req.ReferenceID); got != 1 {
+		t.Fatalf("expected reconciliation not to resubmit purchase, got %d submissions", got)
+	}
+}
+
 func TestServiceRestartRecoversDurableTransactionState(t *testing.T) {
 	storePath := filepath.Join(t.TempDir(), "transactions", "state.json")
 	firstRegistry := provider.NewRegistry()
