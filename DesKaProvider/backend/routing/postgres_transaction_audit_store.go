@@ -2,10 +2,8 @@ package routing
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
-	"time"
 )
 
 // PostgresTransactionAuditStore is an append-only PostgreSQL implementation
@@ -110,8 +108,3 @@ func validateTransactionAuditEvent(event TransactionAuditEvent) error {
 	return nil
 }
 
-// Keep the sql package referenced here as part of the scanner contract used by
-// database/sql-backed implementations and deterministic test doubles.
-var _ interface{ Scan(...any) error } = (*sql.Row)(nil)
-
-var _ = time.Time{}
