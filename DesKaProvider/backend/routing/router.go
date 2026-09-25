@@ -19,8 +19,10 @@ var (
 	ErrCatalogStale = errors.New("provider catalog is stale")
 )
 
-const defaultCatalogMaxAge = 30 * time.Minute
+const (
+	defaultCatalogMaxAge = 30 * time.Minute
 	defaultOperationalSnapshotMaxAge = 2 * time.Minute
+)
 
 type Request struct {
 	ProductCode string
