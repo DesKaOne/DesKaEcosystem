@@ -169,6 +169,22 @@ func (p *Provider) SetPurchaseStatus(status provider.TransactionStatus, message 
 	}
 }
 
+// SetTransactionStatus changes an already recorded mock transaction.
+func (p *Provider) SetTransactionStatus(referenceID string, status provider.TransactionStatus, message string) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	result, ok := p.purchases[referenceID]
+	if !ok {
+		return false
+	}
+	result.Status = status
+	if message != "" {
+		result.Message = message
+	}
+	p.purchases[referenceID] = result
+	return true
+}
+
 // PurchaseCount reports how many purchase submissions were recorded for a reference ID.
 func (p *Provider) PurchaseCount(referenceID string) int {
 	p.mu.RLock()
