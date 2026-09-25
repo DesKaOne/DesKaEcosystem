@@ -73,19 +73,24 @@ func NewFromEnvironmentContext(ctx context.Context,httpClient *http.Client)(*Ser
  catalogStore,e:=catalog.NewJSONFileStore(cfg.CatalogStorePath);if e!=nil{return nil,e}
  catalogSync,e:=catalog.NewSyncService(registry,catalogStore);if e!=nil{return nil,e}
  transactionStore,transactionDB,e:=openTransactionStore(ctx,cfg);if e!=nil{return nil,e}
- auditStore,auditDB,e:=openAuditStore(ctx,cfg,transactionDB);if e!=nil{if transactionDB!=nil{_ = transactionDB.Close()};return nil,e}
+ auditStore,auditDB,e:=openAuditStore(ctx,cfg,transactionDB);if e!=nil{closeRuntimeDatabases(transactionDB,auditDB);return nil,e}
+ cleanup:=true
+ defer func(){if cleanup{closeRuntimeDatabases(transactionDB,auditDB)}}()
  statePersistence,e:=operational.NewJSONFileProviderStateStore(cfg.ProviderStateStorePath);if e!=nil{return nil,e}
  stateStore,e:=operational.NewPersistentProviderStateStore(statePersistence);if e!=nil{return nil,e}
  for _, name:=range registry.Names(){state,ok:=stateStore.Get(name);if !ok{state,e=operational.NewProviderState(name);if e!=nil{return nil,e}};state.Capabilities=[]operational.Capability{operational.CapabilityPPOB,operational.CapabilityBalance,operational.CapabilityWebhook};if e=stateStore.Put(state);e!=nil{return nil,e}}
  router,e:=routing.NewWithCatalogAndStateAndOperationalMaxAge(registry,store,nil,catalogStore,stateStore,cfg.OperationalSnapshotMaxAge);if e!=nil{return nil,e}
  purchaseService,e:=routing.NewServiceWithStoreContextAndAudit(ctx,router,transactionStore,auditStore);if e!=nil{return nil,e}
- return &Service{syncService:syncService,purchaseService:purchaseService,catalogSync:catalogSync,providerState:stateStore,transactionDB:transactionDB,auditDB:auditDB,interval:cfg.SyncInterval,catalogInterval:cfg.CatalogSyncInterval},nil
+ service:=&Service{syncService:syncService,purchaseService:purchaseService,catalogSync:catalogSync,providerState:stateStore,transactionDB:transactionDB,auditDB:auditDB,interval:cfg.SyncInterval,catalogInterval:cfg.CatalogSyncInterval}
+ cleanup=false
+ return service,nil
 }
 
 func New(syncService *operational.SyncService,interval time.Duration)(*Service,error){if syncService==nil{return nil,errors.New("sync service is required")};if interval<=0{return nil,errors.New("sync interval must be greater than zero")};return &Service{syncService:syncService,interval:interval},nil}
 func (s *Service) Run(ctx context.Context)error{if ctx==nil{return errors.New("context is required")};if s.catalogSync==nil{err:=s.syncService.Run(ctx,s.interval);if s.transactionDB!=nil{_ = s.transactionDB.Close()};if s.auditDB!=nil{_ = s.auditDB.Close()};return err};_=s.catalogSync.SyncAll(ctx);ticker:=time.NewTicker(s.catalogInterval);defer ticker.Stop();go func(){_=s.syncService.Run(ctx,s.interval)}();for{select{case<-ctx.Done():if s.transactionDB!=nil{_ = s.transactionDB.Close()};if s.auditDB!=nil{_ = s.auditDB.Close()};return ctx.Err();case<-ticker.C:_=s.catalogSync.SyncAll(ctx)}}}
 func (s *Service) PurchaseService()*routing.Service{if s==nil{return nil};return s.purchaseService}
 
+func closeRuntimeDatabases(transactionDB,auditDB *sql.DB){if transactionDB!=nil{_ = transactionDB.Close()};if auditDB!=nil && auditDB!=transactionDB{_ = auditDB.Close()}}
 
 func openAuditStore(ctx context.Context, cfg Config, transactionDB *sql.DB) (routing.TransactionAuditStore, *sql.DB, error) {
 	if err := ctx.Err(); err != nil { return nil, nil, err }
