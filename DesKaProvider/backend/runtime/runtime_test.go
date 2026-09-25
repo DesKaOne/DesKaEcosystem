@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+	"strings"
 
 	provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
 	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/catalog"
@@ -282,26 +283,33 @@ func TestNewFromEnvironmentContextRequiresContext(t *testing.T) {
 	if _, err := NewFromEnvironmentContext(nil, nil); err == nil { t.Fatal("expected initialization context error") }
 }
 
-func TestNewFromEnvironmentContextCleansSharedDatabaseAfterPostInitializationFailure(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
+func TestNewFromEnvironmentContextRejectsProviderStateInitializationFailureAfterOwnershipSetup(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("DIGIFLAZZ_USERNAME", "test-user")
 	t.Setenv("DIGIFLAZZ_API_KEY", "test-key")
 	t.Setenv("DESKAPROVIDER_OPERATIONAL_STORE_PATH", filepath.Join(root, "operational", "snapshots.json"))
-	t.Setenv("DESKAPROVIDER_PROVIDER_STATE_STORE_PATH", filepath.Join(root, "provider-state", "state.json"))
-	t.Setenv("DESKAPROVIDER_TRANSACTION_STORE_PATH", filepath.Join(root, "transactions", "state.json"))
-	t.Setenv("DESKAPROVIDER_TRANSACTION_STORE_DRIVER", "postgres")
-	t.Setenv("DESKAPROVIDER_AUDIT_STORE_DRIVER", "postgres")
-	t.Setenv("DESKAPROVIDER_POSTGRES_DSN", "postgres://invalid")
-
-	_, err := NewFromEnvironmentContext(ctx, nil)
-	if err == nil {
-		t.Fatal("expected PostgreSQL initialization failure")
+	providerStatePath := filepath.Join(root, "provider-state", "state.json")
+	if err := os.MkdirAll(filepath.Dir(providerStatePath), 0o750); err != nil {
+		t.Fatal(err)
 	}
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("expected cancellation to remain discoverable: %v", err)
+	if err := os.WriteFile(providerStatePath, []byte("{not-json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DESKAPROVIDER_PROVIDER_STATE_STORE_PATH", providerStatePath)
+	t.Setenv("DESKAPROVIDER_TRANSACTION_STORE_PATH", filepath.Join(root, "transactions", "state.json"))
+	t.Setenv("DESKAPROVIDER_TRANSACTION_STORE_DRIVER", "json")
+	t.Setenv("DESKAPROVIDER_AUDIT_STORE_DRIVER", "memory")
+	t.Setenv("DESKAPROVIDER_POSTGRES_DSN", "")
+
+	service, err := NewFromEnvironmentContext(context.Background(), nil)
+	if err == nil {
+		t.Fatal("expected provider state initialization failure")
+	}
+	if service != nil {
+		t.Fatal("expected failed initialization not to return a service")
+	}
+	if !strings.Contains(err.Error(), "decode provider state store") {
+		t.Fatalf("expected provider state decode error, got %v", err)
 	}
 }
 
