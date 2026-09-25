@@ -310,6 +310,42 @@ func TestRuntimeDatabaseOwnershipSuccessPathDedicatedAuditResource(t *testing.T)
 	if auditDB.closeCount != 1 { t.Fatalf("expected dedicated audit resource to close once, got %d", auditDB.closeCount) }
 }
 
+func TestRuntimeShutdownContextPreservesParentDeadline(t *testing.T) {
+	deadline := time.Now().Add(80 * time.Millisecond)
+	parent, parentCancel := context.WithDeadline(context.Background(), deadline)
+	defer parentCancel()
+
+	shutdownCtx, cancel := runtimeShutdownContext(parent)
+	defer cancel()
+
+	gotDeadline, ok := shutdownCtx.Deadline()
+	if !ok {
+		t.Fatal("expected shutdown context to preserve the parent deadline")
+	}
+	if gotDeadline.Before(deadline.Add(-5 * time.Millisecond)) || gotDeadline.After(deadline.Add(5 * time.Millisecond)) {
+		t.Fatalf("unexpected shutdown deadline: got %v want about %v", gotDeadline, deadline)
+	}
+	select {
+	case <-shutdownCtx.Done():
+		t.Fatal("shutdown context canceled before parent deadline")
+	default:
+	}
+}
+
+func TestRuntimeShutdownContextDoesNotInheritCancellation(t *testing.T) {
+	parent, parentCancel := context.WithCancel(context.Background())
+	parentCancel()
+
+	shutdownCtx, cancel := runtimeShutdownContext(parent)
+	defer cancel()
+
+	select {
+	case <-shutdownCtx.Done():
+		t.Fatal("shutdown context must not inherit already-canceled parent state")
+	default:
+	}
+}
+
 func TestServiceRunStopsOnContextCancellation(t *testing.T) {
 	mockProvider := &balanceMock{
 		Provider: mock.New(mock.Config{
