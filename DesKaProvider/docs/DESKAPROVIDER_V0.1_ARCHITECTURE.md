@@ -439,3 +439,18 @@ The PostgreSQL adapter now preserves database read failures on the new methods i
 Service reconciliation conflict recovery uses the error-aware read path when available. If the durable reload fails because of cancellation or a database error, reconciliation returns that error rather than interpreting the missing state as a reference conflict. This distinction is important for recovery safety: a read failure never authorizes a second provider purchase.
 
 Startup recovery remains on the context-free All() constructor path. This is the next explicit boundary to harden so startup database failures cannot be mistaken for an empty transaction set.
+
+
+## 20. Context-Aware Startup Recovery Boundary
+
+**Date:** 2026-09-25
+
+Milestone #83 adds an explicit initialization-context constructor: NewServiceWithStoreContext(ctx, router, store).
+
+When the store implements ContextReadTransactionStore, service startup loads durable transactions through AllContextE. Database/read errors are returned as initialization failures rather than being collapsed into an empty transaction set.
+
+The existing NewServiceWithStore remains compatible and deliberately supplies context.Background() as its initialization context. This keeps existing callers stable while providing an explicit migration path for production composition roots that own startup cancellation and timeout policy.
+
+A canceled initialization context fails before transaction reconstruction. No provider call is made and no transaction is resubmitted.
+
+Legacy stores without context-aware reads continue through their existing All() path. This is a compatibility boundary, not a claim of context-aware startup behavior for legacy implementations.
