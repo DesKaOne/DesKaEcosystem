@@ -2841,3 +2841,45 @@ Next milestone #81:
 1. add deterministic cancellation/deadline tests for context-aware memory and PostgreSQL persistence paths;
 2. verify cancellation does not alter durable transaction state or authorize resubmission;
 3. continue restart/reconciliation hardening.
+
+
+### 81. Milestone Update — Context Cancellation & Deadline Persistence Hardening
+
+**Date:** 2026-09-25
+
+Completed:
+
+- added deterministic memory-store tests for canceled request contexts across GetContext, AllContext, PutContext, and PutIfCurrentContext;
+- added deterministic memory-store deadline coverage for mutation paths;
+- verified canceled/deadline persistence operations do not mutate the durable in-memory transaction state;
+- added PostgreSQL adapter coverage proving request cancellation reaches the database/sql execution boundary;
+- retained the existing rule that cancellation/deadline errors never authorize provider retry, failover, or resubmission;
+- kept the provider-neutral persistence contract unchanged; this milestone hardens the behavior of the existing ContextTransactionStore boundary rather than expanding financial scope.
+
+Safety boundary:
+
+- cancellation and deadlines only control the persistence operation lifecycle;
+- a canceled or expired persistence call cannot transition transaction state;
+- no provider retry/failover/resubmission was introduced;
+- no customer-ledger mutation was introduced;
+- no automatic provider funding was introduced.
+
+Verification:
+
+- CI run #533 / 36140004549: **GREEN**;
+- test: PASS;
+- vet: PASS;
+- race: PASS;
+- PostgreSQL service remained active for the test/race jobs.
+
+Known limitations:
+
+- GetContext and AllContext retain their existing state-only return shape, so cancellation/database errors on those read methods can still be represented as not-found/empty results;
+- startup recovery still uses the context-free All() compatibility path;
+- production migration orchestration remains separate from the persistence contract.
+
+Next milestone:
+
+1. continue restart/reconciliation hardening with explicit read-error observability where the current context-aware interface is insufficient;
+2. evaluate whether the persistence contract should expose read errors without breaking provider-neutral callers;
+3. keep retry/failover deferred until transaction persistence and reconciliation semantics are fully hardened.
