@@ -4052,3 +4052,43 @@ Milestone #99: runtime ownership transfer and initialization/shutdown lifecycle 
 ### Next Milestone
 
 **#111 — Runtime Close/Shutdown Concurrency Review**: inspect concurrent `Service.Close()` calls and interactions between explicit close and active `Run()` shutdown, preserving single-owner cleanup and avoiding premature resource release.
+
+
+### Milestone #111 — Runtime Close/Shutdown Concurrency Review
+
+**Date:** 2026-09-26
+
+### Completed
+
+- reviewed concurrent `Service.Close()` calls and the interaction between explicit close and an active `Service.Run()` shutdown;
+- prevented explicit `Service.Close()` from releasing runtime-owned database resources while the balance worker lifecycle is still active;
+- preserved the existing ownership rule that the active runtime shutdown path stops the worker before closing owned database resources;
+- retained idempotent database ownership closure after the active `Run()` has completed;
+- added deterministic regression coverage proving an explicit close attempt during active runtime execution does not close the database prematurely and the active `Run()` still performs the single final close;
+- kept re-entry protection and shutdown error composition unchanged;
+- no provider retry, failover, resubmission, transaction-state, audit-authority, customer-ledger, treasury, or automatic provider-funding behavior was changed.
+
+### Verification
+
+- implementation HEAD: `c9c2d562ba60ecebc594e887329658dda9f39e9f`;
+- CI #853 / run `36202743252`: **GREEN** for exact HEAD `c9c2d562ba60ecebc594e887329658dda9f39e9f`;
+- CI jobs `test`: success;
+- CI jobs `race`: success.
+
+### Safety Boundary
+
+- explicit close during active runtime execution is an infrastructure lifecycle concern only;
+- active worker ownership remains responsible for coordinated worker shutdown before database release;
+- a rejected explicit close cannot alter transaction authorization or provider action semantics;
+- transaction persistence remains the authoritative transaction state and audit persistence remains operational evidence;
+- lifecycle concurrency guards cannot authorize provider retry, failover, resubmission, ledger mutation, treasury movement, or provider funding.
+
+### Known Limitations
+
+- the explicit `Service.Close()` guard covers the owned balance-worker lifecycle path; independently owned future workers may require additional coordination;
+- `databaseCloser.Close()` remains non-context-aware, so a driver-level hang is outside this contract;
+- concurrency coverage is deterministic and does not simulate process termination or arbitrary OS-level resource failures.
+
+### Next Milestone
+
+**#112 — Runtime Lifecycle Restart & Post-Shutdown Re-entry Review**: verify restart behavior after a completed `Run()`/shutdown cycle, including worker state reset, database ownership state, and repeated service execution without stale lifecycle state.
