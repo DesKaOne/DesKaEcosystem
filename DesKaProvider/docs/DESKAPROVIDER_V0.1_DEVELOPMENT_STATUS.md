@@ -3719,3 +3719,45 @@ Milestone #99: runtime ownership transfer and initialization/shutdown lifecycle 
 ### Next Milestone
 
 **#102 — Runtime Catalog Worker Lifecycle Boundary Review**: inspect the remaining catalog synchronization lifecycle path and only introduce a dedicated lifecycle abstraction where it improves concrete startup/shutdown ownership without changing business semantics.
+
+
+### Milestone #102 — Runtime Catalog Worker Lifecycle Boundary
+
+**Date:** 2026-09-26
+
+### Completed
+
+- introduced an explicit runtime-owned catalog worker lifecycle boundary;
+- catalog synchronization keeps its existing synchronous `SyncAll(ctx)` semantics and ticker cadence;
+- the lifecycle owns the derived catalog context and provides idempotent shutdown state transitions;
+- duplicate catalog lifecycle start is rejected deterministically;
+- runtime catalog synchronization now runs against the lifecycle-owned context and is canceled during service shutdown;
+- added deterministic tests for lifecycle start/duplicate-start/shutdown/restart behavior;
+- added runtime integration coverage proving the catalog snapshot is populated and the runtime exits with `context.Canceled` after service cancellation;
+- no provider retry, failover, resubmission, transaction-state, audit-authority, customer-ledger, treasury, or automatic provider-funding behavior was changed.
+
+### Verification
+
+- CI #771 / run `36195305696`: **GREEN** for exact HEAD `81a3e3b0a8482e1179fcff738462660f3d01fd2a`;
+- CI #772 / run `36195307870`: **GREEN** for the same exact HEAD;
+- `go test ./...`: PASS;
+- `go vet ./...`: PASS;
+- `go test -race ./...`: PASS;
+- PostgreSQL-backed workflow service completed successfully.
+
+### Safety Boundary
+
+- catalog lifecycle is an infrastructure orchestration concern only;
+- transaction persistence remains authoritative and audit persistence remains observational;
+- catalog worker shutdown cannot authorize provider retry, failover, resubmission, ledger mutation, treasury movement, or provider funding;
+- existing database ownership transfer and single-close semantics remain unchanged.
+
+### Known Limitations
+
+- catalog lifecycle currently owns context/state only; `SyncAll` remains a synchronous call driven by the runtime ticker;
+- there is no external lifecycle metrics or diagnostic endpoint;
+- process-kill and network-partition behavior remain outside the deterministic lifecycle test boundary.
+
+### Next Milestone
+
+**#103 — Runtime Startup/Shutdown Composition Review**: review the combined balance and catalog lifecycle ordering, including failure and repeated-shutdown paths, without expanding financial or provider action semantics.
