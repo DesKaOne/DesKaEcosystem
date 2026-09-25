@@ -39,8 +39,28 @@ func (s *PostgresTransactionStore) Get(ctx context.Context, referenceID string) 
 
 func (s *PostgresTransactionStore) Put(state TransactionState) error {
  if err := validatePostgresState(state); err != nil { return err }
- _, err := s.db.ExecContext(context.Background(), postgresInsertSQL, state.Request.ReferenceID, state.Request.ProductCode, state.Request.CustomerNo, state.Request.Amount, state.Request.Testing, state.Execution.ProviderName, state.Execution.Result.Status, state.Execution.Result.ProviderCode, state.Execution.Result.Message, state.Execution.Result.SerialNumber, state.Execution.Result.Price, 1)
- if err != nil { return fmt.Errorf("insert transaction: %w", err) }
+ current, ok := s.Get(context.Background(), state.Request.ReferenceID)
+ if !ok {
+  _, err := s.db.ExecContext(context.Background(), postgresInsertSQL, state.Request.ReferenceID, state.Request.ProductCode, state.Request.CustomerNo, state.Request.Amount, state.Request.Testing, state.Execution.ProviderName, state.Execution.Result.Status, state.Execution.Result.ProviderCode, state.Execution.Result.Message, state.Execution.Result.SerialNumber, state.Execution.Result.Price, 1)
+  if err != nil { return fmt.Errorf("insert transaction: %w", err) }
+  return nil
+ }
+ if err := validateTransactionTransition(current, state); err != nil { return err }
+ if samePurchaseResult(current.Execution.Result, state.Execution.Result) {
+  return nil
+ }
+ if current.Execution.Result.Status != provider.StatusPending {
+  return ErrReferenceConflict
+ }
+ next := state
+ result, err := s.db.ExecContext(context.Background(), postgresTransitionSQL,
+  state.Request.ReferenceID, next.Execution.Result.Status, next.Execution.Result.ProviderCode,
+  next.Execution.Result.Message, next.Execution.Result.SerialNumber, next.Execution.Result.Price,
+  1, current.Request.ProductCode, current.Request.CustomerNo, current.Execution.ProviderName)
+ if err != nil { return fmt.Errorf("update transaction: %w", err) }
+ n, err := result.RowsAffected()
+ if err != nil { return fmt.Errorf("read transaction update result: %w", err) }
+ if n != 1 { return ErrTransactionStateConflict }
  return nil
 }
 
