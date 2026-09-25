@@ -253,7 +253,15 @@ func (s *Service) Run(ctx context.Context) error {
 }
 
 func (s *Service) PurchaseService()*routing.Service{if s==nil{return nil};return s.purchaseService}
-func (s *Service) Close() error { if s==nil { return nil }; return s.closeOwnedDatabases() }
+func (s *Service) Close() error {
+	if s == nil {
+		return nil
+	}
+	if s.balanceLifecycle != nil && s.balanceLifecycle.Running() {
+		return errors.New("service close requires worker shutdown")
+	}
+	return s.closeOwnedDatabases()
+}
 
 func (s *Service) closeOwnedDatabases() error { if s==nil || s.databaseOwnership==nil { return nil }; return s.databaseOwnership.closeOwned() }
 
