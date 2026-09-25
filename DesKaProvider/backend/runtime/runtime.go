@@ -8,6 +8,7 @@ import (
  "net/http"
  "os"
  "strconv"
+ "sync"
  "time"
 
  _ "github.com/jackc/pgx/v5/stdlib"
@@ -39,7 +40,56 @@ const (
 
 type Config struct{StorePath,TransactionStorePath,ProviderStateStorePath,TransactionStoreDriver,AuditStoreDriver,PostgresDSN string;SyncInterval time.Duration;FailureThreshold int;Currency,CatalogStorePath string;CatalogSyncInterval,CatalogMaxAge,OperationalSnapshotMaxAge time.Duration}
 type databaseCloser interface { Close() error }
-type Service struct{syncService *operational.SyncService;purchaseService *routing.Service;catalogSync *catalog.SyncService;providerState *operational.ProviderStateStore;transactionDB databaseCloser;auditDB databaseCloser;interval,catalogInterval time.Duration}
+
+type runtimeDatabaseOwnership struct {
+	mu sync.Mutex
+	transactionDB databaseCloser
+	auditDB databaseCloser
+	transferredToService bool
+	closed bool
+	closeErr error
+}
+
+func newRuntimeDatabaseOwnership(transactionDB, auditDB databaseCloser) *runtimeDatabaseOwnership {
+	return &runtimeDatabaseOwnership{transactionDB: transactionDB, auditDB: auditDB}
+}
+
+func (o *runtimeDatabaseOwnership) transferToService() {
+	if o == nil { return }
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.closed { return }
+	o.transferredToService = true
+}
+
+func (o *runtimeDatabaseOwnership) transferred() bool {
+	if o == nil { return false }
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.transferredToService
+}
+
+func (o *runtimeDatabaseOwnership) cleanupBeforeTransfer() error {
+	if o == nil { return nil }
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.transferredToService || o.closed { return o.closeErr }
+	o.closed = true
+	o.closeErr = closeRuntimeDatabases(o.transactionDB, o.auditDB)
+	return o.closeErr
+}
+
+func (o *runtimeDatabaseOwnership) closeOwned() error {
+	if o == nil { return nil }
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.closed { return o.closeErr }
+	o.closed = true
+	o.closeErr = closeRuntimeDatabases(o.transactionDB, o.auditDB)
+	return o.closeErr
+}
+
+type Service struct{syncService *operational.SyncService;purchaseService *routing.Service;catalogSync *catalog.SyncService;providerState *operational.ProviderStateStore;databaseOwnership *runtimeDatabaseOwnership;interval,catalogInterval time.Duration}
 
 func LoadConfig()(Config,error){
  cfg:=Config{StorePath:os.Getenv("DESKAPROVIDER_OPERATIONAL_STORE_PATH"),TransactionStoreDriver:os.Getenv("DESKAPROVIDER_TRANSACTION_STORE_DRIVER"),AuditStoreDriver:os.Getenv("DESKAPROVIDER_AUDIT_STORE_DRIVER"),PostgresDSN:os.Getenv("DESKAPROVIDER_POSTGRES_DSN"),ProviderStateStorePath:os.Getenv("DESKAPROVIDER_PROVIDER_STATE_STORE_PATH"),TransactionStorePath:os.Getenv("DESKAPROVIDER_TRANSACTION_STORE_PATH"),SyncInterval:defaultSyncInterval,FailureThreshold:defaultFailureThreshold,Currency:os.Getenv("DESKAPROVIDER_OPERATIONAL_CURRENCY"),CatalogStorePath:os.Getenv("DESKAPROVIDER_CATALOG_STORE_PATH"),CatalogSyncInterval:defaultCatalogSyncInterval,CatalogMaxAge:defaultCatalogMaxAge,OperationalSnapshotMaxAge:defaultOperationalSnapshotMaxAge}
@@ -56,7 +106,7 @@ func NewFromEnvironment(httpClient *http.Client)(*Service,error){
  return NewFromEnvironmentContext(context.Background(),httpClient)
 }
 
-func NewFromEnvironmentContext(ctx context.Context,httpClient *http.Client)(*Service,error){
+func NewFromEnvironmentContext(ctx context.Context,httpClient *http.Client)(service *Service, err error){
  if ctx==nil{return nil,errors.New("initialization context is required")}
  if err:=ctx.Err();err!=nil{return nil,err}
  cfg,e:=LoadConfig();if e!=nil{return nil,e}
@@ -75,21 +125,28 @@ func NewFromEnvironmentContext(ctx context.Context,httpClient *http.Client)(*Ser
  catalogSync,e:=catalog.NewSyncService(registry,catalogStore);if e!=nil{return nil,e}
  transactionStore,transactionDB,e:=openTransactionStore(ctx,cfg);if e!=nil{return nil,e}
 auditStore,auditDB,e:=openAuditStore(ctx,cfg,transactionDB);if e!=nil{return nil,withRuntimeInitializationCleanupError(e,transactionDB,auditDB)}
-cleanup:=true
-defer func(){if cleanup{_ = closeRuntimeDatabases(transactionDB,auditDB)}}()
-statePersistence,e:=operational.NewJSONFileProviderStateStore(cfg.ProviderStateStorePath);if e!=nil{return nil,withRuntimeInitializationCleanupError(e,transactionDB,auditDB)}
-stateStore,e:=operational.NewPersistentProviderStateStore(statePersistence);if e!=nil{return nil,withRuntimeInitializationCleanupError(e,transactionDB,auditDB)}
-for _, name:=range registry.Names(){state,ok:=stateStore.Get(name);if !ok{state,e=operational.NewProviderState(name);if e!=nil{return nil,withRuntimeInitializationCleanupError(e,transactionDB,auditDB)}};state.Capabilities=[]operational.Capability{operational.CapabilityPPOB,operational.CapabilityBalance,operational.CapabilityWebhook};if e=stateStore.Put(state);e!=nil{return nil,withRuntimeInitializationCleanupError(e,transactionDB,auditDB)}} // persist provider lifecycle/capability state before router construction
+ownership:=newRuntimeDatabaseOwnership(transactionDB,auditDB)
+defer func(){
+	if ownership == nil || ownership.transferred() { return }
+	if cleanupErr:=ownership.cleanupBeforeTransfer();cleanupErr!=nil {
+		err=combineRuntimeShutdownError(err,cleanupErr)
+		service=nil
+	}
+}()
+statePersistence,e:=operational.NewJSONFileProviderStateStore(cfg.ProviderStateStorePath);if e!=nil{return nil,e}
+stateStore,e:=operational.NewPersistentProviderStateStore(statePersistence);if e!=nil{return nil,e}
+for _, name:=range registry.Names(){state,ok:=stateStore.Get(name);if !ok{state,e=operational.NewProviderState(name);if e!=nil{return nil,e}};state.Capabilities=[]operational.Capability{operational.CapabilityPPOB,operational.CapabilityBalance,operational.CapabilityWebhook};if e=stateStore.Put(state);e!=nil{return nil,e}} // persist provider lifecycle/capability state before router construction
 router,e:=routing.NewWithCatalogAndStateAndOperationalMaxAge(registry,store,nil,catalogStore,stateStore,cfg.OperationalSnapshotMaxAge);if e!=nil{return nil,e}
- purchaseService,e:=routing.NewServiceWithStoreContextAndAudit(ctx,router,transactionStore,auditStore);if e!=nil{return nil,e}
- service:=&Service{syncService:syncService,purchaseService:purchaseService,catalogSync:catalogSync,providerState:stateStore,transactionDB:transactionDB,auditDB:auditDB,interval:cfg.SyncInterval,catalogInterval:cfg.CatalogSyncInterval}
- cleanup=false
- return service,nil
+purchaseService,e:=routing.NewServiceWithStoreContextAndAudit(ctx,router,transactionStore,auditStore);if e!=nil{return nil,e}
+service=&Service{syncService:syncService,purchaseService:purchaseService,catalogSync:catalogSync,providerState:stateStore,databaseOwnership:ownership,interval:cfg.SyncInterval,catalogInterval:cfg.CatalogSyncInterval}
+ownership.transferToService()
+return service,nil
 }
 
 func New(syncService *operational.SyncService,interval time.Duration)(*Service,error){if syncService==nil{return nil,errors.New("sync service is required")};if interval<=0{return nil,errors.New("sync interval must be greater than zero")};return &Service{syncService:syncService,interval:interval},nil}
-func (s *Service) Run(ctx context.Context)error{if ctx==nil{return errors.New("context is required")};if s.catalogSync==nil{err:=s.syncService.Run(ctx,s.interval);return combineRuntimeShutdownError(err,closeRuntimeDatabases(s.transactionDB,s.auditDB))};_=s.catalogSync.SyncAll(ctx);ticker:=time.NewTicker(s.catalogInterval);defer ticker.Stop();go func(){_=s.syncService.Run(ctx,s.interval)}();for{select{case<-ctx.Done():return combineRuntimeShutdownError(ctx.Err(),closeRuntimeDatabases(s.transactionDB,s.auditDB));case<-ticker.C:_=s.catalogSync.SyncAll(ctx)}}}
+func (s *Service) Run(ctx context.Context)error{if ctx==nil{return errors.New("context is required")};if s.catalogSync==nil{err:=s.syncService.Run(ctx,s.interval);return combineRuntimeShutdownError(err,s.closeOwnedDatabases())};_=s.catalogSync.SyncAll(ctx);ticker:=time.NewTicker(s.catalogInterval);defer ticker.Stop();go func(){_=s.syncService.Run(ctx,s.interval)}();for{select{case<-ctx.Done():return combineRuntimeShutdownError(ctx.Err(),s.closeOwnedDatabases());case<-ticker.C:_=s.catalogSync.SyncAll(ctx)}}}
 func (s *Service) PurchaseService()*routing.Service{if s==nil{return nil};return s.purchaseService}
+func (s *Service) closeOwnedDatabases() error { if s==nil || s.databaseOwnership==nil { return nil }; return s.databaseOwnership.closeOwned() }
 
 func combineRuntimeShutdownError(primary,closeErr error) error{if primary==nil{return closeErr};if closeErr==nil{return primary};return errors.Join(primary,closeErr)}
 

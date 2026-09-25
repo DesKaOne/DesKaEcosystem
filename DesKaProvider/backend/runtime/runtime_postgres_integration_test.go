@@ -86,16 +86,22 @@ func TestCloseRuntimeDatabasesClosesSharedAndDedicatedHandles(t *testing.T) {
 	_, sharedDB, err := openTransactionStore(ctx, sharedCfg)
 	if err != nil { t.Fatal(err) }
 	if _, _, err := openAuditStore(ctx, sharedCfg, sharedDB); err != nil { t.Fatal(err) }
-	closeRuntimeDatabases(sharedDB, nil)
-	if err := sharedDB.PingContext(ctx); err == nil {
-		t.Fatal("expected shared PostgreSQL handle to be closed")
-	}
+	sharedOwnership := newRuntimeDatabaseOwnership(sharedDB, sharedDB)
+	sharedOwnership.transferToService()
+	if err := sharedOwnership.cleanupBeforeTransfer(); err != nil { t.Fatal(err) }
+	if err := sharedDB.PingContext(ctx); err != nil { t.Fatalf("initialization guard closed transferred shared handle: %v", err) }
+	if err := sharedOwnership.closeOwned(); err != nil { t.Fatal(err) }
+	if err := sharedDB.PingContext(ctx); err == nil { t.Fatal("expected shared PostgreSQL handle to be closed") }
+	if err := sharedOwnership.closeOwned(); err != nil { t.Fatal(err) }
 
 	dedicatedCfg := Config{AuditStoreDriver: "postgres", PostgresDSN: dsn}
 	_, dedicatedDB, err := openAuditStore(ctx, dedicatedCfg, nil)
 	if err != nil { t.Fatal(err) }
-	closeRuntimeDatabases(nil, dedicatedDB)
-	if err := dedicatedDB.PingContext(ctx); err == nil {
-		t.Fatal("expected dedicated PostgreSQL audit handle to be closed")
-	}
+	dedicatedOwnership := newRuntimeDatabaseOwnership(nil, dedicatedDB)
+	dedicatedOwnership.transferToService()
+	if err := dedicatedOwnership.cleanupBeforeTransfer(); err != nil { t.Fatal(err) }
+	if err := dedicatedDB.PingContext(ctx); err != nil { t.Fatalf("initialization guard closed transferred dedicated audit handle: %v", err) }
+	if err := dedicatedOwnership.closeOwned(); err != nil { t.Fatal(err) }
+	if err := dedicatedDB.PingContext(ctx); err == nil { t.Fatal("expected dedicated PostgreSQL audit handle to be closed") }
+	if err := dedicatedOwnership.closeOwned(); err != nil { t.Fatal(err) }
 }

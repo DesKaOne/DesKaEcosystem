@@ -117,6 +117,41 @@ func TestRuntimeInitializationCleanupDoesNotDoubleCloseSharedHandle(t *testing.T
 	}
 }
 
+func TestRuntimeDatabaseOwnershipSuccessPathTransfersOwnershipToService(t *testing.T) {
+	transactionDB := &closeErrorDB{}
+	auditDB := &closeErrorDB{}
+	ownership := newRuntimeDatabaseOwnership(transactionDB, auditDB)
+	ownership.transferToService()
+	if err := ownership.cleanupBeforeTransfer(); err != nil { t.Fatalf("successful handoff must disable initialization cleanup: %v", err) }
+	if transactionDB.closeCount != 0 || auditDB.closeCount != 0 { t.Fatalf("initialization guard closed transferred resources: tx=%d audit=%d", transactionDB.closeCount, auditDB.closeCount) }
+	if err := ownership.closeOwned(); err != nil { t.Fatalf("service shutdown close failed: %v", err) }
+	if transactionDB.closeCount != 1 || auditDB.closeCount != 1 { t.Fatalf("expected service to close each resource once: tx=%d audit=%d", transactionDB.closeCount, auditDB.closeCount) }
+	if err := ownership.closeOwned(); err != nil { t.Fatalf("repeated service shutdown should return the recorded close result: %v", err) }
+	if transactionDB.closeCount != 1 || auditDB.closeCount != 1 { t.Fatalf("repeated shutdown double-closed resources: tx=%d audit=%d", transactionDB.closeCount, auditDB.closeCount) }
+}
+
+func TestRuntimeDatabaseOwnershipSuccessPathSharedResourceClosesOnce(t *testing.T) {
+	shared := &closeErrorDB{}
+	ownership := newRuntimeDatabaseOwnership(shared, shared)
+	ownership.transferToService()
+	if err := ownership.cleanupBeforeTransfer(); err != nil { t.Fatalf("unexpected guard cleanup error: %v", err) }
+	if shared.closeCount != 0 { t.Fatalf("shared resource closed before shutdown: %d", shared.closeCount) }
+	if err := ownership.closeOwned(); err != nil { t.Fatalf("shutdown close failed: %v", err) }
+	if shared.closeCount != 1 { t.Fatalf("expected shared resource to close once, got %d", shared.closeCount) }
+	if err := ownership.closeOwned(); err != nil { t.Fatalf("second shutdown close returned unexpected error: %v", err) }
+	if shared.closeCount != 1 { t.Fatalf("shared resource double-closed on repeated shutdown: %d", shared.closeCount) }
+}
+
+func TestRuntimeDatabaseOwnershipSuccessPathDedicatedAuditResource(t *testing.T) {
+	auditDB := &closeErrorDB{}
+	ownership := newRuntimeDatabaseOwnership(nil, auditDB)
+	ownership.transferToService()
+	if err := ownership.cleanupBeforeTransfer(); err != nil { t.Fatalf("unexpected guard cleanup error: %v", err) }
+	if auditDB.closeCount != 0 { t.Fatalf("dedicated audit resource closed before shutdown: %d", auditDB.closeCount) }
+	if err := ownership.closeOwned(); err != nil { t.Fatalf("shutdown close failed: %v", err) }
+	if auditDB.closeCount != 1 { t.Fatalf("expected dedicated audit resource to close once, got %d", auditDB.closeCount) }
+}
+
 func TestServiceRunStopsOnContextCancellation(t *testing.T) {
 	mockProvider := &balanceMock{
 		Provider: mock.New(mock.Config{
@@ -402,10 +437,12 @@ func TestLoadConfigRejectsUnknownAuditStoreDriver(t *testing.T) {
 type closeErrorDB struct {
 	err error
 	closed bool
+	closeCount int
 }
 
 func (d *closeErrorDB) Close() error {
 	d.closed = true
+	d.closeCount++
 	return d.err
 }
 
@@ -457,7 +494,8 @@ func TestServiceRunPropagatesDatabaseCloseError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service.transactionDB = &closeErrorDB{err: closeErr}
+	service.databaseOwnership = newRuntimeDatabaseOwnership(&closeErrorDB{err: closeErr}, nil)
+	service.databaseOwnership.transferToService()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
