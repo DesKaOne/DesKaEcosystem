@@ -255,11 +255,25 @@ func TestPostgresTransactionStoreRestartRecoveryReconcilesWithoutResubmission(t 
 		t.Fatal(err)
 	}
 
-	pending := postgresPendingState()
-	pending.Request.ReferenceID = postgresIntegrationReference()
-	pending.Execution.Result.ReferenceID = pending.Request.ReferenceID
-	if err := store.PutContext(ctx, pending); err != nil {
-		t.Fatalf("persist durable pending state: %v", err)
+	req := PurchaseRequest{
+		ProductCode: "pln20",
+		CustomerNo:  "08123456789",
+		ReferenceID: postgresIntegrationReference(),
+		Amount:      20000,
+	}
+	firstService, err := NewServiceWithStoreContext(ctx, router, store)
+	if err != nil {
+		t.Fatalf("construct initial service: %v", err)
+	}
+	first, err := firstService.Purchase(ctx, req)
+	if err != nil {
+		t.Fatalf("initial purchase: %v", err)
+	}
+	if first.Result.Status != provider.StatusPending {
+		t.Fatalf("expected initial purchase to remain pending, got %q", first.Result.Status)
+	}
+	if got := mock.PurchaseCount(req.ReferenceID); got != 1 {
+		t.Fatalf("expected exactly one provider submission before restart, got %d", got)
 	}
 
 	restarted, err := NewServiceWithStoreContext(ctx, router, store)
@@ -267,21 +281,21 @@ func TestPostgresTransactionStoreRestartRecoveryReconcilesWithoutResubmission(t 
 		t.Fatalf("reconstruct service from PostgreSQL: %v", err)
 	}
 
-	reconciled, err := restarted.Reconcile(ctx, pending.Request.ReferenceID)
+	reconciled, err := restarted.Reconcile(ctx, req.ReferenceID)
 	if err != nil {
 		t.Fatalf("reconcile recovered pending transaction: %v", err)
 	}
-	if reconciled.ProviderName != pending.Execution.ProviderName {
+	if reconciled.ProviderName != first.ProviderName {
 		t.Fatalf("provider identity changed during recovery: %q", reconciled.ProviderName)
 	}
 	if reconciled.Result.Status != provider.StatusPending {
 		t.Fatalf("expected provider status to remain pending, got %q", reconciled.Result.Status)
 	}
-	if got := mock.PurchaseCount(pending.Request.ReferenceID); got != 0 {
+	if got := mock.PurchaseCount(req.ReferenceID); got != 1 {
 		t.Fatalf("restart reconciliation must not resubmit purchase, got %d submissions", got)
 	}
 
-	recovered, ok := store.Get(pending.Request.ReferenceID)
+	recovered, ok := store.Get(req.ReferenceID)
 	if !ok {
 		t.Fatal("recovered transaction disappeared")
 	}
