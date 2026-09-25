@@ -3,6 +3,8 @@ package routing
 import (
 	"errors"
 	"sync"
+
+	provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
 )
 
 type TransactionState struct {
@@ -14,6 +16,30 @@ type TransactionStore interface {
 	Get(referenceID string) (TransactionState, bool)
 	Put(state TransactionState) error
 	All() []TransactionState
+}
+
+func validateTransactionTransition(previous, next TransactionState) error {
+	if previous.Request != next.Request {
+		return ErrReferenceConflict
+	}
+	if previous.Execution.ProviderName != next.Execution.ProviderName {
+		return ErrReferenceConflict
+	}
+	if previous.Execution.Result.Status == provider.StatusSuccess || previous.Execution.Result.Status == provider.StatusFailed {
+		if !samePurchaseResult(previous.Execution.Result, next.Execution.Result) {
+			return ErrReferenceConflict
+		}
+		return nil
+	}
+	if previous.Execution.Result.Status != provider.StatusPending {
+		return ErrReferenceConflict
+	}
+	if next.Execution.Result.Status != provider.StatusPending &&
+		next.Execution.Result.Status != provider.StatusSuccess &&
+		next.Execution.Result.Status != provider.StatusFailed {
+		return ErrReferenceConflict
+	}
+	return nil
 }
 
 type MemoryTransactionStore struct {
@@ -41,6 +67,11 @@ func (s *MemoryTransactionStore) Put(state TransactionState) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if previous, ok := s.transactions[state.Request.ReferenceID]; ok {
+		if err := validateTransactionTransition(previous, state); err != nil {
+			return err
+		}
+	}
 	s.transactions[state.Request.ReferenceID] = state
 	return nil
 }
