@@ -530,6 +530,8 @@ func TestPostgresMigrationVerification(t *testing.T) {
 		"AND version = $7",
 		"AND status = 'pending'",
 		"RETURNING *",
+		"CREATE TABLE IF NOT EXISTS provider_transaction_audit",
+		"provider_transaction_audit_reference_created_idx",
 	}
 	for _, fragment := range required {
 		if !strings.Contains(sqlText, fragment) {
