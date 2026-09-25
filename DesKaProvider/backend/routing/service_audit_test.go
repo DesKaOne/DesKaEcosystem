@@ -163,15 +163,7 @@ func TestServiceAuditRecordsReconciliationTransition(t *testing.T) {
 	if _, err := service.Purchase(context.Background(), req); err != nil {
 		t.Fatal(err)
 	}
-	mock.SetTransactionStatus(req.ReferenceID, provider.PurchaseStatus{
-		ReferenceID:  req.ReferenceID,
-		CustomerNo:   req.CustomerNo,
-		ProductCode:  req.ProductCode,
-		Status:       provider.StatusSuccess,
-		ProviderCode: "00",
-		Message:      "success",
-		Price:        20000,
-	})
+	mock.SetTransactionStatus(req.ReferenceID, provider.TransactionStatusSuccess, "success")
 	if execution, err := service.Reconcile(context.Background(), req.ReferenceID); err != nil {
 		t.Fatal(err)
 	} else if execution.Result.Status != provider.StatusSuccess {
