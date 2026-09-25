@@ -182,6 +182,60 @@ func TestServiceRunRejectsConcurrentReentryWithoutClosingActiveDatabase(t *testi
 	}
 }
 
+func TestServiceCloseDoesNotCloseDatabaseWhileRunIsActive(t *testing.T) {
+	mockProvider := &balanceMock{Provider: mock.New(mock.Config{Products: []provider.Product{{Code: "xld10", Name: "Test"}}}), balance: 2100000}
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", mockProvider); err != nil {
+		t.Fatal(err)
+	}
+	syncService, err := operational.NewSyncService(registry, operational.NewMemoryStore(), "IDR", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := New(syncService, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	closeDB := &closeErrorDB{}
+	service.databaseOwnership = newRuntimeDatabaseOwnership(closeDB, nil)
+	service.databaseOwnership.transferToService()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- service.Run(ctx) }()
+
+	deadline := time.After(time.Second)
+	for !service.balanceLifecycle.Running() {
+		select {
+		case <-deadline:
+			t.Fatal("balance lifecycle did not start")
+		default:
+			time.Sleep(time.Millisecond)
+		}
+	}
+
+	if err := service.Close(); err == nil {
+		t.Fatal("expected Close to reject active runtime ownership")
+	}
+	if closeDB.closeCount != 0 {
+		t.Fatalf("explicit Close must not close an active runtime database, got %d", closeDB.closeCount)
+	}
+
+	cancel()
+	select {
+	case err := <-done:
+		if err != context.Canceled {
+			t.Fatalf("unexpected Run shutdown error: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Run did not shut down")
+	}
+	if closeDB.closeCount != 1 {
+		t.Fatalf("expected active Run to close database exactly once, got %d", closeDB.closeCount)
+	}
+}
+
 func TestServiceCloseRemainsIdempotentAfterRepeatedRunShutdown(t *testing.T) {
 	mockProvider := &balanceMock{Provider: mock.New(mock.Config{Products: []provider.Product{{Code: "xld10", Name: "Test"}}}), balance: 1950000}
 	registry := provider.NewRegistry()
