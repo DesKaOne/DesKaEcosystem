@@ -31,13 +31,15 @@ func TestLoadConfigDefaults(t *testing.T) {
 	t.Setenv("DESKAPROVIDER_CATALOG_SYNC_INTERVAL", "")
 	t.Setenv("DESKAPROVIDER_CATALOG_MAX_AGE", "")
 	t.Setenv("DESKAPROVIDER_OPERATIONAL_SNAPSHOT_MAX_AGE", "")
+	t.Setenv("DESKAPROVIDER_TRANSACTION_STORE_DRIVER", "")
+	t.Setenv("DESKAPROVIDER_POSTGRES_DSN", "")
 
 	cfg, err := LoadConfig()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if cfg.StorePath != defaultStorePath || cfg.TransactionStorePath != defaultTransactionStorePath || cfg.SyncInterval != defaultSyncInterval ||
-		cfg.FailureThreshold != defaultFailureThreshold || cfg.Currency != defaultCurrency || cfg.CatalogSyncInterval != defaultCatalogSyncInterval || cfg.CatalogMaxAge != defaultCatalogMaxAge || cfg.OperationalSnapshotMaxAge != defaultOperationalSnapshotMaxAge {
+		cfg.FailureThreshold != defaultFailureThreshold || cfg.Currency != defaultCurrency || cfg.TransactionStoreDriver != defaultTransactionStoreDriver || cfg.CatalogSyncInterval != defaultCatalogSyncInterval || cfg.CatalogMaxAge != defaultCatalogMaxAge || cfg.OperationalSnapshotMaxAge != defaultOperationalSnapshotMaxAge {
 		t.Fatalf("unexpected defaults: %#v", cfg)
 	}
 }
@@ -282,5 +284,33 @@ func TestNewFromEnvironmentContextRejectsCanceledInitialization(t *testing.T) {
 func TestNewFromEnvironmentContextRequiresContext(t *testing.T) {
 	if _, err := NewFromEnvironmentContext(nil, nil); err == nil {
 		t.Fatal("expected initialization context error")
+	}
+}
+
+
+func TestLoadConfigPostgresRequiresDSN(t *testing.T) {
+	t.Setenv("DESKAPROVIDER_TRANSACTION_STORE_DRIVER", "postgres")
+	t.Setenv("DESKAPROVIDER_POSTGRES_DSN", "")
+	if _, err := LoadConfig(); err == nil {
+		t.Fatal("expected PostgreSQL DSN requirement")
+	}
+}
+
+func TestLoadConfigRejectsUnknownTransactionStoreDriver(t *testing.T) {
+	t.Setenv("DESKAPROVIDER_TRANSACTION_STORE_DRIVER", "sqlite")
+	if _, err := LoadConfig(); err == nil {
+		t.Fatal("expected unknown transaction store driver error")
+	}
+}
+
+func TestLoadConfigAcceptsPostgresTransactionStore(t *testing.T) {
+	t.Setenv("DESKAPROVIDER_TRANSACTION_STORE_DRIVER", "postgres")
+	t.Setenv("DESKAPROVIDER_POSTGRES_DSN", "postgres://test")
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.TransactionStoreDriver != "postgres" || cfg.PostgresDSN != "postgres://test" {
+		t.Fatalf("unexpected PostgreSQL config: %#v", cfg)
 	}
 }
