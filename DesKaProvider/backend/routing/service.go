@@ -285,6 +285,13 @@ current := call.result.Result
 	expected := TransactionState{Request: call.request, Execution: call.result}
 	if err := s.persistTransition(referenceID, expected, TransactionState{Request: call.request, Execution: next}); err != nil {
 		if errors.Is(err, ErrTransactionStateConflict) {
+			latest, ok := s.Store.Get(referenceID)
+			if ok && latest.Request == call.request &&
+				latest.Execution.ProviderName == call.result.ProviderName &&
+				samePurchaseResult(latest.Execution.Result, incoming) {
+				call.result = latest.Execution
+				return call.result, nil
+			}
 			return PurchaseExecution{}, ErrWebhookReferenceConflict
 		}
 		return PurchaseExecution{}, err
