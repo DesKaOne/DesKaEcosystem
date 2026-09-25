@@ -116,7 +116,7 @@ func (s *Service) Purchase(ctx context.Context, req PurchaseRequest) (PurchaseEx
 			Status:      provider.StatusPending,
 		},
 	}
-	if err := s.Store.Put(TransactionState{Request: req, Execution: pending}); err != nil {
+	if err := putTransactionContext(ctx, s.Store, TransactionState{Request: req, Execution: pending}); err != nil {
 		err = fmt.Errorf("persist pending transaction state: %w", err)
 		s.finishPurchase(call, pending, err)
 		return pending, err
@@ -127,7 +127,7 @@ func (s *Service) Purchase(ctx context.Context, req PurchaseRequest) (PurchaseEx
 
 	result, err := s.executePurchase(ctx, providerName, req)
 	if err == nil {
-		if storeErr := s.Store.Put(TransactionState{Request: req, Execution: result}); storeErr != nil {
+		if storeErr := putTransactionContext(ctx, s.Store, TransactionState{Request: req, Execution: result}); storeErr != nil {
 			err = fmt.Errorf("persist transaction result: %w", storeErr)
 		}
 	}
@@ -188,7 +188,7 @@ func (s *Service) HandleWebhook(ctx context.Context, event provider.WebhookEvent
 		return PurchaseExecution{}, ErrWebhookReferenceConflict
 	}
 	if incoming.Status == provider.StatusPending {
-		if err := s.persistLocked(call.request, PurchaseExecution{ProviderName: call.result.ProviderName, Result: incoming}); err != nil {
+		if err := s.persistLocked(ctx, call.request, PurchaseExecution{ProviderName: call.result.ProviderName, Result: incoming}); err != nil {
 			return PurchaseExecution{}, err
 		}
 		call.result.Result = incoming
@@ -199,7 +199,7 @@ func (s *Service) HandleWebhook(ctx context.Context, event provider.WebhookEvent
 	}
 
 	next := PurchaseExecution{ProviderName: call.result.ProviderName, Result: incoming}
-	if err := s.persistLocked(call.request, next); err != nil {
+	if err := s.persistLocked(ctx, call.request, next); err != nil {
 		return PurchaseExecution{}, err
 	}
 	call.result = next
@@ -282,9 +282,9 @@ current := call.result.Result
 	}
 	next := PurchaseExecution{ProviderName: call.result.ProviderName, Result: incoming}
 	expected := TransactionState{Request: call.request, Execution: call.result}
-	if err := s.persistTransition(referenceID, expected, TransactionState{Request: call.request, Execution: next}); err != nil {
+	if err := s.persistTransition(ctx, referenceID, expected, TransactionState{Request: call.request, Execution: next}); err != nil {
 		if errors.Is(err, ErrTransactionStateConflict) {
-			latest, ok := s.Store.Get(referenceID)
+			latest, ok := getTransactionContext(ctx, s.Store, referenceID)
 			if ok && latest.Request == call.request &&
 				latest.Execution.ProviderName == call.result.ProviderName &&
 				samePurchaseResult(latest.Execution.Result, incoming) {
@@ -299,21 +299,21 @@ current := call.result.Result
 	return call.result, nil
 }
 
-func (s *Service) persistLocked(request PurchaseRequest, execution PurchaseExecution) error {
-	if err := s.Store.Put(TransactionState{Request: request, Execution: execution}); err != nil {
+func (s *Service) persistLocked(ctx context.Context, request PurchaseRequest, execution PurchaseExecution) error {
+	if err := putTransactionContext(ctx, s.Store, TransactionState{Request: request, Execution: execution}); err != nil {
 		return fmt.Errorf("persist transaction state: %w", err)
 	}
 	return nil
 }
 
-func (s *Service) persistTransition(referenceID string, previous, next TransactionState) error {
-	if store, ok := s.Store.(AtomicTransactionStore); ok {
-		if err := store.PutIfCurrent(referenceID, previous, next); err != nil {
+func (s *Service) persistTransition(ctx context.Context, referenceID string, previous, next TransactionState) error {
+	if store, ok := s.Store.(ContextTransactionStore); ok {
+		if err := store.PutIfCurrentContext(ctx, referenceID, previous, next); err != nil {
 			return fmt.Errorf("persist atomic transaction transition: %w", err)
 		}
 		return nil
 	}
-	if err := s.Store.Put(next); err != nil {
+	if err := putTransactionContext(ctx, s.Store, next); err != nil {
 		return fmt.Errorf("persist transaction transition: %w", err)
 	}
 	return nil
@@ -401,4 +401,19 @@ func samePurchaseResult(a, b provider.PurchaseResult) bool {
 		a.Message == b.Message &&
 		a.SerialNumber == b.SerialNumber &&
 		a.Price == b.Price
+}
+
+
+func getTransactionContext(ctx context.Context, store TransactionStore, referenceID string) (TransactionState, bool) {
+	if scoped, ok := store.(ContextTransactionStore); ok {
+		return scoped.GetContext(ctx, referenceID)
+	}
+	return store.Get(referenceID)
+}
+
+func putTransactionContext(ctx context.Context, store TransactionStore, state TransactionState) error {
+	if scoped, ok := store.(ContextTransactionStore); ok {
+		return scoped.PutContext(ctx, state)
+	}
+	return store.Put(state)
 }
