@@ -2822,3 +2822,22 @@ Next milestone:
 1. verify CI GREEN for the context-aware contract;
 2. add explicit cancellation/deadline tests at the persistence boundary;
 3. continue restart/reconciliation hardening before retry/failover consideration.
+
+
+#### Milestone #80 CI closure
+
+Final verification:
+
+- CI run #529 / 36138375689: **GREEN**;
+- test: PASS;
+- vet: PASS;
+- race: PASS;
+- PostgreSQL integration service remained active for the test/race jobs and the existing real-database coverage passed.
+
+Milestone #80 is closed at the context-aware persistence contract boundary. Explicit cancellation/deadline assertions remain the next hardening step, rather than being assumed from the interface alone.
+
+Next milestone #81:
+
+1. add deterministic cancellation/deadline tests for context-aware memory and PostgreSQL persistence paths;
+2. verify cancellation does not alter durable transaction state or authorize resubmission;
+3. continue restart/reconciliation hardening.
