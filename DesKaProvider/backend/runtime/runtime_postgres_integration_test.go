@@ -75,3 +75,27 @@ func TestOpenAuditStorePostgresIntegration(t *testing.T) {
 	if err != nil { t.Fatal(err) }
 	if len(reloaded) != 1 || reloaded[0].ReferenceID != event.ReferenceID || reloaded[0].Action != event.Action || reloaded[0].Next != event.Next { t.Fatalf("unexpected durable audit events: %#v", reloaded) }
 }
+
+
+func TestCloseRuntimeDatabasesClosesSharedAndDedicatedHandles(t *testing.T) {
+	dsn := os.Getenv("DESKAPROVIDER_POSTGRES_DSN")
+	if dsn == "" { t.Skip("DESKAPROVIDER_POSTGRES_DSN is not configured") }
+	ctx := context.Background()
+
+	sharedCfg := Config{TransactionStoreDriver: "postgres", AuditStoreDriver: "postgres", PostgresDSN: dsn}
+	_, sharedDB, err := openTransactionStore(ctx, sharedCfg)
+	if err != nil { t.Fatal(err) }
+	if _, _, err := openAuditStore(ctx, sharedCfg, sharedDB); err != nil { t.Fatal(err) }
+	closeRuntimeDatabases(sharedDB, nil)
+	if err := sharedDB.PingContext(ctx); err == nil {
+		t.Fatal("expected shared PostgreSQL handle to be closed")
+	}
+
+	dedicatedCfg := Config{AuditStoreDriver: "postgres", PostgresDSN: dsn}
+	_, dedicatedDB, err := openAuditStore(ctx, dedicatedCfg, nil)
+	if err != nil { t.Fatal(err) }
+	closeRuntimeDatabases(nil, dedicatedDB)
+	if err := dedicatedDB.PingContext(ctx); err == nil {
+		t.Fatal("expected dedicated PostgreSQL audit handle to be closed")
+	}
+}
