@@ -2421,3 +2421,47 @@ Verification gate:
 
 - fresh CI for the implementation commit is mandatory;
 - `test`, `vet`, and `race` must all be **GREEN** before continuing.
+
+
+### 72. Milestone Update — Operational Snapshot Freshness Gate
+
+**Date:** 2026-09-25
+
+CI gate:
+
+- CI #424 for commit `9889b3852e4dd8d63706bbfa70d4569534647f63` is **GREEN**;
+- `test`, `vet`, and `race` completed successfully.
+
+Implementation:
+
+- routing can now enforce an explicit operational snapshot maximum age;
+- a provider with a missing or zero `LastCheckedAt` is rejected when freshness enforcement is enabled;
+- stale operational snapshots are excluded before catalog/product eligibility is evaluated;
+- fresh operational snapshots remain eligible when lifecycle, capability, health, balance, and catalog requirements are satisfied;
+- runtime exposes `DESKAPROVIDER_OPERATIONAL_SNAPSHOT_MAX_AGE`;
+- default operational snapshot freshness boundary is 2 minutes, while the balance synchronization default remains 30 seconds;
+- existing router constructors retain their previous behavior unless the operational freshness boundary is explicitly enabled.
+
+Regression coverage:
+
+- stale operational snapshot is rejected;
+- fresh operational snapshot is selectable;
+- invalid operational snapshot max-age configuration is rejected.
+
+Safety boundary:
+
+- freshness only affects routing eligibility;
+- it does not mutate provider lifecycle;
+- it does not mutate health state;
+- it does not trigger provider funding;
+- it does not introduce retry or failover behavior.
+
+Known limitation:
+
+- the freshness boundary is currently an operational routing gate, not a financial ledger timestamp or source-of-truth mechanism.
+
+Next milestone:
+
+1. stabilize combined routing eligibility with deterministic freshness boundaries;
+2. review routing behavior around missing/stale catalog and operational snapshots;
+3. only after routing is stable, proceed toward transaction execution hardening and idempotency expansion.
