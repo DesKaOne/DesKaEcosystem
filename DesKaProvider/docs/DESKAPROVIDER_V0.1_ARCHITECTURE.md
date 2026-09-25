@@ -293,3 +293,36 @@ Required invariants:
 The current memory and JSON stores implement this boundary for deterministic single-process behavior. The JSON store remains an interim persistence implementation and does not provide cross-process file locking. PostgreSQL remains the deployment-direction target for production transaction persistence.
 
 No retry/failover policy is derived from this contract. Atomic persistence protects transaction identity and state transitions; it does not authorize a second provider submission.
+
+
+## 14. PostgreSQL Transaction-Store Schema & Conditional Transition Boundary
+
+**Date:** 2026-09-25
+
+Milestone #77 defines the concrete PostgreSQL persistence shape without introducing a database driver into the current Go module.
+
+The schema artifact is:
+
+`DesKaProvider/backend/migrations/001_provider_transactions.sql`
+
+The table `provider_transactions` stores the minimum durable identity needed to reconstruct a pending purchase after restart:
+
+- `reference_id` — primary key and stable transaction identity;
+- `product_code`, `customer_no`, `amount`, `testing` — original purchase request identity;
+- `provider_name` — selected provider identity, immutable for the transaction;
+- `status` — constrained to `pending`, `success`, or `failed`;
+- provider result fields — `provider_code`, `message`, `serial_number`, `price`;
+- `version` — optimistic-concurrency version, incremented exactly once per accepted transition;
+- `created_at`, `updated_at` — persistence timestamps.
+
+The production database adapter must map `AtomicTransactionStore.PutIfCurrent` to one PostgreSQL transaction or one conditional `UPDATE ... WHERE reference_id = ? AND version = ? ...` operation. The conditional update must also verify the original request identity and selected provider.
+
+A zero-row conditional update is a concurrency/state conflict. The adapter must reload the current state and follow the existing reconciliation conflict semantics; it must never interpret the conflict as permission to submit the provider purchase again.
+
+Terminal states are immutable. A repeated identical terminal observation is handled idempotently by the service/reconciliation layer rather than mutating the terminal record into a different result.
+
+The schema deliberately does not add retry counters, failover state, automatic funding fields, or customer-ledger postings. Those concerns remain outside this persistence boundary.
+
+PostgreSQL row-level locking/conditional-update behavior is consistent with the database's concurrency model: concurrent updates to the same row are serialized by PostgreSQL, and the update predicate is re-evaluated against the current row version. citeturn0search5
+
+Current limitation: the SQL migration is a concrete schema/locking contract only. The Go PostgreSQL adapter, connection management, migration runner, and live PostgreSQL integration tests are not yet implemented.
