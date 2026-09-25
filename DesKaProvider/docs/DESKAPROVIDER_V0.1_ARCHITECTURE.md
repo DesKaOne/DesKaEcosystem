@@ -261,3 +261,35 @@ Provider verification is tracked independently from adapter implementation:
 - **Verification deferred until the application is running / required business evidence is available:** DOKU, Ezeelink, Digiflazz
 
 The provider-neutral architecture remains unchanged: provider-specific protocols stay inside adapters, while DesKaCash consumes a stable provider-neutral boundary.
+
+
+## 13. Transaction Persistence Concurrency Boundary
+
+**Date:** 2026-09-25
+
+The v0.1 transaction-store contract distinguishes ordinary persistence from an atomic compare-and-transition capability.
+
+The provider-neutral persistence boundary is:
+
+```go
+type AtomicTransactionStore interface {
+    TransactionStore
+    PutIfCurrent(referenceID string, previous, next TransactionState) error
+}
+```
+
+The atomic operation must verify the expected current state and apply the next state as one conditional transition. A database-backed implementation must map this to a single database transaction or conditional update so concurrent DesKaProvider processes cannot overwrite a transaction based on stale state.
+
+Required invariants:
+
+- transaction reference ID remains stable;
+- original purchase request identity remains stable;
+- selected provider identity remains stable;
+- only `pending -> success/failed` transitions are accepted;
+- terminal states are immutable except for idempotent identical writes;
+- a stale expected state must fail the atomic transition rather than overwrite the newer state;
+- concurrent reconciliation of the same terminal provider result must remain idempotent.
+
+The current memory and JSON stores implement this boundary for deterministic single-process behavior. The JSON store remains an interim persistence implementation and does not provide cross-process file locking. PostgreSQL remains the deployment-direction target for production transaction persistence.
+
+No retry/failover policy is derived from this contract. Atomic persistence protects transaction identity and state transitions; it does not authorize a second provider submission.
