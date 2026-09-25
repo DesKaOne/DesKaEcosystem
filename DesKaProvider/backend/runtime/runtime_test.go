@@ -118,7 +118,7 @@ func TestServiceRunRejectsConcurrentReentryAtBalanceLifecycle(t *testing.T) {
 	go func() { firstDone <- service.Run(ctx) }()
 
 	deadline := time.After(time.Second)
-	for !service.balanceLifecycleRunningForTest() {
+	for !service.balanceLifecycle.Running() {
 		select {
 		case <-deadline:
 			t.Fatal("balance lifecycle did not start")
@@ -167,7 +167,7 @@ func TestServiceCloseRemainsIdempotentAfterRepeatedRunShutdown(t *testing.T) {
 	go func() { done <- service.Run(ctx) }()
 
 	deadline := time.After(time.Second)
-	for !service.balanceLifecycleRunningForTest() {
+	for !service.balanceLifecycle.Running() {
 		select {
 		case <-deadline:
 			t.Fatal("balance lifecycle did not start")
