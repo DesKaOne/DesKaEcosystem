@@ -3971,3 +3971,44 @@ Milestone #99: runtime ownership transfer and initialization/shutdown lifecycle 
 ### Next Milestone
 
 **#109 — Runtime Context Cancellation & Shutdown Boundary Review**: inspect the remaining cancellation/shutdown edges after lifecycle idempotency is established, with emphasis on context ownership and shutdown timeout behavior, without changing business or financial semantics.
+
+
+### Milestone #109 — Runtime Context Cancellation & Shutdown Boundary Review
+
+**Date:** 2026-09-26
+
+### Completed
+
+- reviewed the relationship between the parent service context and runtime-owned worker shutdown context;
+- preserved the existing rule that shutdown cleanup must not inherit an already-canceled parent context as an immediate cancellation signal;
+- added a runtime shutdown-context helper that isolates shutdown cancellation from the parent while preserving an existing parent deadline;
+- updated the balance-worker shutdown path to use the derived shutdown context instead of an unbounded Background() context;
+- added deterministic coverage proving a parent deadline is preserved by the shutdown context;
+- added deterministic coverage proving an already-canceled parent does not cause immediate shutdown-context cancellation;
+- retained the existing worker shutdown ordering and single-close database ownership semantics;
+- kept provider retry, failover, resubmission, transaction-state, audit-authority, customer-ledger, treasury, and automatic provider-funding boundaries unchanged.
+
+### Verification
+
+- implementation HEAD: `709dfef165d61479ac2693bf292a153f444356c7`;
+- CI #843 / run `36202103586`: **GREEN** for exact HEAD `709dfef165d61479ac2693bf292a153f444356c7`;
+- CI jobs `test`: success;
+- CI jobs `race`: success.
+
+### Safety Boundary
+
+- context propagation and worker shutdown remain infrastructure lifecycle concerns only;
+- the shutdown context can enforce an existing runtime deadline without changing transaction or provider outcome semantics;
+- an already-canceled service context does not become an immediate cleanup cancellation signal for the owned worker;
+- transaction persistence remains the authoritative transaction state and audit persistence remains operational evidence;
+- shutdown timeout handling cannot authorize provider retry, failover, resubmission, ledger mutation, treasury movement, or provider funding.
+
+### Known Limitations
+
+- the new helper preserves a parent deadline when one exists, but it does not invent a default shutdown timeout when the parent has no deadline;
+- deterministic coverage exercises context cancellation boundaries but not process termination or driver-specific hangs during database close;
+- independently owned future workers may require explicit deadline propagation rules of their own.
+
+### Next Milestone
+
+**#110 — Runtime Worker Error & Shutdown Timeout Composition Review**: inspect how worker-returned errors interact with shutdown deadlines and database-close errors, without changing business or financial semantics.
