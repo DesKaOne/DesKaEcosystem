@@ -1,6 +1,7 @@
 package routing
 
 import (
+	"context"
 	"errors"
 	"sync"
 
@@ -16,6 +17,17 @@ type TransactionStore interface {
 	Get(referenceID string) (TransactionState, bool)
 	Put(state TransactionState) error
 	All() []TransactionState
+}
+
+// ContextTransactionStore is the context-aware persistence boundary.
+// TransactionStore remains available for existing callers; new service paths
+// prefer these methods so cancellation and deadlines can reach the database.
+type ContextTransactionStore interface {
+	TransactionStore
+	GetContext(ctx context.Context, referenceID string) (TransactionState, bool)
+	PutContext(ctx context.Context, state TransactionState) error
+	AllContext(ctx context.Context) []TransactionState
+	PutIfCurrentContext(ctx context.Context, referenceID string, previous, next TransactionState) error
 }
 
 // AtomicTransactionStore provides a compare-and-transition boundary for stores
@@ -60,6 +72,36 @@ type MemoryTransactionStore struct {
 
 func NewMemoryTransactionStore() *MemoryTransactionStore {
 	return &MemoryTransactionStore{transactions: make(map[string]TransactionState)}
+}
+
+var _ ContextTransactionStore = (*MemoryTransactionStore)(nil)
+
+func (s *MemoryTransactionStore) GetContext(ctx context.Context, referenceID string) (TransactionState, bool) {
+	if err := ctx.Err(); err != nil {
+		return TransactionState{}, false
+	}
+	return s.Get(referenceID)
+}
+
+func (s *MemoryTransactionStore) PutContext(ctx context.Context, state TransactionState) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return s.Put(state)
+}
+
+func (s *MemoryTransactionStore) AllContext(ctx context.Context) []TransactionState {
+	if err := ctx.Err(); err != nil {
+		return nil
+	}
+	return s.All()
+}
+
+func (s *MemoryTransactionStore) PutIfCurrentContext(ctx context.Context, referenceID string, previous, next TransactionState) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return s.PutIfCurrent(referenceID, previous, next)
 }
 
 func (s *MemoryTransactionStore) Get(referenceID string) (TransactionState, bool) {
