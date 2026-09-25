@@ -2465,3 +2465,41 @@ Next milestone:
 1. stabilize combined routing eligibility with deterministic freshness boundaries;
 2. review routing behavior around missing/stale catalog and operational snapshots;
 3. only after routing is stable, proceed toward transaction execution hardening and idempotency expansion.
+
+
+
+### 73. Milestone Update — Deterministic Routing Freshness Boundaries
+
+**Date:** 2026-09-25
+
+CI gate:
+
+- CI #429 for commit `c00813b7a61460d78b5c700cb6fbb3405193ac58` is **GREEN**;
+- `test`, `vet`, and `race` completed successfully.
+
+Completed:
+
+- routing freshness evaluation now uses a router-level clock hook, defaulting to `time.Now`;
+- operational snapshot and catalog freshness decisions are deterministic when tests inject a fixed time;
+- a freshness timestamp is valid only when it is non-zero and not in the future;
+- the configured maximum age is inclusive at the exact boundary;
+- future operational snapshots are rejected instead of being treated as fresh;
+- future catalog snapshots are rejected instead of being treated as fresh;
+- added deterministic regression coverage for exact max-age, future operational timestamps, and future catalog timestamps.
+
+Safety boundary:
+
+- the change only tightens routing eligibility semantics;
+- it does not mutate lifecycle, health, capability, balance, catalog state, or financial ledger state;
+- no retry/failover, funding, or automatic provider activation was introduced.
+
+Known limitation:
+
+- freshness remains an operational routing gate and does not establish a financial source of truth;
+- system clock correctness remains an infrastructure requirement for timestamp-based eligibility.
+
+Next milestone:
+
+1. verify and stabilize the transaction execution boundary against the routing eligibility gate;
+2. review purchase idempotency persistence semantics before any retry/failover behavior;
+3. preserve provider-neutral transaction correlation and do not mutate financial ledger state from provider execution results.
