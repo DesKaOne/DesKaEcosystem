@@ -2763,3 +2763,24 @@ Next milestone:
 1. verify the fresh PostgreSQL-backed CI gate;
 2. if green, close the integration boundary and evaluate explicit context propagation in the persistence contract;
 3. continue hardening restart/reconciliation semantics before considering any retry/failover policy.
+
+
+#### Milestone #79 CI closure
+
+Final verification for milestone #79:
+
+- CI run #515 / 36137545123: **GREEN**;
+- test: PASS;
+- vet: PASS;
+- race: PASS;
+- PostgreSQL 18 service was provisioned in both test and race jobs;
+- the real PostgreSQL integration test passed for migration application, durable transaction reconstruction, concurrent `PutIfCurrent`, and reconnect/recovery.
+
+CI recovery during the milestone:
+
+- CI #508 / 36137207631 initially failed on an integration-test string literal and the race job also lacked a committed `go.sum` after the dependency was introduced;
+- CI #512 / 36137340637 exposed a second newline-literal defect in the migration test and the race job was hardened with an explicit `go mod tidy` step;
+- CI #514 / 36137424736 exposed incorrect comment stripping in the migration runner, which was executing a fragment of a SQL comment;
+- these defects were corrected before final closure; no production transaction behavior was changed by the test-harness fixes.
+
+Milestone #79 is closed at the real-PostgreSQL integration boundary. The provider-neutral adapter is now exercised against PostgreSQL concurrency and reconnect behavior in CI, while production migration orchestration and explicit context propagation remain separate concerns.
