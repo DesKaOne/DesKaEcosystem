@@ -799,3 +799,33 @@ The key invariant is that restart/reconstruction is a persistence boundary, not 
 The runtime owns PostgreSQL resources opened for transaction and audit persistence. Shared transaction/audit usage reuses the transaction database connection; audit-only PostgreSQL usage owns a dedicated connection. Initialization failures close resources already opened by runtime before returning the error.
 
 No audit read/write failure may authorize retry, failover, resubmission, ledger mutation, or provider funding. Migration deployment remains outside runtime startup.
+
+## 33. PostgreSQL Audit/Transaction Lifecycle Shutdown Failure Hardening
+
+**Date:** 2026-09-26
+
+Milestone #96 strengthens runtime resource ownership after PostgreSQL transaction/audit handles are opened.
+
+The production composition path now establishes a deferred cleanup guard before subsequent initialization steps. If provider-state persistence, state reconstruction, router construction, or service construction fails, runtime closes database handles already acquired instead of returning while retaining open PostgreSQL resources.
+
+When transaction and audit stores share one PostgreSQL database, the transaction database is the resource owner and is closed once. When audit storage is PostgreSQL-only, runtime owns a dedicated audit database handle and closes that handle independently.
+
+The lifecycle boundary is:
+
+```
+open transaction DB
+        |
+        +--> open audit DB (shared or dedicated)
+        |
+        +--> remaining service initialization
+        |
+        +--> failure -> close acquired DB resources
+        |
+        +--> success -> transfer ownership to runtime Service
+        |
+        +--> shutdown -> close runtime-owned DB resources
+```
+
+Cleanup does not participate in transaction-state authorization. A close failure is not a provider result and must not trigger retry, failover, resubmission, ledger mutation, treasury movement, or provider funding. Audit persistence remains separate from the financial source of truth.
+
+Real PostgreSQL integration coverage verifies that both shared and dedicated database handles become unusable after the runtime cleanup helper closes them. This is a resource-lifecycle verification boundary, not a claim about physical process termination or network-partition behavior.
