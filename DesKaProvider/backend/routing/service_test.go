@@ -575,3 +575,56 @@ func TestTransactionStoreRejectsRequestMutation(t *testing.T) {
 		t.Fatalf("expected request mutation rejection, got %v", err)
 	}
 }
+
+
+func TestServiceRestartReconcilesPendingWithoutResubmission(t *testing.T) {
+	storePath := filepath.Join(t.TempDir(), "transactions", "state.json")
+	registry := provider.NewRegistry()
+	initialMock := Mock.New(Mock.Config{
+		Products: []provider.Product{{Code: "pln20", Name: "PLN 20"}},
+		ProviderCode: "00", Message: "pending", PurchaseStatus: provider.StatusPending, Price: 20000,
+	})
+	if err := registry.Register("mock", initialMock); err != nil { t.Fatal(err) }
+	ops := operational.NewMemoryStore()
+	if err := ops.Put(operational.Snapshot{ProviderName: "mock", Balance: 100000, Health: operational.HealthHealthy}); err != nil { t.Fatal(err) }
+	router, err := New(registry, ops, map[string]int{"mock": 1})
+	if err != nil { t.Fatal(err) }
+	store, err := NewJSONFileTransactionStore(storePath)
+	if err != nil { t.Fatal(err) }
+	service, err := NewServiceWithStore(router, store)
+	if err != nil { t.Fatal(err) }
+
+	req := PurchaseRequest{ProductCode: "pln20", CustomerNo: "08123456789", ReferenceID: "ref-restart-reconcile", Amount: 20000}
+	if _, err := service.Purchase(context.Background(), req); err != nil { t.Fatal(err) }
+
+	recoveredRegistry := provider.NewRegistry()
+	recoveredMock := Mock.New(Mock.Config{
+		Products: []provider.Product{{Code: "pln20", Name: "PLN 20"}},
+		ProviderCode: "00", Message: "success after reconciliation", PurchaseStatus: provider.StatusSuccess, Price: 20000,
+	})
+	if err := recoveredRegistry.Register("mock", recoveredMock); err != nil { t.Fatal(err) }
+	recoveredOps := operational.NewMemoryStore()
+	if err := recoveredOps.Put(operational.Snapshot{ProviderName: "mock", Balance: 100000, Health: operational.HealthHealthy}); err != nil { t.Fatal(err) }
+	recoveredRouter, err := New(recoveredRegistry, recoveredOps, map[string]int{"mock": 1})
+	if err != nil { t.Fatal(err) }
+	recoveredStore, err := NewJSONFileTransactionStore(storePath)
+	if err != nil { t.Fatal(err) }
+	recoveredService, err := NewServiceWithStore(recoveredRouter, recoveredStore)
+	if err != nil { t.Fatal(err) }
+
+	result, err := recoveredService.Reconcile(context.Background(), req.ReferenceID)
+	if err != nil { t.Fatal(err) }
+	if result.Result.Status != provider.StatusSuccess {
+		t.Fatalf("expected reconciled success, got %#v", result)
+	}
+	if got := recoveredMock.PurchaseCount(req.ReferenceID); got != 0 {
+		t.Fatalf("expected reconciliation not to resubmit purchase, got %d submissions", got)
+	}
+
+	persistedStore, err := NewJSONFileTransactionStore(storePath)
+	if err != nil { t.Fatal(err) }
+	persisted, ok := persistedStore.Get(req.ReferenceID)
+	if !ok || persisted.Execution.Result.Status != provider.StatusSuccess {
+		t.Fatalf("expected durable reconciled success, got %#v, ok=%v", persisted, ok)
+	}
+}
