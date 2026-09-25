@@ -181,28 +181,12 @@ func (s *Service) Purchase(ctx context.Context, req PurchaseRequest) (PurchaseEx
 	})
 
 	result, err := s.executePurchase(ctx, providerName, req)
-	if err == nil {
-		if storeErr := putTransactionContext(ctx, s.Store, TransactionState{Request: req, Execution: result}); storeErr != nil {
-			err = fmt.Errorf("persist transaction result: %w", storeErr)
-		} else {
-			if auditErr := s.appendAudit(TransactionAuditEvent{
-				ReferenceID: req.ReferenceID,
-				Action: "PURCHASE_TERMINAL",
-				Previous: string(provider.StatusPending),
-				Next: string(result.Result.Status),
-				ProviderName: providerName,
-				Message: result.Result.Message,
-			}); auditErr != nil {
-				err = fmt.Errorf("audit transaction result: %w", auditErr)
-			}
-		}
-	}
 	if err != nil {
-		// Keep the durable pending state. The caller receives the provider/persistence
-		// error, while a restart can recover this reference and reconcile it safely.
+		// Keep the durable pending state. The caller receives the provider error,
+		// while a restart can recover this reference and reconcile it safely.
 		_ = s.appendAudit(TransactionAuditEvent{
 			ReferenceID: req.ReferenceID,
-			Action: "PURCHASE_PENDING_RECOVERY",
+			Action: "PURCHASE_PROVIDER_ERROR",
 			Previous: string(provider.StatusPending),
 			Next: string(provider.StatusPending),
 			ProviderName: providerName,
@@ -210,6 +194,33 @@ func (s *Service) Purchase(ctx context.Context, req PurchaseRequest) (PurchaseEx
 		})
 		s.finishPurchase(call, pending, err)
 		return pending, err
+	}
+	if storeErr := putTransactionContext(ctx, s.Store, TransactionState{Request: req, Execution: result}); storeErr != nil {
+		err = fmt.Errorf("persist transaction result: %w", storeErr)
+		_ = s.appendAudit(TransactionAuditEvent{
+			ReferenceID: req.ReferenceID,
+			Action: "PURCHASE_RESULT_PERSIST_FAILURE",
+			Previous: string(provider.StatusPending),
+			Next: string(provider.StatusPending),
+			ProviderName: providerName,
+			Message: err.Error(),
+		})
+		s.finishPurchase(call, pending, err)
+		return pending, err
+	}
+	if auditErr := s.appendAudit(TransactionAuditEvent{
+		ReferenceID: req.ReferenceID,
+		Action: "PURCHASE_TERMINAL",
+		Previous: string(provider.StatusPending),
+		Next: string(result.Result.Status),
+		ProviderName: providerName,
+		Message: result.Result.Message,
+	}); auditErr != nil {
+		// The terminal transaction is already durable. Audit failure is reported
+		// without reverting state or authorizing another provider submission.
+		err = fmt.Errorf("audit transaction result: %w", auditErr)
+		s.finishPurchase(call, result, err)
+		return result, err
 	}
 	s.finishPurchase(call, result, nil)
 	return result, nil
