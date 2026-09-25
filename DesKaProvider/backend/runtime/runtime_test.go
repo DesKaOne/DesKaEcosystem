@@ -149,6 +149,39 @@ func TestNewFromEnvironmentBuildsDurableService(t *testing.T) {
 	}
 }
 
+func TestNewFromEnvironmentPreservesEnabledProviderLifecycleAcrossRestart(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("DIGIFLAZZ_USERNAME", "test-user")
+	t.Setenv("DIGIFLAZZ_API_KEY", "test-key")
+	t.Setenv("DESKAPROVIDER_OPERATIONAL_STORE_PATH", filepath.Join(root, "operational", "snapshots.json"))
+	t.Setenv("DESKAPROVIDER_PROVIDER_STATE_STORE_PATH", filepath.Join(root, "provider-state", "state.json"))
+	t.Setenv("DESKAPROVIDER_TRANSACTION_STORE_PATH", filepath.Join(root, "transactions", "state.json"))
+
+	first, err := NewFromEnvironment(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin := operational.NewProviderAdminService(first.providerState)
+	if _, err := admin.Enable("digiflazz"); err != nil {
+		t.Fatal(err)
+	}
+
+	second, err := NewFromEnvironment(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, ok := second.providerState.Get("digiflazz")
+	if !ok {
+		t.Fatal("expected digiflazz state after restart")
+	}
+	if !state.Enabled() {
+		t.Fatal("expected enabled lifecycle to survive runtime restart")
+	}
+	if !state.Supports(operational.CapabilityPPOB) || !state.Supports(operational.CapabilityBalance) || !state.Supports(operational.CapabilityWebhook) {
+		t.Fatalf("unexpected capabilities after restart: %#v", state.Capabilities)
+	}
+}
+
 func TestServiceRestartRecoversPersistedOperationalSnapshot(t *testing.T) {
 	storePath := filepath.Join(t.TempDir(), "operational", "snapshots.json")
 
