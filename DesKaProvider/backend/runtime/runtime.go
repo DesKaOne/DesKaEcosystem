@@ -2,12 +2,15 @@ package runtime
 
 import (
  "context"
+ "database/sql"
  "errors"
  "fmt"
  "net/http"
  "os"
  "strconv"
  "time"
+
+ _ "github.com/jackc/pgx/v5/stdlib"
 
  provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
  "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/catalog"
@@ -30,14 +33,15 @@ const (
  defaultCatalogSyncInterval=15*time.Minute
  defaultCatalogMaxAge=30*time.Minute
  defaultOperationalSnapshotMaxAge=2*time.Minute
+ defaultTransactionStoreDriver="json"
 )
 
-type Config struct{StorePath,TransactionStorePath,ProviderStateStorePath string;SyncInterval time.Duration;FailureThreshold int;Currency,CatalogStorePath string;CatalogSyncInterval,CatalogMaxAge,OperationalSnapshotMaxAge time.Duration}
-type Service struct{syncService *operational.SyncService;purchaseService *routing.Service;catalogSync *catalog.SyncService;providerState *operational.ProviderStateStore;interval,catalogInterval time.Duration}
+type Config struct{StorePath,TransactionStorePath,ProviderStateStorePath,TransactionStoreDriver,PostgresDSN string;SyncInterval time.Duration;FailureThreshold int;Currency,CatalogStorePath string;CatalogSyncInterval,CatalogMaxAge,OperationalSnapshotMaxAge time.Duration}
+type Service struct{syncService *operational.SyncService;purchaseService *routing.Service;catalogSync *catalog.SyncService;providerState *operational.ProviderStateStore;transactionDB *sql.DB;interval,catalogInterval time.Duration}
 
 func LoadConfig()(Config,error){
- cfg:=Config{StorePath:os.Getenv("DESKAPROVIDER_OPERATIONAL_STORE_PATH"),ProviderStateStorePath:os.Getenv("DESKAPROVIDER_PROVIDER_STATE_STORE_PATH"),TransactionStorePath:os.Getenv("DESKAPROVIDER_TRANSACTION_STORE_PATH"),SyncInterval:defaultSyncInterval,FailureThreshold:defaultFailureThreshold,Currency:os.Getenv("DESKAPROVIDER_OPERATIONAL_CURRENCY"),CatalogStorePath:os.Getenv("DESKAPROVIDER_CATALOG_STORE_PATH"),CatalogSyncInterval:defaultCatalogSyncInterval,CatalogMaxAge:defaultCatalogMaxAge,OperationalSnapshotMaxAge:defaultOperationalSnapshotMaxAge}
- if cfg.StorePath==""{cfg.StorePath=defaultStorePath};if cfg.ProviderStateStorePath==""{cfg.ProviderStateStorePath=defaultProviderStateStorePath};if cfg.TransactionStorePath==""{cfg.TransactionStorePath=defaultTransactionStorePath};if cfg.Currency==""{cfg.Currency=defaultCurrency};if cfg.CatalogStorePath==""{cfg.CatalogStorePath=defaultCatalogStorePath}
+ cfg:=Config{StorePath:os.Getenv("DESKAPROVIDER_OPERATIONAL_STORE_PATH"),TransactionStoreDriver:os.Getenv("DESKAPROVIDER_TRANSACTION_STORE_DRIVER"),PostgresDSN:os.Getenv("DESKAPROVIDER_POSTGRES_DSN"),ProviderStateStorePath:os.Getenv("DESKAPROVIDER_PROVIDER_STATE_STORE_PATH"),TransactionStorePath:os.Getenv("DESKAPROVIDER_TRANSACTION_STORE_PATH"),SyncInterval:defaultSyncInterval,FailureThreshold:defaultFailureThreshold,Currency:os.Getenv("DESKAPROVIDER_OPERATIONAL_CURRENCY"),CatalogStorePath:os.Getenv("DESKAPROVIDER_CATALOG_STORE_PATH"),CatalogSyncInterval:defaultCatalogSyncInterval,CatalogMaxAge:defaultCatalogMaxAge,OperationalSnapshotMaxAge:defaultOperationalSnapshotMaxAge}
+ if cfg.StorePath==""{cfg.StorePath=defaultStorePath};if cfg.TransactionStoreDriver==""{cfg.TransactionStoreDriver=defaultTransactionStoreDriver};if cfg.TransactionStoreDriver!="json"&&cfg.TransactionStoreDriver!="postgres"{return Config{},fmt.Errorf("invalid DESKAPROVIDER_TRANSACTION_STORE_DRIVER: %q",cfg.TransactionStoreDriver)};if cfg.TransactionStoreDriver=="postgres"&&cfg.PostgresDSN==""{return Config{},errors.New("DESKAPROVIDER_POSTGRES_DSN is required when DESKAPROVIDER_TRANSACTION_STORE_DRIVER=postgres")};if cfg.ProviderStateStorePath==""{cfg.ProviderStateStorePath=defaultProviderStateStorePath};if cfg.TransactionStorePath==""{cfg.TransactionStorePath=defaultTransactionStorePath};if cfg.Currency==""{cfg.Currency=defaultCurrency};if cfg.CatalogStorePath==""{cfg.CatalogStorePath=defaultCatalogStorePath}
  if raw:=os.Getenv("DESKAPROVIDER_CATALOG_SYNC_INTERVAL");raw!=""{v,e:=time.ParseDuration(raw);if e!=nil||v<=0{return Config{},fmt.Errorf("invalid DESKAPROVIDER_CATALOG_SYNC_INTERVAL: %q",raw)};cfg.CatalogSyncInterval=v}
  if raw:=os.Getenv("DESKAPROVIDER_CATALOG_MAX_AGE");raw!=""{v,e:=time.ParseDuration(raw);if e!=nil||v<=0{return Config{},fmt.Errorf("invalid DESKAPROVIDER_CATALOG_MAX_AGE: %q",raw)};cfg.CatalogMaxAge=v}
  if raw:=os.Getenv("DESKAPROVIDER_OPERATIONAL_SNAPSHOT_MAX_AGE");raw!=""{v,e:=time.ParseDuration(raw);if e!=nil||v<=0{return Config{},fmt.Errorf("invalid DESKAPROVIDER_OPERATIONAL_SNAPSHOT_MAX_AGE: %q",raw)};cfg.OperationalSnapshotMaxAge=v}
@@ -67,15 +71,23 @@ func NewFromEnvironmentContext(ctx context.Context,httpClient *http.Client)(*Ser
  syncService,e:=operational.NewSyncService(registry,store,cfg.Currency,cfg.FailureThreshold);if e!=nil{return nil,e}
  catalogStore,e:=catalog.NewJSONFileStore(cfg.CatalogStorePath);if e!=nil{return nil,e}
  catalogSync,e:=catalog.NewSyncService(registry,catalogStore);if e!=nil{return nil,e}
- transactionStore,e:=routing.NewJSONFileTransactionStore(cfg.TransactionStorePath);if e!=nil{return nil,e}
+ var transactionStore routing.TransactionStore
+ var transactionDB *sql.DB
+ if cfg.TransactionStoreDriver=="postgres" {
+  transactionDB,e=sql.Open("pgx",cfg.PostgresDSN);if e!=nil{return nil,fmt.Errorf("open PostgreSQL transaction store: %w",e)}
+  if e=transactionDB.PingContext(ctx);e!=nil{transactionDB.Close();return nil,fmt.Errorf("ping PostgreSQL transaction store: %w",e)}
+  transactionStore,e=routing.NewPostgresTransactionStore(transactionDB);if e!=nil{transactionDB.Close();return nil,e}
+ } else {
+  transactionStore,e=routing.NewJSONFileTransactionStore(cfg.TransactionStorePath);if e!=nil{return nil,e}
+ }
  statePersistence,e:=operational.NewJSONFileProviderStateStore(cfg.ProviderStateStorePath);if e!=nil{return nil,e}
  stateStore,e:=operational.NewPersistentProviderStateStore(statePersistence);if e!=nil{return nil,e}
  for _, name:=range registry.Names(){state,ok:=stateStore.Get(name);if !ok{state,e=operational.NewProviderState(name);if e!=nil{return nil,e}};state.Capabilities=[]operational.Capability{operational.CapabilityPPOB,operational.CapabilityBalance,operational.CapabilityWebhook};if e=stateStore.Put(state);e!=nil{return nil,e}}
  router,e:=routing.NewWithCatalogAndStateAndOperationalMaxAge(registry,store,nil,catalogStore,stateStore,cfg.OperationalSnapshotMaxAge);if e!=nil{return nil,e}
  purchaseService,e:=routing.NewServiceWithStoreContext(ctx,router,transactionStore);if e!=nil{return nil,e}
- return &Service{syncService:syncService,purchaseService:purchaseService,catalogSync:catalogSync,providerState:stateStore,interval:cfg.SyncInterval,catalogInterval:cfg.CatalogSyncInterval},nil
+ return &Service{syncService:syncService,purchaseService:purchaseService,catalogSync:catalogSync,providerState:stateStore,transactionDB:transactionDB,interval:cfg.SyncInterval,catalogInterval:cfg.CatalogSyncInterval},nil
 }
 
 func New(syncService *operational.SyncService,interval time.Duration)(*Service,error){if syncService==nil{return nil,errors.New("sync service is required")};if interval<=0{return nil,errors.New("sync interval must be greater than zero")};return &Service{syncService:syncService,interval:interval},nil}
-func (s *Service) Run(ctx context.Context)error{if ctx==nil{return errors.New("context is required")};if s.catalogSync==nil{return s.syncService.Run(ctx,s.interval)};_=s.catalogSync.SyncAll(ctx);ticker:=time.NewTicker(s.catalogInterval);defer ticker.Stop();go func(){_=s.syncService.Run(ctx,s.interval)}();for{select{case<-ctx.Done():return ctx.Err();case<-ticker.C:_=s.catalogSync.SyncAll(ctx)}}}
+func (s *Service) Run(ctx context.Context)error{if ctx==nil{return errors.New("context is required")};if s.catalogSync==nil{err:=s.syncService.Run(ctx,s.interval);if s.transactionDB!=nil{_ = s.transactionDB.Close()};return err};_=s.catalogSync.SyncAll(ctx);ticker:=time.NewTicker(s.catalogInterval);defer ticker.Stop();go func(){_=s.syncService.Run(ctx,s.interval)}();for{select{case<-ctx.Done():if s.transactionDB!=nil{_ = s.transactionDB.Close()};return ctx.Err();case<-ticker.C:_=s.catalogSync.SyncAll(ctx)}}}
 func (s *Service) PurchaseService()*routing.Service{if s==nil{return nil};return s.purchaseService}
