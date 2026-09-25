@@ -74,13 +74,12 @@ func NewFromEnvironmentContext(ctx context.Context,httpClient *http.Client)(*Ser
  catalogStore,e:=catalog.NewJSONFileStore(cfg.CatalogStorePath);if e!=nil{return nil,e}
  catalogSync,e:=catalog.NewSyncService(registry,catalogStore);if e!=nil{return nil,e}
  transactionStore,transactionDB,e:=openTransactionStore(ctx,cfg);if e!=nil{return nil,e}
- auditStore,auditDB,e:=openAuditStore(ctx,cfg,transactionDB);if e!=nil{closeRuntimeDatabases(transactionDB,auditDB);return nil,e}
- cleanup:=true
- defer func(){if cleanup{closeRuntimeDatabases(transactionDB,auditDB)}}()
- statePersistence,e:=operational.NewJSONFileProviderStateStore(cfg.ProviderStateStorePath);if e!=nil{return nil,e}
- stateStore,e:=operational.NewPersistentProviderStateStore(statePersistence);if e!=nil{return nil,e}
- for _, name:=range registry.Names(){state,ok:=stateStore.Get(name);if !ok{state,e=operational.NewProviderState(name);if e!=nil{return nil,e}};state.Capabilities=[]operational.Capability{operational.CapabilityPPOB,operational.CapabilityBalance,operational.CapabilityWebhook};if e=stateStore.Put(state);e!=nil{return nil,e}}
- router,e:=routing.NewWithCatalogAndStateAndOperationalMaxAge(registry,store,nil,catalogStore,stateStore,cfg.OperationalSnapshotMaxAge);if e!=nil{return nil,e}
+auditStore,auditDB,e:=openAuditStore(ctx,cfg,transactionDB);if e!=nil{return nil,withRuntimeInitializationCleanupError(e,transactionDB,auditDB)}
+cleanup:=true
+defer func(){if cleanup{_ = closeRuntimeDatabases(transactionDB,auditDB)}}()
+statePersistence,e:=operational.NewJSONFileProviderStateStore(cfg.ProviderStateStorePath);if e!=nil{return nil,withRuntimeInitializationCleanupError(e,transactionDB,auditDB)}
+stateStore,e:=operational.NewPersistentProviderStateStore(statePersistence);if e!=nil{return nil,withRuntimeInitializationCleanupError(e,transactionDB,auditDB)}
+router,e:=routing.NewWithCatalogAndStateAndOperationalMaxAge(registry,store,nil,catalogStore,stateStore,cfg.OperationalSnapshotMaxAge);if e!=nil{return nil,e}
  purchaseService,e:=routing.NewServiceWithStoreContextAndAudit(ctx,router,transactionStore,auditStore);if e!=nil{return nil,e}
  service:=&Service{syncService:syncService,purchaseService:purchaseService,catalogSync:catalogSync,providerState:stateStore,transactionDB:transactionDB,auditDB:auditDB,interval:cfg.SyncInterval,catalogInterval:cfg.CatalogSyncInterval}
  cleanup=false
@@ -92,6 +91,8 @@ func (s *Service) Run(ctx context.Context)error{if ctx==nil{return errors.New("c
 func (s *Service) PurchaseService()*routing.Service{if s==nil{return nil};return s.purchaseService}
 
 func combineRuntimeShutdownError(primary,closeErr error) error{if primary==nil{return closeErr};if closeErr==nil{return primary};return errors.Join(primary,closeErr)}
+
+func withRuntimeInitializationCleanupError(primary error,transactionDB,auditDB databaseCloser) error{if primary==nil{return closeRuntimeDatabases(transactionDB,auditDB)};return combineRuntimeShutdownError(primary,closeRuntimeDatabases(transactionDB,auditDB))}
 
 func closeRuntimeDatabases(transactionDB,auditDB databaseCloser) error{var errs []error;if transactionDB!=nil{if err:=transactionDB.Close();err!=nil{errs=append(errs,fmt.Errorf("close transaction database: %w",err))}};if auditDB!=nil && auditDB!=transactionDB{if err:=auditDB.Close();err!=nil{errs=append(errs,fmt.Errorf("close audit database: %w",err))}};return errors.Join(errs...)}
 
