@@ -89,7 +89,7 @@ func (o *runtimeDatabaseOwnership) closeOwned() error {
 	return o.closeErr
 }
 
-type Service{syncService *operational.SyncService;purchaseService *routing.Service;catalogSync *catalog.SyncService;providerState *operational.ProviderStateStore;databaseOwnership *runtimeDatabaseOwnership;balanceLifecycle *operational.SyncWorkerLifecycle;interval,catalogInterval time.Duration}
+type Service struct{syncService *operational.SyncService;purchaseService *routing.Service;catalogSync *catalog.SyncService;providerState *operational.ProviderStateStore;databaseOwnership *runtimeDatabaseOwnership;balanceLifecycle *operational.SyncWorkerLifecycle;interval,catalogInterval time.Duration}
 
 func (s *Service) runBalanceSync(ctx context.Context, done chan<- error) {
 	if s == nil || s.syncService == nil {
