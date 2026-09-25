@@ -289,3 +289,38 @@ func TestRouterStateGateRejectsAllWhenNoProviderIsEnabledForCapability(t *testin
 		t.Fatalf("expected no-provider error, got %v", err)
 	}
 }
+
+func TestRouterRejectsUnhealthyEnabledProvider(t *testing.T) {
+ registry := provider.NewRegistry()
+ if err := registry.Register("mock", mock.New(mock.Config{Products: []provider.Product{{Code: "xld10", Name: "Test"}}})); err != nil { t.Fatal(err) }
+ store := operational.NewMemoryStore(); if err := store.Put(operational.Snapshot{ProviderName:"mock",Balance:100000,Health:operational.HealthUnhealthy}); err != nil { t.Fatal(err) }
+ states := operational.NewProviderStateStore(); if err := states.Put(operational.ProviderState{ProviderName:"mock",Lifecycle:operational.LifecycleEnabled,Capabilities:[]operational.Capability{operational.CapabilityPPOB}}); err != nil { t.Fatal(err) }
+ router, err := NewWithState(registry,store,nil,states); if err != nil { t.Fatal(err) }
+ if _, err := router.Select(context.Background(),Request{ProductCode:"xld10",Amount:50000}); !errors.Is(err,ErrNoProviderAvailable) { t.Fatalf("expected unhealthy provider rejection, got %v",err) }
+}
+
+func TestRouterRejectsDegradedEnabledProvider(t *testing.T) {
+ registry := provider.NewRegistry(); if err := registry.Register("mock",mock.New(mock.Config{Products:[]provider.Product{{Code:"xld10",Name:"Test"}}})); err != nil { t.Fatal(err) }
+ store := operational.NewMemoryStore(); if err := store.Put(operational.Snapshot{ProviderName:"mock",Balance:100000,Health:operational.HealthDegraded}); err != nil { t.Fatal(err) }
+ states := operational.NewProviderStateStore(); if err := states.Put(operational.ProviderState{ProviderName:"mock",Lifecycle:operational.LifecycleEnabled,Capabilities:[]operational.Capability{operational.CapabilityPPOB}}); err != nil { t.Fatal(err) }
+ router, err := NewWithState(registry,store,nil,states); if err != nil { t.Fatal(err) }
+ if _, err := router.Select(context.Background(),Request{ProductCode:"xld10",Amount:50000}); !errors.Is(err,ErrNoProviderAvailable) { t.Fatalf("expected degraded provider rejection, got %v",err) }
+}
+
+func TestRouterRejectsStaleCatalogForEnabledHealthyProvider(t *testing.T) {
+ registry := provider.NewRegistry(); if err := registry.Register("mock",mock.New(mock.Config{Products:[]provider.Product{{Code:"xld10",Name:"Test"}}})); err != nil { t.Fatal(err) }
+ store := operational.NewMemoryStore(); if err := store.Put(operational.Snapshot{ProviderName:"mock",Balance:100000,Health:operational.HealthHealthy}); err != nil { t.Fatal(err) }
+ states := operational.NewProviderStateStore(); if err := states.Put(operational.ProviderState{ProviderName:"mock",Lifecycle:operational.LifecycleEnabled,Capabilities:[]operational.Capability{operational.CapabilityPPOB}}); err != nil { t.Fatal(err) }
+ catalogs := catalog.NewMemoryStore(); if err := catalogs.Put(catalog.Snapshot{ProviderName:"mock",Products:[]provider.Product{{Code:"xld10",Name:"Test"}},SyncedAt:time.Now().Add(-2*time.Hour)}); err != nil { t.Fatal(err) }
+ router, err := NewWithCatalogAndState(registry,store,nil,catalogs,states); if err != nil { t.Fatal(err) }
+ if _, err := router.Select(context.Background(),Request{ProductCode:"xld10",Amount:50000}); !errors.Is(err,ErrNoProviderAvailable) { t.Fatalf("expected stale catalog rejection, got %v",err) }
+}
+
+func TestRouterSelectsEnabledHealthyFreshProviderWithState(t *testing.T) {
+ registry := provider.NewRegistry(); if err := registry.Register("mock",mock.New(mock.Config{Products:[]provider.Product{{Code:"xld10",Name:"Test"}}})); err != nil { t.Fatal(err) }
+ store := operational.NewMemoryStore(); if err := store.Put(operational.Snapshot{ProviderName:"mock",Balance:100000,Health:operational.HealthHealthy}); err != nil { t.Fatal(err) }
+ states := operational.NewProviderStateStore(); if err := states.Put(operational.ProviderState{ProviderName:"mock",Lifecycle:operational.LifecycleEnabled,Capabilities:[]operational.Capability{operational.CapabilityPPOB}}); err != nil { t.Fatal(err) }
+ catalogs := catalog.NewMemoryStore(); if err := catalogs.Put(catalog.Snapshot{ProviderName:"mock",Products:[]provider.Product{{Code:"xld10",Name:"Test"}},SyncedAt:time.Now()}); err != nil { t.Fatal(err) }
+ router, err := NewWithCatalogAndState(registry,store,nil,catalogs,states); if err != nil { t.Fatal(err) }
+ got, err := router.Select(context.Background(),Request{ProductCode:"xld10",Amount:50000}); if err != nil { t.Fatal(err) }; if got!="mock" { t.Fatalf("expected eligible provider, got %q",got) }
+}
