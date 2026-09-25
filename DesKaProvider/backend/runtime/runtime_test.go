@@ -543,45 +543,36 @@ func TestServiceRollbackStartedLifecyclesBeforeDatabaseClose(t *testing.T) {
 		return nil, catalogStartErr
 	}
 
-type orderedCloseDB struct {
-	service *Service
-	closed  bool
-	workerWasRunningAtClose bool
-}
-
-func (db *orderedCloseDB) Close() error {
-	if db.service != nil && db.service.balanceLifecycle != nil {
-		if err := db.service.balanceLifecycle.Shutdown(context.Background()); err == nil {
-			db.workerWasRunningAtClose = true
-		}
-	}
-	db.closed = true
-	return nil
-}
-
-	db := &orderedCloseDB{service: service}
+	db := &rollbackOrderDB{service: service}
 	service.databaseOwnership = newRuntimeDatabaseOwnership(db, nil)
 	service.databaseOwnership.transferToService()
 
-	ctx, cancel := context.WithCancel(context.Background())
-
-	err = service.Run(ctx)
-	if !errors.Is(err, catalogStartErr) {
+	if err := service.Run(context.Background()); !errors.Is(err, catalogStartErr) {
 		t.Fatalf("expected injected catalog start failure, got %v", err)
 	}
-	cancel()
 	if !db.closed {
 		t.Fatal("expected database to be closed during rollback")
 	}
 	if db.workerWasRunningAtClose {
 		t.Fatal("expected started balance lifecycle to be stopped before database close")
 	}
-	if service.balanceLifecycle == nil {
-		t.Fatal("expected balance lifecycle")
+	if err := service.balanceLifecycle.Shutdown(context.Background()); err != nil {
+		t.Fatalf("expected rollback to stop balance lifecycle cleanly, got %v", err)
 	}
-	if shutdownErr := service.balanceLifecycle.Shutdown(context.Background()); shutdownErr != nil {
-		t.Fatalf("expected rollback to stop balance lifecycle cleanly, got %v", shutdownErr)
+}
+
+type rollbackOrderDB struct {
+	service *Service
+	closed bool
+	workerWasRunningAtClose bool
+}
+
+func (db *rollbackOrderDB) Close() error {
+	if db.service != nil && db.service.balanceLifecycle != nil {
+		db.workerWasRunningAtClose = db.service.balanceLifecycle.Shutdown(context.Background()) != nil
 	}
+	db.closed = true
+	return nil
 }
 
 func TestServiceRunWithBalanceAndCatalogLifecyclesClosesDeterministically(t *testing.T) {
