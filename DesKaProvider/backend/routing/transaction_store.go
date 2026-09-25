@@ -60,8 +60,8 @@ type AtomicTransactionStore interface {
 type TransactionAuditEvent struct {
 	ReferenceID string
 	Action      string
-	Previous    provider.Status
-	Next        provider.Status
+	Previous    string
+	Next        string
 	ProviderName string
 	Message     string
 	CreatedAt   time.Time
