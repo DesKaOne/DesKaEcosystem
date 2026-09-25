@@ -23,25 +23,30 @@ func NewPostgresTransactionStore(db DBTX) (*PostgresTransactionStore, error) {
 }
 
 var _ AtomicTransactionStore = (*PostgresTransactionStore)(nil)
+var _ ContextTransactionStore = (*PostgresTransactionStore)(nil)
 
 const postgresGetSQL = "SELECT reference_id, product_code, customer_no, amount, testing, provider_name, status, provider_code, message, serial_number, price, version, created_at, updated_at FROM provider_transactions WHERE reference_id = $1"
 const postgresAllSQL = "SELECT reference_id, product_code, customer_no, amount, testing, provider_name, status, provider_code, message, serial_number, price, version, created_at, updated_at FROM provider_transactions ORDER BY created_at, reference_id"
 const postgresInsertSQL = "INSERT INTO provider_transactions (reference_id, product_code, customer_no, amount, testing, provider_name, status, provider_code, message, serial_number, price, version) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)"
 const postgresTransitionSQL = "UPDATE provider_transactions SET status=$2, provider_code=$3, message=$4, serial_number=$5, price=$6, version=version+1, updated_at=CURRENT_TIMESTAMP WHERE reference_id=$1 AND version=$7 AND product_code=$8 AND customer_no=$9 AND provider_name=$10 AND status='pending'"
 
-func (s *PostgresTransactionStore) Get(referenceID string) (TransactionState, bool) {
- row := s.db.QueryRowContext(context.Background(), postgresGetSQL, referenceID)
+func (s *PostgresTransactionStore) GetContext(ctx context.Context, referenceID string) (TransactionState, bool) {
+ row := s.db.QueryRowContext(ctx, postgresGetSQL, referenceID)
  state, err := scanPostgresState(row)
  if errors.Is(err, sql.ErrNoRows) { return TransactionState{}, false }
  if err != nil { return TransactionState{}, false }
  return state, true
 }
 
-func (s *PostgresTransactionStore) Put(state TransactionState) error {
+func (s *PostgresTransactionStore) Get(referenceID string) (TransactionState, bool) {
+ return s.GetContext(context.Background(), referenceID)
+}
+
+func (s *PostgresTransactionStore) PutContext(ctx context.Context, state TransactionState) error {
  if err := validatePostgresState(state); err != nil { return err }
- current, ok := s.Get(state.Request.ReferenceID)
+ current, ok := s.GetContext(ctx, state.Request.ReferenceID)
  if !ok {
-  _, err := s.db.ExecContext(context.Background(), postgresInsertSQL, state.Request.ReferenceID, state.Request.ProductCode, state.Request.CustomerNo, state.Request.Amount, state.Request.Testing, state.Execution.ProviderName, state.Execution.Result.Status, state.Execution.Result.ProviderCode, state.Execution.Result.Message, state.Execution.Result.SerialNumber, state.Execution.Result.Price, 1)
+  _, err := s.db.ExecContext(ctx, postgresInsertSQL, state.Request.ReferenceID, state.Request.ProductCode, state.Request.CustomerNo, state.Request.Amount, state.Request.Testing, state.Execution.ProviderName, state.Execution.Result.Status, state.Execution.Result.ProviderCode, state.Execution.Result.Message, state.Execution.Result.SerialNumber, state.Execution.Result.Price, 1)
   if err != nil { return fmt.Errorf("insert transaction: %w", err) }
   return nil
  }
@@ -53,7 +58,7 @@ func (s *PostgresTransactionStore) Put(state TransactionState) error {
   return ErrReferenceConflict
  }
  next := state
- result, err := s.db.ExecContext(context.Background(), postgresTransitionSQL,
+ result, err := s.db.ExecContext(ctx, postgresTransitionSQL,
   state.Request.ReferenceID, next.Execution.Result.Status, next.Execution.Result.ProviderCode,
   next.Execution.Result.Message, next.Execution.Result.SerialNumber, next.Execution.Result.Price,
   1, current.Request.ProductCode, current.Request.CustomerNo, current.Execution.ProviderName)
@@ -64,7 +69,11 @@ func (s *PostgresTransactionStore) Put(state TransactionState) error {
  return nil
 }
 
-func (s *PostgresTransactionStore) PutIfCurrent(referenceID string, previous, next TransactionState) error {
+func (s *PostgresTransactionStore) Put(state TransactionState) error {
+ return s.PutContext(context.Background(), state)
+}
+
+func (s *PostgresTransactionStore) PutIfCurrentContext(ctx context.Context, referenceID string, previous, next TransactionState) error {
  if referenceID == "" || previous.Request.ReferenceID != referenceID || next.Request.ReferenceID != referenceID { return ErrReferenceConflict }
  if previous.Request != next.Request || previous.Execution.ProviderName != next.Execution.ProviderName { return ErrReferenceConflict }
  if err := validatePostgresState(next); err != nil { return err }
@@ -73,7 +82,7 @@ func (s *PostgresTransactionStore) PutIfCurrent(referenceID string, previous, ne
   return ErrReferenceConflict
  }
  if next.Execution.Result.Status != provider.StatusPending && next.Execution.Result.Status != provider.StatusSuccess && next.Execution.Result.Status != provider.StatusFailed { return ErrReferenceConflict }
- result, err := s.db.ExecContext(context.Background(), postgresTransitionSQL, referenceID, next.Execution.Result.Status, next.Execution.Result.ProviderCode, next.Execution.Result.Message, next.Execution.Result.SerialNumber, next.Execution.Result.Price, 1, previous.Request.ProductCode, previous.Request.CustomerNo, previous.Execution.ProviderName)
+ result, err := s.db.ExecContext(ctx, postgresTransitionSQL, referenceID, next.Execution.Result.Status, next.Execution.Result.ProviderCode, next.Execution.Result.Message, next.Execution.Result.SerialNumber, next.Execution.Result.Price, 1, previous.Request.ProductCode, previous.Request.CustomerNo, previous.Execution.ProviderName)
  if err != nil { return fmt.Errorf("atomic transaction transition: %w", err) }
  n, err := result.RowsAffected()
  if err != nil { return fmt.Errorf("read atomic transition result: %w", err) }
@@ -81,14 +90,22 @@ func (s *PostgresTransactionStore) PutIfCurrent(referenceID string, previous, ne
  return nil
 }
 
-func (s *PostgresTransactionStore) All() []TransactionState {
- rows, err := s.db.QueryContext(context.Background(), postgresAllSQL)
+func (s *PostgresTransactionStore) PutIfCurrent(referenceID string, previous, next TransactionState) error {
+ return s.PutIfCurrentContext(context.Background(), referenceID, previous, next)
+}
+
+func (s *PostgresTransactionStore) AllContext(ctx context.Context) []TransactionState {
+ rows, err := s.db.QueryContext(ctx, postgresAllSQL)
  if err != nil { return nil }
  defer rows.Close()
  var result []TransactionState
  for rows.Next() { state, err := scanPostgresState(rows); if err != nil { return nil }; result = append(result, state) }
  if err := rows.Err(); err != nil { return nil }
  return result
+}
+
+func (s *PostgresTransactionStore) All() []TransactionState {
+ return s.AllContext(context.Background())
 }
 
 func validatePostgresState(state TransactionState) error { if state.Request.ReferenceID == "" || state.Execution.ProviderName == "" { return ErrReferenceConflict }; return nil }
