@@ -284,6 +284,17 @@ func TestNewFromEnvironmentContextRequiresContext(t *testing.T) {
 	if _, err := NewFromEnvironmentContext(nil, nil); err == nil { t.Fatal("expected initialization context error") }
 }
 
+func TestRuntimeInitializationContextCheckpoint(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := checkRuntimeInitializationContext(ctx); err != context.Canceled {
+		t.Fatalf("expected context.Canceled, got %v", err)
+	}
+	if err := checkRuntimeInitializationContext(context.Background()); err != nil {
+		t.Fatalf("expected active context to pass checkpoint, got %v", err)
+	}
+}
+
 func TestNewFromEnvironmentContextRejectsProviderStateInitializationFailureAfterOwnershipSetup(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("DIGIFLAZZ_USERNAME", "test-user")
