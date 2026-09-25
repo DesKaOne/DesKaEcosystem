@@ -530,6 +530,15 @@ func (db *orderedCloseDB) Close() error {
 	return nil
 }
 
+func (db *orderedCloseDB) Close() error {
+	if db.service != nil && db.service.balanceLifecycle != nil {
+		db.service.balanceLifecycle.Shutdown(context.Background())
+		db.workerWasRunningAtClose = true
+	}
+	db.closed = true
+	return nil
+}
+
 func TestServiceRollbackStartedLifecyclesBeforeDatabaseClose(t *testing.T) {
 	mockProvider := &balanceMock{Provider: mock.New(mock.Config{Products: []provider.Product{{Code: "xld10", Name: "Test"}}}), balance: 1800000}
 	registry := provider.NewRegistry()
@@ -551,6 +560,7 @@ func TestServiceRollbackStartedLifecyclesBeforeDatabaseClose(t *testing.T) {
 	type orderedCloseDB struct {
 		service *Service
 		closed  bool
+		workerWasRunningAtClose bool
 	}
 	db := &orderedCloseDB{service: service}
 	service.databaseOwnership = newRuntimeDatabaseOwnership(db, nil)
@@ -565,6 +575,9 @@ func TestServiceRollbackStartedLifecyclesBeforeDatabaseClose(t *testing.T) {
 	cancel()
 	if !db.closed {
 		t.Fatal("expected database to be closed during rollback")
+	}
+	if db.workerWasRunningAtClose {
+		t.Fatal("expected started balance lifecycle to be stopped before database close")
 	}
 	if service.balanceLifecycle == nil {
 		t.Fatal("expected balance lifecycle")
