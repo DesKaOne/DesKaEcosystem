@@ -67,6 +67,56 @@ func TestLoadConfigRejectsInvalidValues(t *testing.T) {
 	}
 }
 
+type initializationCloseErrorDB struct {
+	closeErr error
+	closeCount int
+}
+
+func (db *initializationCloseErrorDB) Close() error {
+	db.closeCount++
+	return db.closeErr
+}
+
+func TestRuntimeInitializationCleanupErrorIsObservable(t *testing.T) {
+	primary := errors.New("initialization failed")
+	cleanupErr := errors.New("cleanup failed")
+	transactionDB := &initializationCloseErrorDB{closeErr: cleanupErr}
+	got := withRuntimeInitializationCleanupError(primary, transactionDB, nil)
+	if !errors.Is(got, primary) {
+		t.Fatalf("expected primary initialization error to remain discoverable: %v", got)
+	}
+	if !errors.Is(got, cleanupErr) {
+		t.Fatalf("expected cleanup error to be observable: %v", got)
+	}
+	if transactionDB.closeCount != 1 {
+		t.Fatalf("expected one cleanup close, got %d", transactionDB.closeCount)
+	}
+}
+
+func TestRuntimeInitializationCleanupPreservesPrimaryWhenCleanupSucceeds(t *testing.T) {
+	primary := errors.New("initialization failed")
+	transactionDB := &initializationCloseErrorDB{}
+	got := withRuntimeInitializationCleanupError(primary, transactionDB, nil)
+	if got != primary {
+		t.Fatalf("expected primary error identity to be preserved, got %v", got)
+	}
+	if transactionDB.closeCount != 1 {
+		t.Fatalf("expected one cleanup close, got %d", transactionDB.closeCount)
+	}
+}
+
+func TestRuntimeInitializationCleanupDoesNotDoubleCloseSharedHandle(t *testing.T) {
+	cleanupErr := errors.New("cleanup failed")
+	shared := &initializationCloseErrorDB{closeErr: cleanupErr}
+	got := withRuntimeInitializationCleanupError(errors.New("initialization failed"), shared, shared)
+	if !errors.Is(got, cleanupErr) {
+		t.Fatalf("expected cleanup error to be observable: %v", got)
+	}
+	if shared.closeCount != 1 {
+		t.Fatalf("expected shared handle to close once, got %d", shared.closeCount)
+	}
+}
+
 func TestServiceRunStopsOnContextCancellation(t *testing.T) {
 	mockProvider := &balanceMock{
 		Provider: mock.New(mock.Config{
