@@ -32,6 +32,7 @@ func TestLoadConfigDefaults(t *testing.T) {
 	t.Setenv("DESKAPROVIDER_CATALOG_MAX_AGE", "")
 	t.Setenv("DESKAPROVIDER_OPERATIONAL_SNAPSHOT_MAX_AGE", "")
 	t.Setenv("DESKAPROVIDER_TRANSACTION_STORE_DRIVER", "")
+	t.Setenv("DESKAPROVIDER_AUDIT_STORE_DRIVER", "")
 	t.Setenv("DESKAPROVIDER_POSTGRES_DSN", "")
 
 	cfg, err := LoadConfig()
@@ -39,7 +40,7 @@ func TestLoadConfigDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	if cfg.StorePath != defaultStorePath || cfg.TransactionStorePath != defaultTransactionStorePath || cfg.SyncInterval != defaultSyncInterval ||
-		cfg.FailureThreshold != defaultFailureThreshold || cfg.Currency != defaultCurrency || cfg.TransactionStoreDriver != defaultTransactionStoreDriver || cfg.CatalogSyncInterval != defaultCatalogSyncInterval || cfg.CatalogMaxAge != defaultCatalogMaxAge || cfg.OperationalSnapshotMaxAge != defaultOperationalSnapshotMaxAge {
+		cfg.FailureThreshold != defaultFailureThreshold || cfg.Currency != defaultCurrency || cfg.TransactionStoreDriver != defaultTransactionStoreDriver || cfg.AuditStoreDriver != defaultAuditStoreDriver || cfg.CatalogSyncInterval != defaultCatalogSyncInterval || cfg.CatalogMaxAge != defaultCatalogMaxAge || cfg.OperationalSnapshotMaxAge != defaultOperationalSnapshotMaxAge {
 		t.Fatalf("unexpected defaults: %#v", cfg)
 	}
 }
@@ -323,4 +324,25 @@ func TestOpenTransactionStoreCanceledContext(t *testing.T) {
 	if _, _, err := openTransactionStore(ctx, cfg); err != context.Canceled {
 		t.Fatalf("expected context.Canceled, got %v", err)
 	}
+}
+
+func TestLoadConfigPostgresAuditRequiresDSN(t *testing.T) {
+	t.Setenv("DESKAPROVIDER_AUDIT_STORE_DRIVER", "postgres")
+	t.Setenv("DESKAPROVIDER_POSTGRES_DSN", "")
+	if _, err := LoadConfig(); err == nil {
+		t.Fatal("expected PostgreSQL DSN requirement for audit store")
+	}
+}
+
+func TestLoadConfigAcceptsPostgresAuditStore(t *testing.T) {
+	t.Setenv("DESKAPROVIDER_AUDIT_STORE_DRIVER", "postgres")
+	t.Setenv("DESKAPROVIDER_POSTGRES_DSN", "postgres://test")
+	cfg, err := LoadConfig()
+	if err != nil { t.Fatal(err) }
+	if cfg.AuditStoreDriver != "postgres" || cfg.PostgresDSN != "postgres://test" { t.Fatalf("unexpected PostgreSQL audit config: %#v", cfg) }
+}
+
+func TestLoadConfigRejectsUnknownAuditStoreDriver(t *testing.T) {
+	t.Setenv("DESKAPROVIDER_AUDIT_STORE_DRIVER", "sqlite")
+	if _, err := LoadConfig(); err == nil { t.Fatal("expected unknown audit store driver error") }
 }
