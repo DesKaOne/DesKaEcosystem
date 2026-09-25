@@ -3367,3 +3367,47 @@ Next milestone:
 2. add dedicated reconciliation audit-failure injection coverage;
 3. verify committed transaction state remains authoritative in both paths;
 4. only then wire PostgreSQL audit-store selection into production runtime.
+
+
+### 93. Milestone Update — Webhook & Reconciliation Audit Failure Injection Hardening
+
+**Date:** 2026-09-26
+
+Completed:
+
+- added dedicated webhook audit-failure injection coverage after a terminal webhook transition is durably committed;
+- added dedicated reconciliation audit-failure injection coverage after a terminal reconciliation transition is durably committed;
+- verified the committed terminal TransactionState remains authoritative when the audit append fails;
+- verified audit failure does not revert terminal state to pending;
+- verified audit failure does not authorize provider resubmission;
+- verified provider PurchaseCount remains exactly one through the injected webhook/reconciliation audit failure scenarios;
+- verified subsequent identical webhook/reconciliation observations converge idempotently from the committed terminal state.
+
+Safety boundary:
+
+- transaction persistence remains the authorization boundary; audit persistence is observational;
+- webhook/reconciliation audit failure cannot trigger retry, failover, or provider resubmission;
+- durable terminal state is never rolled back because operational audit storage is unavailable;
+- no customer-ledger mutation, provider-balance mutation, treasury mutation, or automatic funding was introduced.
+
+Verification:
+
+- dedicated deterministic failure-injection tests cover both webhook and reconciliation paths;
+- latest CI run #676 / 36174112280: **GREEN**;
+- test: PASS;
+- vet: PASS;
+- race: PASS;
+- PostgreSQL integration service active and the full suite passed.
+
+Known limitations:
+
+- failure injection is deterministic at the TransactionAuditStore boundary; it does not simulate PostgreSQL process failure or network partition during an audit INSERT;
+- production runtime selection of PostgreSQL audit storage remains deferred to the next milestone;
+- audit history remains operational evidence and is not a financial ledger or source of truth.
+
+Next milestone:
+
+1. wire PostgreSQL TransactionAuditStore selection into production runtime configuration;
+2. verify startup construction and shutdown lifecycle with PostgreSQL transaction and audit stores together;
+3. add runtime integration coverage proving durable audit reads survive service reconstruction;
+4. keep retry/failover/resubmission deferred.
