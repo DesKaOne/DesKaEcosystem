@@ -711,3 +711,46 @@ Real PostgreSQL integration coverage verifies:
 The integration boundary also verifies that a canceled audit append does not mutate an already durable terminal transaction and cannot authorize a second provider submission.
 
 Production runtime selection of PostgreSQL audit storage remains deferred until the audit failure-injection matrix for webhook and reconciliation is complete.
+
+
+## 30. Webhook & Reconciliation Audit Failure Injection Hardening
+
+**Date:** 2026-09-26
+
+Milestone #93 closes the remaining deterministic audit-failure coverage gap for webhook and reconciliation transitions.
+
+### Verified invariant
+
+For both paths:
+
+```
+provider observation
+      |
+      v
+persist TransactionState
+      |
+      +--> audit append fails
+      |
+      v
+durable terminal state remains authoritative
+      |
+      v
+no retry / failover / resubmission
+```
+
+Dedicated tests inject an unavailable TransactionAuditStore after the provider transaction has already reached a pending durable state. A terminal webhook or reconciliation transition is persisted first, then the audit append fails.
+
+The verification requires:
+
+- the returned execution remains terminal;
+- the PostgreSQL-independent transaction store still contains the terminal state;
+- provider PurchaseCount remains exactly one;
+- a later identical observation converges idempotently without invoking Purchase again.
+
+### Runtime boundary
+
+This milestone does not yet select PostgreSQL audit storage in production. The audit adapter remains independently testable and is not allowed to become part of provider submission authorization.
+
+### Limitation
+
+The failure injection is deterministic at the audit-store abstraction. It does not reproduce a real PostgreSQL connection failure, transaction rollback, or network partition during an INSERT. Those concerns belong to runtime integration coverage in the next milestone.
