@@ -89,6 +89,27 @@ func (s *JSONFileTransactionStore) Put(state TransactionState) error {
     return s.persistLocked()
 }
 
+func (s *JSONFileTransactionStore) PutIfCurrent(referenceID string, previous, next TransactionState) error {
+    if referenceID == "" || next.Request.ReferenceID != referenceID || previous.Request.ReferenceID != referenceID {
+        return ErrReferenceConflict
+    }
+    s.mu.Lock()
+    defer s.mu.Unlock()
+    current, ok := s.transactions[referenceID]
+    if !ok || current != previous {
+        return ErrTransactionStateConflict
+    }
+    if err := validateTransactionTransition(previous, next); err != nil {
+        return err
+    }
+    s.transactions[referenceID] = next
+    if err := s.persistLocked(); err != nil {
+        s.transactions[referenceID] = current
+        return err
+    }
+    return nil
+}
+
 func (s *JSONFileTransactionStore) persistLocked() error {
     state := jsonTransactionState{Transactions: s.transactions}
     data, err := json.MarshalIndent(state, "", "  ")
