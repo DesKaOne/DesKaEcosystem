@@ -181,3 +181,153 @@ func TestPostgresTransactionAuditStoreFailureDoesNotChangeTransactionState(t *te
 		t.Fatalf("audit failure must not authorize resubmission, got %d", got)
 	}
 }
+
+
+func TestPostgresTransactionAndAuditStoresReconstructServiceAfterRestart(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	schema := "transaction_audit_restart_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatalf("create isolated schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
+	})
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set search path: %v", err)
+	}
+	applyPostgresMigration(t, db)
+
+	transactionStore, err := NewPostgresTransactionStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	auditStore, err := NewPostgresTransactionAuditStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	registry := provider.NewRegistry()
+	mock := Mock.New(Mock.Config{
+		Products: []provider.Product{{Code: "pln20", Name: "PLN 20"}},
+		ProviderCode: "00",
+		Message: "success",
+		PurchaseStatus: provider.StatusSuccess,
+		Price: 20000,
+	})
+	if err := registry.Register("mock", mock); err != nil {
+		t.Fatal(err)
+	}
+	operationalStore := operational.NewMemoryStore()
+	if err := operationalStore.Put(operational.Snapshot{
+		ProviderName: "mock",
+		Balance: 100000,
+		Health: operational.HealthHealthy,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	router, err := New(registry, operationalStore, map[string]int{"mock": 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := PurchaseRequest{
+		ProductCode: "pln20",
+		CustomerNo: "08123456789",
+		ReferenceID: postgresIntegrationReference(),
+		Amount: 20000,
+	}
+	firstService, err := NewServiceWithStoreContextAndAudit(ctx, router, transactionStore, auditStore)
+	if err != nil {
+		t.Fatalf("construct initial service: %v", err)
+	}
+	first, err := firstService.Purchase(ctx, req)
+	if err != nil {
+		t.Fatalf("initial purchase: %v", err)
+	}
+	if first.Result.Status != provider.StatusSuccess {
+		t.Fatalf("expected terminal success, got %q", first.Result.Status)
+	}
+	if got := mock.PurchaseCount(req.ReferenceID); got != 1 {
+		t.Fatalf("expected exactly one provider submission, got %d", got)
+	}
+
+	beforeRestart, err := auditStore.AllContext(ctx, req.ReferenceID)
+	if err != nil {
+		t.Fatalf("read audit history before restart: %v", err)
+	}
+	if len(beforeRestart) != 2 || beforeRestart[0].Action != "PURCHASE_PENDING" || beforeRestart[1].Action != "PURCHASE_RESULT" {
+		t.Fatalf("unexpected pre-restart audit history: %#v", beforeRestart)
+	}
+
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := sql.Open("pgx", os.Getenv("DESKAPROVIDER_POSTGRES_DSN"))
+	if err != nil {
+		t.Fatalf("reopen postgres: %v", err)
+	}
+	defer reopened.Close()
+	if err := reopened.PingContext(ctx); err != nil {
+		t.Fatalf("ping reopened postgres: %v", err)
+	}
+	if _, err := reopened.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("restore search path after restart: %v", err)
+	}
+
+	restartedTransactionStore, err := NewPostgresTransactionStore(reopened)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restartedAuditStore, err := NewPostgresTransactionAuditStore(reopened)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restarted, err := NewServiceWithStoreContextAndAudit(ctx, router, restartedTransactionStore, restartedAuditStore)
+	if err != nil {
+		t.Fatalf("reconstruct service after restart: %v", err)
+	}
+
+	reconciled, err := restarted.Reconcile(ctx, req.ReferenceID)
+	if err != nil {
+		t.Fatalf("reconcile recovered terminal transaction: %v", err)
+	}
+	if !samePurchaseResult(reconciled.Result, first.Result) {
+		t.Fatalf("terminal result changed after restart: %#v", reconciled.Result)
+	}
+	if got := mock.PurchaseCount(req.ReferenceID); got != 1 {
+		t.Fatalf("restart reconciliation must not resubmit purchase, got %d", got)
+	}
+
+	afterRestart, err := restartedAuditStore.AllContext(ctx, req.ReferenceID)
+	if err != nil {
+		t.Fatalf("read durable audit history after restart: %v", err)
+	}
+	if len(afterRestart) != len(beforeRestart) {
+		t.Fatalf("idempotent terminal reconciliation must not append a new audit event, before=%d after=%d", len(beforeRestart), len(afterRestart))
+	}
+	for i := range beforeRestart {
+		if afterRestart[i] != beforeRestart[i] {
+			t.Fatalf("audit history changed after restart: before=%#v after=%#v", beforeRestart, afterRestart)
+		}
+	}
+
+	webhook := provider.WebhookEvent{
+		ReferenceID: req.ReferenceID,
+		ProductCode: req.ProductCode,
+		CustomerNo: req.CustomerNo,
+		Status: provider.StatusSuccess,
+		ProviderCode: first.Result.ProviderCode,
+		Message: first.Result.Message,
+		SerialNumber: first.Result.SerialNumber,
+		Price: first.Result.Price,
+	}
+	if _, err := restarted.HandleWebhook(ctx, webhook); err != nil {
+		t.Fatalf("identical terminal webhook after restart must be idempotent: %v", err)
+	}
+	if got := mock.PurchaseCount(req.ReferenceID); got != 1 {
+		t.Fatalf("terminal webhook after restart must not resubmit purchase, got %d", got)
+	}
+}
