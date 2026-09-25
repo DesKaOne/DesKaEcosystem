@@ -2721,3 +2721,45 @@ Final verification for milestone #78:
 - race: PASS.
 
 The milestone is therefore closed at the provider-neutral adapter/unit-test boundary. Live PostgreSQL integration remains explicitly pending.
+
+
+### 79. Milestone Update — PostgreSQL Integration Harness & Real Concurrency Verification
+
+**Date:** 2026-09-25
+
+Implementation:
+
+- added a real PostgreSQL integration test harness behind `DESKAPROVIDER_POSTGRES_DSN`;
+- added `github.com/jackc/pgx/v5` as the database/sql PostgreSQL driver used only by integration tests;
+- added migration loading/verification and isolated database setup in the routing integration test package;
+- verified the concrete adapter against a real PostgreSQL instance in CI scope for pending persistence, reconstruction, concurrent `PutIfCurrent`, and reconnect/recovery;
+- added concurrent integration coverage requiring exactly one successful terminal transition and one stale-state conflict;
+- updated DesKaProvider CI to provision an isolated PostgreSQL 18 service for both test and race jobs;
+- kept the integration harness credential-free with an ephemeral CI-only DSN.
+
+Safety boundary:
+
+- no provider retry/failover/resubmission was introduced;
+- no customer-ledger mutation was introduced;
+- no automatic provider funding was introduced;
+- PostgreSQL concurrency conflicts remain state conflicts and never authorize provider purchase resubmission;
+- the integration harness does not expose production credentials.
+
+Verification gate:
+
+- fresh CI for this milestone is mandatory;
+- `test`, `vet`, and `race` must all be GREEN before milestone closure;
+- the integration test is expected to exercise the real PostgreSQL service in CI, while local environments without `DESKAPROVIDER_POSTGRES_DSN` skip that integration case.
+
+Known limitations:
+
+- the persistence contract remains context-free and the adapter uses `context.Background()`;
+- migration execution is still not wired into production runtime startup;
+- the integration harness validates the current schema/adapter boundary but does not establish a production migration orchestration policy;
+- retry/failover remains deferred until the full database-backed transaction/idempotency boundary is reviewed.
+
+Next milestone:
+
+1. verify the fresh PostgreSQL-backed CI gate;
+2. if green, close the integration boundary and evaluate explicit context propagation in the persistence contract;
+3. continue hardening restart/reconciliation semantics before considering any retry/failover policy.
