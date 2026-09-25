@@ -910,3 +910,46 @@ initialization failure
 ```
 
 Deterministic tests verify primary-error preservation, cleanup-error observability, and shared-handle de-duplication. PostgreSQL integration continues to verify the underlying resource closure boundary.
+
+
+## 36. Runtime Ownership Transfer & Initialization/Shutdown Lifecycle Contract Consolidation
+
+Milestone #99 makes the database ownership boundary executable rather than implicit.
+
+The lifecycle contract is:
+
+```text
+Initialization
+    ↓
+acquire transaction DB / audit DB
+    ↓
+Runtime database owner
+    ├── initialization failure → cleanup acquired resources
+    └── successful construction → transfer ownership to Service
+                                      ↓
+                                 Service.Run shutdown
+                                      ↓
+                                 close owned resources once
+```
+
+The ownership object carries both transaction and audit handles and distinguishes two phases:
+
+- before transfer, initialization cleanup may close acquired resources;
+- after transfer, initialization cleanup becomes a no-op and the runtime Service is the owner;
+- shutdown close is idempotent, so repeated shutdown invocation does not double-close resources;
+- a shared transaction/audit handle is deduplicated by the underlying close boundary;
+- a dedicated audit handle remains independently owned and closed.
+
+Primary initialization errors remain discoverable when cleanup also fails, and shutdown continues to compose primary lifecycle errors with database close errors. These are infrastructure lifecycle semantics only and do not change transaction authorization.
+
+### Verification
+
+Milestone #99 adds deterministic success-path ownership tests plus real PostgreSQL integration coverage for:
+
+1. transfer without premature initialization cleanup;
+2. Service-owned shutdown closing transaction and audit resources exactly once;
+3. shared PostgreSQL transaction/audit handle deduplication;
+4. dedicated PostgreSQL audit-handle closure;
+5. repeated shutdown not causing an additional close.
+
+No retry, failover, provider resubmission, ledger mutation, treasury movement, or provider funding policy is introduced by this lifecycle contract.

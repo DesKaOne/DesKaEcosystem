@@ -3588,3 +3588,49 @@ The primary initialization error remains the semantic reason startup failed; cle
 ### Next milestone
 
 Milestone #99: runtime ownership transfer and initialization/shutdown lifecycle contract consolidation, including explicit success-path ownership tests and regression coverage across shared versus dedicated PostgreSQL resources.
+
+### Milestone #99 — Runtime Ownership Transfer & Initialization/Shutdown Lifecycle Contract Consolidation
+
+**Date:** 2026-09-26
+
+### Completed
+
+- introduced an explicit runtime database-ownership boundary covering transaction and audit PostgreSQL handles acquired during initialization;
+- made ownership transfer from the initialization guard to the runtime Service explicit on the successful construction path;
+- verified the initialization cleanup guard does not close transferred resources after successful initialization;
+- changed Service shutdown to close runtime-owned database resources through the ownership boundary;
+- made shutdown close idempotent so a repeated shutdown path does not double-close a shared or dedicated handle and preserves the first close result;
+- added deterministic success-path tests for transaction + audit resources together, shared transaction/audit handles, and dedicated PostgreSQL audit handles;
+- added real PostgreSQL integration regression coverage that verifies transferred shared and dedicated handles remain usable before shutdown and are closed after ownership-owned shutdown;
+- kept primary initialization error preservation and shutdown error composition unchanged;
+- no provider routing, retry, failover, resubmission, financial ledger, treasury, or provider funding semantics were changed.
+
+### Verification
+
+- CI run #744 / run 36190106679: **GREEN** for HEAD ed456f5914124c908e0c2ac3f86d7061e1fd8784;
+- `go test ./...`: PASS in CI, including the PostgreSQL integration suite;
+- `go vet ./...`: PASS in CI;
+- `go test -race ./...`: PASS in CI;
+- PostgreSQL service active in CI and shared/dedicated ownership integration coverage passed;
+- local execution was not available because the environment could not clone the GitHub repository, so verification is based on the repository's GitHub Actions run for the exact pushed HEAD.
+
+### Safety Boundary
+
+- transaction persistence remains the authoritative transaction state;
+- audit persistence remains operational evidence only;
+- database cleanup and shutdown errors remain infrastructure lifecycle signals, not provider transaction results;
+- audit failure cannot authorize retry, failover, provider resubmission, ledger mutation, treasury movement, or provider funding;
+- shared PostgreSQL transaction/audit usage is closed exactly once by the runtime owner;
+- dedicated PostgreSQL audit usage is closed by the runtime owner exactly once;
+- failed initialization still cleans up resources already acquired before ownership transfer.
+
+### Known Limitations
+
+- ownership observability remains internal to the runtime ownership boundary; there is still no separate metrics stream or structured external diagnostic endpoint;
+- integration coverage verifies handle lifecycle and PostgreSQL usability, not process-kill or network-partition behavior during shutdown;
+- PostgreSQL migration execution remains a deployment prerequisite and is not run automatically at startup;
+- provider-specific crash/retry semantics remain outside this provider-neutral lifecycle contract.
+
+### Next Milestone
+
+**#100 — Runtime Lifecycle Integration Consolidation**: continue only with a concrete lifecycle gap identified from the current runtime architecture; preserve the established ownership, terminal-state, audit-observational, and non-resubmission boundaries.
