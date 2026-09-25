@@ -3188,3 +3188,46 @@ Next milestone:
 1. extend PostgreSQL integration coverage to conflicting terminal webhook/reconciliation observations;
 2. verify that terminal conflicts remain non-resubmitting across restart;
 3. keep retry/failover deferred.
+
+
+### 89. Milestone Update — PostgreSQL Terminal Conflict Recovery After Restart
+
+**Date:** 2026-09-25
+
+Completed:
+
+- added a real PostgreSQL integration scenario that creates a terminal SUCCESS transaction through Service.Purchase and reconstructs the routing Service from the same PostgreSQL transaction store;
+- changed the mock provider's observed transaction status after restart to model a conflicting provider-side terminal observation;
+- verified reconciliation rejects the conflicting terminal observation with ErrWebhookReferenceConflict;
+- verified a conflicting terminal webhook for the same reference is also rejected with ErrWebhookReferenceConflict;
+- verified both conflict paths leave the durable terminal SUCCESS result unchanged;
+- verified provider PurchaseCount remains exactly one across the original purchase, service reconstruction, reconciliation conflict, and webhook conflict;
+- kept the conflict boundary non-resubmitting and provider-neutral.
+
+Safety boundary:
+
+- conflicting terminal observations are treated as state/reference conflicts, never as retry/failover signals;
+- no provider purchase resubmission was introduced;
+- no customer-ledger mutation or automatic provider funding was introduced;
+- terminal provider identity and transaction identity remain immutable;
+- retry/failover/resubmission remain explicitly deferred.
+
+Verification:
+
+- CI run #612 / 36147378874: **GREEN**;
+- test: PASS;
+- vet: PASS;
+- race: PASS;
+- PostgreSQL integration service remained active and the real PostgreSQL integration coverage passed.
+
+Known limitations:
+
+- the scenario models a conflicting provider observation after service reconstruction using the deterministic mock provider; it does not simulate a real external provider changing a terminal transaction after an actual process crash;
+- migration execution remains a separate deployment concern;
+- provider-specific conflict/retry semantics remain outside the verified provider-neutral contract.
+
+Next milestone:
+
+1. define the next persistence/reconciliation hardening boundary from the current architecture and operational requirements;
+2. preserve terminal conflict non-resubmission guarantees while expanding only where a concrete provider-neutral safety gap is identified;
+3. keep retry/failover deferred until transaction lifecycle semantics are fully verified.
