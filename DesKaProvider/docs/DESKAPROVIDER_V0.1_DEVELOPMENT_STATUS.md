@@ -2908,8 +2908,9 @@ Safety boundary:
 
 Verification:
 
-- CI run #544 / 36140677155: **GREEN**;
-- CI run #543 / 36140677155: **GREEN**;
+- CI run #547 / 36140897373: **GREEN**;
+- CI run #546 / 36140894595: **GREEN**;
+- CI run #545 / 36140891050: **GREEN**;
 - test: PASS;
 - vet: PASS;
 - race: PASS;
@@ -2965,3 +2966,41 @@ Next milestone:
 1. wire explicit initialization context into the production-facing startup composition boundary;
 2. add PostgreSQL integration coverage for startup read failure and cancellation behavior;
 3. keep retry/failover deferred until startup and reconciliation recovery are unambiguous.
+
+
+### 84. Milestone Update — Production Startup Context Wiring
+
+**Date:** 2026-09-25
+
+Completed:
+
+- added NewFromEnvironmentContext to the runtime composition boundary;
+- retained NewFromEnvironment as a compatibility wrapper using context.Background();
+- changed the production command to create its signal-aware lifecycle context before runtime construction;
+- passed that initialization context into NewServiceWithStoreContext so transaction-store startup reads participate in process lifecycle cancellation;
+- added runtime tests for canceled and missing initialization contexts;
+- corrected the historical Milestone #82 CI verification references to the actual green runs.
+
+Safety boundary:
+
+- startup cancellation stops initialization before transaction reconstruction and cannot authorize provider retry/failover/resubmission;
+- no provider-specific contract changed;
+- no customer-ledger mutation or automatic provider funding was introduced;
+- the existing JSON transaction store remains the current runtime persistence selection.
+
+Verification:
+
+- CI test/vet/race must be GREEN before milestone closure;
+- PostgreSQL integration remains green from the existing persistence harness.
+
+Known limitations:
+
+- runtime composition still selects the JSON transaction store; PostgreSQL startup-read integration is not claimed until a production PostgreSQL store selection/configuration boundary exists;
+- migration execution remains separate from runtime startup;
+- legacy callers using NewFromEnvironment retain background-context compatibility semantics.
+
+Next milestone:
+
+1. define the production PostgreSQL transaction-store selection boundary without leaking database details into routing;
+2. add PostgreSQL-backed runtime startup failure/cancellation integration coverage through that composition boundary;
+3. keep retry/failover deferred until production persistence startup and reconciliation remain unambiguous.
