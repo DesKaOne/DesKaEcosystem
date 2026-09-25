@@ -3044,3 +3044,24 @@ Next milestone:
 1. harden PostgreSQL runtime restart recovery with durable pending-state reconstruction through the production composition path;
 2. add integration coverage for startup recovery of pending transactions and clean reconstruction after reconnect;
 3. keep retry/failover deferred until production restart/reconciliation behavior is fully verified.
+
+
+#### Milestone #85 CI closure
+
+Final verification after isolating the runtime PostgreSQL integration test schema:
+
+- CI run #585 / 36143519374: **GREEN**;
+- CI run #584 / 36143515119: **GREEN**;
+- test: PASS;
+- vet: PASS;
+- race: PASS;
+- PostgreSQL runtime composition integration passed against the CI PostgreSQL service.
+
+CI recovery during Milestone #85:
+
+- CI #581/#580 exposed a shared PostgreSQL test-schema collision between the existing routing integration harness and the new runtime integration test;
+- CI #583/#582 exposed an invalid schema identifier containing a dot from nanosecond timestamp formatting;
+- the runtime integration test was changed to create an isolated schema with a PostgreSQL-safe numeric suffix and a single connection pool for deterministic search_path usage;
+- no production persistence behavior was changed by these test-harness fixes.
+
+Milestone #85 is closed at the production PostgreSQL transaction-store selection and runtime composition boundary.
