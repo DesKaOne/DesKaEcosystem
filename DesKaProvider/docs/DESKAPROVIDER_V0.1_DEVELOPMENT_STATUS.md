@@ -3231,3 +3231,44 @@ Next milestone:
 1. define the next persistence/reconciliation hardening boundary from the current architecture and operational requirements;
 2. preserve terminal conflict non-resubmission guarantees while expanding only where a concrete provider-neutral safety gap is identified;
 3. keep retry/failover deferred until transaction lifecycle semantics are fully verified.
+
+
+### 90. Milestone Update — Transaction Audit Persistence Boundary
+
+**Date:** 2026-09-26
+
+Completed:
+
+- defined a provider-neutral append-only TransactionAuditStore contract separate from financial TransactionState;
+- added deterministic MemoryTransactionAuditStore coverage for append-only behavior and incomplete-event rejection;
+- added PostgreSQL provider_transaction_audit schema with immutable append-only intent and reference/time index;
+- extended the real PostgreSQL migration verification to require the audit table and index fragments;
+- kept audit persistence separate from transaction-state mutation so audit concerns cannot authorize provider retry, failover, or resubmission.
+
+Safety boundary:
+
+- audit records are append-only operational history, not financial ledger postings;
+- audit persistence does not mutate TransactionState, customer ledger state, provider balance, or treasury state;
+- no retry/failover/resubmission policy was introduced;
+- no automatic provider funding was introduced;
+- provider-specific credentials and protocol details are not stored by this boundary.
+
+Verification:
+
+- CI run #630 / 36167152247: **GREEN**;
+- test: PASS;
+- vet: PASS;
+- race: PASS;
+- PostgreSQL integration service active and migration verification passed.
+
+Known limitations:
+
+- this milestone defines and verifies the persistence boundary; Service lifecycle events are not yet wired to emit audit records;
+- PostgreSQL audit adapter/runtime selection is deferred until the event emission contract is finalized;
+- audit records are operational history and are not a substitute for the financial ledger or immutable financial postings.
+
+Next milestone:
+
+1. wire transaction lifecycle, webhook, reconciliation, and terminal-conflict events into the audit boundary;
+2. verify audit failures cannot trigger provider resubmission and do not mutate financial state;
+3. add PostgreSQL audit adapter integration only after the event semantics are stable.
