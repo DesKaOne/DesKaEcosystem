@@ -204,6 +204,9 @@ func (s *Service) Run(ctx context.Context) error {
 	}
 
 	if err := s.balanceLifecycle.Start(ctx); err != nil {
+		if errors.Is(err, operational.ErrSyncWorkerRunning) {
+			return err
+		}
 		return combineRuntimeShutdownError(err, s.Close())
 	}
 	workerShutdownCtx, cancel := context.WithCancel(context.Background())
