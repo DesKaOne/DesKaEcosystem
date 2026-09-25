@@ -112,3 +112,45 @@ func TestPostgresTransactionStoreContextCancellationPropagatesToDB(t *testing.T)
 		t.Fatal("expected context-aware persistence to reach the database boundary")
 	}
 }
+
+
+func TestMemoryTransactionStoreContextReadReturnsCancellationError(t *testing.T) {
+	store := NewMemoryTransactionStore()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if _, ok, err := store.GetContextE(ctx, "missing"); !errors.Is(err, context.Canceled) || ok {
+		t.Fatalf("expected canceled GetContextE, got ok=%v err=%v", ok, err)
+	}
+	if states, err := store.AllContextE(ctx); !errors.Is(err, context.Canceled) || states != nil {
+		t.Fatalf("expected canceled AllContextE, got states=%#v err=%v", states, err)
+	}
+}
+
+func TestPostgresTransactionStoreContextReadPreservesDatabaseError(t *testing.T) {
+	stub := &contextReadDBStub{err: errors.New("database unavailable")}
+	store, err := NewPostgresTransactionStore(stub)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if states, err := store.AllContextE(context.Background()); err == nil || states != nil {
+		t.Fatalf("expected database read error, got states=%#v err=%v", states, err)
+	}
+}
+
+type contextReadDBStub struct {
+	err error
+}
+
+func (s *contextReadDBStub) ExecContext(context.Context, string, ...any) (sql.Result, error) {
+	return nil, s.err
+}
+
+func (s *contextReadDBStub) QueryContext(context.Context, string, ...any) (*sql.Rows, error) {
+	return nil, s.err
+}
+
+func (s *contextReadDBStub) QueryRowContext(context.Context, string, ...any) *sql.Row {
+	panic("not used")
+}
