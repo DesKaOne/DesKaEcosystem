@@ -98,17 +98,47 @@ func (s *Service) Purchase(ctx context.Context, req PurchaseRequest) (PurchaseEx
 		}
 	}
 
-	result, err := s.executePurchase(ctx, req)
-	if err == nil {
-		if storeErr := s.Store.Put(TransactionState{Request: req, Execution: result}); storeErr != nil {
-			err = fmt.Errorf("persist transaction state: %w", storeErr)
-		}
+	providerName, err := s.selectProvider(ctx, req)
+	if err != nil {
+		s.finishPurchase(call, PurchaseExecution{}, err)
+		return PurchaseExecution{}, err
+	}
+
+	// Persist the selected provider and a pending state before the external
+	// submission. A crash after this point must recover to reconciliation,
+	// not silently create a second provider submission.
+	pending := PurchaseExecution{
+		ProviderName: providerName,
+		Result: provider.PurchaseResult{
+			ReferenceID: req.ReferenceID,
+			CustomerNo:  req.CustomerNo,
+			ProductCode: req.ProductCode,
+			Status:      provider.StatusPending,
+		},
+	}
+	if err := s.Store.Put(TransactionState{Request: req, Execution: pending}); err != nil {
+		err = fmt.Errorf("persist pending transaction state: %w", err)
+		s.finishPurchase(call, pending, err)
+		return pending, err
 	}
 	s.mu.Lock()
-	call.result, call.err = result, err
+	call.result = pending
 	s.mu.Unlock()
-	close(call.done)
-	return result, err
+
+	result, err := s.executePurchase(ctx, providerName, req)
+	if err == nil {
+		if storeErr := s.Store.Put(TransactionState{Request: req, Execution: result}); storeErr != nil {
+			err = fmt.Errorf("persist transaction result: %w", storeErr)
+		}
+	}
+	if err != nil {
+		// Keep the durable pending state. The caller receives the provider error,
+		// while a restart can recover this reference and reconcile it safely.
+		s.finishPurchase(call, pending, err)
+		return pending, err
+	}
+	s.finishPurchase(call, result, nil)
+	return result, nil
 }
 
 func (s *Service) HandleWebhook(ctx context.Context, event provider.WebhookEvent) (PurchaseExecution, error) {
@@ -279,12 +309,19 @@ func (s *Service) startPurchase(req PurchaseRequest) (*purchaseCall, bool) {
 	return call, true
 }
 
-func (s *Service) executePurchase(ctx context.Context, req PurchaseRequest) (PurchaseExecution, error) {
+func (s *Service) selectProvider(ctx context.Context, req PurchaseRequest) (string, error) {
 	name, err := s.Router.Select(ctx, Request{ProductCode: req.ProductCode, Amount: req.Amount})
 	if err != nil {
-		return PurchaseExecution{}, err
+		return "", err
 	}
-	p, err := s.Router.Registry.Get(name)
+	if _, err := s.Router.Registry.Get(name); err != nil {
+		return "", fmt.Errorf("get selected provider: %w", err)
+	}
+	return name, nil
+}
+
+func (s *Service) executePurchase(ctx context.Context, providerName string, req PurchaseRequest) (PurchaseExecution, error) {
+	p, err := s.Router.Registry.Get(providerName)
 	if err != nil {
 		return PurchaseExecution{}, fmt.Errorf("get selected provider: %w", err)
 	}
@@ -295,9 +332,16 @@ func (s *Service) executePurchase(ctx context.Context, req PurchaseRequest) (Pur
 		Testing:     req.Testing,
 	})
 	if err != nil {
-		return PurchaseExecution{}, fmt.Errorf("purchase with provider %q: %w", name, err)
+		return PurchaseExecution{}, fmt.Errorf("purchase with provider %q: %w", providerName, err)
 	}
-	return PurchaseExecution{ProviderName: name, Result: result}, nil
+	return PurchaseExecution{ProviderName: providerName, Result: result}, nil
+}
+
+func (s *Service) finishPurchase(call *purchaseCall, result PurchaseExecution, err error) {
+	s.mu.Lock()
+	call.result, call.err = result, err
+	s.mu.Unlock()
+	close(call.done)
 }
 
 func validatePurchaseRequest(req PurchaseRequest) error {
