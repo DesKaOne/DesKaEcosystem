@@ -4012,3 +4012,43 @@ Milestone #99: runtime ownership transfer and initialization/shutdown lifecycle 
 ### Next Milestone
 
 **#110 — Runtime Worker Error & Shutdown Timeout Composition Review**: inspect how worker-returned errors interact with shutdown deadlines and database-close errors, without changing business or financial semantics.
+
+
+### Milestone #110 — Runtime Worker Error & Shutdown Timeout Composition Review
+
+**Date:** 2026-09-26
+
+### Completed
+
+- reviewed how worker shutdown errors interact with the runtime shutdown deadline and database ownership closure;
+- verified that `SyncWorkerLifecycle.Shutdown()` returns the caller-provided cancellation/deadline error when the worker has not exited yet;
+- preserved lifecycle ownership while shutdown is incomplete: a canceled/expired shutdown context does not mark the worker as stopped and duplicate `Start()` remains rejected;
+- added deterministic regression coverage proving lifecycle ownership is retained across an interrupted shutdown and that a later shutdown can complete cleanly;
+- retained the runtime rule that worker shutdown is coordinated before runtime-owned database resources are closed;
+- preserved error composition behavior for primary runtime errors, worker shutdown errors, and database close errors;
+- no provider retry, failover, resubmission, transaction-state, audit-authority, customer-ledger, treasury, or automatic provider-funding behavior was changed.
+
+### Verification
+
+- implementation HEAD: `6dbd6711b59bdf397d537828c2b7c219432e9516`;
+- CI #847 / run `36202432766`: **GREEN** for exact HEAD `6dbd6711b59bdf397d537828c2b7c219432e9516`;
+- CI jobs `test`: success;
+- CI jobs `race`: success.
+
+### Safety Boundary
+
+- shutdown timeout and worker ownership remain infrastructure lifecycle concerns only;
+- an incomplete worker shutdown does not release lifecycle ownership or authorize another worker instance to start;
+- database ownership remains with the runtime owner until its coordinated shutdown path reaches the database-close stage;
+- transaction persistence remains the authoritative transaction state and audit persistence remains operational evidence;
+- worker errors and timeout errors cannot authorize provider retry, failover, resubmission, ledger mutation, treasury movement, or provider funding.
+
+### Known Limitations
+
+- the regression covers lifecycle shutdown timeout/cancellation behavior but does not simulate a permanently hung worker or process termination;
+- database-close timeout policy is still outside the current ownership interface because `databaseCloser.Close()` has no context-aware form;
+- independently owned future workers may require their own timeout and ownership coordination rules.
+
+### Next Milestone
+
+**#111 — Runtime Close/Shutdown Concurrency Review**: inspect concurrent `Service.Close()` calls and interactions between explicit close and active `Run()` shutdown, preserving single-owner cleanup and avoiding premature resource release.
