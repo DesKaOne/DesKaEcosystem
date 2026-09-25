@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"os"
 	"path/filepath"
@@ -368,6 +369,14 @@ func (d *closeErrorDB) Close() error {
 	d.closed = true
 	d.closeCount++
 	return d.err
+}
+
+func TestCloseRuntimeDatabasesIgnoresTypedNilHandles(t *testing.T) {
+	var transactionDB *sql.DB
+	var auditDB *sql.DB
+	if err := closeRuntimeDatabases(transactionDB, auditDB); err != nil {
+		t.Fatalf("typed-nil database handles must be ignored: %v", err)
+	}
 }
 
 func TestCloseRuntimeDatabasesPropagatesCloseErrors(t *testing.T) {
