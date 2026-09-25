@@ -772,3 +772,30 @@ Operational boundaries:
 - audit persistence remains observational and append-only, separate from financial transaction state.
 
 The audit store does not become a financial source of truth and cannot authorize retry, failover, resubmission, ledger mutation, or provider funding.
+
+
+## 32. Runtime Durable Audit Reconstruction & Shutdown Integration Hardening
+
+**Date:** 2026-09-26
+
+Milestone #95 verifies that PostgreSQL transaction persistence and PostgreSQL audit persistence survive a service reconstruction boundary together.
+
+The integration sequence is:
+
+1. construct PostgreSQL transaction and audit stores;
+2. construct a routing service with both durable stores;
+3. execute a successful purchase and persist the pending and terminal lifecycle events;
+4. close the PostgreSQL connection;
+5. reopen PostgreSQL using the configured DSN and restore the isolated schema context;
+6. reconstruct both stores and a new routing service;
+7. reconcile the already-terminal transaction;
+8. verify the terminal result and audit history are unchanged;
+9. process an identical terminal webhook without another provider submission.
+
+The key invariant is that restart/reconstruction is a persistence boundary, not a resubmission boundary. A terminal transaction remains authoritative after restart, and audit history is reconstructed as durable evidence without becoming an authorization source for provider actions.
+
+### Shutdown and failure boundary
+
+The runtime owns PostgreSQL resources opened for transaction and audit persistence. Shared transaction/audit usage reuses the transaction database connection; audit-only PostgreSQL usage owns a dedicated connection. Initialization failures close resources already opened by runtime before returning the error.
+
+No audit read/write failure may authorize retry, failover, resubmission, ledger mutation, or provider funding. Migration deployment remains outside runtime startup.
