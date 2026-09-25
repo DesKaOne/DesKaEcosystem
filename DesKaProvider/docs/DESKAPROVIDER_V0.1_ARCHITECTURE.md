@@ -524,3 +524,28 @@ The safety invariant is:
 pending -> terminal is accepted once by the durable conditional boundary; stale pending -> terminal attempts after restart are conflicts, while identical terminal observations remain idempotent.
 
 This milestone does not add retry counters, failover state, automatic resubmission, customer-ledger postings, or provider funding behavior. PostgreSQL persistence remains an internal transaction-state boundary, not a financial ledger.
+
+## 25. PostgreSQL Failed-State Recovery & Webhook Convergence
+
+**Date:** 2026-09-25
+
+Milestone #88 extends restart verification to terminal failed transactions.
+
+The real PostgreSQL integration boundary now verifies:
+
+- failed provider results are durably persisted;
+- a new Service instance reconstructs the failed transaction;
+- reconciliation of an already-failed transaction is idempotent;
+- the provider purchase operation is not called again;
+- an identical terminal failed webhook is accepted as an idempotent convergence event;
+- the durable failed result remains unchanged through restart, reconciliation, and webhook handling.
+
+The invariant is:
+
+`terminal failed + identical observation -> same terminal state, no provider submission`
+
+A terminal webhook is therefore part of state convergence only. It is not a trigger for retry or failover.
+
+Conflicting terminal observations remain subject to the existing reference-conflict boundary and do not authorize a provider purchase.
+
+No retry counters, failover state, automatic resubmission, customer-ledger postings, or provider funding are introduced.
