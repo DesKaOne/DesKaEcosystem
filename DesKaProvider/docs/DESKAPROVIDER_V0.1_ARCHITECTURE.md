@@ -677,3 +677,37 @@ The audit store remains append-only and has no update/delete contract.
 ### Current limitation
 
 Milestone #91 does not add a PostgreSQL audit adapter or production runtime selection. PostgreSQL audit persistence remains the next boundary after event semantics and failure behavior are stable.
+
+
+## 29. PostgreSQL Transaction Audit Store Adapter
+
+**Date:** 2026-09-26
+
+Milestone #92 adds a PostgreSQL implementation of the provider-neutral TransactionAuditStore boundary.
+
+The adapter:
+
+- uses the existing database/sql DBTX boundary;
+- inserts audit events only;
+- reads events by reference ID ordered by created_at and audit_id;
+- propagates context cancellation/deadline errors through context-aware methods;
+- performs no UPDATE or DELETE operation;
+- does not participate in transaction-state authorization or provider submission decisions.
+
+The adapter is intentionally separate from PostgresTransactionStore. A transaction-state write can therefore remain authoritative even when an audit append fails.
+
+### Durability and restart boundary
+
+Real PostgreSQL integration coverage verifies:
+
+1. two audit events are appended;
+2. a new adapter instance reads the same durable events;
+3. event ordering and contents remain unchanged;
+4. unrelated reference IDs do not leak events;
+5. the audit table remains append-only at the application contract level.
+
+### Failure safety
+
+The integration boundary also verifies that a canceled audit append does not mutate an already durable terminal transaction and cannot authorize a second provider submission.
+
+Production runtime selection of PostgreSQL audit storage remains deferred until the audit failure-injection matrix for webhook and reconciliation is complete.
