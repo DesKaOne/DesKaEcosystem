@@ -2926,3 +2926,42 @@ Next milestone:
 1. harden startup/restart recovery with explicit initialization context and read-error propagation;
 2. evaluate constructor/API changes needed to make startup database failures distinguishable from an empty transaction set;
 3. keep retry/failover deferred until startup/reconciliation recovery remains unambiguous.
+
+
+### 83. Milestone Update — Context-Aware Startup Recovery Boundary
+
+**Date:** 2026-09-25
+
+Completed:
+
+- added NewServiceWithStoreContext for explicit initialization context;
+- startup transaction reconstruction now prefers ContextReadTransactionStore.AllContextE when available;
+- startup database/read failures are surfaced as initialization errors instead of being interpreted as an empty transaction store;
+- canceled initialization contexts are rejected before transaction reconstruction;
+- retained compatibility behavior for existing context-free and legacy stores;
+- added deterministic startup read-error and canceled-initialization tests.
+
+Safety boundary:
+
+- startup recovery failure never authorizes provider retry/failover/resubmission;
+- no customer-ledger mutation was introduced;
+- no automatic provider funding was introduced;
+- existing NewServiceWithStore remains compatible and uses context.Background as its explicit legacy initialization context;
+- provider-specific contracts remain unchanged.
+
+Verification:
+
+- CI test/vet/race must be GREEN before milestone closure;
+- PostgreSQL integration remains the real database verification boundary.
+
+Known limitations:
+
+- legacy TransactionStore implementations still expose only context-free startup reads;
+- production application startup must explicitly choose NewServiceWithStoreContext to receive initialization cancellation/error semantics;
+- migration orchestration remains separate from service construction.
+
+Next milestone:
+
+1. wire explicit initialization context into the production-facing startup composition boundary;
+2. add PostgreSQL integration coverage for startup read failure and cancellation behavior;
+3. keep retry/failover deferred until startup and reconciliation recovery are unambiguous.
