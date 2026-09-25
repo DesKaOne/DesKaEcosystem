@@ -171,6 +171,7 @@ router,e:=routing.NewWithCatalogAndStateAndOperationalMaxAge(registry,store,nil,
 purchaseService,e:=routing.NewServiceWithStoreContextAndAudit(ctx,router,transactionStore,auditStore);if e!=nil{return nil,e}
  balanceLifecycle,e:=operational.NewSyncWorkerLifecycle(syncService,cfg.SyncInterval);if e!=nil{return nil,e}
 service=&Service{syncService:syncService,purchaseService:purchaseService,catalogSync:catalogSync,providerState:stateStore,databaseOwnership:ownership,balanceLifecycle:balanceLifecycle,catalogLifecycle:newCatalogWorkerLifecycle(),interval:cfg.SyncInterval,catalogInterval:cfg.CatalogSyncInterval}
+if err := ctx.Err(); err != nil { return nil, err }
 ownership.transferToService()
 return service,nil
 }
