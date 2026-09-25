@@ -16,6 +16,8 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 
 	provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
+	Mock "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/Mock"
+	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/operational"
 )
 
 func postgresIntegrationDB(t *testing.T) *sql.DB {
