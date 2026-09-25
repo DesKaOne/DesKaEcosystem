@@ -472,6 +472,35 @@ func TestCloseRuntimeDatabasesDoesNotDoubleCloseSharedHandle(t *testing.T) {
 	}
 }
 
+func TestServiceCloseIsIdempotent(t *testing.T) {
+	transactionDB := &closeErrorDB{}
+	auditDB := &closeErrorDB{}
+	service := &Service{databaseOwnership: newRuntimeDatabaseOwnership(transactionDB, auditDB)}
+	service.databaseOwnership.transferToService()
+
+	if err := service.Close(); err != nil { t.Fatalf("first close failed: %v", err) }
+	if err := service.Close(); err != nil { t.Fatalf("second close failed: %v", err) }
+	if transactionDB.closeCount != 1 || auditDB.closeCount != 1 {
+		t.Fatalf("expected Close to release each resource once: tx=%d audit=%d", transactionDB.closeCount, auditDB.closeCount)
+	}
+}
+
+func TestServiceClosePreservesCloseErrorAcrossRepeatedCalls(t *testing.T) {
+	closeErr := errors.New("database close failed")
+	transactionDB := &closeErrorDB{err: closeErr}
+	service := &Service{databaseOwnership: newRuntimeDatabaseOwnership(transactionDB, nil)}
+	service.databaseOwnership.transferToService()
+
+	first := service.Close()
+	second := service.Close()
+	if !errors.Is(first, closeErr) || !errors.Is(second, closeErr) {
+		t.Fatalf("expected close error to remain discoverable: first=%v second=%v", first, second)
+	}
+	if transactionDB.closeCount != 1 {
+		t.Fatalf("expected one underlying close, got %d", transactionDB.closeCount)
+	}
+}
+
 func TestServiceRunPropagatesDatabaseCloseError(t *testing.T) {
 	mockProvider := &balanceMock{
 		Provider: mock.New(mock.Config{
