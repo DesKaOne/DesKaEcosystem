@@ -22,13 +22,13 @@ type Config struct {
 }
 
 type Provider struct {
-	mu           sync.RWMutex
-	products     map[string]provider.Product
-	status       provider.TransactionStatus
-	providerCode string
-	message      string
-	price        int64
-	purchases    map[string]provider.PurchaseResult
+	mu             sync.RWMutex
+	products       map[string]provider.Product
+	status         provider.TransactionStatus
+	providerCode   string
+	message        string
+	price          int64
+	purchases      map[string]provider.PurchaseResult
 	purchaseCounts map[string]int
 }
 
@@ -48,12 +48,12 @@ func New(cfg Config) *Provider {
 	}
 
 	return &Provider{
-		products:     products,
-		status:       status,
-		providerCode: cfg.ProviderCode,
-		message:      message,
-		price:        cfg.Price,
-		purchases:    make(map[string]provider.PurchaseResult),
+		products:       products,
+		status:         status,
+		providerCode:   cfg.ProviderCode,
+		message:        message,
+		price:          cfg.Price,
+		purchases:      make(map[string]provider.PurchaseResult),
 		purchaseCounts: make(map[string]int),
 	}
 }
@@ -155,6 +155,18 @@ func (p *Provider) HandleWebhook(ctx context.Context, req provider.WebhookReques
 		return provider.WebhookEvent{}, err
 	}
 	return event, nil
+}
+
+// SetPurchaseStatus changes the status returned by future mock purchase submissions.
+// Existing recorded transactions are intentionally unchanged; callers can use this to
+// model an external provider whose transaction state changes after submission.
+func (p *Provider) SetPurchaseStatus(status provider.TransactionStatus, message string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.status = status
+	if message != "" {
+		p.message = message
+	}
 }
 
 // PurchaseCount reports how many purchase submissions were recorded for a reference ID.
