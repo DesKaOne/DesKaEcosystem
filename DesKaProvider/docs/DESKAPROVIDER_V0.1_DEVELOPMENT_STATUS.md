@@ -3065,3 +3065,43 @@ CI recovery during Milestone #85:
 - no production persistence behavior was changed by these test-harness fixes.
 
 Milestone #85 is closed at the production PostgreSQL transaction-store selection and runtime composition boundary.
+
+
+### 86. Milestone Update — PostgreSQL Restart Recovery & Reconciliation Verification
+
+**Date:** 2026-09-25
+
+Completed:
+
+- added a real PostgreSQL integration scenario that creates a pending transaction through Service.Purchase using PostgresTransactionStore;
+- verified the pending state is durable before process/service reconstruction;
+- reconstructed a new routing service from the same PostgreSQL transaction store using NewServiceWithStoreContext;
+- reconciled the recovered pending transaction through the provider status path;
+- verified reconciliation does not submit the provider purchase a second time;
+- verified provider identity and pending transaction state remain stable after reconstruction/reconciliation;
+- isolated the integration scenario in its own PostgreSQL schema so it cannot interfere with other database tests.
+
+Safety boundary:
+
+- restart recovery only reads durable state and reconciles through provider status;
+- recovery never calls the provider purchase operation;
+- no retry/failover/resubmission policy was introduced;
+- no customer-ledger mutation or automatic provider funding was introduced;
+- the provider-neutral TransactionStore/Service boundary remains unchanged.
+
+Verification:
+
+- CI test/vet/race must be GREEN before milestone closure;
+- real PostgreSQL integration verifies durable pending recovery and no-resubmission behavior.
+
+Known limitations:
+
+- this milestone verifies service reconstruction and reconciliation against a live PostgreSQL store, but does not simulate a physical process kill while a real network provider request is in flight;
+- PostgreSQL migration execution remains a separate deployment concern;
+- provider-specific crash/retry semantics remain outside the verified contract.
+
+Next milestone:
+
+1. verify terminal-state recovery across PostgreSQL reconnect/restart boundaries;
+2. add explicit recovery tests for persisted success/failed transactions and stale transition rejection after restart;
+3. keep retry/failover deferred.
