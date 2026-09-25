@@ -678,3 +678,61 @@ func TestServiceRestartReconcilesPendingWithoutResubmission(t *testing.T) {
 		t.Fatalf("expected durable reconciled success, got %#v, ok=%v", persisted, ok)
 	}
 }
+
+
+func TestNewServiceWithStoreContextPropagatesStartupReadError(t *testing.T) {
+	registry := provider.NewRegistry()
+	mock := Mock.New(Mock.Config{Products: []provider.Product{{Code: "pln20", Name: "PLN 20"}}})
+	if err := registry.Register("mock", mock); err != nil {
+		t.Fatal(err)
+	}
+	ops := operational.NewMemoryStore()
+	if err := ops.Put(operational.Snapshot{ProviderName: "mock", Balance: 100000, Health: operational.HealthHealthy}); err != nil {
+		t.Fatal(err)
+	}
+	router, err := New(registry, ops, map[string]int{"mock": 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	store := &startupReadErrorStore{MemoryTransactionStore: NewMemoryTransactionStore(), err: errors.New("database unavailable")}
+	_, err = NewServiceWithStoreContext(context.Background(), router, store)
+	if err == nil || !strings.Contains(err.Error(), "load persisted transaction state") {
+		t.Fatalf("expected startup read error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "database unavailable") {
+		t.Fatalf("expected underlying database error, got %v", err)
+	}
+}
+
+func TestNewServiceWithStoreContextRejectsCanceledInitialization(t *testing.T) {
+	registry := provider.NewRegistry()
+	mock := Mock.New(Mock.Config{Products: []provider.Product{{Code: "pln20", Name: "PLN 20"}}})
+	if err := registry.Register("mock", mock); err != nil {
+		t.Fatal(err)
+	}
+	ops := operational.NewMemoryStore()
+	if err := ops.Put(operational.Snapshot{ProviderName: "mock", Balance: 100000, Health: operational.HealthHealthy}); err != nil {
+		t.Fatal(err)
+	}
+	router, err := New(registry, ops, map[string]int{"mock": 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err = NewServiceWithStoreContext(ctx, router, NewMemoryTransactionStore())
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected canceled initialization, got %v", err)
+	}
+}
+
+type startupReadErrorStore struct {
+	*MemoryTransactionStore
+	err error
+}
+
+func (s *startupReadErrorStore) AllContextE(context.Context) ([]TransactionState, error) {
+	return nil, s.err
+}
