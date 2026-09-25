@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
 )
@@ -34,6 +35,7 @@ type PurchaseExecution struct {
 type Service struct {
 	Router       *Router
 	Store        TransactionStore
+	AuditStore   TransactionAuditStore
 	mu           sync.Mutex
 	transactions map[string]*purchaseCall
 }
@@ -46,24 +48,32 @@ type purchaseCall struct {
 }
 
 func NewService(router *Router) (*Service, error) {
-	return NewServiceWithStore(router, NewMemoryTransactionStore())
+	return NewServiceWithStoreAndAudit(router, NewMemoryTransactionStore(), NewMemoryTransactionAuditStore())
 }
 
 // NewServiceWithStoreContext constructs a service using the caller's initialization
 // context when the configured transaction store supports error-aware context reads.
 // This prevents startup database failures from being mistaken for an empty store.
 func NewServiceWithStoreContext(ctx context.Context, router *Router, store TransactionStore) (*Service, error) {
+	return NewServiceWithStoreContextAndAudit(ctx, router, store, NewMemoryTransactionAuditStore())
+}
+
+func NewServiceWithStoreContextAndAudit(ctx context.Context, router *Router, store TransactionStore, auditStore TransactionAuditStore) (*Service, error) {
 	if ctx == nil {
 		return nil, errors.New("initialization context is required")
 	}
-	return newServiceWithStoreContext(ctx, router, store)
+	return newServiceWithStoreContext(ctx, router, store, auditStore)
 }
 
 func NewServiceWithStore(router *Router, store TransactionStore) (*Service, error) {
-	return newServiceWithStoreContext(context.Background(), router, store)
+	return NewServiceWithStoreAndAudit(router, store, NewMemoryTransactionAuditStore())
 }
 
-func newServiceWithStoreContext(ctx context.Context, router *Router, store TransactionStore) (*Service, error) {
+func NewServiceWithStoreAndAudit(router *Router, store TransactionStore, auditStore TransactionAuditStore) (*Service, error) {
+	return newServiceWithStoreContext(context.Background(), router, store, auditStore)
+}
+
+func newServiceWithStoreContext(ctx context.Context, router *Router, store TransactionStore, auditStore TransactionAuditStore) (*Service, error) {
 	if router == nil {
 		return nil, errors.New("provider router is required")
 	}
@@ -78,6 +88,7 @@ func newServiceWithStoreContext(ctx context.Context, router *Router, store Trans
 	service := &Service{
 		Router:       router,
 		Store:        store,
+		AuditStore:   auditStore,
 		transactions: make(map[string]*purchaseCall),
 	}
 	var states []TransactionState
@@ -158,15 +169,45 @@ func (s *Service) Purchase(ctx context.Context, req PurchaseRequest) (PurchaseEx
 	call.result = pending
 	s.mu.Unlock()
 
+	// Audit is observational only. Its failure must never block the external
+	// provider submission because the durable pending state is the safety gate.
+	_ = s.appendAudit(TransactionAuditEvent{
+		ReferenceID: req.ReferenceID,
+		Action: "PURCHASE_PENDING",
+		Previous: "",
+		Next: string(provider.StatusPending),
+		ProviderName: providerName,
+		Message: "provider submission authorized by durable pending state",
+	})
+
 	result, err := s.executePurchase(ctx, providerName, req)
 	if err == nil {
 		if storeErr := putTransactionContext(ctx, s.Store, TransactionState{Request: req, Execution: result}); storeErr != nil {
 			err = fmt.Errorf("persist transaction result: %w", storeErr)
+		} else {
+			if auditErr := s.appendAudit(TransactionAuditEvent{
+				ReferenceID: req.ReferenceID,
+				Action: "PURCHASE_TERMINAL",
+				Previous: string(provider.StatusPending),
+				Next: string(result.Result.Status),
+				ProviderName: providerName,
+				Message: result.Result.Message,
+			}); auditErr != nil {
+				err = fmt.Errorf("audit transaction result: %w", auditErr)
+			}
 		}
 	}
 	if err != nil {
-		// Keep the durable pending state. The caller receives the provider error,
-		// while a restart can recover this reference and reconcile it safely.
+		// Keep the durable pending state. The caller receives the provider/persistence
+		// error, while a restart can recover this reference and reconcile it safely.
+		_ = s.appendAudit(TransactionAuditEvent{
+			ReferenceID: req.ReferenceID,
+			Action: "PURCHASE_PENDING_RECOVERY",
+			Previous: string(provider.StatusPending),
+			Next: string(provider.StatusPending),
+			ProviderName: providerName,
+			Message: err.Error(),
+		})
 		s.finishPurchase(call, pending, err)
 		return pending, err
 	}
@@ -215,6 +256,14 @@ func (s *Service) HandleWebhook(ctx context.Context, event provider.WebhookEvent
 		if samePurchaseResult(current, incoming) {
 			return call.result, nil
 		}
+		_ = s.appendAudit(TransactionAuditEvent{
+			ReferenceID: event.ReferenceID,
+			Action: "WEBHOOK_TERMINAL_CONFLICT",
+			Previous: string(current.Status),
+			Next: string(incoming.Status),
+			ProviderName: call.result.ProviderName,
+			Message: incoming.Message,
+		})
 		return PurchaseExecution{}, ErrWebhookReferenceConflict
 	}
 	if current.Status != provider.StatusPending {
@@ -224,7 +273,16 @@ func (s *Service) HandleWebhook(ctx context.Context, event provider.WebhookEvent
 		if err := s.persistLocked(ctx, call.request, PurchaseExecution{ProviderName: call.result.ProviderName, Result: incoming}); err != nil {
 			return PurchaseExecution{}, err
 		}
+		previous := call.result.Result.Status
 		call.result.Result = incoming
+		_ = s.appendAudit(TransactionAuditEvent{
+			ReferenceID: event.ReferenceID,
+			Action: "WEBHOOK_PENDING",
+			Previous: string(previous),
+			Next: string(incoming.Status),
+			ProviderName: call.result.ProviderName,
+			Message: incoming.Message,
+		})
 		return call.result, nil
 	}
 	if incoming.Status != provider.StatusSuccess && incoming.Status != provider.StatusFailed {
@@ -236,6 +294,16 @@ func (s *Service) HandleWebhook(ctx context.Context, event provider.WebhookEvent
 		return PurchaseExecution{}, err
 	}
 	call.result = next
+	if auditErr := s.appendAudit(TransactionAuditEvent{
+		ReferenceID: event.ReferenceID,
+		Action: "WEBHOOK_TERMINAL",
+		Previous: string(provider.StatusPending),
+		Next: string(incoming.Status),
+		ProviderName: call.result.ProviderName,
+		Message: incoming.Message,
+	}); auditErr != nil {
+		return call.result, fmt.Errorf("audit webhook event: %w", auditErr)
+	}
 	return call.result, nil
 }
 
@@ -308,6 +376,14 @@ current := call.result.Result
 		if samePurchaseResult(current, incoming) {
 			return call.result, nil
 		}
+		_ = s.appendAudit(TransactionAuditEvent{
+			ReferenceID: referenceID,
+			Action: "RECONCILIATION_TERMINAL_CONFLICT",
+			Previous: string(current.Status),
+			Next: string(incoming.Status),
+			ProviderName: call.result.ProviderName,
+			Message: incoming.Message,
+		})
 		return PurchaseExecution{}, ErrWebhookReferenceConflict
 	}
 	if current.Status != provider.StatusPending {
@@ -330,6 +406,16 @@ current := call.result.Result
 		return PurchaseExecution{}, err
 	}
 	call.result = next
+	if auditErr := s.appendAudit(TransactionAuditEvent{
+		ReferenceID: referenceID,
+		Action: "RECONCILIATION",
+		Previous: string(current.Status),
+		Next: string(incoming.Status),
+		ProviderName: call.result.ProviderName,
+		Message: incoming.Message,
+	}); auditErr != nil {
+		return call.result, fmt.Errorf("audit reconciliation event: %w", auditErr)
+	}
 	return call.result, nil
 }
 
@@ -461,4 +547,15 @@ func putTransactionContext(ctx context.Context, store TransactionStore, state Tr
 		return scoped.PutContext(ctx, state)
 	}
 	return store.Put(state)
+}
+
+
+func (s *Service) appendAudit(event TransactionAuditEvent) error {
+	if s.AuditStore == nil {
+		return nil
+	}
+	if event.CreatedAt.IsZero() {
+		event.CreatedAt = time.Now().UTC()
+	}
+	return s.AuditStore.Append(event)
 }
