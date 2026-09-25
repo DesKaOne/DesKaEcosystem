@@ -284,7 +284,8 @@ current := call.result.Result
 	expected := TransactionState{Request: call.request, Execution: call.result}
 	if err := s.persistTransition(ctx, referenceID, expected, TransactionState{Request: call.request, Execution: next}); err != nil {
 		if errors.Is(err, ErrTransactionStateConflict) {
-			latest, ok := getTransactionContext(ctx, s.Store, referenceID)
+			latest, ok, readErr := getTransactionContextE(ctx, s.Store, referenceID)
+			if readErr != nil { return PurchaseExecution{}, fmt.Errorf("reload transaction after conflict: %w", readErr) }
 			if ok && latest.Request == call.request &&
 				latest.Execution.ProviderName == call.result.ProviderName &&
 				samePurchaseResult(latest.Execution.Result, incoming) {
@@ -405,10 +406,21 @@ func samePurchaseResult(a, b provider.PurchaseResult) bool {
 
 
 func getTransactionContext(ctx context.Context, store TransactionStore, referenceID string) (TransactionState, bool) {
-	if scoped, ok := store.(ContextTransactionStore); ok {
-		return scoped.GetContext(ctx, referenceID)
+	state, ok, _ := getTransactionContextE(ctx, store, referenceID)
+	return state, ok
+}
+
+func getTransactionContextE(ctx context.Context, store TransactionStore, referenceID string) (TransactionState, bool, error) {
+	if scoped, ok := store.(ContextReadTransactionStore); ok {
+		return scoped.GetContextE(ctx, referenceID)
 	}
-	return store.Get(referenceID)
+	if scoped, ok := store.(ContextTransactionStore); ok {
+		state, found := scoped.GetContext(ctx, referenceID)
+		if err := ctx.Err(); err != nil { return TransactionState{}, false, err }
+		return state, found, nil
+	}
+	state, found := store.Get(referenceID)
+	return state, found, nil
 }
 
 func putTransactionContext(ctx context.Context, store TransactionStore, state TransactionState) error {
