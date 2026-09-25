@@ -3929,3 +3929,45 @@ Milestone #99: runtime ownership transfer and initialization/shutdown lifecycle 
 ### Next Milestone
 
 **#108 — Runtime Lifecycle Idempotency & Re-entry Review**: verify repeated Run/Close/lifecycle start-stop behavior and ensure runtime re-entry cannot create duplicate workers or duplicate shutdown side effects.
+
+
+### Milestone #108 — Runtime Lifecycle Idempotency & Re-entry Review
+
+**Date:** 2026-09-26
+
+### Completed
+
+- verified the owned balance worker lifecycle rejects duplicate Start() attempts deterministically while preserving mutex-protected lifecycle state;
+- verified repeated lifecycle shutdown remains idempotent and the runtime can safely reuse the lifecycle after a completed shutdown;
+- added runtime coverage for concurrent Service.Run() re-entry while the balance lifecycle is active;
+- fixed a concrete re-entry ownership gap: when a second Service.Run() is rejected with operational.ErrSyncWorkerRunning, that rejected invocation no longer calls Service.Close() and therefore cannot close runtime-owned database resources belonging to the active Run() instance;
+- added regression coverage proving the rejected concurrent Run() leaves the active database ownership open and the active Run() closes it exactly once after cancellation;
+- preserved repeated Service.Close() idempotence and close-error preservation;
+- kept provider retry, failover, resubmission, transaction-state, audit-authority, customer-ledger, treasury, and automatic provider-funding boundaries unchanged.
+
+### Verification
+
+- implementation HEAD: 1dff617374503c5900aea8ae148bda412ca443ca;
+- CI #837 / run 36201789474: **GREEN** for exact HEAD 1dff617374503c5900aea8ae148bda412ca443ca;
+- CI jobs test: success;
+- CI jobs race: success;
+- the prior CI #833 / run 36201434715 for f7eeb357e3ddc98b11ffe7fcc440243210c14ef0 also completed successfully before the re-entry ownership fix;
+- the final #108 verification is therefore based on the newer exact HEAD and its green test/race run.
+
+### Safety Boundary
+
+- concurrent runtime re-entry is an infrastructure lifecycle concern only;
+- rejecting a duplicate Run() does not trigger database cleanup owned by the already-running instance;
+- active runtime ownership remains responsible for its own worker shutdown and database closure;
+- transaction persistence remains the authoritative transaction state and audit persistence remains operational evidence;
+- re-entry guards cannot authorize provider retry, failover, resubmission, ledger mutation, treasury movement, or provider funding.
+
+### Known Limitations
+
+- the re-entry boundary is deterministic and covers the owned balance lifecycle path; future independently owned workers may require their own coordination rules;
+- lifecycle observability remains internal with no separate structured diagnostic stream;
+- process termination and network-partition behavior remain outside the deterministic test boundary.
+
+### Next Milestone
+
+**#109 — Runtime Context Cancellation & Shutdown Boundary Review**: inspect the remaining cancellation/shutdown edges after lifecycle idempotency is established, with emphasis on context ownership and shutdown timeout behavior, without changing business or financial semantics.
