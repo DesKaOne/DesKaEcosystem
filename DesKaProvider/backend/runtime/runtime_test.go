@@ -127,6 +127,61 @@ func TestServiceRunRejectsConcurrentReentryAtBalanceLifecycle(t *testing.T) {
 	}
 }
 
+func TestServiceRunRejectsConcurrentReentryWithoutClosingActiveDatabase(t *testing.T) {
+	mockProvider := &balanceMock{Provider: mock.New(mock.Config{Products: []provider.Product{{Code: "xld10", Name: "Test"}}}), balance: 2000000}
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", mockProvider); err != nil {
+		t.Fatal(err)
+	}
+	syncService, err := operational.NewSyncService(registry, operational.NewMemoryStore(), "IDR", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := New(syncService, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	closeDB := &closeErrorDB{}
+	service.databaseOwnership = newRuntimeDatabaseOwnership(closeDB, nil)
+	service.databaseOwnership.transferToService()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	firstDone := make(chan error, 1)
+	go func() { firstDone <- service.Run(ctx) }()
+
+	deadline := time.After(time.Second)
+	for !service.balanceLifecycle.Running() {
+		select {
+		case <-deadline:
+			t.Fatal("balance lifecycle did not start")
+		default:
+			time.Sleep(time.Millisecond)
+		}
+	}
+
+	secondErr := service.Run(context.Background())
+	if !errors.Is(secondErr, operational.ErrSyncWorkerRunning) {
+		t.Fatalf("expected concurrent Run to reject duplicate worker start, got %v", secondErr)
+	}
+	if closeDB.closeCount != 0 {
+		t.Fatalf("concurrent Run must not close the active runtime database, got close count %d", closeDB.closeCount)
+	}
+
+	cancel()
+	select {
+	case err := <-firstDone:
+		if err != context.Canceled {
+			t.Fatalf("unexpected first Run shutdown error: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("first Run did not shut down")
+	}
+	if closeDB.closeCount != 1 {
+		t.Fatalf("expected active Run to close the database exactly once, got %d", closeDB.closeCount)
+	}
+}
+
 func TestServiceCloseRemainsIdempotentAfterRepeatedRunShutdown(t *testing.T) {
 	mockProvider := &balanceMock{Provider: mock.New(mock.Config{Products: []provider.Product{{Code: "xld10", Name: "Test"}}}), balance: 1950000}
 	registry := provider.NewRegistry()
