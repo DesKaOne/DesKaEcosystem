@@ -525,6 +525,51 @@ func TestServiceRunUsesOwnedCatalogWorkerLifecycle(t *testing.T) {
 	select { case <-ctx.Done(): default: t.Fatal("expected service context to be canceled") }
 }
 
+func (db *orderedCloseDB) Close() error {
+	db.closed = true
+	return nil
+}
+
+func TestServiceRollbackStartedLifecyclesBeforeDatabaseClose(t *testing.T) {
+	mockProvider := &balanceMock{Provider: mock.New(mock.Config{Products: []provider.Product{{Code: "xld10", Name: "Test"}}}), balance: 1800000}
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", mockProvider); err != nil { t.Fatal(err) }
+	operationalStore := operational.NewMemoryStore()
+	syncService, err := operational.NewSyncService(registry, operationalStore, "IDR", 3)
+	if err != nil { t.Fatal(err) }
+
+	service, err := New(syncService, time.Hour)
+	if err != nil { t.Fatal(err) }
+	service.catalogLifecycle = newCatalogWorkerLifecycle()
+	service.catalogSync = &catalog.SyncService{}
+	service.catalogInterval = time.Hour
+
+	type orderedCloseDB struct {
+		service *Service
+		closed  bool
+	}
+	db := &orderedCloseDB{service: service}
+	service.databaseOwnership = newRuntimeDatabaseOwnership(db, nil)
+	service.databaseOwnership.transferToService()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err = service.Run(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled, got %v", err)
+	}
+	if !db.closed {
+		t.Fatal("expected database to be closed during rollback")
+	}
+	if service.balanceLifecycle == nil {
+		t.Fatal("expected balance lifecycle")
+	}
+	if shutdownErr := service.balanceLifecycle.Shutdown(context.Background()); shutdownErr != nil {
+		t.Fatalf("expected rollback to stop balance lifecycle cleanly, got %v", shutdownErr)
+	}
+}
+
 func TestServiceRunWithBalanceAndCatalogLifecyclesClosesDeterministically(t *testing.T) {
 	mockProvider := &balanceMock{Provider: mock.New(mock.Config{Products: []provider.Product{{Code: "xld10", Name: "Test"}}}), balance: 1700000}
 	registry := provider.NewRegistry()
