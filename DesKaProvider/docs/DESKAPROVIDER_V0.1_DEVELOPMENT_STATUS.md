@@ -2784,3 +2784,41 @@ CI recovery during the milestone:
 - these defects were corrected before final closure; no production transaction behavior was changed by the test-harness fixes.
 
 Milestone #79 is closed at the real-PostgreSQL integration boundary. The provider-neutral adapter is now exercised against PostgreSQL concurrency and reconnect behavior in CI, while production migration orchestration and explicit context propagation remain separate concerns.
+
+
+### 80. Milestone Update — Context-Aware Persistence Boundary
+
+**Date:** 2026-09-25
+
+Completed:
+
+- added optional ContextTransactionStore contract extending the existing TransactionStore boundary;
+- added context-aware Get/Put/All/PutIfCurrent methods to the in-memory store;
+- propagated request context through PostgreSQL database/sql operations;
+- updated purchase, webhook, and reconciliation persistence paths to prefer context-aware storage when available;
+- retained compatibility wrappers and fallback behavior for existing context-free stores;
+- documented the boundary and cancellation semantics in the architecture document.
+
+Safety boundary:
+
+- context cancellation only controls the persistence operation lifecycle;
+- no retry/failover/resubmission was introduced;
+- no customer-ledger mutation or automatic provider funding was introduced;
+- a cancelled persistence operation never authorizes another provider submission.
+
+Verification gate:
+
+- test, vet, and race must all be GREEN;
+- existing PostgreSQL integration coverage remains the real database verification boundary.
+
+Known limitations:
+
+- startup recovery through Service construction still uses the context-free All() compatibility path;
+- legacy stores that do not implement ContextTransactionStore retain their existing behavior;
+- production migration orchestration remains separate from this persistence contract.
+
+Next milestone:
+
+1. verify CI GREEN for the context-aware contract;
+2. add explicit cancellation/deadline tests at the persistence boundary;
+3. continue restart/reconciliation hardening before retry/failover consideration.
