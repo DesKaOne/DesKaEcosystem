@@ -501,3 +501,26 @@ The integration assertion requires the mock provider purchase count to remain ex
 durable pending state -> reconstruct -> reconcile -> no second provider submission
 
 No retry, failover, customer-ledger mutation, or automatic funding behavior is implied by this boundary.
+
+
+## 24. PostgreSQL Terminal-State Recovery & Stale Transition Hardening
+
+**Date:** 2026-09-25
+
+Milestone #87 extends the real PostgreSQL verification boundary from pending recovery to terminal-state recovery.
+
+The integration contract now verifies:
+
+- a successful provider result is durably persisted;
+- a new Service instance reconstructs the terminal transaction from PostgreSQL;
+- reconciliation of an already-terminal transaction is idempotent when the provider reports the same result;
+- the provider purchase operation is not called again after restart;
+- an identical terminal compare-and-transition is accepted without changing the durable result;
+- a stale pending transition cannot overwrite the terminal row and returns ErrTransactionStateConflict;
+- a terminal transition to a different result is rejected as a transaction reference/state conflict.
+
+The safety invariant is:
+
+pending -> terminal is accepted once by the durable conditional boundary; stale pending -> terminal attempts after restart are conflicts, while identical terminal observations remain idempotent.
+
+This milestone does not add retry counters, failover state, automatic resubmission, customer-ledger postings, or provider funding behavior. PostgreSQL persistence remains an internal transaction-state boundary, not a financial ledger.
