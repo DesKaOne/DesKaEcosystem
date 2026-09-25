@@ -454,3 +454,16 @@ The existing NewServiceWithStore remains compatible and deliberately supplies co
 A canceled initialization context fails before transaction reconstruction. No provider call is made and no transaction is resubmitted.
 
 Legacy stores without context-aware reads continue through their existing All() path. This is a compatibility boundary, not a claim of context-aware startup behavior for legacy implementations.
+
+
+## 21. Production Startup Context Wiring
+
+**Date:** 2026-09-25
+
+Milestone #84 connects the process lifecycle context to service initialization.
+
+The production command creates the signal-aware context before runtime composition, then passes it through NewFromEnvironmentContext into NewServiceWithStoreContext. When the configured transaction store implements ContextReadTransactionStore, startup persistence reads therefore participate in process lifecycle cancellation.
+
+NewFromEnvironment remains a compatibility wrapper and supplies context.Background(). The explicit context-aware constructor is the production composition path.
+
+The runtime still selects the JSON transaction store today. Therefore this milestone does not claim PostgreSQL-backed runtime startup verification; the existing PostgreSQL integration harness remains the persistence adapter verification boundary. PostgreSQL runtime selection and its startup failure/cancellation integration are deferred to the next persistence-composition milestone.
