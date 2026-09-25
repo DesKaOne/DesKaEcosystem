@@ -88,8 +88,10 @@ func NewFromEnvironmentContext(ctx context.Context,httpClient *http.Client)(*Ser
 }
 
 func New(syncService *operational.SyncService,interval time.Duration)(*Service,error){if syncService==nil{return nil,errors.New("sync service is required")};if interval<=0{return nil,errors.New("sync interval must be greater than zero")};return &Service{syncService:syncService,interval:interval},nil}
-func (s *Service) Run(ctx context.Context)error{if ctx==nil{return errors.New("context is required")};if s.catalogSync==nil{err:=s.syncService.Run(ctx,s.interval);return errors.Join(err,closeRuntimeDatabases(s.transactionDB,s.auditDB))};_=s.catalogSync.SyncAll(ctx);ticker:=time.NewTicker(s.catalogInterval);defer ticker.Stop();go func(){_=s.syncService.Run(ctx,s.interval)}();for{select{case<-ctx.Done():return errors.Join(ctx.Err(),closeRuntimeDatabases(s.transactionDB,s.auditDB));case<-ticker.C:_=s.catalogSync.SyncAll(ctx)}}}
+func (s *Service) Run(ctx context.Context)error{if ctx==nil{return errors.New("context is required")};if s.catalogSync==nil{err:=s.syncService.Run(ctx,s.interval);return combineRuntimeShutdownError(err,closeRuntimeDatabases(s.transactionDB,s.auditDB))};_=s.catalogSync.SyncAll(ctx);ticker:=time.NewTicker(s.catalogInterval);defer ticker.Stop();go func(){_=s.syncService.Run(ctx,s.interval)}();for{select{case<-ctx.Done():return combineRuntimeShutdownError(ctx.Err(),closeRuntimeDatabases(s.transactionDB,s.auditDB));case<-ticker.C:_=s.catalogSync.SyncAll(ctx)}}}
 func (s *Service) PurchaseService()*routing.Service{if s==nil{return nil};return s.purchaseService}
+
+func combineRuntimeShutdownError(primary,closeErr error) error{if primary==nil{return closeErr};if closeErr==nil{return primary};return errors.Join(primary,closeErr)}
 
 func closeRuntimeDatabases(transactionDB,auditDB databaseCloser) error{var errs []error;if transactionDB!=nil{if err:=transactionDB.Close();err!=nil{errs=append(errs,fmt.Errorf("close transaction database: %w",err))}};if auditDB!=nil && auditDB!=transactionDB{if err:=auditDB.Close();err!=nil{errs=append(errs,fmt.Errorf("close audit database: %w",err))}};return errors.Join(errs...)}
 
