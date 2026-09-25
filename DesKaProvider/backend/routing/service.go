@@ -295,6 +295,19 @@ func (s *Service) persistLocked(request PurchaseRequest, execution PurchaseExecu
 	return nil
 }
 
+func (s *Service) persistTransition(referenceID string, previous, next TransactionState) error {
+	if store, ok := s.Store.(AtomicTransactionStore); ok {
+		if err := store.PutIfCurrent(referenceID, previous, next); err != nil {
+			return fmt.Errorf("persist atomic transaction transition: %w", err)
+		}
+		return nil
+	}
+	if err := s.Store.Put(next); err != nil {
+		return fmt.Errorf("persist transaction transition: %w", err)
+	}
+	return nil
+}
+
 func (s *Service) startPurchase(req PurchaseRequest) (*purchaseCall, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
