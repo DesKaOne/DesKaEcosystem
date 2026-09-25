@@ -89,15 +89,37 @@ func (o *runtimeDatabaseOwnership) closeOwned() error {
 	return o.closeErr
 }
 
-type Service struct{syncService *operational.SyncService;purchaseService *routing.Service;catalogSync *catalog.SyncService;providerState *operational.ProviderStateStore;databaseOwnership *runtimeDatabaseOwnership;balanceLifecycle *operational.SyncWorkerLifecycle;interval,catalogInterval time.Duration}
-
-func (s *Service) runBalanceSync(ctx context.Context, done chan<- error) {
-	if s == nil || s.syncService == nil {
-		done <- nil
-		return
-	}
-	done <- s.syncService.Run(ctx, s.interval)
+type catalogWorkerLifecycle struct {
+	mu sync.Mutex
+	running bool
+	cancel context.CancelFunc
 }
+
+func newCatalogWorkerLifecycle() *catalogWorkerLifecycle { return &catalogWorkerLifecycle{} }
+
+func (l *catalogWorkerLifecycle) Start(parent context.Context) (context.Context, error) {
+	if parent == nil { return nil, errors.New("catalog parent context is required") }
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.running { return nil, errors.New("catalog worker is already running") }
+	ctx, cancel := context.WithCancel(parent)
+	l.cancel = cancel
+	l.running = true
+	return ctx, nil
+}
+
+func (l *catalogWorkerLifecycle) Shutdown() {
+	if l == nil { return }
+	l.mu.Lock()
+	if !l.running { l.mu.Unlock(); return }
+	cancel := l.cancel
+	l.cancel = nil
+	l.running = false
+	l.mu.Unlock()
+	cancel()
+}
+
+type Service struct{syncService *operational.SyncService;purchaseService *routing.Service;catalogSync *catalog.SyncService;providerState *operational.ProviderStateStore;databaseOwnership *runtimeDatabaseOwnership;balanceLifecycle *operational.SyncWorkerLifecycle;catalogLifecycle *catalogWorkerLifecycle;interval,catalogInterval time.Duration}
 
 func LoadConfig()(Config,error){
  cfg:=Config{StorePath:os.Getenv("DESKAPROVIDER_OPERATIONAL_STORE_PATH"),TransactionStoreDriver:os.Getenv("DESKAPROVIDER_TRANSACTION_STORE_DRIVER"),AuditStoreDriver:os.Getenv("DESKAPROVIDER_AUDIT_STORE_DRIVER"),PostgresDSN:os.Getenv("DESKAPROVIDER_POSTGRES_DSN"),ProviderStateStorePath:os.Getenv("DESKAPROVIDER_PROVIDER_STATE_STORE_PATH"),TransactionStorePath:os.Getenv("DESKAPROVIDER_TRANSACTION_STORE_PATH"),SyncInterval:defaultSyncInterval,FailureThreshold:defaultFailureThreshold,Currency:os.Getenv("DESKAPROVIDER_OPERATIONAL_CURRENCY"),CatalogStorePath:os.Getenv("DESKAPROVIDER_CATALOG_STORE_PATH"),CatalogSyncInterval:defaultCatalogSyncInterval,CatalogMaxAge:defaultCatalogMaxAge,OperationalSnapshotMaxAge:defaultOperationalSnapshotMaxAge}
@@ -147,12 +169,12 @@ for _, name:=range registry.Names(){state,ok:=stateStore.Get(name);if !ok{state,
 router,e:=routing.NewWithCatalogAndStateAndOperationalMaxAge(registry,store,nil,catalogStore,stateStore,cfg.OperationalSnapshotMaxAge);if e!=nil{return nil,e}
 purchaseService,e:=routing.NewServiceWithStoreContextAndAudit(ctx,router,transactionStore,auditStore);if e!=nil{return nil,e}
  balanceLifecycle,e:=operational.NewSyncWorkerLifecycle(syncService,cfg.SyncInterval);if e!=nil{return nil,e}
-service=&Service{syncService:syncService,purchaseService:purchaseService,catalogSync:catalogSync,providerState:stateStore,databaseOwnership:ownership,balanceLifecycle:balanceLifecycle,interval:cfg.SyncInterval,catalogInterval:cfg.CatalogSyncInterval}
+service=&Service{syncService:syncService,purchaseService:purchaseService,catalogSync:catalogSync,providerState:stateStore,databaseOwnership:ownership,balanceLifecycle:balanceLifecycle,catalogLifecycle:newCatalogWorkerLifecycle(),interval:cfg.SyncInterval,catalogInterval:cfg.CatalogSyncInterval}
 ownership.transferToService()
 return service,nil
 }
 
-func New(syncService *operational.SyncService,interval time.Duration)(*Service,error){if syncService==nil{return nil,errors.New("sync service is required")};if interval<=0{return nil,errors.New("sync interval must be greater than zero")};balanceLifecycle,err:=operational.NewSyncWorkerLifecycle(syncService,interval);if err!=nil{return nil,err};return &Service{syncService:syncService,balanceLifecycle:balanceLifecycle,interval:interval},nil}
+func New(syncService *operational.SyncService,interval time.Duration)(*Service,error){if syncService==nil{return nil,errors.New("sync service is required")};if interval<=0{return nil,errors.New("sync interval must be greater than zero")};balanceLifecycle,err:=operational.NewSyncWorkerLifecycle(syncService,interval);if err!=nil{return nil,err};return &Service{syncService:syncService,balanceLifecycle:balanceLifecycle,catalogLifecycle:newCatalogWorkerLifecycle(),interval:interval},nil}
 func (s *Service) Run(ctx context.Context) error {
 	if ctx == nil { return errors.New("context is required") }
 
@@ -186,7 +208,13 @@ func (s *Service) Run(ctx context.Context) error {
 		return combineRuntimeShutdownError(combineRuntimeShutdownError(ctx.Err(), workerErr), s.Close())
 	}
 
-	_ = s.catalogSync.SyncAll(ctx)
+	catalogCtx, catalogStartErr := s.catalogLifecycle.Start(ctx)
+	if catalogStartErr != nil {
+		workerErr := s.balanceLifecycle.Shutdown(context.Background())
+		return combineRuntimeShutdownError(combineRuntimeShutdownError(workerErr, catalogStartErr), s.Close())
+	}
+	defer s.catalogLifecycle.Shutdown()
+	_ = s.catalogSync.SyncAll(catalogCtx)
 	ticker := time.NewTicker(s.catalogInterval)
 	defer ticker.Stop()
 
@@ -196,7 +224,7 @@ func (s *Service) Run(ctx context.Context) error {
 			workerErr := s.balanceLifecycle.Shutdown(workerShutdownCtx)
 			return combineRuntimeShutdownError(combineRuntimeShutdownError(ctx.Err(), workerErr), s.Close())
 		case <-ticker.C:
-			_ = s.catalogSync.SyncAll(ctx)
+			_ = s.catalogSync.SyncAll(catalogCtx)
 		}
 	}
 }
