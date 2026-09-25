@@ -3553,3 +3553,38 @@ The test boundary uses deterministic close-error injection; it does not claim to
 ### Next milestone
 
 **Milestone #98:** runtime initialization cleanup error observability and explicit ownership diagnostics, while preserving the primary initialization failure and financial safety boundaries.
+
+
+## 35. Runtime Initialization Cleanup Error Observability & Explicit Ownership Diagnostics
+
+**Date:** 2026-09-26
+
+Milestone #98 hardens the failure path after PostgreSQL transaction/audit resources have been acquired but before runtime service ownership is successfully transferred.
+
+### Verified behavior
+
+- initialization failures after database acquisition now close already-owned transaction/audit database handles;
+- cleanup failures are no longer silently discarded;
+- the original initialization failure remains discoverable through errors.Is;
+- cleanup failures are surfaced as supplemental lifecycle infrastructure errors;
+- shared transaction/audit handles remain closed exactly once;
+- successful initialization transfers database ownership to the runtime Service, so the initialization cleanup guard does not close live resources;
+- deterministic tests cover cleanup-error observability, primary-error preservation, and shared-handle de-duplication.
+
+CI run #736 / 36187759170 is **GREEN**: test, vet, race, and PostgreSQL-backed integration coverage passed.
+
+### Safety boundary
+
+Initialization cleanup errors are infrastructure lifecycle signals only. They do not authorize provider retry, failover, resubmission, transaction-state mutation, customer-ledger mutation, treasury movement, or provider funding.
+
+The primary initialization error remains the semantic reason startup failed; cleanup failure is supplemental evidence that must remain observable for operators.
+
+### Known limitations
+
+- cleanup error injection is deterministic at the databaseCloser abstraction rather than a forced real PostgreSQL Close() failure;
+- the runtime still does not expose a dedicated structured ownership diagnostic object or metrics stream; current observability is through returned errors and deterministic tests;
+- migration deployment remains outside runtime startup.
+
+### Next milestone
+
+Milestone #99: runtime ownership transfer and initialization/shutdown lifecycle contract consolidation, including explicit success-path ownership tests and regression coverage across shared versus dedicated PostgreSQL resources.
