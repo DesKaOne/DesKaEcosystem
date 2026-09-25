@@ -3887,3 +3887,45 @@ Milestone #99: runtime ownership transfer and initialization/shutdown lifecycle 
 ### Next Milestone
 
 **#107 — Runtime Shutdown Error Composition & Close-Order Review**: review cleanup-error propagation across worker shutdown, catalog shutdown, and database ownership closure, preserving the distinction between infrastructure errors and provider/financial outcomes.
+
+
+### Milestone #107 — Runtime Shutdown Error Composition & Close-Order Review
+
+**Date:** 2026-09-26
+
+### Completed
+
+- reviewed the runtime cleanup composition after lifecycle shutdown and during Service.Close();
+- confirmed the runtime combines primary lifecycle errors with database-close errors using errors.Join, preserving discoverability of each underlying error;
+- added deterministic coverage proving a primary runtime error, worker/cleanup error, and database close error can remain independently discoverable when composed;
+- added deterministic coverage proving runtime database ownership preserves the original close error across repeated shutdown calls without double-closing the resource;
+- retained the existing close order: started worker lifecycles are shut down before runtime-owned database resources are closed;
+- retained the existing shared-handle single-close rule for transaction/audit PostgreSQL resources;
+- no provider retry, failover, resubmission, transaction-state, audit-authority, customer-ledger, treasury, or automatic provider-funding behavior was changed.
+
+### Verification
+
+- implementation HEAD: `819066ee2b55d22d9f99ff08cf8190951834ea59`;
+- CI #821 / run `36200425590`: **GREEN** for exact HEAD `819066ee2b55d22d9f99ff08cf8190951834ea59`;
+- `go test ./...`: PASS in CI;
+- `go vet ./...`: PASS in CI;
+- `go test -race ./...`: PASS in CI;
+- PostgreSQL-backed workflow service completed successfully.
+
+### Safety Boundary
+
+- shutdown error composition is an infrastructure observability concern only;
+- transaction persistence remains the authoritative transaction state;
+- audit persistence remains operational evidence only;
+- infrastructure cleanup errors cannot authorize provider retry, failover, resubmission, ledger mutation, treasury movement, or provider funding;
+- existing single-close database ownership semantics remain unchanged.
+
+### Known Limitations
+
+- deterministic close-error injection does not reproduce every operating-system, driver, or network failure mode during shutdown;
+- lifecycle observability remains internal with no separate structured diagnostic stream;
+- process termination and network-partition behavior remain outside the deterministic runtime test boundary.
+
+### Next Milestone
+
+**#108 — Runtime Lifecycle Idempotency & Re-entry Review**: verify repeated Run/Close/lifecycle start-stop behavior and ensure runtime re-entry cannot create duplicate workers or duplicate shutdown side effects.
