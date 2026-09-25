@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/routing"
 )
@@ -22,6 +23,11 @@ func TestOpenTransactionStorePostgresIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
+	db.SetMaxOpenConns(1)
+	schema := "runtime_test_" + time.Now().Format("20060102150405.000000000")
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil { t.Fatal(err) }
+	defer db.ExecContext(ctx, "DROP SCHEMA "+schema+" CASCADE")
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil { t.Fatal(err) }
 
 	migration, err := os.ReadFile(filepath.Join("..", "migrations", "001_provider_transactions.sql"))
 	if err != nil {
