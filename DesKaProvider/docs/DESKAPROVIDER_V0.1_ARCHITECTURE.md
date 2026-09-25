@@ -467,3 +467,22 @@ The production command creates the signal-aware context before runtime compositi
 NewFromEnvironment remains a compatibility wrapper and supplies context.Background(). The explicit context-aware constructor is the production composition path.
 
 The runtime still selects the JSON transaction store today. Therefore this milestone does not claim PostgreSQL-backed runtime startup verification; the existing PostgreSQL integration harness remains the persistence adapter verification boundary. PostgreSQL runtime selection and its startup failure/cancellation integration are deferred to the next persistence-composition milestone.
+
+
+## 22. Production PostgreSQL Transaction-Store Selection
+
+**Date:** 2026-09-25
+
+Milestone #85 establishes the production persistence selection boundary without leaking database details into routing.
+
+Configuration:
+
+- DESKAPROVIDER_TRANSACTION_STORE_DRIVER=json (default) selects the existing JSON store;
+- DESKAPROVIDER_TRANSACTION_STORE_DRIVER=postgres selects PostgresTransactionStore;
+- DESKAPROVIDER_POSTGRES_DSN is mandatory for the PostgreSQL selection.
+
+Runtime composition performs sql.Open followed by PingContext using the same initialization context that flows into NewServiceWithStoreContext. A failed database connection therefore aborts startup before transaction reconstruction.
+
+The routing/service layer remains dependent only on the provider-neutral TransactionStore and its context-aware extensions. PostgreSQL-specific connection lifecycle is contained in runtime composition.
+
+The runtime service closes the database handle on shutdown. No retry or automatic reconnection policy is introduced in this milestone.
