@@ -57,3 +57,25 @@ CREATE INDEX IF NOT EXISTS provider_transactions_status_updated_idx
 -- The request identity columns are deliberately part of the predicate so a
 -- stale or mismatched caller cannot transition another request that happens
 -- to reuse the same reference identifier.
+
+
+-- Append-only transaction audit boundary.
+-- Audit rows are never updated or deleted by the application lifecycle.
+CREATE TABLE IF NOT EXISTS provider_transaction_audit (
+    audit_id BIGSERIAL PRIMARY KEY,
+    reference_id TEXT NOT NULL,
+    action TEXT NOT NULL,
+    previous_status TEXT NOT NULL DEFAULT '',
+    next_status TEXT NOT NULL DEFAULT '',
+    provider_name TEXT NOT NULL DEFAULT '',
+    message TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS provider_transaction_audit_reference_created_idx
+    ON provider_transaction_audit (reference_id, created_at, audit_id);
+
+-- Audit insertion is append-only:
+-- INSERT INTO provider_transaction_audit
+--     (reference_id, action, previous_status, next_status, provider_name, message)
+-- VALUES ($1, $2, $3, $4, $5, $6);
