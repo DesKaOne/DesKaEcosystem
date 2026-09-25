@@ -323,6 +323,6 @@ Terminal states are immutable. A repeated identical terminal observation is hand
 
 The schema deliberately does not add retry counters, failover state, automatic funding fields, or customer-ledger postings. Those concerns remain outside this persistence boundary.
 
-PostgreSQL row-level locking/conditional-update behavior is consistent with the database's concurrency model: concurrent updates to the same row are serialized by PostgreSQL, and the update predicate is re-evaluated against the current row version. citeturn0search5
+PostgreSQL row-level locking/conditional-update behavior is consistent with the database's concurrency model: concurrent updates to the same row are serialized by PostgreSQL, and the update predicate is re-evaluated against the current row version.
 
 Current limitation: the SQL migration is a concrete schema/locking contract only. The Go PostgreSQL adapter, connection management, migration runner, and live PostgreSQL integration tests are not yet implemented.
