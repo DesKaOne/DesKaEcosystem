@@ -18,6 +18,17 @@ type TransactionStore interface {
 	All() []TransactionState
 }
 
+// AtomicTransactionStore provides a compare-and-transition boundary for stores
+// that can enforce transaction identity and state transitions atomically.
+// Database-backed implementations must map this operation to a single
+// transaction/conditional update across processes.
+type AtomicTransactionStore interface {
+	TransactionStore
+	PutIfCurrent(referenceID string, previous, next TransactionState) error
+}
+
+var ErrTransactionStateConflict = errors.New("transaction state changed concurrently")
+
 func validateTransactionTransition(previous, next TransactionState) error {
 	if previous.Request != next.Request {
 		return ErrReferenceConflict
@@ -73,6 +84,23 @@ func (s *MemoryTransactionStore) Put(state TransactionState) error {
 		}
 	}
 	s.transactions[state.Request.ReferenceID] = state
+	return nil
+}
+
+func (s *MemoryTransactionStore) PutIfCurrent(referenceID string, previous, next TransactionState) error {
+	if referenceID == "" || next.Request.ReferenceID != referenceID || previous.Request.ReferenceID != referenceID {
+		return ErrReferenceConflict
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	current, ok := s.transactions[referenceID]
+	if !ok || current != previous {
+		return ErrTransactionStateConflict
+	}
+	if err := validateTransactionTransition(previous, next); err != nil {
+		return err
+	}
+	s.transactions[referenceID] = next
 	return nil
 }
 
