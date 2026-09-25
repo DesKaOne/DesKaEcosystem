@@ -525,20 +525,6 @@ func TestServiceRunUsesOwnedCatalogWorkerLifecycle(t *testing.T) {
 	select { case <-ctx.Done(): default: t.Fatal("expected service context to be canceled") }
 }
 
-func (db *orderedCloseDB) Close() error {
-	db.closed = true
-	return nil
-}
-
-func (db *orderedCloseDB) Close() error {
-	if db.service != nil && db.service.balanceLifecycle != nil {
-		db.service.balanceLifecycle.Shutdown(context.Background())
-		db.workerWasRunningAtClose = true
-	}
-	db.closed = true
-	return nil
-}
-
 func TestServiceRollbackStartedLifecyclesBeforeDatabaseClose(t *testing.T) {
 	mockProvider := &balanceMock{Provider: mock.New(mock.Config{Products: []provider.Product{{Code: "xld10", Name: "Test"}}}), balance: 1800000}
 	registry := provider.NewRegistry()
@@ -557,11 +543,22 @@ func TestServiceRollbackStartedLifecyclesBeforeDatabaseClose(t *testing.T) {
 		return nil, catalogStartErr
 	}
 
-	type orderedCloseDB struct {
-		service *Service
-		closed  bool
-		workerWasRunningAtClose bool
+type orderedCloseDB struct {
+	service *Service
+	closed  bool
+	workerWasRunningAtClose bool
+}
+
+func (db *orderedCloseDB) Close() error {
+	if db.service != nil && db.service.balanceLifecycle != nil {
+		if err := db.service.balanceLifecycle.Shutdown(context.Background()); err == nil {
+			db.workerWasRunningAtClose = true
+		}
 	}
+	db.closed = true
+	return nil
+}
+
 	db := &orderedCloseDB{service: service}
 	service.databaseOwnership = newRuntimeDatabaseOwnership(db, nil)
 	service.databaseOwnership.transferToService()
