@@ -544,3 +544,34 @@ func TestServiceRestartRecoversDurableTransactionState(t *testing.T) {
 	}
 
 }
+
+
+func TestTransactionStoreRejectsTerminalOverwrite(t *testing.T) {
+	store := NewMemoryTransactionStore()
+	req := PurchaseRequest{ProductCode: "pln20", CustomerNo: "08123456789", ReferenceID: "ref-terminal", Amount: 20000}
+	success := TransactionState{Request: req, Execution: PurchaseExecution{ProviderName: "mock", Result: provider.PurchaseResult{
+		ReferenceID: req.ReferenceID, CustomerNo: req.CustomerNo, ProductCode: req.ProductCode, Status: provider.StatusSuccess, ProviderCode: "00",
+	}}}
+	if err := store.Put(success); err != nil { t.Fatal(err) }
+
+	mutated := success
+	mutated.Execution.Result.Message = "mutated"
+	if err := store.Put(mutated); !errors.Is(err, ErrReferenceConflict) {
+		t.Fatalf("expected terminal overwrite rejection, got %v", err)
+	}
+}
+
+func TestTransactionStoreRejectsRequestMutation(t *testing.T) {
+	store := NewMemoryTransactionStore()
+	req := PurchaseRequest{ProductCode: "pln20", CustomerNo: "08123456789", ReferenceID: "ref-request-mutation", Amount: 20000}
+	pending := TransactionState{Request: req, Execution: PurchaseExecution{ProviderName: "mock", Result: provider.PurchaseResult{
+		ReferenceID: req.ReferenceID, CustomerNo: req.CustomerNo, ProductCode: req.ProductCode, Status: provider.StatusPending,
+	}}}
+	if err := store.Put(pending); err != nil { t.Fatal(err) }
+
+	mutated := pending
+	mutated.Request.Amount = 21000
+	if err := store.Put(mutated); !errors.Is(err, ErrReferenceConflict) {
+		t.Fatalf("expected request mutation rejection, got %v", err)
+	}
+}
