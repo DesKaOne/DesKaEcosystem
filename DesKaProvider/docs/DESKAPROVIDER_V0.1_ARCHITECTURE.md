@@ -376,3 +376,20 @@ CI provisions a dedicated PostgreSQL service for both the normal test and race j
 The harness is verification infrastructure only. It does not change provider routing, retry/failover policy, transaction resubmission behavior, customer-ledger mutation, or provider funding.
 
 The current adapter still has the context-free TransactionStore contract and therefore uses context.Background(). Explicit context propagation remains a separate contract decision.
+
+
+## 17. Context-Aware Persistence Boundary
+
+**Date:** 2026-09-25
+
+Milestone #80 adds an optional context-aware persistence contract without removing the existing provider-neutral TransactionStore interface.
+
+ContextTransactionStore extends the persistence boundary with GetContext, PutContext, AllContext, and PutIfCurrentContext.
+
+The routing service prefers the context-aware methods when the configured store implements the contract. Existing stores remain compatible through the original interface, and legacy fallback paths remain available.
+
+The PostgreSQL adapter now passes the caller context to database/sql operations instead of hard-coding context.Background() on context-aware service paths. The context-free methods remain compatibility wrappers using context.Background().
+
+Cancellation and deadlines therefore reach PostgreSQL persistence operations on purchase, webhook, and reconciliation paths. Context cancellation does not authorize retry, failover, provider resubmission, ledger mutation, or provider funding.
+
+The constructor startup All() recovery path remains context-free because it is initialization work rather than a request-scoped operation. Explicit startup lifecycle context can be considered separately if runtime startup/shutdown requires it.
