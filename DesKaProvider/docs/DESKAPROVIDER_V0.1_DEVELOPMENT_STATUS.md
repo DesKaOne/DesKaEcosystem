@@ -3846,38 +3846,44 @@ Milestone #99: runtime ownership transfer and initialization/shutdown lifecycle 
 **#105 — Runtime Lifecycle Construction & Context Propagation Review**: inspect the remaining constructor-time lifecycle failure paths and context propagation guarantees, especially balance lifecycle construction, catalog lifecycle creation, and cancellation boundaries, without changing business or financial semantics.
 
 
-### Milestone #105 — Runtime Lifecycle Construction & Context Propagation Review
+### Milestone #106 — Runtime Start Failure & Partial Lifecycle Rollback Review
 
 **Date:** 2026-09-26
 
 ### Completed
 
-- reviewed constructor-time balance lifecycle creation and confirmed the lifecycle constructor already rejects nil synchronization services and non-positive intervals before runtime handoff;
-- reviewed catalog lifecycle creation and confirmed it is an internal context owner with explicit start/shutdown state, while catalog synchronization itself remains synchronous;
-- added a shared runtime initialization context checkpoint immediately before database ownership transfer to the service;
-- preserved constructor behavior for already-canceled contexts while closing the previously unguarded cancellation window between resource construction and ownership handoff;
-- added deterministic unit coverage for the runtime initialization context checkpoint;
-- preserved ownership cleanup ordering: resources remain initialization-owned until the successful handoff point, while cancellation before handoff remains on the initialization cleanup path;
+- reviewed the runtime startup sequence where the balance lifecycle starts before catalog lifecycle startup is attempted;
+- added an explicit rollback helper for the partial-start failure path;
+- when catalog lifecycle startup fails, the already-started balance lifecycle is stopped before runtime-owned database resources are closed;
+- retained the existing composed shutdown path and idempotent lifecycle/database cleanup semantics;
+- added deterministic failure-injection coverage for the catalog lifecycle start boundary and the partial-start rollback path;
+- preserved primary startup failure semantics while treating lifecycle/database cleanup as infrastructure concerns;
 - no provider retry, failover, resubmission, transaction-state, audit-authority, customer-ledger, treasury, or automatic provider-funding behavior was changed.
 
 ### Verification
 
-- implementation HEAD: `63e6e7199d72ffb7dff50f8b336b062263953894`;
-- CI for this exact HEAD is pending and must be GREEN before milestone #105 is considered closed;
-- the change is limited to runtime constructor context propagation and deterministic test coverage.
+- implementation HEAD: `5c32b04db8a39cfcaa7419fb3aa332b7454471ea`;
+- CI #817 / run `36199199241`: **GREEN** for exact HEAD `5c32b04db8a39cfcaa7419fb3aa332b7454471ea`;
+- CI #818 / run `36199202092`: **GREEN** for the same exact HEAD;
+- `go test ./...`: PASS in CI;
+- `go vet ./...`: PASS in CI;
+- `go test -race ./...`: PASS in CI;
+- PostgreSQL-backed workflow service completed successfully.
 
 ### Safety Boundary
 
-- the new checkpoint only decides whether initialization may transfer resource ownership into the service;
-- a canceled initialization does not authorize provider activity or mutate transaction/financial state;
-- database resources acquired before cancellation remain subject to the existing initialization cleanup guard;
-- transaction persistence remains authoritative and audit persistence remains operational evidence only.
+- partial lifecycle rollback is an infrastructure startup/shutdown concern only;
+- transaction persistence remains the authoritative transaction state;
+- audit persistence remains operational evidence only;
+- rollback and database cleanup cannot authorize provider retry, failover, resubmission, ledger mutation, treasury movement, or provider funding;
+- existing single-close database ownership semantics remain unchanged.
 
 ### Known Limitations
 
-- deterministic tests cannot force cancellation at every individual instruction boundary between external I/O operations;
+- deterministic failure injection covers the catalog lifecycle start boundary, not every possible runtime startup instruction or external I/O failure;
+- lifecycle observability remains internal and there is no separate structured diagnostic stream;
 - process termination, driver-specific failure timing, and network partitions remain outside the deterministic runtime test boundary.
 
 ### Next Milestone
 
-**#106 — Runtime Start Failure & Partial Lifecycle Rollback Review**: exercise failure after one runtime lifecycle has started but before the complete runtime loop is established, ensuring already-started lifecycle resources are rolled back before database shutdown without changing provider or financial semantics.
+**#107 — Runtime Shutdown Error Composition & Close-Order Review**: review cleanup-error propagation across worker shutdown, catalog shutdown, and database ownership closure, preserving the distinction between infrastructure errors and provider/financial outcomes.
