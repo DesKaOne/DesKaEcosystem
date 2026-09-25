@@ -268,3 +268,19 @@ func TestServiceRestartRecoversPersistedOperationalSnapshot(t *testing.T) {
 		t.Fatalf("unexpected post-restart snapshot: %#v", updated)
 	}
 }
+
+
+func TestNewFromEnvironmentContextRejectsCanceledInitialization(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if _, err := NewFromEnvironmentContext(ctx, nil); err != context.Canceled {
+		t.Fatalf("expected context.Canceled, got %v", err)
+	}
+}
+
+func TestNewFromEnvironmentContextRequiresContext(t *testing.T) {
+	if _, err := NewFromEnvironmentContext(nil, nil); err == nil {
+		t.Fatal("expected initialization context error")
+	}
+}
