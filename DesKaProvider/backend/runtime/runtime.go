@@ -91,6 +91,14 @@ func (o *runtimeDatabaseOwnership) closeOwned() error {
 
 type Service struct{syncService *operational.SyncService;purchaseService *routing.Service;catalogSync *catalog.SyncService;providerState *operational.ProviderStateStore;databaseOwnership *runtimeDatabaseOwnership;interval,catalogInterval time.Duration}
 
+func (s *Service) runBalanceSync(ctx context.Context, done chan<- error) {
+\tif s == nil || s.syncService == nil {
+\t\tdone <- nil
+\t\treturn
+\t}
+\tdone <- s.syncService.Run(ctx, s.interval)
+}
+
 func LoadConfig()(Config,error){
  cfg:=Config{StorePath:os.Getenv("DESKAPROVIDER_OPERATIONAL_STORE_PATH"),TransactionStoreDriver:os.Getenv("DESKAPROVIDER_TRANSACTION_STORE_DRIVER"),AuditStoreDriver:os.Getenv("DESKAPROVIDER_AUDIT_STORE_DRIVER"),PostgresDSN:os.Getenv("DESKAPROVIDER_POSTGRES_DSN"),ProviderStateStorePath:os.Getenv("DESKAPROVIDER_PROVIDER_STATE_STORE_PATH"),TransactionStorePath:os.Getenv("DESKAPROVIDER_TRANSACTION_STORE_PATH"),SyncInterval:defaultSyncInterval,FailureThreshold:defaultFailureThreshold,Currency:os.Getenv("DESKAPROVIDER_OPERATIONAL_CURRENCY"),CatalogStorePath:os.Getenv("DESKAPROVIDER_CATALOG_STORE_PATH"),CatalogSyncInterval:defaultCatalogSyncInterval,CatalogMaxAge:defaultCatalogMaxAge,OperationalSnapshotMaxAge:defaultOperationalSnapshotMaxAge}
  if cfg.StorePath==""{cfg.StorePath=defaultStorePath};if cfg.TransactionStoreDriver==""{cfg.TransactionStoreDriver=defaultTransactionStoreDriver};if cfg.AuditStoreDriver==""{cfg.AuditStoreDriver=defaultAuditStoreDriver};if cfg.AuditStoreDriver!="memory"&&cfg.AuditStoreDriver!="postgres"{return Config{},fmt.Errorf("invalid DESKAPROVIDER_AUDIT_STORE_DRIVER: %q",cfg.AuditStoreDriver)};if cfg.TransactionStoreDriver!="json"&&cfg.TransactionStoreDriver!="postgres"{return Config{},fmt.Errorf("invalid DESKAPROVIDER_TRANSACTION_STORE_DRIVER: %q",cfg.TransactionStoreDriver)};if (cfg.TransactionStoreDriver=="postgres"||cfg.AuditStoreDriver=="postgres")&&cfg.PostgresDSN==""{return Config{},errors.New("DESKAPROVIDER_POSTGRES_DSN is required when DESKAPROVIDER_TRANSACTION_STORE_DRIVER=postgres")};if cfg.ProviderStateStorePath==""{cfg.ProviderStateStorePath=defaultProviderStateStorePath};if cfg.TransactionStorePath==""{cfg.TransactionStorePath=defaultTransactionStorePath};if cfg.Currency==""{cfg.Currency=defaultCurrency};if cfg.CatalogStorePath==""{cfg.CatalogStorePath=defaultCatalogStorePath}
@@ -144,7 +152,31 @@ return service,nil
 }
 
 func New(syncService *operational.SyncService,interval time.Duration)(*Service,error){if syncService==nil{return nil,errors.New("sync service is required")};if interval<=0{return nil,errors.New("sync interval must be greater than zero")};return &Service{syncService:syncService,interval:interval},nil}
-func (s *Service) Run(ctx context.Context)error{if ctx==nil{return errors.New("context is required")};if s.catalogSync==nil{err:=s.syncService.Run(ctx,s.interval);return combineRuntimeShutdownError(err,s.Close())};_=s.catalogSync.SyncAll(ctx);ticker:=time.NewTicker(s.catalogInterval);defer ticker.Stop();go func(){_=s.syncService.Run(ctx,s.interval)}();for{select{case<-ctx.Done():return combineRuntimeShutdownError(ctx.Err(),s.Close());case<-ticker.C:_=s.catalogSync.SyncAll(ctx)}}}
+func (s *Service) Run(ctx context.Context) error {
+\tif ctx == nil { return errors.New("context is required") }
+\tif s.catalogSync == nil {
+\t\trunErr := s.syncService.Run(ctx, s.interval)
+\t\treturn combineRuntimeShutdownError(runErr, s.Close())
+\t}
+\n\t_ = s.catalogSync.SyncAll(ctx)
+\tticker := time.NewTicker(s.catalogInterval)
+\tdefer ticker.Stop()
+\n\tworkerDone := make(chan error, 1)
+\tgo s.runBalanceSync(ctx, workerDone)
+\n\tvar shutdownErr error
+\tfor {
+\t\tselect {
+\t\tcase err := <-workerDone:
+\t\t\tshutdownErr = err
+\t\t\treturn combineRuntimeShutdownError(shutdownErr, s.Close())
+\t\tcase <-ctx.Done():
+\t\t\tworkerErr := <-workerDone
+\t\t\treturn combineRuntimeShutdownError(combineRuntimeShutdownError(ctx.Err(), workerErr), s.Close())
+\t\tcase <-ticker.C:
+\t\t\t_ = s.catalogSync.SyncAll(ctx)
+\t\t}
+\t}
+}
 func (s *Service) PurchaseService()*routing.Service{if s==nil{return nil};return s.purchaseService}
 func (s *Service) Close() error { if s==nil { return nil }; return s.closeOwnedDatabases() }
 
