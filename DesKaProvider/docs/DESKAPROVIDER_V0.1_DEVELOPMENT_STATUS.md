@@ -3411,3 +3411,42 @@ Next milestone:
 2. verify startup construction and shutdown lifecycle with PostgreSQL transaction and audit stores together;
 3. add runtime integration coverage proving durable audit reads survive service reconstruction;
 4. keep retry/failover/resubmission deferred.
+
+
+### Milestone #94 — Production PostgreSQL Audit-Store Runtime Selection
+
+**Date:** 2026-09-26
+
+Completed:
+
+- added runtime configuration `DESKAPROVIDER_AUDIT_STORE_DRIVER=memory|postgres`;
+- retained the default audit store as in-memory for the existing local/interim runtime boundary;
+- PostgreSQL audit selection requires `DESKAPROVIDER_POSTGRES_DSN` and uses the existing PostgreSQL transaction connection when the transaction store is also PostgreSQL;
+- when only the audit store uses PostgreSQL, runtime opens and validates a dedicated PostgreSQL connection using the same configured DSN;
+- production service construction now injects the selected `TransactionAuditStore` into the routing service;
+- PostgreSQL audit connection lifecycle is closed during runtime shutdown;
+- added runtime configuration tests for default, PostgreSQL, invalid, and missing-DSN audit-store settings;
+- added a real PostgreSQL runtime integration test that applies the migration, appends an audit event, and reconstructs it through the selected audit adapter.
+
+### Verification
+
+- Latest pre-milestone CI baseline: CI #680 / run `36175136617` for HEAD `052ae776f7aa332fb7825980a7c10b89cb7c9d9b` was GREEN before Milestone #94 changes.
+- Milestone #94 changes require a new CI run on the resulting HEAD; this milestone is not closed until that latest HEAD is GREEN.
+- No automatic retry, failover, resubmission, ledger mutation, or provider funding was introduced.
+
+### Safety Boundary
+
+- Audit-store selection is operational persistence only.
+- Audit failure remains non-authoritative relative to committed transaction state.
+- PostgreSQL audit persistence does not authorize provider resubmission.
+- A single PostgreSQL DSN may back both transaction and audit stores, but the audit table remains append-only and separate from transaction state.
+
+### Known Limitations
+
+- Audit-store runtime selection currently supports memory and PostgreSQL only.
+- Migration deployment remains an operational prerequisite; runtime does not execute schema migrations automatically.
+- The runtime integration test verifies durable audit persistence and adapter selection, not external provider crash/network failure semantics.
+
+### Next Milestone
+
+**#95 — Runtime Durable Audit Reconstruction & Shutdown Integration Hardening**: verify a production-style service restart with PostgreSQL transaction and audit stores, including durable audit history reconstruction and clean shutdown/error-path behavior.
