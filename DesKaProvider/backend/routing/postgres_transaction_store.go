@@ -66,6 +66,7 @@ func (s *PostgresTransactionStore) Put(state TransactionState) error {
 
 func (s *PostgresTransactionStore) PutIfCurrent(referenceID string, previous, next TransactionState) error {
  if referenceID == "" || previous.Request.ReferenceID != referenceID || next.Request.ReferenceID != referenceID { return ErrReferenceConflict }
+ if previous.Request != next.Request || previous.Execution.ProviderName != next.Execution.ProviderName { return ErrReferenceConflict }
  if err := validatePostgresState(next); err != nil { return err }
  if previous.Execution.Result.Status != provider.StatusPending {
   if samePurchaseResult(previous.Execution.Result, next.Execution.Result) && previous.Request == next.Request && previous.Execution.ProviderName == next.Execution.ProviderName { return nil }
