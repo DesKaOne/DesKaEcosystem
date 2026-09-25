@@ -557,12 +557,12 @@ func TestServiceRollbackStartedLifecyclesBeforeDatabaseClose(t *testing.T) {
 	service.databaseOwnership.transferToService()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
 
 	err = service.Run(ctx)
 	if !errors.Is(err, catalogStartErr) {
 		t.Fatalf("expected injected catalog start failure, got %v", err)
 	}
+	cancel()
 	if !db.closed {
 		t.Fatal("expected database to be closed during rollback")
 	}
