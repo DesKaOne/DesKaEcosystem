@@ -2546,3 +2546,46 @@ Next milestone:
 1. harden restart/reconciliation behavior for durable pending transactions;
 2. add explicit persistence semantics for transaction state transitions and concurrent process safety;
 3. only after those boundaries are stable evaluate controlled retry/failover policies.
+
+
+### 75. Milestone Update — Restart/Reconciliation Persistence Transition Hardening
+
+**Date:** 2026-09-25
+
+CI gate:
+
+- CI #452 for commit `21172bdb7b43210f50599d71900f646ea304d857` is **GREEN**;
+- `test` and `race` completed successfully;
+- `vet` completed successfully as part of the test job.
+
+Completed:
+
+- transaction persistence now enforces explicit provider-neutral state transitions;
+- transaction request identity and selected provider identity cannot be mutated after persistence;
+- only `pending` transactions may transition to terminal `success` or `failed`;
+- terminal states are immutable except for idempotent re-writes of the identical terminal result;
+- the same transition validation is enforced by both in-memory and JSON transaction stores;
+- restart recovery and reconciliation are covered together: a durable pending transaction can be loaded by a fresh service instance and reconciled through provider status without resubmitting the purchase;
+- the restart reconciliation test now models the external provider retaining the transaction state across a DesKaProvider process restart;
+- the Mock provider gained deterministic test-only helpers for modeling a provider-side transaction status transition.
+
+Safety boundary:
+
+- no retry/failover or automatic resubmission was introduced;
+- reconciliation calls provider status only and never invokes provider purchase;
+- conflicting request/provider identity or terminal overwrite is rejected;
+- provider transaction state remains separate from customer financial ledger state;
+- no automatic funding, ledger mutation, or lifecycle mutation is triggered by reconciliation.
+
+Known limitations:
+
+- the JSON transaction store remains single-process locked and is not a multi-process transaction database;
+- atomic database uniqueness/locking semantics are still required before multi-process production deployment;
+- provider status reconciliation still depends on the concrete provider retaining and exposing the transaction reference;
+- unresolved pending transactions remain explicitly pending when provider status cannot yet resolve them.
+
+Next milestone:
+
+1. harden concurrent reconciliation and durable transition behavior across process boundaries;
+2. define the minimum database-backed transaction-store contract before production deployment;
+3. only after the persistence boundary is stable evaluate controlled retry/failover policies with explicit idempotency guarantees.
