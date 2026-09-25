@@ -3148,3 +3148,43 @@ Next milestone:
 1. add explicit PostgreSQL restart/reconnect coverage for terminal failed recovery;
 2. verify terminal-state behavior through webhook/reconciliation convergence where applicable;
 3. keep retry/failover deferred until the full transaction lifecycle remains unambiguous.
+
+### 88. Milestone Update — PostgreSQL Failed-State Recovery & Webhook Convergence
+
+**Date:** 2026-09-25
+
+Completed:
+
+- added real PostgreSQL integration coverage for a persisted terminal failed transaction;
+- reconstructed a new routing Service from the same PostgreSQL store and reconciled the failed terminal state;
+- verified failed-terminal reconciliation is idempotent and does not submit the provider purchase again;
+- verified an identical terminal failed webhook after restart converges idempotently without changing the durable result;
+- verified provider purchase count remains exactly one across purchase, restart, reconciliation, and terminal webhook handling;
+- verified the failed terminal result remains durable after the restart/reconciliation/webhook sequence.
+
+Safety boundary:
+
+- terminal failed recovery never authorizes provider resubmission;
+- identical terminal webhook events are convergence signals, not retry signals;
+- no retry/failover/resubmission policy was introduced;
+- no customer-ledger mutation or automatic provider funding was introduced;
+- provider-neutral transaction identity and selected provider identity remain immutable.
+
+Verification:
+
+- the integration test uses an isolated PostgreSQL schema and the real PostgresTransactionStore;
+- the failed recovery path verifies durable failed persistence, reconstruction, reconciliation idempotency, and terminal webhook idempotency;
+- fresh CI test, vet, race, and PostgreSQL integration must all be GREEN before milestone closure.
+
+Known limitations:
+
+- the integration scenario verifies an already terminal failed transaction rather than a physical process kill during an in-flight external request;
+- webhook convergence is verified for an identical terminal event; conflicting terminal webhook payloads remain rejected by the existing reference-conflict boundary;
+- PostgreSQL migration execution remains a separate deployment concern;
+- provider-specific crash/retry semantics remain outside the verified contract.
+
+Next milestone:
+
+1. extend PostgreSQL integration coverage to conflicting terminal webhook/reconciliation observations;
+2. verify that terminal conflicts remain non-resubmitting across restart;
+3. keep retry/failover deferred.
