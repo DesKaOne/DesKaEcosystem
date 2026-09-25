@@ -2397,3 +2397,27 @@ Next milestone:
 1. verify fresh CI for lifecycle restart preservation;
 2. if green, add routing eligibility tests for disabled/unhealthy/degraded/stale/fresh provider states;
 3. keep Admin API authorization deferred until requirements are explicit.
+
+### 71. Milestone Update — Routing Eligibility Regression Coverage
+
+**Date:** 2026-09-25
+
+CI gate:
+
+- CI #408 for commit `641bd1519b9b44f463f97e34d3bca79388f6e07e` is **GREEN**;
+- `test`, `vet`, and `race` completed successfully.
+
+Implementation:
+
+- added deterministic routing eligibility regression coverage for provider state + operational health + catalog freshness;
+- enabled + unhealthy is rejected;
+- enabled + degraded is rejected under the current router semantics;
+- enabled + healthy + stale catalog is rejected;
+- enabled + healthy + fresh catalog is selectable.
+
+No routing behavior was broadened; the milestone locks the existing provider-neutral eligibility rules with tests.
+
+Verification gate:
+
+- fresh CI for the implementation commit is mandatory;
+- `test`, `vet`, and `race` must all be **GREEN** before continuing.
