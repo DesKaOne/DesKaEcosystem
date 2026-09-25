@@ -326,3 +326,29 @@ The schema deliberately does not add retry counters, failover state, automatic f
 PostgreSQL row-level locking/conditional-update behavior is consistent with the database's concurrency model: concurrent updates to the same row are serialized by PostgreSQL, and the update predicate is re-evaluated against the current row version.
 
 Current limitation: the SQL migration is a concrete schema/locking contract only. The Go PostgreSQL adapter, connection management, migration runner, and live PostgreSQL integration tests are not yet implemented.
+
+
+## 15. PostgreSQL AtomicTransactionStore Adapter
+
+**Date:** 2026-09-25
+
+Milestone #78 adds the first concrete PostgreSQL adapter behind the existing provider-neutral AtomicTransactionStore contract:
+
+DesKaProvider/backend/routing/postgres_transaction_store.go
+
+The adapter deliberately uses the standard library database/sql boundary and does not select or embed a PostgreSQL driver. The runtime may inject a PostgreSQL-compatible database/sql implementation without changing the routing/service contract.
+
+The adapter provides:
+
+- Get for durable transaction reconstruction;
+- Put for initial insertion and pending-to-terminal transition semantics;
+- All for restart recovery;
+- PutIfCurrent for atomic compare-and-transition.
+
+The atomic transition uses the migration's conditional update shape and treats zero affected rows as ErrTransactionStateConflict. The predicate includes reference ID, version, original request identity, selected provider, and status='pending'.
+
+The adapter does not retry a failed transition, resubmit a provider purchase, mutate the customer ledger, or perform provider funding.
+
+Because the existing TransactionStore interface is intentionally context-free, the concrete adapter currently uses context.Background() for store operations. A future contract revision may introduce explicit context propagation if the repository standard requires it.
+
+The adapter's unit tests use a deterministic database stub to verify successful atomic transition, zero-row conflict behavior, and request-identity rejection. Live PostgreSQL integration remains a separate verification boundary.
