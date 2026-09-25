@@ -30,6 +30,7 @@ type Request struct {
 }
 
 type Router struct {
+	Now            func() time.Time
 	Registry       *provider.Registry
 	Store          operational.Store
 	Priorities     map[string]int
@@ -82,12 +83,16 @@ func newRouter(registry *provider.Registry, store operational.Store, priorities 
 	for name, priority := range priorities {
 		copied[normalize(name)] = priority
 	}
-	return &Router{Registry: registry, Store: store, Priorities: copied, Catalog: catalogStore, CatalogMaxAge: catalogMaxAge, OperationalMaxAge: operationalMaxAge, ProviderState: stateStore}, nil
+	return &Router{Registry: registry, Store: store, Priorities: copied, Catalog: catalogStore, CatalogMaxAge: catalogMaxAge, OperationalMaxAge: operationalMaxAge, ProviderState: stateStore, Now: time.Now}, nil
 }
 
 func (r *Router) Select(ctx context.Context, req Request) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
+	}
+	now := time.Now()
+	if r.Now != nil {
+		now = r.Now()
 	}
 	if req.ProductCode == "" || req.Amount <= 0 {
 		return "", fmt.Errorf("%w: product code and positive amount are required", ErrInvalidRouteRequest)
@@ -105,7 +110,7 @@ func (r *Router) Select(ctx context.Context, req Request) (string, error) {
 		if !ok || snapshot.Health != operational.HealthHealthy || snapshot.Balance < req.Amount {
 			continue
 		}
-		if r.OperationalMaxAge > 0 && (snapshot.LastCheckedAt.IsZero() || time.Since(snapshot.LastCheckedAt) > r.OperationalMaxAge) {
+		if r.OperationalMaxAge > 0 && !isFresh(snapshot.LastCheckedAt, now, r.OperationalMaxAge) {
 			continue
 		}
 
@@ -114,7 +119,7 @@ func (r *Router) Select(ctx context.Context, req Request) (string, error) {
 			if !ok {
 				continue
 			}
-			if r.CatalogMaxAge > 0 && time.Since(snapshot.SyncedAt) > r.CatalogMaxAge {
+			if r.CatalogMaxAge > 0 && !isFresh(snapshot.SyncedAt, now, r.CatalogMaxAge) {
 				continue
 			}
 			if !hasProduct(snapshot.Products, req.ProductCode) {
@@ -148,6 +153,14 @@ func (r *Router) Select(ctx context.Context, req Request) (string, error) {
 		return candidates[i].name < candidates[j].name
 	})
 	return candidates[0].name, nil
+}
+
+func isFresh(timestamp, now time.Time, maxAge time.Duration) bool {
+	if timestamp.IsZero() || maxAge <= 0 {
+		return false
+	}
+	age := now.Sub(timestamp)
+	return age >= 0 && age <= maxAge
 }
 
 func hasProduct(products []provider.Product, code string) bool {
