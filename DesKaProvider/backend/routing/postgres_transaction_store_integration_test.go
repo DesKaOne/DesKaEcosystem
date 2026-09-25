@@ -293,6 +293,120 @@ func TestPostgresTransactionStoreTerminalRecoveryIsIdempotentAfterRestart(t *tes
 	}
 }
 
+
+func TestPostgresTransactionStoreFailedRecoveryIsIdempotentAfterRestart(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	schema := "failed_recovery_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatalf("create isolated schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
+	})
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set isolated search path: %v", err)
+	}
+	applyPostgresMigration(t, db)
+
+	store, err := NewPostgresTransactionStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	registry := provider.NewRegistry()
+	mock := Mock.New(Mock.Config{
+		Products:       []provider.Product{{Code: "pln20", Name: "PLN 20"}},
+		ProviderCode:   "02",
+		Message:        "failed",
+		PurchaseStatus: provider.StatusFailed,
+		Price:          20000,
+	})
+	if err := registry.Register("mock", mock); err != nil {
+		t.Fatal(err)
+	}
+
+	operationalStore := operational.NewMemoryStore()
+	if err := operationalStore.Put(operational.Snapshot{
+		ProviderName: "mock",
+		Balance:      100000,
+		Health:       operational.HealthHealthy,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	router, err := New(registry, operationalStore, map[string]int{"mock": 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := PurchaseRequest{
+		ProductCode: "pln20",
+		CustomerNo:  "08123456789",
+		ReferenceID: postgresIntegrationReference(),
+		Amount:      20000,
+	}
+	firstService, err := NewServiceWithStoreContext(ctx, router, store)
+	if err != nil {
+		t.Fatalf("construct initial service: %v", err)
+	}
+	first, err := firstService.Purchase(ctx, req)
+	if err != nil {
+		t.Fatalf("initial failed purchase: %v", err)
+	}
+	if first.Result.Status != provider.StatusFailed {
+		t.Fatalf("expected initial purchase to be failed, got %q", first.Result.Status)
+	}
+	if got := mock.PurchaseCount(req.ReferenceID); got != 1 {
+		t.Fatalf("expected exactly one provider submission, got %d", got)
+	}
+
+	restarted, err := NewServiceWithStoreContext(ctx, router, store)
+	if err != nil {
+		t.Fatalf("reconstruct service from PostgreSQL: %v", err)
+	}
+	reconciled, err := restarted.Reconcile(ctx, req.ReferenceID)
+	if err != nil {
+		t.Fatalf("reconcile recovered failed transaction: %v", err)
+	}
+	if !samePurchaseResult(reconciled.Result, first.Result) {
+		t.Fatalf("failed terminal result changed after restart reconciliation: %#v", reconciled.Result)
+	}
+	if got := mock.PurchaseCount(req.ReferenceID); got != 1 {
+		t.Fatalf("failed terminal reconciliation must not resubmit purchase, got %d submissions", got)
+	}
+
+	event := provider.WebhookEvent{
+		ReferenceID:  req.ReferenceID,
+		ProductCode:  req.ProductCode,
+		CustomerNo:   req.CustomerNo,
+		Status:       provider.StatusFailed,
+		ProviderCode: first.Result.ProviderCode,
+		Message:      first.Result.Message,
+		SerialNumber: first.Result.SerialNumber,
+		Price:        first.Result.Price,
+	}
+	webhookResult, err := restarted.HandleWebhook(ctx, event)
+	if err != nil {
+		t.Fatalf("identical terminal webhook must be idempotent: %v", err)
+	}
+	if !samePurchaseResult(webhookResult.Result, first.Result) {
+		t.Fatalf("terminal webhook changed durable result: %#v", webhookResult.Result)
+	}
+	if got := mock.PurchaseCount(req.ReferenceID); got != 1 {
+		t.Fatalf("terminal webhook must not resubmit purchase, got %d submissions", got)
+	}
+
+	durable, ok := store.Get(req.ReferenceID)
+	if !ok {
+		t.Fatal("failed terminal transaction disappeared after restart")
+	}
+	if !samePurchaseResult(durable.Execution.Result, first.Result) {
+		t.Fatalf("durable failed result changed: %#v", durable.Execution.Result)
+	}
+}
+
 func TestPostgresMigrationVerification(t *testing.T) {
 	sqlText := postgresMigrationSQL(t)
 	required := []string{
