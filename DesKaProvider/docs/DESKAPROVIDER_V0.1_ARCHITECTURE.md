@@ -754,3 +754,21 @@ This milestone does not yet select PostgreSQL audit storage in production. The a
 ### Limitation
 
 The failure injection is deterministic at the audit-store abstraction. It does not reproduce a real PostgreSQL connection failure, transaction rollback, or network partition during an INSERT. Those concerns belong to runtime integration coverage in the next milestone.
+
+
+## 31. Production PostgreSQL Audit-Store Runtime Selection
+
+Milestone #94 establishes the runtime boundary for the transaction audit persistence selected by configuration.
+
+Runtime configuration selects either the in-memory audit store or the PostgreSQL append-only audit store. When both transaction and audit stores use PostgreSQL, they may share the same database connection pool. When only the audit store uses PostgreSQL, runtime opens a dedicated PostgreSQL connection using the configured DSN.
+
+Operational boundaries:
+
+- `DESKAPROVIDER_AUDIT_STORE_DRIVER` accepts `memory` or `postgres`;
+- PostgreSQL selection requires `DESKAPROVIDER_POSTGRES_DSN`;
+- runtime validates the PostgreSQL connection with `PingContext` before constructing the service;
+- runtime closes PostgreSQL resources on shutdown and initialization failure paths;
+- migration execution remains outside runtime startup;
+- audit persistence remains observational and append-only, separate from financial transaction state.
+
+The audit store does not become a financial source of truth and cannot authorize retry, failover, resubmission, ledger mutation, or provider funding.
