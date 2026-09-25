@@ -3802,3 +3802,45 @@ Milestone #99: runtime ownership transfer and initialization/shutdown lifecycle 
 ### Next Milestone
 
 **#104 — Runtime Initialization Failure Composition Review**: verify startup failures across balance lifecycle construction, catalog lifecycle construction, provider-state initialization, and database ownership cleanup without changing financial or provider action semantics.
+
+### Milestone #104 — Runtime Initialization Failure Composition Review
+
+**Date:** 2026-09-26
+
+### Completed
+
+- reviewed startup failure composition across runtime configuration, provider-state initialization, store construction, routing/service construction, and lifecycle construction boundaries;
+- added deterministic coverage for provider-state initialization failure after runtime database ownership has been established;
+- fixed a real cleanup-boundary bug where typed-nil database handles stored in the databaseCloser interface could reach (*sql.DB).Close() and panic during initialization cleanup;
+- restored the existing transaction/audit store opening helpers after the cleanup fix and revalidated the complete runtime initialization path;
+- added a regression test proving typed-nil database handles are ignored safely by runtime cleanup;
+- preserved the existing ownership transfer rule: cleanup runs before ownership transfer and service shutdown owns resources only after successful handoff;
+- preserved primary initialization error semantics; cleanup remains an infrastructure lifecycle concern;
+- no provider retry, failover, resubmission, transaction-state, audit-authority, customer-ledger, treasury, or automatic provider-funding behavior was changed.
+
+### Verification
+
+- CI #789 / run 36197733274: **GREEN** for exact HEAD 52b59d4dc5f2eb07e821711762c38d976e27b02e;
+- CI #790 / run 36197737431: **GREEN** for the same exact HEAD;
+- go test ./...: PASS;
+- go vet ./...: PASS;
+- go test -race ./...: PASS;
+- PostgreSQL-backed workflow service completed successfully.
+
+### Safety Boundary
+
+- initialization and database cleanup remain infrastructure lifecycle concerns only;
+- transaction persistence remains the authoritative transaction state;
+- audit persistence remains operational evidence only;
+- cleanup failures cannot authorize provider retry, failover, resubmission, ledger mutation, treasury movement, or provider funding;
+- typed-nil cleanup protection prevents infrastructure cleanup from panicking and does not alter financial/provider action semantics.
+
+### Known Limitations
+
+- the deterministic failure-injection boundary does not reproduce every operating-system or driver-specific shutdown failure;
+- lifecycle observability remains internal and there is no separate structured diagnostic stream;
+- process-kill and network-partition behavior remain outside the deterministic runtime test boundary.
+
+### Next Milestone
+
+**#105 — Runtime Lifecycle Construction & Context Propagation Review**: inspect the remaining constructor-time lifecycle failure paths and context propagation guarantees, especially balance lifecycle construction, catalog lifecycle creation, and cancellation boundaries, without changing business or financial semantics.
