@@ -34,6 +34,19 @@ type ContextTransactionStore interface {
 // that can enforce transaction identity and state transitions atomically.
 // Database-backed implementations must map this operation to a single
 // transaction/conditional update across processes.
+// ContextReadTransactionStore is an optional read-error-aware extension.
+// It preserves ContextTransactionStore compatibility while allowing request-scoped
+// callers to distinguish cancellation, database failures, and not-found results.
+type ContextReadTransactionStore interface {
+	ContextTransactionStore
+	GetContextE(ctx context.Context, referenceID string) (TransactionState, bool, error)
+	AllContextE(ctx context.Context) ([]TransactionState, error)
+}
+
+// AtomicTransactionStore provides a compare-and-transition boundary for stores
+// that can enforce transaction identity and state transitions atomically.
+// Database-backed implementations must map this operation to a single
+// transaction/conditional update across processes.
 type AtomicTransactionStore interface {
 	TransactionStore
 	PutIfCurrent(referenceID string, previous, next TransactionState) error
@@ -75,6 +88,18 @@ func NewMemoryTransactionStore() *MemoryTransactionStore {
 }
 
 var _ ContextTransactionStore = (*MemoryTransactionStore)(nil)
+var _ ContextReadTransactionStore = (*MemoryTransactionStore)(nil)
+
+func (s *MemoryTransactionStore) GetContextE(ctx context.Context, referenceID string) (TransactionState, bool, error) {
+	if err := ctx.Err(); err != nil { return TransactionState{}, false, err }
+	state, ok := s.Get(referenceID)
+	return state, ok, nil
+}
+
+func (s *MemoryTransactionStore) AllContextE(ctx context.Context) ([]TransactionState, error) {
+	if err := ctx.Err(); err != nil { return nil, err }
+	return s.All(), nil
+}
 
 func (s *MemoryTransactionStore) GetContext(ctx context.Context, referenceID string) (TransactionState, bool) {
 	if err := ctx.Err(); err != nil {
