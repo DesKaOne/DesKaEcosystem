@@ -1,3 +1,0 @@
-# Dokumentasi DesKaEcosystem
-
-

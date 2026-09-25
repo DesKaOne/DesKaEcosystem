@@ -30,13 +30,14 @@ func TestLoadConfigDefaults(t *testing.T) {
 	t.Setenv("DESKAPROVIDER_BALANCE_FAILURE_THRESHOLD", "")
 	t.Setenv("DESKAPROVIDER_CATALOG_SYNC_INTERVAL", "")
 	t.Setenv("DESKAPROVIDER_CATALOG_MAX_AGE", "")
+	t.Setenv("DESKAPROVIDER_OPERATIONAL_SNAPSHOT_MAX_AGE", "")
 
 	cfg, err := LoadConfig()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if cfg.StorePath != defaultStorePath || cfg.TransactionStorePath != defaultTransactionStorePath || cfg.SyncInterval != defaultSyncInterval ||
-		cfg.FailureThreshold != defaultFailureThreshold || cfg.Currency != defaultCurrency || cfg.CatalogSyncInterval != defaultCatalogSyncInterval || cfg.CatalogMaxAge != defaultCatalogMaxAge {
+		cfg.FailureThreshold != defaultFailureThreshold || cfg.Currency != defaultCurrency || cfg.CatalogSyncInterval != defaultCatalogSyncInterval || cfg.CatalogMaxAge != defaultCatalogMaxAge || cfg.OperationalSnapshotMaxAge != defaultOperationalSnapshotMaxAge {
 		t.Fatalf("unexpected defaults: %#v", cfg)
 	}
 }
@@ -53,6 +54,9 @@ func TestLoadConfigRejectsInvalidValues(t *testing.T) {
 		t.Fatal("expected invalid catalog max age error")
 	}
 	t.Setenv("DESKAPROVIDER_CATALOG_MAX_AGE", "45m")
+	t.Setenv("DESKAPROVIDER_OPERATIONAL_SNAPSHOT_MAX_AGE", "not-a-duration")
+	if _, err := LoadConfig(); err == nil { t.Fatal("expected invalid operational snapshot max age error") }
+	t.Setenv("DESKAPROVIDER_OPERATIONAL_SNAPSHOT_MAX_AGE", "2m")
 	t.Setenv("DESKAPROVIDER_BALANCE_FAILURE_THRESHOLD", "0")
 	if _, err := LoadConfig(); err == nil {
 		t.Fatal("expected invalid failure threshold error")

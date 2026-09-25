@@ -29,16 +29,18 @@ const (
  defaultCatalogStorePath="data/product-catalog.json"
  defaultCatalogSyncInterval=15*time.Minute
  defaultCatalogMaxAge=30*time.Minute
+ defaultOperationalSnapshotMaxAge=2*time.Minute
 )
 
-type Config struct{StorePath,TransactionStorePath,ProviderStateStorePath string;SyncInterval time.Duration;FailureThreshold int;Currency,CatalogStorePath string;CatalogSyncInterval,CatalogMaxAge time.Duration}
+type Config struct{StorePath,TransactionStorePath,ProviderStateStorePath string;SyncInterval time.Duration;FailureThreshold int;Currency,CatalogStorePath string;CatalogSyncInterval,CatalogMaxAge,OperationalSnapshotMaxAge time.Duration}
 type Service struct{syncService *operational.SyncService;purchaseService *routing.Service;catalogSync *catalog.SyncService;providerState *operational.ProviderStateStore;interval,catalogInterval time.Duration}
 
 func LoadConfig()(Config,error){
- cfg:=Config{StorePath:os.Getenv("DESKAPROVIDER_OPERATIONAL_STORE_PATH"),ProviderStateStorePath:os.Getenv("DESKAPROVIDER_PROVIDER_STATE_STORE_PATH"),TransactionStorePath:os.Getenv("DESKAPROVIDER_TRANSACTION_STORE_PATH"),SyncInterval:defaultSyncInterval,FailureThreshold:defaultFailureThreshold,Currency:os.Getenv("DESKAPROVIDER_OPERATIONAL_CURRENCY"),CatalogStorePath:os.Getenv("DESKAPROVIDER_CATALOG_STORE_PATH"),CatalogSyncInterval:defaultCatalogSyncInterval,CatalogMaxAge:defaultCatalogMaxAge}
+ cfg:=Config{StorePath:os.Getenv("DESKAPROVIDER_OPERATIONAL_STORE_PATH"),ProviderStateStorePath:os.Getenv("DESKAPROVIDER_PROVIDER_STATE_STORE_PATH"),TransactionStorePath:os.Getenv("DESKAPROVIDER_TRANSACTION_STORE_PATH"),SyncInterval:defaultSyncInterval,FailureThreshold:defaultFailureThreshold,Currency:os.Getenv("DESKAPROVIDER_OPERATIONAL_CURRENCY"),CatalogStorePath:os.Getenv("DESKAPROVIDER_CATALOG_STORE_PATH"),CatalogSyncInterval:defaultCatalogSyncInterval,CatalogMaxAge:defaultCatalogMaxAge,OperationalSnapshotMaxAge:defaultOperationalSnapshotMaxAge}
  if cfg.StorePath==""{cfg.StorePath=defaultStorePath};if cfg.ProviderStateStorePath==""{cfg.ProviderStateStorePath=defaultProviderStateStorePath};if cfg.TransactionStorePath==""{cfg.TransactionStorePath=defaultTransactionStorePath};if cfg.Currency==""{cfg.Currency=defaultCurrency};if cfg.CatalogStorePath==""{cfg.CatalogStorePath=defaultCatalogStorePath}
  if raw:=os.Getenv("DESKAPROVIDER_CATALOG_SYNC_INTERVAL");raw!=""{v,e:=time.ParseDuration(raw);if e!=nil||v<=0{return Config{},fmt.Errorf("invalid DESKAPROVIDER_CATALOG_SYNC_INTERVAL: %q",raw)};cfg.CatalogSyncInterval=v}
  if raw:=os.Getenv("DESKAPROVIDER_CATALOG_MAX_AGE");raw!=""{v,e:=time.ParseDuration(raw);if e!=nil||v<=0{return Config{},fmt.Errorf("invalid DESKAPROVIDER_CATALOG_MAX_AGE: %q",raw)};cfg.CatalogMaxAge=v}
+ if raw:=os.Getenv("DESKAPROVIDER_OPERATIONAL_SNAPSHOT_MAX_AGE");raw!=""{v,e:=time.ParseDuration(raw);if e!=nil||v<=0{return Config{},fmt.Errorf("invalid DESKAPROVIDER_OPERATIONAL_SNAPSHOT_MAX_AGE: %q",raw)};cfg.OperationalSnapshotMaxAge=v}
  if raw:=os.Getenv("DESKAPROVIDER_BALANCE_SYNC_INTERVAL");raw!=""{v,e:=time.ParseDuration(raw);if e!=nil||v<=0{return Config{},fmt.Errorf("invalid DESKAPROVIDER_BALANCE_SYNC_INTERVAL: %q",raw)};cfg.SyncInterval=v}
  if raw:=os.Getenv("DESKAPROVIDER_BALANCE_FAILURE_THRESHOLD");raw!=""{v,e:=strconv.Atoi(raw);if e!=nil||v<1{return Config{},fmt.Errorf("invalid DESKAPROVIDER_BALANCE_FAILURE_THRESHOLD: %q",raw)};cfg.FailureThreshold=v}
  return cfg,nil
@@ -63,7 +65,7 @@ func NewFromEnvironment(httpClient *http.Client)(*Service,error){
  statePersistence,e:=operational.NewJSONFileProviderStateStore(cfg.ProviderStateStorePath);if e!=nil{return nil,e}
  stateStore,e:=operational.NewPersistentProviderStateStore(statePersistence);if e!=nil{return nil,e}
  for _, name:=range registry.Names(){state,ok:=stateStore.Get(name);if !ok{state,e=operational.NewProviderState(name);if e!=nil{return nil,e}};state.Capabilities=[]operational.Capability{operational.CapabilityPPOB,operational.CapabilityBalance,operational.CapabilityWebhook};if e=stateStore.Put(state);e!=nil{return nil,e}}
- router,e:=routing.NewWithCatalogAndState(registry,store,nil,catalogStore,stateStore);if e!=nil{return nil,e}
+ router,e:=routing.NewWithCatalogAndStateAndOperationalMaxAge(registry,store,nil,catalogStore,stateStore,cfg.OperationalSnapshotMaxAge);if e!=nil{return nil,e}
  purchaseService,e:=routing.NewServiceWithStore(router,transactionStore);if e!=nil{return nil,e}
  return &Service{syncService:syncService,purchaseService:purchaseService,catalogSync:catalogSync,providerState:stateStore,interval:cfg.SyncInterval,catalogInterval:cfg.CatalogSyncInterval},nil
 }

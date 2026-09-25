@@ -20,6 +20,7 @@ var (
 )
 
 const defaultCatalogMaxAge = 30 * time.Minute
+	defaultOperationalSnapshotMaxAge = 2 * time.Minute
 
 type Request struct {
 	ProductCode string
@@ -41,29 +42,33 @@ type candidate struct {
 }
 
 func New(registry *provider.Registry, store operational.Store, priorities map[string]int) (*Router, error) {
-	return newRouter(registry, store, priorities, nil, 0, nil)
+	return newRouter(registry, store, priorities, nil, 0, 0, nil)
 }
 
 func NewWithState(registry *provider.Registry, store operational.Store, priorities map[string]int, stateStore *operational.ProviderStateStore) (*Router, error) {
-	return newRouter(registry, store, priorities, nil, 0, stateStore)
+	return newRouter(registry, store, priorities, nil, 0, 0, stateStore)
 }
 
 func NewWithCatalogAndState(registry *provider.Registry, store operational.Store, priorities map[string]int, catalogStore catalog.Store, stateStore *operational.ProviderStateStore) (*Router, error) {
-	return newRouter(registry, store, priorities, catalogStore, defaultCatalogMaxAge, stateStore)
+	return newRouter(registry, store, priorities, catalogStore, defaultCatalogMaxAge, 0, stateStore)
+}
+func NewWithCatalogAndStateAndOperationalMaxAge(registry *provider.Registry, store operational.Store, priorities map[string]int, catalogStore catalog.Store, stateStore *operational.ProviderStateStore, maxAge time.Duration) (*Router, error) {
+	if maxAge <= 0 { return nil, errors.New("operational snapshot max age must be greater than zero") }
+	return newRouter(registry, store, priorities, catalogStore, defaultCatalogMaxAge, maxAge, stateStore)
 }
 
 func NewWithCatalog(registry *provider.Registry, store operational.Store, priorities map[string]int, catalogStore catalog.Store) (*Router, error) {
-	return newRouter(registry, store, priorities, catalogStore, defaultCatalogMaxAge, nil)
+	return newRouter(registry, store, priorities, catalogStore, defaultCatalogMaxAge, 0, nil)
 }
 
 func NewWithCatalogMaxAge(registry *provider.Registry, store operational.Store, priorities map[string]int, catalogStore catalog.Store, maxAge time.Duration) (*Router, error) {
 	if maxAge <= 0 {
 		return nil, errors.New("catalog max age must be greater than zero")
 	}
-	return newRouter(registry, store, priorities, catalogStore, maxAge, nil)
+	return newRouter(registry, store, priorities, catalogStore, maxAge, 0, nil)
 }
 
-func newRouter(registry *provider.Registry, store operational.Store, priorities map[string]int, catalogStore catalog.Store, catalogMaxAge time.Duration, stateStore *operational.ProviderStateStore) (*Router, error) {
+func newRouter(registry *provider.Registry, store operational.Store, priorities map[string]int, catalogStore catalog.Store, catalogMaxAge time.Duration, operationalMaxAge time.Duration, stateStore *operational.ProviderStateStore) (*Router, error) {
 	if registry == nil {
 		return nil, errors.New("provider registry is required")
 	}
@@ -74,7 +79,7 @@ func newRouter(registry *provider.Registry, store operational.Store, priorities 
 	for name, priority := range priorities {
 		copied[normalize(name)] = priority
 	}
-	return &Router{Registry: registry, Store: store, Priorities: copied, Catalog: catalogStore, CatalogMaxAge: catalogMaxAge, ProviderState: stateStore}, nil
+	return &Router{Registry: registry, Store: store, Priorities: copied, Catalog: catalogStore, CatalogMaxAge: catalogMaxAge, OperationalMaxAge: operationalMaxAge, ProviderState: stateStore}, nil
 }
 
 func (r *Router) Select(ctx context.Context, req Request) (string, error) {
@@ -95,6 +100,9 @@ func (r *Router) Select(ctx context.Context, req Request) (string, error) {
 		}
 		snapshot, ok := r.Store.Get(name)
 		if !ok || snapshot.Health != operational.HealthHealthy || snapshot.Balance < req.Amount {
+			continue
+		}
+		if r.OperationalMaxAge > 0 && (snapshot.LastCheckedAt.IsZero() || time.Since(snapshot.LastCheckedAt) > r.OperationalMaxAge) {
 			continue
 		}
 
