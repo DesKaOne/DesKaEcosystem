@@ -6,6 +6,7 @@ import (
  "errors"
  "fmt"
  "net/http"
+ "reflect"
  "os"
  "strconv"
  "sync"
@@ -242,47 +243,24 @@ func combineRuntimeShutdownError(primary,closeErr error) error{if primary==nil{r
 
 func withRuntimeInitializationCleanupError(primary error,transactionDB,auditDB databaseCloser) error{if primary==nil{return closeRuntimeDatabases(transactionDB,auditDB)};return combineRuntimeShutdownError(primary,closeRuntimeDatabases(transactionDB,auditDB))}
 
-func closeRuntimeDatabases(transactionDB,auditDB databaseCloser) error{var errs []error;if transactionDB!=nil{if err:=transactionDB.Close();err!=nil{errs=append(errs,fmt.Errorf("close transaction database: %w",err))}};if auditDB!=nil && auditDB!=transactionDB{if err:=auditDB.Close();err!=nil{errs=append(errs,fmt.Errorf("close audit database: %w",err))}};return errors.Join(errs...)}
-
-func openAuditStore(ctx context.Context, cfg Config, transactionDB *sql.DB) (routing.TransactionAuditStore, *sql.DB, error) {
-	if err := ctx.Err(); err != nil { return nil, nil, err }
-	if cfg.AuditStoreDriver != "postgres" { store := routing.NewMemoryTransactionAuditStore(); return store, nil, nil }
-	if transactionDB != nil {
-		store, err := routing.NewPostgresTransactionAuditStore(transactionDB)
-		if err != nil { return nil, nil, err }
-		return store, nil, nil
+func closeRuntimeDatabases(transactionDB,auditDB databaseCloser) error{
+	var errs []error
+	if databaseCloserIsNil(transactionDB)==false {
+		if err:=transactionDB.Close();err!=nil{errs=append(errs,fmt.Errorf("close transaction database: %w",err))}
 	}
-	db, err := sql.Open("pgx", cfg.PostgresDSN)
-	if err != nil { return nil, nil, fmt.Errorf("open PostgreSQL audit store: %w", err) }
-	if err := db.PingContext(ctx); err != nil { _ = db.Close(); return nil, nil, fmt.Errorf("ping PostgreSQL audit store: %w", err) }
-	store, err := routing.NewPostgresTransactionAuditStore(db)
-	if err != nil { _ = db.Close(); return nil, nil, err }
-	return store, db, nil
+	if databaseCloserIsNil(auditDB)==false && auditDB!=transactionDB {
+		if err:=auditDB.Close();err!=nil{errs=append(errs,fmt.Errorf("close audit database: %w",err))}
+	}
+	return errors.Join(errs...)
 }
 
-func openTransactionStore(ctx context.Context, cfg Config) (routing.TransactionStore, *sql.DB, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, nil, err
+func databaseCloserIsNil(value databaseCloser) bool {
+	if value == nil { return true }
+	v := reflect.ValueOf(value)
+	switch v.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return v.IsNil()
+	default:
+		return false
 	}
-	if cfg.TransactionStoreDriver == "postgres" {
-		db, err := sql.Open("pgx", cfg.PostgresDSN)
-		if err != nil {
-			return nil, nil, fmt.Errorf("open PostgreSQL transaction store: %w", err)
-		}
-		if err := db.PingContext(ctx); err != nil {
-			_ = db.Close()
-			return nil, nil, fmt.Errorf("ping PostgreSQL transaction store: %w", err)
-		}
-		store, err := routing.NewPostgresTransactionStore(db)
-		if err != nil {
-			_ = db.Close()
-			return nil, nil, err
-		}
-		return store, db, nil
-	}
-	store, err := routing.NewJSONFileTransactionStore(cfg.TransactionStorePath)
-	if err != nil {
-		return nil, nil, err
-	}
-	return store, nil, nil
 }
