@@ -87,6 +87,7 @@ func (s *PostgresTransactionAuditStore) AllContext(ctx context.Context, referenc
 		); err != nil {
 			return nil, fmt.Errorf("scan transaction audit: %w", err)
 		}
+		event.CreatedAt = event.CreatedAt.UTC()
 		result = append(result, event)
 	}
 	if err := rows.Err(); err != nil {
