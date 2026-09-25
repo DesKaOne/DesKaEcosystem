@@ -97,6 +97,9 @@ jobs:
           cache: true
           cache-dependency-path: DesKaProvider/backend/go.mod
 
+      - name: Tidy
+        run: go mod tidy
+
       - name: Race test
         env:
           DESKAPROVIDER_POSTGRES_DSN: postgres://deskaprovider:deskaprovider@localhost:5432/deskaprovider_test?sslmode=disable
