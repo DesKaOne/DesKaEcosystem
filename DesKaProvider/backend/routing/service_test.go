@@ -11,6 +11,105 @@ import (
 	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/operational"
 )
 
+
+
+type failPutTransactionStore struct {
+	base      TransactionStore
+	failAfter int
+	puts      int
+}
+
+func (s *failPutTransactionStore) Get(referenceID string) (TransactionState, bool) {
+	return s.base.Get(referenceID)
+}
+
+func (s *failPutTransactionStore) Put(state TransactionState) error {
+	s.puts++
+	if s.failAfter > 0 && s.puts >= s.failAfter {
+		return errors.New("injected transaction store failure")
+	}
+	return s.base.Put(state)
+}
+
+func (s *failPutTransactionStore) All() []TransactionState {
+	return s.base.All()
+}
+
+func TestServicePurchasePersistsPendingBeforeSubmission(t *testing.T) {
+	registry := provider.NewRegistry()
+	mock := Mock.New(Mock.Config{Products: []provider.Product{{Code: "pln20", Name: "PLN 20"}}, ProviderCode: "00", PurchaseStatus: provider.StatusSuccess, Price: 20000})
+	if err := registry.Register("mock", mock); err != nil {
+		t.Fatal(err)
+	}
+	store := operational.NewMemoryStore()
+	if err := store.Put(operational.Snapshot{ProviderName: "mock", Balance: 100000, Health: operational.HealthHealthy}); err != nil {
+		t.Fatal(err)
+	}
+	router, err := New(registry, store, map[string]int{"mock": 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	transactionStore := NewMemoryTransactionStore()
+	failingStore := &failPutTransactionStore{base: transactionStore, failAfter: 1}
+	service, err := NewServiceWithStore(router, failingStore)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := PurchaseRequest{ProductCode: "pln20", CustomerNo: "08123456789", ReferenceID: "ref-persist-before-submit", Amount: 20000}
+	_, err = service.Purchase(context.Background(), req)
+	if err == nil {
+		t.Fatal("expected persistence failure before provider submission")
+	}
+	if got := mock.PurchaseCount(req.ReferenceID); got != 0 {
+		t.Fatalf("expected provider submission to be blocked by pending-state persistence failure, got %d", got)
+	}
+	if _, ok := transactionStore.Get(req.ReferenceID); ok {
+		t.Fatal("expected failed pending persistence not to create durable state")
+	}
+}
+
+func TestServicePurchaseKeepsPendingStateWhenResultPersistenceFails(t *testing.T) {
+	registry := provider.NewRegistry()
+	mock := Mock.New(Mock.Config{Products: []provider.Product{{Code: "pln20", Name: "PLN 20"}}, ProviderCode: "00", PurchaseStatus: provider.StatusSuccess, Price: 20000})
+	if err := registry.Register("mock", mock); err != nil {
+		t.Fatal(err)
+	}
+	store := operational.NewMemoryStore()
+	if err := store.Put(operational.Snapshot{ProviderName: "mock", Balance: 100000, Health: operational.HealthHealthy}); err != nil {
+		t.Fatal(err)
+	}
+	router, err := New(registry, store, map[string]int{"mock": 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	transactionStore := NewMemoryTransactionStore()
+	failingStore := &failPutTransactionStore{base: transactionStore, failAfter: 2}
+	service, err := NewServiceWithStore(router, failingStore)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := PurchaseRequest{ProductCode: "pln20", CustomerNo: "08123456789", ReferenceID: "ref-result-persist-failure", Amount: 20000}
+	execution, err := service.Purchase(context.Background(), req)
+	if err == nil {
+		t.Fatal("expected result persistence failure")
+	}
+	if execution.Result.Status != provider.StatusPending {
+		t.Fatalf("expected caller to retain pending state, got %q", execution.Result.Status)
+	}
+	if got := mock.PurchaseCount(req.ReferenceID); got != 1 {
+		t.Fatalf("expected exactly one provider submission, got %d", got)
+	}
+	persisted, ok := transactionStore.Get(req.ReferenceID)
+	if !ok {
+		t.Fatal("expected durable pending state to remain")
+	}
+	if persisted.Execution.Result.Status != provider.StatusPending {
+		t.Fatalf("expected durable pending state after result persistence failure, got %q", persisted.Execution.Result.Status)
+	}
+}
+
 type mismatchedStatusProvider struct {
 	provider.PPOBProvider
 }
