@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -201,5 +202,88 @@ func TestPostgresMigrationVerification(t *testing.T) {
 		if !strings.Contains(sqlText, fragment) {
 			t.Fatalf("migration missing required fragment %q", fragment)
 		}
+	}
+}
+
+
+func TestPostgresTransactionStoreRestartRecoveryReconcilesWithoutResubmission(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	schema := "restart_recovery_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatalf("create isolated schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
+	})
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set isolated search path: %v", err)
+	}
+	applyPostgresMigration(t, db)
+
+	store, err := NewPostgresTransactionStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	registry := provider.NewRegistry()
+	mock := Mock.New(Mock.Config{
+		Products:       []provider.Product{{Code: "pln20", Name: "PLN 20"}},
+		ProviderCode:   "00",
+		Message:        "pending",
+		PurchaseStatus: provider.StatusPending,
+		Price:          20000,
+	})
+	if err := registry.Register("mock", mock); err != nil {
+		t.Fatal(err)
+	}
+
+	operationalStore := operational.NewMemoryStore()
+	if err := operationalStore.Put(operational.Snapshot{
+		ProviderName: "mock",
+		Balance:      100000,
+		Health:       operational.HealthHealthy,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	router, err := New(registry, operationalStore, map[string]int{"mock": 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pending := postgresPendingState()
+	pending.Request.ReferenceID = postgresIntegrationReference()
+	pending.Execution.Result.ReferenceID = pending.Request.ReferenceID
+	if err := store.PutContext(ctx, pending); err != nil {
+		t.Fatalf("persist durable pending state: %v", err)
+	}
+
+	restarted, err := NewServiceWithStoreContext(ctx, router, store)
+	if err != nil {
+		t.Fatalf("reconstruct service from PostgreSQL: %v", err)
+	}
+
+	reconciled, err := restarted.Reconcile(ctx, pending.Request.ReferenceID)
+	if err != nil {
+		t.Fatalf("reconcile recovered pending transaction: %v", err)
+	}
+	if reconciled.ProviderName != pending.Execution.ProviderName {
+		t.Fatalf("provider identity changed during recovery: %q", reconciled.ProviderName)
+	}
+	if reconciled.Result.Status != provider.StatusPending {
+		t.Fatalf("expected provider status to remain pending, got %q", reconciled.Result.Status)
+	}
+	if got := mock.PurchaseCount(pending.Request.ReferenceID); got != 0 {
+		t.Fatalf("restart reconciliation must not resubmit purchase, got %d submissions", got)
+	}
+
+	recovered, ok := store.Get(pending.Request.ReferenceID)
+	if !ok {
+		t.Fatal("recovered transaction disappeared")
+	}
+	if recovered.Execution.Result.Status != provider.StatusPending {
+		t.Fatalf("expected durable pending state after reconciliation, got %q", recovered.Execution.Result.Status)
 	}
 }
