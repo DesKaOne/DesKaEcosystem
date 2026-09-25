@@ -102,3 +102,12 @@ func (l *SyncWorkerLifecycle) Shutdown(ctx context.Context) error {
 		return ctx.Err()
 	}
 }
+// Running reports whether the owned synchronization worker is active.
+func (l *SyncWorkerLifecycle) Running() bool {
+	if l == nil {
+		return false
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.running
+}
