@@ -155,24 +155,38 @@ return service,nil
 func New(syncService *operational.SyncService,interval time.Duration)(*Service,error){if syncService==nil{return nil,errors.New("sync service is required")};if interval<=0{return nil,errors.New("sync interval must be greater than zero")};balanceLifecycle,err:=operational.NewSyncWorkerLifecycle(syncService,interval);if err!=nil{return nil,err};return &Service{syncService:syncService,balanceLifecycle:balanceLifecycle,interval:interval},nil}
 func (s *Service) Run(ctx context.Context) error {
 	if ctx == nil { return errors.New("context is required") }
-	if s.catalogSync == nil {
-		if s.balanceLifecycle != nil {
-			if err := s.balanceLifecycle.Start(ctx); err != nil { return combineRuntimeShutdownError(err, s.Close()) }
-			shutdownCtx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-			runErr := s.balanceLifecycle.Shutdown(shutdownCtx)
+
+	if s.balanceLifecycle == nil {
+		if s.catalogSync == nil {
+			runErr := s.syncService.Run(ctx, s.interval)
 			return combineRuntimeShutdownError(runErr, s.Close())
 		}
-		runErr := s.syncService.Run(ctx, s.interval)
-		return combineRuntimeShutdownError(runErr, s.Close())
+		_ = s.catalogSync.SyncAll(ctx)
+		ticker := time.NewTicker(s.catalogInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return combineRuntimeShutdownError(ctx.Err(), s.Close())
+			case <-ticker.C:
+				_ = s.catalogSync.SyncAll(ctx)
+			}
+		}
+	}
+
+	if err := s.balanceLifecycle.Start(ctx); err != nil {
+		return combineRuntimeShutdownError(err, s.Close())
+	}
+	workerShutdownCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if s.catalogSync == nil {
+		<-ctx.Done()
+		workerErr := s.balanceLifecycle.Shutdown(workerShutdownCtx)
+		return combineRuntimeShutdownError(combineRuntimeShutdownError(ctx.Err(), workerErr), s.Close())
 	}
 
 	_ = s.catalogSync.SyncAll(ctx)
-	workerShutdownCtx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	if s.balanceLifecycle != nil {
-		if err := s.balanceLifecycle.Start(ctx); err != nil { return combineRuntimeShutdownError(err, s.Close()) }
-	}
 	ticker := time.NewTicker(s.catalogInterval)
 	defer ticker.Stop()
 
