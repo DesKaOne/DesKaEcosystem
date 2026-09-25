@@ -222,6 +222,7 @@ func (s *Service) Reconcile(ctx context.Context, referenceID string) (PurchaseEx
 	}
 	request := call.request
 	providerName := call.result.ProviderName
+	previous := TransactionState{Request: request, Execution: call.result}
 	if providerName == "" {
 		s.mu.Unlock()
 		return PurchaseExecution{}, ErrWebhookReferenceConflict
@@ -270,7 +271,7 @@ func (s *Service) Reconcile(ctx context.Context, referenceID string) (PurchaseEx
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	current := call.result.Result
+current := call.result.Result
 	if current.Status == provider.StatusSuccess || current.Status == provider.StatusFailed {
 		if samePurchaseResult(current, incoming) {
 			return call.result, nil
@@ -281,7 +282,11 @@ func (s *Service) Reconcile(ctx context.Context, referenceID string) (PurchaseEx
 		return PurchaseExecution{}, ErrWebhookReferenceConflict
 	}
 	next := PurchaseExecution{ProviderName: call.result.ProviderName, Result: incoming}
-	if err := s.persistLocked(call.request, next); err != nil {
+	expected := TransactionState{Request: call.request, Execution: call.result}
+	if err := s.persistTransition(referenceID, expected, TransactionState{Request: call.request, Execution: next}); err != nil {
+		if errors.Is(err, ErrTransactionStateConflict) {
+			return PurchaseExecution{}, ErrWebhookReferenceConflict
+		}
 		return PurchaseExecution{}, err
 	}
 	call.result = next
