@@ -2704,3 +2704,20 @@ Next milestone:
 2. verify rollback and concurrent transition behavior against a real PostgreSQL instance;
 3. then evaluate explicit context propagation in the persistence contract;
 4. keep retry/failover deferred until database-backed idempotency is proven.
+
+
+#### Milestone #78 CI closure
+
+The initial adapter implementation exposed two contract mismatches and was corrected before milestone closure:
+
+- CI run #490 reported the adapter Get signature and transaction-status type mismatch; corrected in commit c43ad17c70fd6625ad3a43e3c098ab246c1ec94832.
+- CI run #492 reported missing request-identity validation in PutIfCurrent; corrected in commit 98eb5139e4a51e15b419853806aa18c2f90d9f88.
+
+Final verification for milestone #78:
+
+- CI run #496 / 36136543507: **GREEN**;
+- test: PASS;
+- vet: PASS;
+- race: PASS.
+
+The milestone is therefore closed at the provider-neutral adapter/unit-test boundary. Live PostgreSQL integration remains explicitly pending.
