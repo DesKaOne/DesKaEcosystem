@@ -3105,3 +3105,46 @@ Next milestone:
 1. verify terminal-state recovery across PostgreSQL reconnect/restart boundaries;
 2. add explicit recovery tests for persisted success/failed transactions and stale transition rejection after restart;
 3. keep retry/failover deferred.
+
+
+### 87. Milestone Update — PostgreSQL Terminal-State Recovery & Stale Transition Hardening
+
+**Date:** 2026-09-25
+
+Completed:
+
+- extended the real PostgreSQL integration coverage to verify persisted terminal success state across service reconstruction;
+- reconstructed a new routing service from the same PostgreSQL transaction store and reconciled the already-terminal transaction;
+- verified terminal reconciliation is idempotent and does not submit the provider purchase again;
+- verified the durable terminal result remains unchanged after restart/reconciliation;
+- verified an identical terminal compare-and-transition is accepted idempotently;
+- verified a stale/old pending transition is rejected with ErrTransactionStateConflict after the PostgreSQL row has already become terminal;
+- verified a terminal mutation to a different result is rejected with ErrReferenceConflict.
+
+Safety boundary:
+
+- terminal recovery never authorizes provider purchase resubmission;
+- stale PostgreSQL state conflicts are treated as state conflicts, not retry/failover signals;
+- no retry/failover/resubmission policy was introduced;
+- no customer-ledger mutation or automatic provider funding was introduced;
+- provider-neutral transaction identity and selected provider identity remain immutable.
+
+Verification:
+
+- the integration test uses an isolated PostgreSQL schema and the real PostgresTransactionStore;
+- the terminal recovery path verifies success persistence, reconstruction, reconciliation idempotency, and provider purchase count remains exactly one;
+- stale transition behavior is verified against the real PostgreSQL conditional-update boundary;
+- fresh CI test, vet, race, and PostgreSQL integration must all be GREEN before milestone closure.
+
+Known limitations:
+
+- this milestone covers terminal success recovery directly; equivalent failed persistence remains covered by the provider-neutral transition contract but does not yet have a separate end-to-end PostgreSQL restart scenario;
+- the test still does not simulate a physical process kill while an external provider request is in flight;
+- PostgreSQL migration execution remains a separate deployment concern;
+- provider-specific crash/retry semantics remain outside the verified contract.
+
+Next milestone:
+
+1. add explicit PostgreSQL restart/reconnect coverage for terminal failed recovery;
+2. verify terminal-state behavior through webhook/reconciliation convergence where applicable;
+3. keep retry/failover deferred until the full transaction lifecycle remains unambiguous.
