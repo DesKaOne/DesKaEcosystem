@@ -549,3 +549,36 @@ A terminal webhook is therefore part of state convergence only. It is not a trig
 Conflicting terminal observations remain subject to the existing reference-conflict boundary and do not authorize a provider purchase.
 
 No retry counters, failover state, automatic resubmission, customer-ledger postings, or provider funding are introduced.
+
+
+## 26. PostgreSQL Terminal Conflict Recovery After Restart
+
+**Date:** 2026-09-25
+
+The PostgreSQL transaction-store integration boundary now verifies that terminal conflicts remain non-resubmitting after service reconstruction.
+
+### Verified flow
+
+Service.Purchase -> PostgreSQL terminal SUCCESS -> Service reconstruction -> conflicting provider status or conflicting terminal webhook -> ErrWebhookReferenceConflict -> no provider Purchase -> durable terminal state unchanged.
+
+The test uses the real PostgresTransactionStore, an isolated PostgreSQL schema, and the deterministic mock provider. The provider's recorded transaction observation is deliberately changed after reconstruction to model a conflicting external observation without introducing provider-specific retry behavior.
+
+### Safety invariant
+
+A persisted terminal transaction is authoritative for local transaction identity and provider selection. A later conflicting reconciliation or webhook observation is a conflict signal requiring investigation/reconciliation, not authorization to submit the provider transaction again.
+
+The conflict boundary guarantees:
+
+- terminal SUCCESS/FAILED is not overwritten by a conflicting observation;
+- ErrWebhookReferenceConflict is returned for service-level convergence conflicts;
+- provider Purchase is never called by conflict handling;
+- provider identity and request identity remain immutable;
+- no ledger mutation or automatic funding is performed by this boundary.
+
+### Verification boundary
+
+Real PostgreSQL integration coverage verifies the durable terminal state before and after service reconstruction and conflicting observations. CI test, vet, race, and PostgreSQL integration must remain GREEN before this milestone is considered closed.
+
+### Limitation
+
+The integration test models a conflicting provider observation using the deterministic mock provider. It does not claim to reproduce the exact behavior of an external provider after a physical process crash or network partition. Provider-specific conflict semantics remain outside the provider-neutral contract.
