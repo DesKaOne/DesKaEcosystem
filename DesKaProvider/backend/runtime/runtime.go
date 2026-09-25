@@ -177,6 +177,16 @@ return service,nil
 }
 
 func New(syncService *operational.SyncService,interval time.Duration)(*Service,error){if syncService==nil{return nil,errors.New("sync service is required")};if interval<=0{return nil,errors.New("sync interval must be greater than zero")};balanceLifecycle,err:=operational.NewSyncWorkerLifecycle(syncService,interval);if err!=nil{return nil,err};return &Service{syncService:syncService,balanceLifecycle:balanceLifecycle,catalogLifecycle:newCatalogWorkerLifecycle(),interval:interval},nil}
+func runtimeShutdownContext(parent context.Context) (context.Context, context.CancelFunc) {
+	if parent == nil {
+		return context.WithCancel(context.Background())
+	}
+	if deadline, ok := parent.Deadline(); ok {
+		return context.WithDeadline(context.Background(), deadline)
+	}
+	return context.WithCancel(context.Background())
+}
+
 func (s *Service) Run(ctx context.Context) error {
 	if ctx == nil { return errors.New("context is required") }
 
@@ -209,7 +219,7 @@ func (s *Service) Run(ctx context.Context) error {
 		}
 		return combineRuntimeShutdownError(err, s.Close())
 	}
-	workerShutdownCtx, cancel := context.WithCancel(context.Background())
+	workerShutdownCtx, cancel := runtimeShutdownContext(ctx)
 	defer cancel()
 
 	if s.catalogSync == nil {
