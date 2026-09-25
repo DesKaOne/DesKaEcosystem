@@ -141,3 +141,53 @@ func TestServiceAuditFailureDoesNotResubmitOrRevertTerminalState(t *testing.T) {
 		t.Fatalf("audit failure must not authorize a second provider submission, got %d", got)
 	}
 }
+
+
+func TestServiceAuditRecordsReconciliationTransition(t *testing.T) {
+	mock := Mock.New(Mock.Config{
+		Products:       []provider.Product{{Code: "pln20", Name: "PLN 20"}},
+		ProviderCode:   "00",
+		Message:        "pending",
+		PurchaseStatus: provider.StatusPending,
+		Price:          20000,
+	})
+	audit := NewMemoryTransactionAuditStore()
+	service := newAuditTestService(t, mock, audit)
+
+	req := PurchaseRequest{
+		ProductCode: "pln20",
+		CustomerNo:  "08123456789",
+		ReferenceID: "ref-audit-reconcile",
+		Amount:      20000,
+	}
+	if _, err := service.Purchase(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	mock.SetTransactionStatus(req.ReferenceID, provider.PurchaseStatus{
+		ReferenceID:  req.ReferenceID,
+		CustomerNo:   req.CustomerNo,
+		ProductCode:  req.ProductCode,
+		Status:       provider.StatusSuccess,
+		ProviderCode: "00",
+		Message:      "success",
+		Price:        20000,
+	})
+	if execution, err := service.Reconcile(context.Background(), req.ReferenceID); err != nil {
+		t.Fatal(err)
+	} else if execution.Result.Status != provider.StatusSuccess {
+		t.Fatalf("expected reconciliation to reach success, got %q", execution.Result.Status)
+	}
+
+	events := audit.All(req.ReferenceID)
+	if len(events) != 3 {
+		t.Fatalf("expected purchase pending/result plus reconciliation audit events, got %d", len(events))
+	}
+	if events[2].Action != "RECONCILIATION" ||
+		events[2].Previous != string(provider.StatusPending) ||
+		events[2].Next != string(provider.StatusSuccess) {
+		t.Fatalf("unexpected reconciliation audit event: %#v", events[2])
+	}
+	if got := mock.PurchaseCount(req.ReferenceID); got != 1 {
+		t.Fatalf("reconciliation must not resubmit provider purchase, got %d", got)
+	}
+}
