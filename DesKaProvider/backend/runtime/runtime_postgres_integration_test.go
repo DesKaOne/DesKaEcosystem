@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -24,7 +25,7 @@ func TestOpenTransactionStorePostgresIntegration(t *testing.T) {
 	}
 	defer db.Close()
 	db.SetMaxOpenConns(1)
-	schema := "runtime_test_" + time.Now().Format("20060102150405.000000000")
+	schema := "runtime_test_" + strconv.FormatInt(time.Now().UnixNano(), 10)
 	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil { t.Fatal(err) }
 	defer db.ExecContext(ctx, "DROP SCHEMA "+schema+" CASCADE")
 	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil { t.Fatal(err) }
