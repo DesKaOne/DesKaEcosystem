@@ -184,8 +184,112 @@ func TestPostgresTransactionStoreIntegration(t *testing.T) {
 		t.Fatalf("expected recovered success, got %s", recovered.Execution.Result.Status)
 	}
 
-	if err := restarted.PutIfCurrent(pending.Request.ReferenceID, pending, success); err != nil && err != ErrTransactionStateConflict {
-		t.Fatalf("unexpected stale transition result after restart: %v", err)
+	if err := restarted.PutIfCurrent(pending.Request.ReferenceID, pending, success); err != ErrTransactionStateConflict {
+		t.Fatalf("expected stale pending transition to conflict after restart, got %v", err)
+	}
+}
+
+func TestPostgresTransactionStoreTerminalRecoveryIsIdempotentAfterRestart(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	schema := "terminal_recovery_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatalf("create isolated schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
+	})
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set isolated search path: %v", err)
+	}
+	applyPostgresMigration(t, db)
+
+	store, err := NewPostgresTransactionStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	registry := provider.NewRegistry()
+	mock := Mock.New(Mock.Config{
+		Products:       []provider.Product{{Code: "pln20", Name: "PLN 20"}},
+		ProviderCode:   "00",
+		Message:        "success",
+		PurchaseStatus: provider.StatusSuccess,
+		Price:          20000,
+	})
+	if err := registry.Register("mock", mock); err != nil {
+		t.Fatal(err)
+	}
+
+	operationalStore := operational.NewMemoryStore()
+	if err := operationalStore.Put(operational.Snapshot{
+		ProviderName: "mock",
+		Balance:      100000,
+		Health:       operational.HealthHealthy,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	router, err := New(registry, operationalStore, map[string]int{"mock": 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := PurchaseRequest{
+		ProductCode: "pln20",
+		CustomerNo:  "08123456789",
+		ReferenceID: postgresIntegrationReference(),
+		Amount:      20000,
+	}
+	firstService, err := NewServiceWithStoreContext(ctx, router, store)
+	if err != nil {
+		t.Fatalf("construct initial service: %v", err)
+	}
+	first, err := firstService.Purchase(ctx, req)
+	if err != nil {
+		t.Fatalf("initial successful purchase: %v", err)
+	}
+	if first.Result.Status != provider.StatusSuccess {
+		t.Fatalf("expected initial purchase to be success, got %q", first.Result.Status)
+	}
+	if got := mock.PurchaseCount(req.ReferenceID); got != 1 {
+		t.Fatalf("expected exactly one provider submission, got %d", got)
+	}
+
+	restarted, err := NewServiceWithStoreContext(ctx, router, store)
+	if err != nil {
+		t.Fatalf("reconstruct service from PostgreSQL: %v", err)
+	}
+	reconciled, err := restarted.Reconcile(ctx, req.ReferenceID)
+	if err != nil {
+		t.Fatalf("reconcile recovered terminal transaction: %v", err)
+	}
+	if !samePurchaseResult(reconciled.Result, first.Result) {
+		t.Fatalf("terminal result changed after restart reconciliation: %#v", reconciled.Result)
+	}
+	if got := mock.PurchaseCount(req.ReferenceID); got != 1 {
+		t.Fatalf("terminal reconciliation must not resubmit purchase, got %d submissions", got)
+	}
+
+	terminal, ok := store.Get(req.ReferenceID)
+	if !ok {
+		t.Fatal("terminal transaction disappeared after restart reconciliation")
+	}
+	if !samePurchaseResult(terminal.Execution.Result, first.Result) {
+		t.Fatalf("durable terminal result changed: %#v", terminal.Execution.Result)
+	}
+
+	if err := store.PutIfCurrent(req.ReferenceID, terminal, terminal); err != nil {
+		t.Fatalf("identical terminal transition must be idempotent, got %v", err)
+	}
+
+	failed := terminal
+	failed.Execution.Result.Status = provider.StatusFailed
+	failed.Execution.Result.ProviderCode = "02"
+	failed.Execution.Result.Message = "failed"
+	if err := store.PutIfCurrent(req.ReferenceID, terminal, failed); err != ErrReferenceConflict {
+		t.Fatalf("terminal state must reject mutation after restart, got %v", err)
 	}
 }
 
