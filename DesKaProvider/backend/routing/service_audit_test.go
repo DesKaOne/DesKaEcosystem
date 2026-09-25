@@ -183,3 +183,65 @@ func TestServiceAuditRecordsReconciliationTransition(t *testing.T) {
 		t.Fatalf("reconciliation must not resubmit provider purchase, got %d", got)
 	}
 }
+
+
+func TestServiceWebhookAuditFailureKeepsCommittedTerminalState(t *testing.T) {
+	mock := Mock.New(Mock.Config{
+		Products:       []provider.Product{{Code: "pln20", Name: "PLN 20"}},
+		ProviderCode:   "00",
+		Message:        "pending",
+		PurchaseStatus: provider.StatusPending,
+		Price:          20000,
+	})
+	service := newAuditTestService(t, mock, NewMemoryTransactionAuditStore())
+	req := PurchaseRequest{ProductCode: "pln20", CustomerNo: "08123456789", ReferenceID: "ref-audit-webhook-failure", Amount: 20000}
+	if _, err := service.Purchase(context.Background(), req); err != nil { t.Fatal(err) }
+
+	service.AuditStore = failTransactionAuditStore{err: errors.New("webhook audit unavailable")}
+	execution, err := service.HandleWebhook(context.Background(), provider.WebhookEvent{
+		ReferenceID: req.ReferenceID, ProductCode: req.ProductCode, CustomerNo: req.CustomerNo,
+		Status: provider.StatusSuccess, ProviderCode: "00", Message: "success", Price: 20000,
+	})
+	if !errors.Is(err, service.AuditStore.(failTransactionAuditStore).err) {
+		t.Fatalf("expected webhook audit error after durable terminal state, got %v", err)
+	}
+	if execution.Result.Status != provider.StatusSuccess { t.Fatalf("expected committed terminal success, got %q", execution.Result.Status) }
+	persisted, ok := service.Store.Get(req.ReferenceID)
+	if !ok || persisted.Execution.Result.Status != provider.StatusSuccess { t.Fatalf("expected durable terminal success, got %#v", persisted) }
+
+	// A repeated webhook must converge from the committed state and must not resubmit.
+	execution, err = service.HandleWebhook(context.Background(), provider.WebhookEvent{
+		ReferenceID: req.ReferenceID, ProductCode: req.ProductCode, CustomerNo: req.CustomerNo,
+		Status: provider.StatusSuccess, ProviderCode: "00", Message: "success", Price: 20000,
+	})
+	if err == nil || execution.Result.Status != provider.StatusSuccess { t.Fatalf("expected audit failure to remain observable on repeated webhook, got execution=%#v err=%v", execution, err) }
+	if got := mock.PurchaseCount(req.ReferenceID); got != 1 { t.Fatalf("webhook audit failure must not authorize provider resubmission, got %d", got) }
+}
+
+func TestServiceReconciliationAuditFailureKeepsCommittedTerminalState(t *testing.T) {
+	mock := Mock.New(Mock.Config{
+		Products:       []provider.Product{{Code: "pln20", Name: "PLN 20"}},
+		ProviderCode:   "00",
+		Message:        "pending",
+		PurchaseStatus: provider.StatusPending,
+		Price:          20000,
+	})
+	service := newAuditTestService(t, mock, NewMemoryTransactionAuditStore())
+	req := PurchaseRequest{ProductCode: "pln20", CustomerNo: "08123456789", ReferenceID: "ref-audit-reconcile-failure", Amount: 20000}
+	if _, err := service.Purchase(context.Background(), req); err != nil { t.Fatal(err) }
+	mock.SetTransactionStatus(req.ReferenceID, provider.TransactionStatus("success"), "success")
+
+	auditErr := errors.New("reconciliation audit unavailable")
+	service.AuditStore = failTransactionAuditStore{err: auditErr}
+	execution, err := service.Reconcile(context.Background(), req.ReferenceID)
+	if !errors.Is(err, auditErr) { t.Fatalf("expected reconciliation audit error after durable terminal state, got %v", err) }
+	if execution.Result.Status != provider.StatusSuccess { t.Fatalf("expected committed terminal success, got %q", execution.Result.Status) }
+	persisted, ok := service.Store.Get(req.ReferenceID)
+	if !ok || persisted.Execution.Result.Status != provider.StatusSuccess { t.Fatalf("expected durable terminal success, got %#v", persisted) }
+	if got := mock.PurchaseCount(req.ReferenceID); got != 1 { t.Fatalf("reconciliation audit failure must not authorize provider resubmission, got %d", got) }
+
+	// Reconciliation reads the provider status again; it must converge without Purchase.
+	execution, err = service.Reconcile(context.Background(), req.ReferenceID)
+	if err == nil || execution.Result.Status != provider.StatusSuccess { t.Fatalf("expected audit failure to remain observable on repeated reconciliation, got execution=%#v err=%v", execution, err) }
+	if got := mock.PurchaseCount(req.ReferenceID); got != 1 { t.Fatalf("reconciliation audit failure must not authorize a second provider submission, got %d", got) }
+}
