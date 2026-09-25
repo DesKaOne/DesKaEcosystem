@@ -3761,3 +3761,44 @@ Milestone #99: runtime ownership transfer and initialization/shutdown lifecycle 
 ### Next Milestone
 
 **#103 — Runtime Startup/Shutdown Composition Review**: review the combined balance and catalog lifecycle ordering, including failure and repeated-shutdown paths, without expanding financial or provider action semantics.
+
+
+### Milestone #103 — Runtime Startup/Shutdown Composition Review
+
+**Date:** 2026-09-26
+
+### Completed
+
+- consolidated the runtime shutdown path for the combined balance and catalog lifecycle composition;
+- explicit shutdown ordering now stops the catalog lifecycle first, then waits for the balance worker lifecycle, then closes runtime-owned database resources;
+- catalog lifecycle shutdown is idempotent and remains separate from database ownership shutdown;
+- when catalog lifecycle startup fails, the balance worker is shut down before database ownership is closed;
+- deterministic regression coverage verifies combined balance+catalog runtime shutdown returns `context.Canceled` and database ownership is closed exactly once;
+- repeated `Service.Close()` remains idempotent after the composed worker shutdown path;
+- no provider retry, failover, resubmission, transaction-state, audit-authority, customer-ledger, treasury, or automatic provider-funding behavior was changed.
+
+### Verification
+
+- CI #777 / run `36195985232`: **GREEN** for exact HEAD `be43aac84d393824d4c99cc52c59a44f1273fb7c`;
+- CI #778 / run `36195989681`: **GREEN** for the same exact HEAD;
+- `go test ./...`: PASS;
+- `go vet ./...`: PASS;
+- `go test -race ./...`: PASS;
+- PostgreSQL-backed workflow service completed successfully.
+
+### Safety Boundary
+
+- lifecycle composition is an infrastructure shutdown concern only;
+- transaction persistence remains the authoritative transaction state and audit persistence remains operational evidence;
+- worker startup/shutdown failures cannot authorize provider retry, failover, resubmission, ledger mutation, treasury movement, or provider funding;
+- existing single-close database ownership semantics remain unchanged.
+
+### Known Limitations
+
+- lifecycle composition is internal to the runtime and has no external metrics/diagnostic endpoint;
+- the catalog synchronization operation itself remains synchronous rather than a separately goroutine-owned worker;
+- process-kill and network-partition failure modes remain outside the deterministic test boundary.
+
+### Next Milestone
+
+**#104 — Runtime Initialization Failure Composition Review**: verify startup failures across balance lifecycle construction, catalog lifecycle construction, provider-state initialization, and database ownership cleanup without changing financial or provider action semantics.
