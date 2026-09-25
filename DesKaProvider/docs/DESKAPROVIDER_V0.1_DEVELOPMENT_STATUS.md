@@ -3491,3 +3491,34 @@ Completed:
 ### Next Milestone
 
 **#96 — PostgreSQL Audit/Transaction Lifecycle Shutdown Failure Hardening**: verify initialization and shutdown error paths when PostgreSQL transaction and audit stores are shared or separately opened, while preserving the rule that audit persistence cannot authorize financial or provider state transitions.
+
+## Milestone #96 — PostgreSQL Audit/Transaction Lifecycle Shutdown Failure Hardening
+
+**Date:** 2026-09-26
+
+Milestone #96 hardens runtime ownership of PostgreSQL transaction and audit database handles during service initialization failure and shutdown.
+
+### Completed
+
+- runtime initialization now installs a deferred database cleanup guard immediately after transaction/audit persistence resources are opened;
+- initialization failures after database acquisition therefore close resources before returning, including failures in provider-state persistence, provider-state reconstruction, routing construction, and service construction;
+- shared PostgreSQL transaction/audit usage is closed once through the transaction database owner;
+- audit-only PostgreSQL usage remains owned by and closed through its dedicated database handle;
+- dedicated integration coverage verifies both shared and dedicated PostgreSQL handles are actually closed;
+- normal shutdown continues to close runtime-owned PostgreSQL resources without changing transaction authorization semantics.
+
+### Verification
+
+CI #716 / run `36185635330` is GREEN: test, vet, race, and PostgreSQL integration service passed.
+
+### Safety boundary
+
+Database cleanup is an infrastructure lifecycle concern only. It does not introduce retry, failover, provider resubmission, ledger mutation, treasury movement, or automatic provider funding. Audit persistence remains observational and cannot authorize provider actions.
+
+### Limitation
+
+The integration test verifies database-handle closure rather than simulating an operating-system process kill or a network partition during shutdown. PostgreSQL migration deployment remains outside runtime startup.
+
+### Next milestone
+
+**Milestone #97:** runtime shutdown error propagation and ownership observability hardening, with explicit verification that resource-close failures cannot be confused with transaction/provider outcomes.
