@@ -617,3 +617,63 @@ Audit persistence is deliberately separated from TransactionState persistence. A
 ### Current boundary
 
 Milestone #90 verifies the contract and migration shape but does not yet wire Service lifecycle events or select a PostgreSQL audit adapter at runtime. Those are deferred until the event taxonomy and failure semantics are explicitly verified.
+
+## 28. Transaction Lifecycle Audit Event Wiring
+
+**Date:** 2026-09-26
+
+Milestone #91 wires the provider-neutral TransactionAuditStore into the routing service without making audit persistence part of transaction authorization.
+
+### Event boundary
+
+The service emits operational audit observations for:
+
+- PURCHASE_PENDING when the durable pending state is persisted before provider submission;
+- PURCHASE_RESULT after the provider result is durably persisted;
+- PURCHASE_PROVIDER_ERROR when provider execution fails while the durable transaction remains pending;
+- PURCHASE_RESULT_PERSIST_FAILURE when the provider result cannot be durably committed and the pending state remains authoritative;
+- WEBHOOK_PENDING for a pending webhook transition;
+- WEBHOOK_TERMINAL for a terminal webhook transition;
+- WEBHOOK_TERMINAL_CONFLICT for a conflicting terminal webhook observation;
+- RECONCILIATION for a durable reconciliation transition;
+- RECONCILIATION_TERMINAL_CONFLICT for a conflicting terminal reconciliation observation.
+
+The event taxonomy records reference identity, previous/next status, provider identity, message, and creation time. It remains provider-neutral.
+
+### Audit failure semantics
+
+Audit writes are observational and cannot authorize a provider operation.
+
+    persist transaction state
+            |
+            +--> audit append fails
+            |       |
+            |       +--> transaction state remains authoritative
+            |       +--> no rollback to provider state
+            |       +--> no retry/failover/resubmission
+            |
+            v
+    existing transaction safety rules continue
+
+For the purchase path, the pending audit failure does not block the first provider submission because the pending transaction state is already durable. If the terminal transaction has already been durably persisted and the terminal audit append fails, the service returns the durable terminal result together with the audit error; it does not revert the transaction to pending and does not authorize a second provider submission. A repeated purchase uses the existing transaction correlation and therefore does not submit the provider again.
+
+For webhook and reconciliation transitions, the durable state is committed before the audit append. An audit error is therefore reported without reverting the committed transaction state.
+
+### Construction boundary
+
+Existing service constructors now install an in-memory audit store by default for deterministic/local operation. An additive constructor accepts an explicit TransactionAuditStore, allowing future durable implementations without changing routing or provider contracts.
+
+### Financial safety
+
+Audit history is not a financial ledger and cannot mutate:
+
+- customer balances or ledger postings;
+- provider operational balance snapshots;
+- treasury state;
+- transaction authorization state.
+
+The audit store remains append-only and has no update/delete contract.
+
+### Current limitation
+
+Milestone #91 does not add a PostgreSQL audit adapter or production runtime selection. PostgreSQL audit persistence remains the next boundary after event semantics and failure behavior are stable.
