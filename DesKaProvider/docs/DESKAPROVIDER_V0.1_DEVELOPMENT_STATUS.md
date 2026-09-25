@@ -3450,3 +3450,44 @@ Completed:
 ### Next Milestone
 
 **#95 — Runtime Durable Audit Reconstruction & Shutdown Integration Hardening**: verify a production-style service restart with PostgreSQL transaction and audit stores, including durable audit history reconstruction and clean shutdown/error-path behavior.
+
+
+### Milestone #95 — Runtime Durable Audit Reconstruction & Shutdown Integration Hardening
+
+**Date:** 2026-09-26
+
+Completed:
+
+- added real PostgreSQL integration coverage that constructs the transaction and audit stores through the production service constructor;
+- executed a successful purchase and verified exactly one provider submission;
+- verified durable audit history contains the expected `PURCHASE_PENDING` and `PURCHASE_RESULT` events before restart;
+- closed the original PostgreSQL connection and reopened a fresh connection using the configured runtime DSN;
+- reconstructed both PostgreSQL stores and a new routing service instance after restart;
+- verified terminal reconciliation returns the same durable purchase result without provider resubmission;
+- verified audit history remains unchanged after restart and idempotent reconciliation;
+- verified an identical terminal webhook after restart is idempotent and does not resubmit the provider.
+
+### Verification
+
+- CI #708 / run `36183435145`: **GREEN**;
+- test: PASS;
+- vet: PASS;
+- race: PASS;
+- PostgreSQL integration service active and the restart/reconstruction test passed.
+
+### Safety Boundary
+
+- PostgreSQL transaction state remains the authoritative transaction persistence boundary;
+- audit history is durable operational evidence, not a financial ledger;
+- restart reconciliation never resubmits an already terminal provider transaction;
+- no retry, failover, provider resubmission, customer-ledger mutation, treasury mutation, or automatic provider funding was introduced.
+
+### Known Limitations
+
+- the integration models restart by closing/reopening the database connection and reconstructing service objects; it does not kill a production process during an in-flight network request;
+- migration deployment remains an operational prerequisite and is not executed automatically by runtime startup;
+- provider-specific crash/retry semantics remain outside the provider-neutral contract.
+
+### Next Milestone
+
+**#96 — PostgreSQL Audit/Transaction Lifecycle Shutdown Failure Hardening**: verify initialization and shutdown error paths when PostgreSQL transaction and audit stores are shared or separately opened, while preserving the rule that audit persistence cannot authorize financial or provider state transitions.
