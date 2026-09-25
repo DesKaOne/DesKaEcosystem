@@ -2589,3 +2589,43 @@ Next milestone:
 1. harden concurrent reconciliation and durable transition behavior across process boundaries;
 2. define the minimum database-backed transaction-store contract before production deployment;
 3. only after the persistence boundary is stable evaluate controlled retry/failover policies with explicit idempotency guarantees.
+
+
+### 76. Milestone Update — Concurrent Reconciliation & Atomic Transaction-Store Contract
+
+**Date:** 2026-09-25
+
+CI gate:
+
+- CI #470 for commit `0bbb5eb5c13bae8ceb5af138ffcc94a353ebd809` is **GREEN**;
+- `test` and `race` completed successfully;
+- `vet` completed successfully as part of the test job.
+
+Completed:
+
+- introduced an optional `AtomicTransactionStore` boundary with `PutIfCurrent(referenceID, previous, next)`;
+- memory and JSON transaction stores enforce compare-and-transition semantics under their existing single-process locks;
+- reconciliation now uses the atomic transition boundary when the configured store supports it;
+- concurrent reconciliation against the same provider result is idempotent: a stale transition detects the newer terminal state and returns the same terminal result instead of overwriting it;
+- added deterministic concurrent reconciliation coverage with two service instances sharing the same transaction store;
+- documented the minimum database-backed transaction-store contract in the architecture document.
+
+Safety boundary:
+
+- atomic transition protects transaction identity/state consistency but does not authorize provider resubmission;
+- no retry/failover was introduced;
+- reconciliation remains status-only and never calls provider purchase;
+- provider transaction state remains separate from customer ledger state;
+- stale concurrent transitions are rejected rather than silently overwriting newer state.
+
+Known limitations:
+
+- the current JSON transaction store still provides only single-process locking and does not provide cross-process file locking;
+- the database-backed implementation and PostgreSQL schema/locking strategy are not implemented yet;
+- the atomic store contract is therefore an architectural boundary, not yet a production multi-process persistence guarantee.
+
+Next milestone:
+
+1. define the concrete PostgreSQL transaction-store schema and conditional update/locking semantics;
+2. add persistence-level failure/recovery tests around atomic transitions;
+3. keep retry/failover deferred until database-backed idempotency and transaction correlation are production-ready.
