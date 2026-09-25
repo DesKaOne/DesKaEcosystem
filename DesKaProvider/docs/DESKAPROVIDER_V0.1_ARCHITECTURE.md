@@ -953,3 +953,46 @@ Milestone #99 adds deterministic success-path ownership tests plus real PostgreS
 5. repeated shutdown not causing an additional close.
 
 No retry, failover, provider resubmission, ledger mutation, treasury movement, or provider funding policy is introduced by this lifecycle contract.
+## 37. Runtime Lifecycle Integration Consolidation
+
+Milestone #100 promotes the runtime Service itself as the explicit shutdown boundary for owned database resources.
+
+The contract is:
+
+```text
+successful initialization
+        |
+        +--> ownership transferred to Service
+                         |
+                         v
+                    Service.Close()
+                         |
+                         +--> close shared transaction/audit owner once
+                         |
+                         +--> close dedicated audit owner once
+                         |
+                         v
+                    recorded close result
+
+Service.Run()
+    |
+    +--> primary shutdown lifecycle error
+    |
+    +--> Service.Close()
+    |
+    v
+combined lifecycle result
+```
+
+Service.Close() is idempotent. Repeated calls do not re-close already closed resources and return the recorded result from the first close attempt. Service.Run() delegates shutdown cleanup to this boundary so lifecycle ownership is represented by one runtime operation instead of parallel close paths.
+
+This remains an infrastructure lifecycle contract only. It does not alter transaction authorization, provider routing, retry/failover/resubmission rules, ledger semantics, treasury operations, or provider funding.
+
+### Verification
+
+Milestone #100 adds deterministic Service.Close() tests and real PostgreSQL integration coverage for:
+
+1. idempotent Service shutdown;
+2. preservation of close errors across repeated calls;
+3. shared transaction/audit PostgreSQL ownership closing once;
+4. dedicated PostgreSQL audit ownership closing once.

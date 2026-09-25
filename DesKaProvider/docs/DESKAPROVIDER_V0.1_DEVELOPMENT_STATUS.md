@@ -3634,3 +3634,45 @@ Milestone #99: runtime ownership transfer and initialization/shutdown lifecycle 
 ### Next Milestone
 
 **#100 — Runtime Lifecycle Integration Consolidation**: continue only with a concrete lifecycle gap identified from the current runtime architecture; preserve the established ownership, terminal-state, audit-observational, and non-resubmission boundaries.
+### Milestone #100 — Runtime Lifecycle Integration Consolidation
+
+**Date:** 2026-09-26
+
+### Completed
+
+- promoted Service.Close() as the explicit runtime shutdown boundary for owned database resources;
+- consolidated Service.Run() shutdown handling so it delegates resource release to Service.Close() rather than duplicating database-close behavior;
+- preserved idempotent ownership semantics: repeated Service.Close() calls do not double-close shared or dedicated resources;
+- preserved close-error observability across repeated shutdown calls;
+- added deterministic tests for Service.Close() idempotence and close-error preservation;
+- added real PostgreSQL integration coverage proving Service.Close() closes shared transaction/audit ownership exactly once and closes dedicated audit ownership correctly;
+- kept transaction authorization, audit observational semantics, provider routing, retry/failover/resubmission, ledger, treasury, and provider funding boundaries unchanged.
+
+### Verification
+
+- CI #750 / run 36190896225: **GREEN** for exact HEAD 36eb85dba859d1b5df5a5d0d2fbd34f007a2ef45;
+- go test ./...: PASS;
+- go vet ./...: PASS;
+- go test -race ./...: PASS;
+- PostgreSQL integration service active and Service.Close() shared/dedicated lifecycle coverage passed;
+- CI #749 / run 36190888005 for the same HEAD also completed successfully.
+
+### Safety Boundary
+
+- Service.Close() is an infrastructure lifecycle operation only;
+- database close errors are not provider transaction results and cannot authorize retry, failover, resubmission, ledger mutation, treasury movement, or provider funding;
+- transaction persistence remains the authoritative transaction state;
+- audit persistence remains operational evidence only;
+- shared PostgreSQL transaction/audit ownership remains single-close;
+- dedicated PostgreSQL audit ownership remains independently owned and single-close.
+
+### Known Limitations
+
+- the runtime does not expose a separate lifecycle metrics stream or structured external shutdown diagnostic API;
+- integration coverage verifies database-handle behavior, not process-kill or network-partition behavior during shutdown;
+- PostgreSQL migration deployment remains an external operational prerequisite;
+- broader orchestration across future runtime workers remains outside this milestone.
+
+### Next Milestone
+
+**#101 — Runtime Shutdown/Startup Integration Boundary Review**: inspect remaining runtime lifecycle edges around future workers and externally initiated shutdown, and only add behavior where a concrete lifecycle gap is demonstrated.
