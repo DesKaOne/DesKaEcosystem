@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"time"
 
 	provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
 )
@@ -50,6 +51,27 @@ type ContextReadTransactionStore interface {
 type AtomicTransactionStore interface {
 	TransactionStore
 	PutIfCurrent(referenceID string, previous, next TransactionState) error
+}
+
+
+// TransactionAuditEvent is an append-only operational record for transaction
+// lifecycle and reconciliation observations. It is deliberately separate from
+// TransactionState so audit failures cannot mutate financial state.
+type TransactionAuditEvent struct {
+	ReferenceID string
+	Action      string
+	Previous    provider.Status
+	Next        provider.Status
+	ProviderName string
+	Message     string
+	CreatedAt   time.Time
+}
+
+// TransactionAuditStore persists transaction audit events without allowing
+// callers to update or delete previously appended records.
+type TransactionAuditStore interface {
+	Append(event TransactionAuditEvent) error
+	All(referenceID string) []TransactionAuditEvent
 }
 
 var ErrTransactionStateConflict = errors.New("transaction state changed concurrently")
