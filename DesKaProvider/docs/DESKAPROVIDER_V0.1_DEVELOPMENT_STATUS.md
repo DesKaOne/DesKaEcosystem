@@ -3676,3 +3676,46 @@ Milestone #99: runtime ownership transfer and initialization/shutdown lifecycle 
 ### Next Milestone
 
 **#101 — Runtime Shutdown/Startup Integration Boundary Review**: inspect remaining runtime lifecycle edges around future workers and externally initiated shutdown, and only add behavior where a concrete lifecycle gap is demonstrated.
+
+
+### Milestone #101 — Runtime Balance Worker Lifecycle Integration
+
+**Date:** 2026-09-26
+
+### Completed
+
+- `Service` now owns an explicit `operational.SyncWorkerLifecycle` for balance synchronization;
+- runtime startup constructs the lifecycle and `Run()` starts it once through the lifecycle boundary;
+- the balance worker now follows the original service context instead of being started and stopped immediately;
+- normal service cancellation waits for the owned balance worker to stop before completing runtime shutdown;
+- `Service.Close()` remains the database ownership shutdown boundary after worker shutdown;
+- preserved the existing fallback behavior for manually constructed services that do not provide the lifecycle object;
+- deterministic runtime coverage proves the balance worker performs its immediate synchronization and that runtime cancellation returns `context.Canceled` after worker shutdown;
+- fixed the regression found by CI where the first lifecycle implementation returned `nil` instead of propagating service context cancellation;
+- no provider retry, failover, resubmission, transaction-state, audit-authority, customer-ledger, treasury, or automatic provider-funding behavior was changed.
+
+### Verification
+
+- CI #763 / run `36194276130`: **GREEN** for exact HEAD `3450c8692302aedb124b27fc74daef2ac93e350d`;
+- CI #764 / run `36194278985`: **GREEN** for the same exact HEAD;
+- `go test ./...`: PASS;
+- `go vet ./...`: PASS;
+- `go test -race ./...`: PASS;
+- PostgreSQL-backed integration suite remained green in the workflow.
+
+### Safety Boundary
+
+- transaction persistence remains the authoritative transaction state;
+- audit persistence remains operational evidence only;
+- worker lifecycle and database shutdown are infrastructure concerns and cannot authorize retry, failover, provider resubmission, ledger mutation, treasury movement, or provider funding;
+- database ownership transfer and single-close semantics remain unchanged.
+
+### Known Limitations
+
+- the runtime still manages catalog synchronization directly through its ticker rather than a dedicated lifecycle object;
+- lifecycle observability is internal; there is no external lifecycle metrics/diagnostic endpoint;
+- process-kill and network-partition behavior remain outside this deterministic lifecycle test boundary.
+
+### Next Milestone
+
+**#102 — Runtime Catalog Worker Lifecycle Boundary Review**: inspect the remaining catalog synchronization lifecycle path and only introduce a dedicated lifecycle abstraction where it improves concrete startup/shutdown ownership without changing business semantics.
