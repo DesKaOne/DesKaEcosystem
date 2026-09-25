@@ -582,3 +582,38 @@ Real PostgreSQL integration coverage verifies the durable terminal state before 
 ### Limitation
 
 The integration test models a conflicting provider observation using the deterministic mock provider. It does not claim to reproduce the exact behavior of an external provider after a physical process crash or network partition. Provider-specific conflict semantics remain outside the provider-neutral contract.
+
+
+## 27. Transaction Audit Persistence Boundary
+
+**Date:** 2026-09-26
+
+DesKaProvider now defines an additive append-only transaction audit boundary separate from TransactionState and the financial ledger.
+
+### Contract
+
+```text
+Transaction lifecycle / reconciliation observation
+                  |
+                  v
+       TransactionAuditStore
+                  |
+          append-only record
+                  |
+                  v
+      operational audit history
+```
+
+The provider-neutral record contains reference identity, action, previous/next transaction status, provider identity, message, and creation timestamp. It is operational history only; it is not a balance projection, ledger posting, or authorization record.
+
+### Persistence invariant
+
+Audit rows are append-only. The PostgreSQL migration creates `provider_transaction_audit` with a generated audit identifier and a reference/time index. The application contract intentionally exposes append and filtered read only; no update or delete operation is provided.
+
+### Financial safety invariant
+
+Audit persistence is deliberately separated from TransactionState persistence. Adding an audit record cannot transition a transaction, mutate a customer ledger, move provider liquidity, or authorize a provider Purchase call. Future event wiring must preserve this invariant even when an audit write fails.
+
+### Current boundary
+
+Milestone #90 verifies the contract and migration shape but does not yet wire Service lifecycle events or select a PostgreSQL audit adapter at runtime. Those are deferred until the event taxonomy and failure semantics are explicitly verified.
