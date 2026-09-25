@@ -161,7 +161,10 @@ func TestNewFromEnvironmentPreservesEnabledProviderLifecycleAcrossRestart(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	admin := operational.NewProviderAdminService(first.providerState)
+	admin, err := operational.NewProviderAdminService(first.providerState)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err := admin.Enable("digiflazz"); err != nil {
 		t.Fatal(err)
 	}
