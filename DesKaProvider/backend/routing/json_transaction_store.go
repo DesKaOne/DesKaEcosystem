@@ -80,6 +80,11 @@ func (s *JSONFileTransactionStore) Put(state TransactionState) error {
 
     s.mu.Lock()
     defer s.mu.Unlock()
+    if previous, ok := s.transactions[state.Request.ReferenceID]; ok {
+        if err := validateTransactionTransition(previous, state); err != nil {
+            return err
+        }
+    }
     s.transactions[state.Request.ReferenceID] = state
     return s.persistLocked()
 }
