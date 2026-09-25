@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"os"
+	"reflect"
 	"path/filepath"
 	"testing"
 	"time"
@@ -68,6 +69,21 @@ func TestLoadConfigRejectsInvalidValues(t *testing.T) {
 	if _, err := LoadConfig(); err == nil {
 		t.Fatal("expected invalid failure threshold error")
 	}
+}
+
+func (s *Service) balanceLifecycleRunningForTest() bool {
+	if s == nil || s.balanceLifecycle == nil {
+		return false
+	}
+	value := reflect.ValueOf(s.balanceLifecycle)
+	if value.Kind() != reflect.Pointer || value.IsNil() {
+		return false
+	}
+	field := value.Elem().FieldByName("running")
+	if !field.IsValid() || field.Kind() != reflect.Bool {
+		return false
+	}
+	return field.Bool()
 }
 
 type initializationCloseErrorDB struct {
