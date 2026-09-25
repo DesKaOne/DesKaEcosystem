@@ -400,6 +400,54 @@ func TestRuntimeShutdownContextDoesNotInheritCancellation(t *testing.T) {
 	}
 }
 
+func TestServiceRunCanRestartAfterCompletedShutdown(t *testing.T) {
+	mockProvider := &balanceMock{Provider: mock.New(mock.Config{Products: []provider.Product{{Code: "xld10", Name: "Test"}}}), balance: 2150000}
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", mockProvider); err != nil {
+		t.Fatal(err)
+	}
+	store := operational.NewMemoryStore()
+	syncService, err := operational.NewSyncService(registry, store, "IDR", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := New(syncService, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	runOnce := func() {
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() { done <- service.Run(ctx) }()
+
+		deadline := time.After(time.Second)
+		for !service.balanceLifecycle.Running() {
+			select {
+			case <-deadline:
+				t.Fatal("balance lifecycle did not start")
+			default:
+				time.Sleep(time.Millisecond)
+			}
+		}
+		cancel()
+		select {
+		case err := <-done:
+			if err != context.Canceled {
+				t.Fatalf("unexpected Run shutdown error: %v", err)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("Run did not shut down")
+		}
+		if service.balanceLifecycle.Running() {
+			t.Fatal("expected balance lifecycle to be stopped after Run shutdown")
+		}
+	}
+
+	runOnce()
+	runOnce()
+}
+
 func TestServiceRunStopsOnContextCancellation(t *testing.T) {
 	mockProvider := &balanceMock{
 		Provider: mock.New(mock.Config{
