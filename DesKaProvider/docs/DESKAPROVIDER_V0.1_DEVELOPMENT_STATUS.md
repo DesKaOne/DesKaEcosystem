@@ -3844,3 +3844,40 @@ Milestone #99: runtime ownership transfer and initialization/shutdown lifecycle 
 ### Next Milestone
 
 **#105 — Runtime Lifecycle Construction & Context Propagation Review**: inspect the remaining constructor-time lifecycle failure paths and context propagation guarantees, especially balance lifecycle construction, catalog lifecycle creation, and cancellation boundaries, without changing business or financial semantics.
+
+
+### Milestone #105 — Runtime Lifecycle Construction & Context Propagation Review
+
+**Date:** 2026-09-26
+
+### Completed
+
+- reviewed constructor-time balance lifecycle creation and confirmed the lifecycle constructor already rejects nil synchronization services and non-positive intervals before runtime handoff;
+- reviewed catalog lifecycle creation and confirmed it is an internal context owner with explicit start/shutdown state, while catalog synchronization itself remains synchronous;
+- added a shared runtime initialization context checkpoint immediately before database ownership transfer to the service;
+- preserved constructor behavior for already-canceled contexts while closing the previously unguarded cancellation window between resource construction and ownership handoff;
+- added deterministic unit coverage for the runtime initialization context checkpoint;
+- preserved ownership cleanup ordering: resources remain initialization-owned until the successful handoff point, while cancellation before handoff remains on the initialization cleanup path;
+- no provider retry, failover, resubmission, transaction-state, audit-authority, customer-ledger, treasury, or automatic provider-funding behavior was changed.
+
+### Verification
+
+- implementation HEAD: `63e6e7199d72ffb7dff50f8b336b062263953894`;
+- CI for this exact HEAD is pending and must be GREEN before milestone #105 is considered closed;
+- the change is limited to runtime constructor context propagation and deterministic test coverage.
+
+### Safety Boundary
+
+- the new checkpoint only decides whether initialization may transfer resource ownership into the service;
+- a canceled initialization does not authorize provider activity or mutate transaction/financial state;
+- database resources acquired before cancellation remain subject to the existing initialization cleanup guard;
+- transaction persistence remains authoritative and audit persistence remains operational evidence only.
+
+### Known Limitations
+
+- deterministic tests cannot force cancellation at every individual instruction boundary between external I/O operations;
+- process termination, driver-specific failure timing, and network partitions remain outside the deterministic runtime test boundary.
+
+### Next Milestone
+
+**#106 — Runtime Start Failure & Partial Lifecycle Rollback Review**: exercise failure after one runtime lifecycle has started but before the complete runtime loop is established, ensuring already-started lifecycle resources are rolled back before database shutdown without changing provider or financial semantics.
