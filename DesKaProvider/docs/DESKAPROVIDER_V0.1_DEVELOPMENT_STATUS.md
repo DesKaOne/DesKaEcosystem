@@ -4680,6 +4680,32 @@ Completed:
 - terminal read idempotency is a persistence/read-integrity property only;
 - repeated reads after restart cannot authorize retry, failover, resubmission, ledger mutation, treasury movement, or provider funding.
 
+### 45. Milestone Update — PostgreSQL Restart Read + Concurrent Observation Review
+
+**Date:** 2026-09-26
+
+Completed:
+
+- added deterministic PostgreSQL integration coverage that reconstructs durable terminal transaction state after reconnect and reads it concurrently from independently reconstructed store instances;
+- verified concurrent restart reads return the exact same request identity, provider identity, terminal result payload, and version;
+- verified stale post-restart observations cannot overwrite the committed terminal transaction;
+- verified the read path remains observational and does not create a new transition or provider side effect;
+- preserved transaction persistence as the authoritative transaction state while audit/operational evidence remains non-authoritative.
+
+### Verification
+
+- implementation commit: `8ede3ed584187fe5bd1c80496dc012a5f58233a4`;
+- CI #1032 / run `36215716316`: **GREEN** for exact HEAD `8ede3ed584187fe5bd1c80496dc012a5f58233a4`;
+- CI jobs `test`: success;
+- CI jobs `vet`: success;
+- CI jobs `race`: success.
+
+### Safety Boundary
+
+- restart/concurrent read consistency is a persistence-integrity property only;
+- reconstructed reads cannot authorize provider retry, failover, resubmission, ledger mutation, treasury movement, or provider funding;
+- stale observations remain non-authoritative and cannot replace a committed terminal result.
+
 ### Next Milestone
 
-**#123 — PostgreSQL Restart Read + Concurrent Observation Review:** combine restart reconstruction with concurrent terminal reads to ensure reconstructed services continue observing one immutable terminal result without introducing a transition or provider side effect.
+**#124 — PostgreSQL Context Cancellation During Durable Read/Transition:** verify canceled PostgreSQL operations terminate without partial transaction mutation and without changing the authority boundary.
