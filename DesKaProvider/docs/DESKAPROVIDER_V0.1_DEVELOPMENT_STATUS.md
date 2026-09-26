@@ -6762,3 +6762,41 @@ Completed:
 ### Next Milestone
 
 **#153 — PostgreSQL Audit-First Commit Ordering:** explicitly exercise the inverse ordering where audit evidence commits before transaction state and verify the early audit visibility cannot authorize or imply the pending transaction transition.
+
+
+### 153. Milestone Update — PostgreSQL Audit-First Commit Ordering
+
+**Date:** 2026-09-26
+
+Completed:
+
+- added real-PostgreSQL integration coverage for the inverse persistence ordering where an audit event commits before transaction state;
+- verified the committed audit event becomes visible immediately after its own commit;
+- verified that audit-first visibility does not create or imply transaction authority state;
+- explicitly inserted the pending transaction state only through the transaction store and verified it remains pending after that independent transaction commit;
+- verified the already-visible audit evidence remains unchanged after transaction-state commit;
+- confirmed audit commit ordering is domain-specific and cannot authorize provider execution, retry, reconciliation, or financial state transitions;
+- no production audit-store or transaction-store implementation change was required;
+- no provider submission authority, retry/failover behavior, ledger mutation, treasury movement, or provider funding behavior was broadened.
+
+### Safety Boundary
+
+- audit-first visibility is observational evidence only;
+- the presence of a terminal-looking audit event before transaction persistence must not be interpreted as a completed transaction;
+- transaction persistence remains the authoritative source for transaction state and execution idempotency;
+- audit ordering and visibility cannot authorize provider retry, failover, resubmission, ledger mutation, treasury movement, or provider funding.
+
+### Verification
+
+- test implementation commit: `b6a70162a738e6b9a241353e86ef03d7edc91575`;
+- exact branch HEAD after this status documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before this milestone is considered closed.
+
+### Known Limitations
+
+- this integration test exercises one audit-first commit scenario on a single PostgreSQL instance and does not model every distributed replication or failover topology;
+- the test verifies the audit event itself is observational, not that every possible audit message would be safe to interpret by arbitrary external consumers;
+- audit remains operational evidence and is not a financial source of truth.
+
+### Next Milestone
+
+**#154 — PostgreSQL Audit/Transaction Cross-Read Convergence:** verify fresh readers observing audit and transaction domains after both commits converge without ambiguous ordering or cross-domain partial state.
