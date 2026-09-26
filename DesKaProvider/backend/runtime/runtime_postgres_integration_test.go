@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"database/sql"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -242,7 +243,7 @@ func TestPostgresRuntimeReopenPreservesSharedTransactionAndAuditOwnership(t *tes
 		Message: "durable before reopen",
 		CreatedAt: time.Now().UTC(),
 	}
-	if err := auditStore.AppendContext(ctx, event); err != nil {
+	if err := auditStore.(*routing.PostgresTransactionAuditStore).AppendContext(ctx, event); err != nil {
 		_ = firstDB.Close()
 		t.Fatal(err)
 	}
@@ -276,9 +277,12 @@ func TestPostgresRuntimeReopenPreservesSharedTransactionAndAuditOwnership(t *tes
 	}
 	defer secondDB.Close()
 
-	reloaded, err := reopenedStore.(*routing.PostgresTransactionStore).GetContextE(ctx, reference)
+	reloaded, ok, err := reopenedStore.(*routing.PostgresTransactionStore).GetContextE(ctx, reference)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("expected transaction after reopen")
 	}
 	if reloaded.Execution.Result.Status != provider.StatusSuccess || reloaded.Version != state.Version {
 		t.Fatalf("unexpected transaction after reopen: %#v", reloaded)
@@ -387,7 +391,7 @@ func TestPostgresRuntimeReopenPreservesDedicatedAuditOwnership(t *testing.T) {
 		Message: "durable before reopen",
 		CreatedAt: time.Now().UTC(),
 	}
-	if err := auditStore.AppendContext(ctx, event); err != nil {
+	if err := auditStore.(*routing.PostgresTransactionAuditStore).AppendContext(ctx, event); err != nil {
 		_ = transactionDB.Close()
 		_ = auditDB.Close()
 		t.Fatal(err)
@@ -428,9 +432,12 @@ func TestPostgresRuntimeReopenPreservesDedicatedAuditOwnership(t *testing.T) {
 	defer reopenedTransactionDB.Close()
 	defer reopenedAuditDB.Close()
 
-	reloaded, err := reopenedTransactionStore.(*routing.PostgresTransactionStore).GetContextE(ctx, reference)
+	reloaded, ok, err := reopenedTransactionStore.(*routing.PostgresTransactionStore).GetContextE(ctx, reference)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("expected transaction after dedicated reopen")
 	}
 	if reloaded.Execution.Result.Status != provider.StatusSuccess {
 		t.Fatalf("unexpected transaction after dedicated reopen: %#v", reloaded)
