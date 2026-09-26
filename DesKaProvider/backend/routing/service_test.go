@@ -143,6 +143,70 @@ func (s *failPutTransactionStore) All() []TransactionState {
 	return s.base.All()
 }
 
+func TestServiceReconcilePropagatesDatabaseReadErrorWithoutResubmission(t *testing.T) {
+	registry := provider.NewRegistry()
+	mock := Mock.New(Mock.Config{
+		Products:       []provider.Product{{Code: "pln20", Name: "PLN 20"}},
+		ProviderCode:   "00",
+		Message:        "pending",
+		PurchaseStatus: provider.StatusPending,
+		Price:          20000,
+	})
+	if err := registry.Register("mock", mock); err != nil {
+		t.Fatal(err)
+	}
+	ops := operational.NewMemoryStore()
+	if err := ops.Put(operational.Snapshot{ProviderName: "mock", Balance: 100000, Health: operational.HealthHealthy}); err != nil {
+		t.Fatal(err)
+	}
+	router, err := New(registry, ops, map[string]int{"mock": 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	store := &errorAwareTransactionStore{base: NewMemoryTransactionStore()}
+	service, err := NewServiceWithStoreContext(context.Background(), router, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := PurchaseRequest{
+		ProductCode: "pln20",
+		CustomerNo:  "08123456789",
+		ReferenceID: "ref-reconcile-db-read-error",
+		Amount:      20000,
+	}
+	if _, err := service.Purchase(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	if got := mock.PurchaseCount(req.ReferenceID); got != 1 {
+		t.Fatalf("expected one initial provider submission, got %d", got)
+	}
+
+	if ok := mock.SetTransactionStatus(req.ReferenceID, provider.StatusSuccess, "reconciled success"); !ok {
+		t.Fatal("expected pending provider transaction")
+	}
+
+	wantErr := errors.New("database unavailable")
+	store.getErr = wantErr
+
+	result, err := service.Reconcile(context.Background(), req.ReferenceID)
+	if err == nil || !errors.Is(err, wantErr) {
+		t.Fatalf("expected reconciliation database read error to propagate, got result=%#v err=%v", result, err)
+	}
+	if got := mock.PurchaseCount(req.ReferenceID); got != 1 {
+		t.Fatalf("database read failure must not resubmit provider purchase, got %d submissions", got)
+	}
+
+	durable, ok := store.Get(req.ReferenceID)
+	if !ok {
+		t.Fatal("transaction disappeared after reconciliation database read failure")
+	}
+	if durable.Execution.Result.Status != provider.StatusPending {
+		t.Fatalf("database read failure must preserve pending durable state, got %q", durable.Execution.Result.Status)
+	}
+}
+
 func TestServicePurchasePersistsPendingBeforeSubmission(t *testing.T) {
 	registry := provider.NewRegistry()
 	mock := Mock.New(Mock.Config{Products: []provider.Product{{Code: "pln20", Name: "PLN 20"}}, ProviderCode: "00", PurchaseStatus: provider.StatusSuccess, Price: 20000})
