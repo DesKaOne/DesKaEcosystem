@@ -157,6 +157,30 @@ func openPostgresAuditRowsDB(t *testing.T, scenario *postgresAuditRowsScenario) 
 	return db
 }
 
+func TestPostgresTransactionAuditStoreAllContextPropagatesCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	scenario := &postgresAuditRowsScenario{
+		rows: [][]driver.Value{{
+			"ref", "TEST", nil, nil, "mock", "message", time.Now().UTC(),
+		}},
+	}
+	db := openPostgresAuditRowsDB(t, scenario)
+	store, err := NewPostgresTransactionAuditStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := store.AllContext(ctx, "ref")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected cancellation, got %v", err)
+	}
+	if result != nil {
+		t.Fatalf("canceled audit read must not expose any history, got %#v", result)
+	}
+}
+
 func TestPostgresTransactionAuditStoreAllContextPropagatesQueryError(t *testing.T) {
 	wantErr := errors.New("audit query unavailable")
 	db := openPostgresAuditRowsDB(t, &postgresAuditRowsScenario{queryErr: wantErr})
