@@ -597,6 +597,62 @@ func TestServiceRestartRecoversDurableTransactionState(t *testing.T) {
 }
 
 
+func TestServiceRestartedStaleInstanceRejectsDivergentTerminalization(t *testing.T) {
+	registry := provider.NewRegistry()
+	mock := Mock.New(Mock.Config{
+		Products:       []provider.Product{{Code: "pln20", Name: "PLN 20"}},
+		ProviderCode:   "00",
+		Message:        "pending",
+		PurchaseStatus: provider.StatusPending,
+		Price:          20000,
+	})
+	if err := registry.Register("mock", mock); err != nil { t.Fatal(err) }
+
+	ops := operational.NewMemoryStore()
+	if err := ops.Put(operational.Snapshot{ProviderName: "mock", Balance: 100000, Health: operational.HealthHealthy}); err != nil {
+		t.Fatal(err)
+	}
+	router, err := New(registry, ops, map[string]int{"mock": 1})
+	if err != nil { t.Fatal(err) }
+
+	store := NewMemoryTransactionStore()
+	initial, err := NewServiceWithStore(router, store)
+	if err != nil { t.Fatal(err) }
+
+	req := PurchaseRequest{ProductCode: "pln20", CustomerNo: "08123456789", ReferenceID: "ref-stale-restart", Amount: 20000}
+	if _, err := initial.Purchase(context.Background(), req); err != nil { t.Fatal(err) }
+
+	staleInstance, err := NewServiceWithStore(router, store)
+	if err != nil { t.Fatal(err) }
+
+	mock.SetTransactionStatus(req.ReferenceID, provider.StatusSuccess, "success")
+	freshInstance, err := NewServiceWithStore(router, store)
+	if err != nil { t.Fatal(err) }
+
+	fresh, err := freshInstance.Reconcile(context.Background(), req.ReferenceID)
+	if err != nil { t.Fatal(err) }
+	if fresh.Result.Status != provider.StatusSuccess {
+		t.Fatalf("expected fresh instance to commit success, got %#v", fresh)
+	}
+
+	mock.SetTransactionStatus(req.ReferenceID, provider.StatusFailed, "failed")
+	stale, err := staleInstance.Reconcile(context.Background(), req.ReferenceID)
+	if err == nil || !errors.Is(err, ErrWebhookReferenceConflict) {
+		t.Fatalf("expected stale instance to reject divergent terminalization, got result=%#v err=%v", stale, err)
+	}
+
+	durable, ok := store.Get(req.ReferenceID)
+	if !ok {
+		t.Fatal("durable transaction disappeared after stale-instance reconciliation")
+	}
+	if durable.Execution.Result.Status != provider.StatusSuccess {
+		t.Fatalf("stale instance changed durable terminal state: %#v", durable.Execution.Result)
+	}
+	if got := mock.PurchaseCount(req.ReferenceID); got != 1 {
+		t.Fatalf("stale reconciliation must not resubmit provider purchase, got %d submissions", got)
+	}
+}
+
 func TestTransactionStoreRejectsTerminalOverwrite(t *testing.T) {
 	store := NewMemoryTransactionStore()
 	req := PurchaseRequest{ProductCode: "pln20", CustomerNo: "08123456789", ReferenceID: "ref-terminal", Amount: 20000}
