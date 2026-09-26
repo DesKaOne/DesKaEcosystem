@@ -239,7 +239,7 @@ func NewTimeoutCertificateFromMessages(
 	}
 	if len(lockedProposal) > 0 {
 		if lockProof == nil { return TimeoutCertificate{}, ErrInvalidLockProof }
-		if err := validateTimeoutLockProof(*lockProof, state, validators, votingPower); err != nil { return TimeoutCertificate{}, err }
+		if err := ValidateLockProofWithAuthority(*lockProof, state, validators, votingPower, resolver); err != nil { return TimeoutCertificate{}, err }
 	}
 	return NewTimeoutCertificateWithLockProof(state, validators, votingPower, threshold, nextRound, senders, lockProof)
 }
