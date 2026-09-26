@@ -1873,33 +1873,41 @@ func TestPostgresTransactionAuditStoreConflictWithConcurrentTransactionUpdateRem
 	state.Execution.Result.SerialNumber = ""
 	state.Execution.Result.Price = state.Request.Amount
 
-	transactionConn, err := db.Conn(ctx)
+	seedConn, err := db.Conn(ctx)
 	if err != nil {
-		t.Fatalf("open transaction connection: %v", err)
+		t.Fatalf("open seed connection: %v", err)
 	}
-	defer transactionConn.Close()
-	if _, err := transactionConn.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
-		t.Fatalf("set transaction search path: %v", err)
+	defer seedConn.Close()
+	if _, err := seedConn.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set seed search path: %v", err)
 	}
-	transactionStore, err := NewPostgresTransactionStore(transactionConn)
+	seedStore, err := NewPostgresTransactionStore(seedConn)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := transactionStore.PutContext(ctx, state); err != nil {
+	if err := seedStore.PutContext(ctx, state); err != nil {
 		t.Fatalf("persist pending transaction: %v", err)
 	}
+
+	transitionConn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatalf("open transaction connection: %v", err)
+	}
+	defer transitionConn.Close()
+	if _, err := transitionConn.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set transition search path: %v", err)
+	}
+	transitionTx, err := transitionConn.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatalf("begin durable transaction update: %v", err)
+	}
+	defer transitionTx.Rollback()
 
 	next := state
 	next.Execution.Result.Status = provider.StatusSuccess
 	next.Execution.Result.ProviderCode = "00"
 	next.Execution.Result.Message = "success"
 	next.Execution.Result.SerialNumber = "SN-CONCURRENT"
-
-	transitionTx, err := transactionConn.BeginTx(ctx, nil)
-	if err != nil {
-		t.Fatalf("begin durable transaction update: %v", err)
-	}
-	defer transitionTx.Rollback()
 	if _, err := transitionTx.ExecContext(ctx, `UPDATE provider_transactions
 SET status=$1, provider_code=$2, message=$3, serial_number=$4, price=$5, version=version+1
 WHERE reference_id=$6 AND status='pending' AND version=$7`,
@@ -1953,12 +1961,24 @@ WHERE reference_id=$6 AND status='pending' AND version=$7`,
 		t.Fatalf("stage contradictory audit event: %v", err)
 	}
 
-	beforeCommit, ok, err := transactionStore.GetContextE(ctx, state.Request.ReferenceID)
+	readerConn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatalf("open reader connection: %v", err)
+	}
+	defer readerConn.Close()
+	if _, err := readerConn.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set reader search path: %v", err)
+	}
+	readerStore, err := NewPostgresTransactionStore(readerConn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeCommit, ok, err := readerStore.GetContextE(ctx, state.Request.ReferenceID)
 	if err != nil || !ok {
 		t.Fatalf("read transaction before concurrent commits: ok=%v err=%v", ok, err)
 	}
 	if beforeCommit.Version != state.Version || beforeCommit.Execution.Result.Status != provider.StatusPending {
-		t.Fatalf("durable transaction must remain pending before concurrent commit, got %#v", beforeCommit.Execution.Result)
+		t.Fatalf("transaction state must remain pending before writer commit, got %#v", beforeCommit.Execution.Result)
 	}
 	beforeAudit, err := auditStore.AllContextE(ctx, state.Request.ReferenceID)
 	if err != nil {
@@ -1975,7 +1995,7 @@ WHERE reference_id=$6 AND status='pending' AND version=$7`,
 		t.Fatalf("commit durable transaction update: %v", err)
 	}
 
-	persisted, ok, readErr := transactionStore.GetContextE(ctx, state.Request.ReferenceID)
+	persisted, ok, readErr := readerStore.GetContextE(ctx, state.Request.ReferenceID)
 	if readErr != nil || !ok {
 		t.Fatalf("read committed transaction update: ok=%v err=%v", ok, readErr)
 	}
