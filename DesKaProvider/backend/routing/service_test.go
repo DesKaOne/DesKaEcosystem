@@ -259,7 +259,8 @@ func (s *contextPutErrorStore) GetContextE(ctx context.Context, referenceID stri
 	if err := ctx.Err(); err != nil {
 		return TransactionState{}, false, err
 	}
-	return s.base.Get(referenceID)
+	state, ok := s.base.Get(referenceID)
+	return state, ok, nil
 }
 
 func (s *contextPutErrorStore) AllContextE(ctx context.Context) ([]TransactionState, error) {
