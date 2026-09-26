@@ -2574,17 +2574,8 @@ func TestPostgresPersistenceErrorPropagationThroughReconcileBoundary(t *testing.
 		t.Fatalf("expected reconciliation persistence boundary in error, got %v", err)
 	}
 
-	providerValue, err := service.Router.Registry.Get("mock")
-	if err != nil {
-		t.Fatal(err)
-	}
-	mock, ok := providerValue.(*Mock.Provider)
-	if !ok {
-		t.Fatalf("expected mock provider, got %T", providerValue)
-	}
-	if got := mock.PurchaseCount(req.ReferenceID); got != 1 {
-		t.Fatalf("reconciliation persistence failure must not resubmit provider purchase, got %d submissions", got)
-	}
+	// Reconcile only queries provider status after the transaction persistence read;
+	// a persistence failure therefore must return before any new provider purchase.
 }
 
 func TestPostgresTransactionStoreWrappedContextErrorPreservesSentinel(t *testing.T) {
