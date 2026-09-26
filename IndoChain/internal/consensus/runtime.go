@@ -322,6 +322,19 @@ func (r *ValidatorRuntime) AddVote(msg Message) error {
 		if reached {
 			r.lockedProposal = append([]byte(nil), r.proposal...)
 			r.lockedRound = r.state.Round
+			// Preserve v0.1 compatibility for callers that still emit the
+			// legacy generic vote: once that legacy prevote reaches quorum,
+			// mirror its already-validated evidence into the explicit
+			// precommit bucket. New callers should send MessageTypePrecommit
+			// explicitly in the Precommit phase.
+			if legacyVote {
+				for _, vote := range r.prevotes.VotesForPayload(r.proposal) {
+					vote.Type = MessageTypePrecommit
+					if err := r.precommits.AddVote(vote); err != nil {
+						return err
+					}
+				}
+			}
 			r.state.Phase = PhasePrecommit
 		}
 		return nil
