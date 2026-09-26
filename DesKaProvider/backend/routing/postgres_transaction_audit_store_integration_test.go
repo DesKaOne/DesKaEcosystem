@@ -802,7 +802,15 @@ func TestPostgresTransactionAuditStoreReadVisibilityAfterConcurrentCommit(t *tes
 	}
 	applyPostgresMigration(t, db)
 
-	store, err := NewPostgresTransactionAuditStore(db)
+	readerConn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatalf("open pinned reader connection: %v", err)
+	}
+	t.Cleanup(func() { _ = readerConn.Close() })
+	if _, err := readerConn.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set pinned reader search path: %v", err)
+	}
+	store, err := NewPostgresTransactionAuditStore(readerConn)
 	if err != nil {
 		t.Fatal(err)
 	}
