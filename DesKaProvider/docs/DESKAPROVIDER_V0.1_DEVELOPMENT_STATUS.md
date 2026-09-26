@@ -5386,3 +5386,42 @@ Completed:
 
 **#120 — PostgreSQL Database-Error Propagation Boundary Review**: extend the error-aware persistence matrix across startup reconstruction, reconciliation reads, and atomic transition writes so non-cancellation database failures remain distinguishable from not-found/conflict outcomes without authorizing retry, failover, resubmission, or financial mutation.
 
+
+
+### 43. Milestone Update — PostgreSQL Database-Error Propagation Boundary Review
+
+**Date:** 2026-09-26
+
+Completed:
+
+- audited error-aware PostgreSQL read paths across startup reconstruction and reconciliation;
+- confirmed GetContextE distinguishes sql.ErrNoRows from non-cancellation database failures;
+- confirmed AllContextE propagates query, scan, and iteration failures to service initialization;
+- confirmed reconciliation reloads use getTransactionContextE and preserve database read errors rather than treating them as missing transaction state;
+- corrected the PutContext insert-race fallback so a sql.ErrNoRows from INSERT ... RETURNING is followed by GetContextE instead of legacy error-swallowing GetContext;
+- preserved propagation of atomic update execution failures and RowsAffected failures without collapsing them into ErrTransactionStateConflict;
+- verified the resulting implementation does not introduce retry, failover, resubmission, ledger mutation, treasury movement, or provider-funding authorization.
+
+### Verification
+
+- implementation commit: 826dd330daa64f60eb4a559bff0d5e7bdc422144;
+- CI #1224 / run 36230674952: **GREEN** for exact implementation HEAD;
+- CI jobs test and race: success;
+- CI test job includes successful go vet execution.
+
+### Safety Boundary
+
+- database errors remain observable control/persistence failures;
+- not-found remains distinct from database failure;
+- atomic state conflicts remain coordination outcomes only;
+- no error condition can authorize a second provider submission or financial mutation;
+- transaction persistence remains authoritative, while audit and operational evidence remain non-authoritative.
+
+### Known Limitations
+
+- local full Go/PostgreSQL verification remains unavailable in this runtime because external Git/network access is unavailable;
+- live external-provider credential validation remains environment-gated.
+
+### Next milestone
+
+**#121 — PostgreSQL Persistence Error-Matrix Expansion**: extend deterministic coverage to additional startup/reconciliation persistence failure cases, especially cancellation versus non-cancellation errors, while retaining the same no-resubmission and no-financial-authorization invariants.
