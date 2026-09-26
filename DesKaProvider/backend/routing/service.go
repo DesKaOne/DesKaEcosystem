@@ -425,7 +425,7 @@ func (s *Service) Reconcile(ctx context.Context, referenceID string) (PurchaseEx
 				}
 				return PurchaseExecution{}, ErrWebhookReferenceConflict
 			}
-			if latestResult.Status == provider.StatusPending && incoming.Status == provider.StatusPending {
+			if latestResult.Status == provider.StatusPending {
 				call.result = latestAfterConflict.Execution
 				return latestAfterConflict.Execution, nil
 			}
