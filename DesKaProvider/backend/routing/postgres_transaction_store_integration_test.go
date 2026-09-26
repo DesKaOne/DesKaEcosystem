@@ -238,23 +238,6 @@ func TestPostgresTransactionStoreTerminalRecoveryIsIdempotentAfterRestart(t *tes
 	}
 	applyPostgresMigration(t, db)
 
-	// Keep concurrent transition workers on one connection pool scoped to this schema.
-	pinnedDB, err := sql.Open("pgx", os.Getenv("DESKAPROVIDER_POSTGRES_DSN"))
-	if err != nil {
-		t.Fatalf("open pinned postgres connection: %v", err)
-	}
-	t.Cleanup(func() { _ = pinnedDB.Close() })
-	if err := pinnedDB.PingContext(ctx); err != nil {
-		t.Fatalf("ping pinned postgres: %v", err)
-	}
-	if _, err := pinnedDB.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
-		t.Fatalf("set pinned search path: %v", err)
-	}
-	pinnedStore, err := NewPostgresTransactionStore(pinnedDB)
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	store, err := NewPostgresTransactionStore(db)
 	if err != nil {
 		t.Fatal(err)
