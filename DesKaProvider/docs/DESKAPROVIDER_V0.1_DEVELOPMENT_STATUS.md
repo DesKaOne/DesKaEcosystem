@@ -6613,3 +6613,17 @@ Completed:
 
 - corrective test commit: `78260b98a0fb140a379d7189bf60130d6dc28eff`;
 - exact branch HEAD after this documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before milestone #151 is considered closed.
+
+### 151. Verification Correction — PostgreSQL Session Scoping
+
+**Date:** 2026-09-26
+
+- corrected the concurrent audit/transaction conflict integration test to pin dedicated PostgreSQL connections and set the isolated `search_path` explicitly for migration, transaction, audit, and reader sessions;
+- retained the intended concurrency boundary with separate uncommitted transaction-state and audit transactions;
+- no production behavior changed;
+- previous CI failure was caused by PostgreSQL pooled-session `search_path` scope inside the integration test, not by transaction or audit production logic.
+
+**Verification**
+
+- corrective test commit: `a78b0781376fad2aaab1da5efe95fbdb84aee647`;
+- exact branch HEAD after this documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before milestone #151 is considered closed.
