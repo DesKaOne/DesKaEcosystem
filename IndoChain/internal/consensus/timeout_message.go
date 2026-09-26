@@ -199,7 +199,7 @@ func NewTimeoutCertificateFromMessages(
 		senders = append(senders, append([]byte(nil), msg.Sender...))
 	}
 
-	return NewTimeoutCertificate(
+	return NewTimeoutCertificateWithLockRound(
 		state,
 		validators,
 		votingPower,
