@@ -7803,3 +7803,39 @@ The startup matrix validates rollback mechanics only. Failure after persistence 
 ### Next Milestone
 
 **#174 — Runtime Initialization Error Precedence Across Full Constructor Path:** verify primary initialization errors versus cleanup errors at each constructor stage, including joined-error identity and deterministic cleanup ordering, without changing runtime financial behavior.
+
+### Milestone #174 — Runtime Initialization Error Precedence Across Full Constructor Path
+
+**Date:** 2026-09-27
+
+Completed:
+
+- added real PostgreSQL constructor-path coverage for initialization failures that coincide with cleanup failures;
+- exercised deterministic failure injection after provider-state store initialization, after router construction, after purchase-service construction, and immediately before ownership transfer;
+- wrapped the constructor-owned PostgreSQL audit handle so its real database close executes first and then returns a deterministic cleanup error;
+- verified the returned error preserves both the primary initialization error and the cleanup error through joined-error identity;
+- verified the cleanup error retains the database-specific context (close audit database);
+- verified the acquired PostgreSQL resource is closed exactly once during constructor rollback;
+- preserved deterministic cleanup ordering through the existing transaction-before-audit close boundary;
+- introduced no provider retry, failover, resubmission, ledger, treasury, funding, or cross-domain recovery behavior.
+
+### Verification
+
+- Implementation/test commit: `ed996d1da0d95141ca7255ece51a4878d2544366`.
+- Import correction commit: `471bc76d43fde518830696f19017989885218048`.
+- Final Push CI #1617: **GREEN** — `go test ./...`, `go vet ./...`, PostgreSQL service-backed integration tests, and `go test -race ./...`.
+- The constructor-path matrix confirms that a cleanup failure does not replace or hide the primary initialization failure.
+
+### Safety Boundary
+
+Milestone #174 changes test coverage only. Runtime initialization continues to transfer database ownership only after successful construction and context validation. When initialization fails, constructor-owned resources are cleaned up without provider submission or financial-state mutation. Transaction persistence remains the authoritative transaction-state/idempotency boundary; audit persistence remains observational evidence.
+
+### Known Limitations
+
+- Cleanup-error injection is a test-only wrapper around the real PostgreSQL audit handle; production PostgreSQL `Close` behavior is not modified.
+- The constructor matrix covers post-database initialization stages where ownership cleanup is active; failures before database ownership acquisition remain covered by the existing open/ping error tests.
+- Process termination and external-provider failures during runtime operation remain outside constructor cleanup semantics.
+
+### Next Milestone
+
+**#175 — Runtime Initialization Error Precedence Across Shared PostgreSQL Ownership:** extend the same primary-vs-cleanup error identity and deterministic ordering coverage to shared transaction/audit PostgreSQL ownership, including single-handle cleanup semantics.
