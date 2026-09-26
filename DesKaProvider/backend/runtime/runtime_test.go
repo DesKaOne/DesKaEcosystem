@@ -958,6 +958,7 @@ func TestServiceRunUsesOwnedCatalogWorkerLifecycle(t *testing.T) {
 	service.catalogSync = catalogSync
 	service.catalogLifecycle = newCatalogWorkerLifecycle()
 	service.catalogInterval = time.Hour
+	service.catalogInterval = time.Hour
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func(){ done <- service.Run(ctx) }()
