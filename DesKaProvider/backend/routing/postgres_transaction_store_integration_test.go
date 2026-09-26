@@ -2075,6 +2075,79 @@ func TestPostgresPutContextAdvancesVersionAcrossPendingUpdates(t *testing.T) {
 	}
 }
 
+func TestPostgresSequentialWriterConflictPreservesCurrentVersion(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	schema := "sequential_writer_"; schema += strconv.FormatInt(time.Now().UnixNano(), 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatalf("create isolated schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
+	})
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set search path: %v", err)
+	}
+	applyPostgresMigration(t, db)
+
+	store, err := NewPostgresTransactionStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	initial := postgresPendingState()
+	initial.Request.ReferenceID = postgresIntegrationReference()
+	initial.Execution.Result.ReferenceID = initial.Request.ReferenceID
+	initial.Version = 1
+	if err := store.PutContext(ctx, initial); err != nil {
+		t.Fatalf("insert initial pending transaction: %v", err)
+	}
+
+	latest := initial
+	latest.Execution.Result.Message = "pending-refresh"
+	if err := store.PutContext(ctx, latest); err != nil {
+		t.Fatalf("advance pending transaction: %v", err)
+	}
+	current, ok := store.GetContext(ctx, initial.Request.ReferenceID)
+	if !ok {
+		t.Fatal("latest pending transaction disappeared")
+	}
+	if current.Version != 2 {
+		t.Fatalf("expected version 2 after first pending refresh, got %d", current.Version)
+	}
+
+	stale := initial
+	stale.Execution.Result.Message = "stale-writer"
+	if err := store.PutContext(ctx, stale); err != ErrTransactionStateConflict {
+		t.Fatalf("expected stale pending writer conflict, got %v", err)
+	}
+
+	afterStale, ok := store.GetContext(ctx, initial.Request.ReferenceID)
+	if !ok {
+		t.Fatal("transaction disappeared after stale writer")
+	}
+	if afterStale.Version != 2 || afterStale.Execution.Result.Message != current.Execution.Result.Message {
+		t.Fatalf("stale writer changed durable transaction: %#v", afterStale)
+	}
+
+	upToDate := afterStale
+	upToDate.Execution.Result.Status = provider.StatusSuccess
+	upToDate.Execution.Result.Message = "success"
+	if err := store.PutContext(ctx, upToDate); err != nil {
+		t.Fatalf("up-to-date writer transition: %v", err)
+	}
+
+	final, ok := store.GetContext(ctx, initial.Request.ReferenceID)
+	if !ok {
+		t.Fatal("final transaction disappeared")
+	}
+	if final.Version != 3 || final.Execution.Result.Status != provider.StatusSuccess {
+		t.Fatalf("expected version 3 terminal success, got %#v", final)
+	}
+}
+
 func TestPostgresMigrationVerification(t *testing.T) {
 	sqlText := postgresMigrationSQL(t)
 	required := []string{
