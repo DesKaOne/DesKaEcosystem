@@ -5034,3 +5034,41 @@ Completed:
 ### Next milestone
 
 **#117 — Reconciliation Conflict Matrix Review**: expand deterministic coverage across identical terminal convergence, conflicting terminal observations, stale pending versions, and restart boundaries without widening financial authority.
+
+### 39. Milestone Update — Atomic Reconciliation Transition Boundary
+
+**Date:** 2026-09-26
+
+Completed:
+
+- audited the PostgreSQL service-reconciliation integration boundary after repeated CI regressions;
+- repaired integration-test store scoping so concurrent reconciliation tests use deterministic local transaction-store ownership;
+- updated the CI workflow so pull-request runs explicitly checkout the PR head SHA rather than relying on a potentially stale synthetic merge ref;
+- verified concurrent service reconciliation converges on the same durable terminal result without resubmitting the provider purchase;
+- verified the repository CI for the exact implementation HEAD is green in both `test` and `race` jobs;
+- preserved transaction persistence as the authoritative transaction state and kept operational/audit evidence non-authoritative.
+
+### Verification
+
+- implementation HEAD: `741cf959ec51af1c4ec842d0b95ca1e9cf31521d`;
+- CI #1127 / run `36222194850`: **GREEN** for exact HEAD;
+- CI jobs `test`: success;
+- CI jobs `race`: success.
+
+### Safety Boundary
+
+- the reconciliation path may converge durable transaction state across concurrent service instances, but it never authorizes a second provider purchase;
+- atomic transition conflict remains a coordination signal, not permission to retry, fail over, resubmit, mutate customer ledger, move treasury funds, or fund a provider;
+- audit and operational persistence remain evidence/state inputs only and cannot override durable transaction authority.
+
+### Known Limitations
+
+- the integration test validates concurrent service convergence against PostgreSQL but does not simulate process termination between provider observation and durable transition;
+- schema isolation currently relies on the test connection's session search path and remains test-fixture-specific rather than application configuration;
+- provider-specific eventual-consistency and network-partition behavior remain outside the deterministic mock boundary.
+
+### Next milestone
+
+1. audit sequential PostgreSQL transaction-version progression beyond the first atomic transition;
+2. ensure non-atomic `PutContext` cannot regress or accidentally reuse a stale version after repeated pending updates;
+3. preserve the no-resubmission/no-financial-authorization invariants.
