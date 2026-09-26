@@ -336,6 +336,74 @@ func TestPostgresTransactionAndAuditStoresReconstructServiceAfterRestart(t *test
 
 
 
+func TestPostgresTransactionAuditStoreRepeatedIdenticalAppendRemainsAppendOnly(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	schema := "audit_append_idempotency_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatalf("create isolated schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
+	})
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set search path: %v", err)
+	}
+	applyPostgresMigration(t, db)
+
+	store, err := NewPostgresTransactionAuditStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	createdAt := time.Now().UTC().Truncate(time.Microsecond)
+	event := TransactionAuditEvent{
+		ReferenceID:  "audit-identical-append-ref",
+		Action:       "PURCHASE_RESULT",
+		Previous:     string(provider.StatusPending),
+		Next:         string(provider.StatusSuccess),
+		ProviderName: "mock",
+		Message:      "same evidence",
+		CreatedAt:    createdAt,
+	}
+
+	if err := store.AppendContext(ctx, event); err != nil {
+		t.Fatalf("append first identical audit event: %v", err)
+	}
+	if err := store.AppendContext(ctx, event); err != nil {
+		t.Fatalf("append second identical audit event: %v", err)
+	}
+
+	events, err := store.AllContextE(ctx, event.ReferenceID)
+	if err != nil {
+		t.Fatalf("read repeated audit evidence: %v", err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("repeated identical audit appends must remain append-only evidence, got %d rows", len(events))
+	}
+	if events[0] != event || events[1] != event {
+		t.Fatalf("repeated identical audit evidence changed: %#v", events)
+	}
+
+	var count int
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM provider_transaction_audit WHERE reference_id=$1", event.ReferenceID).Scan(&count); err != nil {
+		t.Fatalf("count repeated audit rows: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("repeated identical audit appends must create two evidence rows, got %d", count)
+	}
+
+	var transactionCount int
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM provider_transactions WHERE reference_id=$1", event.ReferenceID).Scan(&transactionCount); err != nil {
+		t.Fatalf("count unrelated transaction rows: %v", err)
+	}
+	if transactionCount != 0 {
+		t.Fatalf("audit append must not create transaction authority state, got %d rows", transactionCount)
+	}
+}
+
+
 func TestPostgresTransactionAuditStoreAppendFailureThenRecovery(t *testing.T) {
 	db := postgresIntegrationDB(t)
 	schema := "audit_append_recovery_" + strconv.FormatInt(time.Now().UnixNano(), 10)
