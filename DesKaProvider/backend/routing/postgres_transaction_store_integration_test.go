@@ -1024,6 +1024,76 @@ func TestPostgresTransactionStoreAtomicWritePreservesDatabaseErrorClassification
 	}
 }
 
+func TestPostgresTransactionStoreReadConsistencyPreservesDurableIdentity(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	schema := "read_consistency_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatalf("create isolated schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
+	})
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set isolated search path: %v", err)
+	}
+	applyPostgresMigration(t, db)
+
+	store, err := NewPostgresTransactionStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := PurchaseRequest{
+		ProductCode: "pln20",
+		CustomerNo:  "08123456789",
+		ReferenceID: postgresIntegrationReference(),
+		Amount:      20000,
+		Testing:     true,
+	}
+	terminal := TransactionState{
+		Request: request,
+		Execution: PurchaseExecution{
+			ProviderName: "mock",
+			Result: provider.PurchaseResult{
+				ReferenceID:  request.ReferenceID,
+				ProductCode:  request.ProductCode,
+				CustomerNo:   request.CustomerNo,
+				Status:       provider.StatusSuccess,
+				ProviderCode: "00",
+				Message:      "success",
+				SerialNumber: "SN-READ-1",
+				Price:        20000,
+			},
+		},
+		Version: 1,
+	}
+	if err := store.PutContext(ctx, terminal); err != nil {
+		t.Fatalf("persist terminal transaction: %v", err)
+	}
+
+	got, ok, err := store.GetContextE(ctx, request.ReferenceID)
+	if err != nil {
+		t.Fatalf("read terminal transaction: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected terminal transaction to be found")
+	}
+	if got.Request != terminal.Request {
+		t.Fatalf("durable request identity changed on read: got=%#v want=%#v", got.Request, terminal.Request)
+	}
+	if got.Execution.ProviderName != terminal.Execution.ProviderName {
+		t.Fatalf("durable provider identity changed on read: got=%q want=%q", got.Execution.ProviderName, terminal.Execution.ProviderName)
+	}
+	if !samePurchaseResult(got.Execution.Result, terminal.Execution.Result) {
+		t.Fatalf("durable result identity changed on read: got=%#v want=%#v", got.Execution.Result, terminal.Execution.Result)
+	}
+	if got.Version != terminal.Version {
+		t.Fatalf("durable version changed on read: got=%d want=%d", got.Version, terminal.Version)
+	}
+}
+
 func TestPostgresMigrationVerification(t *testing.T) {
 	sqlText := postgresMigrationSQL(t)
 	required := []string{
