@@ -7493,3 +7493,51 @@ Completed:
 ### Next Milestone
 
 **#167 — PostgreSQL Persistence Error Propagation and Recovery Boundary Hardening:** continue validating that persistence-domain errors remain explicit at service/runtime boundaries without introducing fallback state, retry authorization, or cross-domain coupling.
+
+### 167. Milestone Update — PostgreSQL Persistence Error Propagation and Recovery Boundary Hardening
+
+**Date:** 2026-09-27
+
+Completed:
+
+- added deterministic real-PostgreSQL integration coverage for persistence errors crossing the reconciliation service boundary;
+- verified a PostgreSQL persistence failure is wrapped with service context while preserving its underlying error classification;
+- verified a closed PostgreSQL transaction store cannot be interpreted as context.Canceled or context.DeadlineExceeded;
+- verified reconciliation returns no fabricated execution result when authoritative transaction persistence cannot be reloaded;
+- verified persistence failure during reconciliation does not authorize a new provider purchase/submission;
+- added direct PostgreSQL adapter coverage proving wrapped context.Canceled retains sentinel identity through GetContextE;
+- preserved existing transaction version, idempotency, conditional-transition, and provider-selection semantics;
+- no production retry, failover, resubmission, ledger mutation, treasury movement, provider funding, or cross-domain fallback behavior was introduced.
+
+### Safety Boundary
+
+- transaction persistence errors remain explicit and observable at the service boundary;
+- errors.Is identity of underlying persistence/context sentinels remains preserved through adapter and service wrapping;
+- transaction persistence failure is never converted into an empty/missing transaction that can authorize provider execution;
+- reconciliation may query provider status only as part of the existing pending-transaction flow; a failed authoritative transaction reload stops reconciliation before state mutation;
+- audit remains observational evidence and cannot repair a transaction persistence failure;
+- no recovery path creates synthetic transaction state;
+- no retry/failover/resubmission authority is derived from a persistence error.
+
+### Verification
+
+- implementation/test commit: 3176169bf3446d025ec96fee6a8afa68c4014ffa;
+- GitHub Actions push CI run #1560: success;
+- GitHub Actions PR CI run #1561: success;
+- go test ./...: PASS;
+- go vet ./...: PASS;
+- go test -race ./...: PASS;
+- focused real-PostgreSQL integration tests: PASS;
+- exact branch HEAD after this documentation update must pass fresh push and PR CI before Milestone #167 is considered closed.
+
+### Known Limitations
+
+- the new integration scenarios use controlled PostgreSQL connection closure rather than every possible network partition, crash, failover, or replication topology;
+- sentinel preservation is validated for the current adapter/service wrapping path; future infrastructure wrappers must continue to use %w/compatible error composition;
+- provider live API behavior remains outside this milestone;
+- local full-suite execution is not authoritative in the current environment because its Go toolchain differs from repository CI; repository CI remains the full-environment verification authority.
+
+### Next Milestone
+
+**#168 — PostgreSQL Recovery Reopen Boundary and Runtime Ownership Hardening:** verify runtime-level database reopen/ownership transitions preserve independent transaction/audit stores, cleanup ownership, error identity, and do not accidentally reuse or close transferred database resources.
+
