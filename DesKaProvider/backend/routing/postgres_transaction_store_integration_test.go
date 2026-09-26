@@ -2120,6 +2120,7 @@ func TestPostgresSequentialWriterConflictPreservesCurrentVersion(t *testing.T) {
 
 	stale := initial
 	stale.Execution.Result.Message = "stale-writer"
+	stale.Execution.Result.SerialNumber = "stale-serial"
 	if err := store.PutContext(ctx, stale); err != ErrTransactionStateConflict {
 		t.Fatalf("expected stale pending writer conflict, got %v", err)
 	}
