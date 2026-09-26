@@ -1376,3 +1376,57 @@ Milestone ini menghubungkan bukti lock dari explicit precommit dengan timeout ev
 Regression coverage mencakup signed proof round-trip, conflicting proof, unproven lock rejection, runtime proof adoption, higher/lower lock-round behavior, serta defensive-copy boundaries.
 
 CI gate untuk implementasi milestone ini: **CI #1230 — SUCCESS**; Tidy/Test/Vet passed pada commit `5234e26866c1bcb11831f3fa737c8d8b97b5cb30`.
+
+### 4.32 Consensus Authenticated Evidence Boundary
+
+Milestone ini menutup gap antara evidence quorum yang tervalidasi secara struktural dan evidence yang benar-benar diautentikasi oleh signature validator.
+
+- Ditambahkan authenticated evidence path untuk PrecommitCertificate melalui ValidatePrecommitCertificateWithAuthority.
+- Ditambahkan authenticated validation untuk LockProof melalui ValidateLockProofWithAuthority; seluruh precommit signature di dalam proof harus lolos resolver public-key dan Ed25519 verification.
+- Ditambahkan authenticated finality validation melalui ValidateFinalityCertificateWithAuthority; path ini hanya menerima explicit MessageTypePrecommit, sehingga finality evidence tidak dapat memakai generic vote/prevote pada authenticated boundary.
+- Timeout certificate construction yang menerima LockProof sekarang memvalidasi proof beserta seluruh nested precommit signatures menggunakan authority resolver yang sama dengan timeout-message authentication.
+- Error authentication mempertahankan errors.Is untuk ErrInvalidSignature, sehingga failure path tetap dapat dibedakan secara deterministik.
+- Regression fixtures untuk timeout/round-change diperbarui agar precommit evidence membawa signature nyata; tidak ada pelemahan protocol invariant untuk membuat CI hijau.
+- CI workflow ditambah Race Test menggunakan go test -race ./... sebagai regression gate tambahan.
+
+Regression coverage mencakup:
+- authenticated precommit certificate success;
+- tampered precommit signature rejection;
+- unsigned LockProof rejection;
+- authenticated finality requiring explicit precommit;
+- unsigned timeout-carried LockProof rejection;
+- signed timeout proof fixtures pada normal, conflict, higher-lock, dan lower-lock paths.
+
+Implementation commits:
+- authenticated evidence boundary: 162d22ec5e267a3d59faa5550534bbb96efe5ddb
+- authenticated evidence regression tests: 80a9eed5d6da3c67220a6f0238da978c7aeb9d0f
+- error wrapping/authentication hardening: 625d72907732fcaa0618bb566a8a345bda007cb2
+- timeout proof fixture authentication: a4e46d49de6d69fa06b02f7670b4d363c35a815b, a83c90673654a64769cf695e3c723494b74c8219
+- Race Test CI gate: f59bec76a57ba756cd8360768c71c14bf3a1a9de
+
+Protocol invariant:
+- structural quorum validation remains unchanged;
+- authenticated proof-of-lock now requires validator signature verification;
+- timeout proof adoption cannot rely on unsigned nested precommit evidence;
+- explicit precommit remains the canonical finality evidence type;
+- legacy MessageTypeVote remains only a compatibility input path and is not accepted by the authenticated finality boundary;
+- cryptographic domain, message signing bytes, LockProof encoding, quorum arithmetic, validator membership, and highest-lock semantics are unchanged.
+
+Safety boundary:
+- resolver input/output is defensively copied at the authority boundary;
+- invalid signatures and resolver failures are non-mutating;
+- timeout round advancement still occurs only after complete evidence validation;
+- conflicting/higher/lower lock behavior remains unchanged.
+
+Known limitations:
+- The existing structural constructors/validators remain available as v0.1 development compatibility paths; they do not by themselves authenticate validator signatures.
+- ValidatorRuntime has not yet made an authority resolver mandatory for its local FinalizeProposal path. The authenticated finality API is available, but production runtime wiring remains the next boundary.
+- Validator-set lifecycle, canonical signature-authority registry, network-wide round synchronization, and the production BFT algorithm are still not frozen.
+- Race coverage is now part of CI, but this does not constitute a production security audit or BFT proof.
+
+CI verification:
+- IndoChain CI #1269 (run 36269385910) passed Tidy, Test, and Vet on code/test HEAD a83c90673654a64769cf695e3c723494b74c8219.
+- IndoChain CI #1271 (run 36269409126) passed Tidy, Test, Race Test, and Vet on final workflow HEAD f59bec76a57ba756cd8360768c71c14bf3a1a9de.
+
+Next milestone:
+- 4.33 — ValidatorRuntime Authenticated Finality Wiring: make authority resolution part of the runtime finality boundary so finalized evidence cannot be produced/accepted through an unauthenticated local path, while preserving the legacy compatibility surface only where it cannot weaken explicit precommit/finality invariants.
