@@ -596,6 +596,68 @@ func TestNewFromEnvironmentContextPreservesInitializationErrorWhenCleanupAlsoFai
 	}
 }
 
+
+func TestNewFromEnvironmentContextPreservesInitializationErrorWhenSharedCleanupAlsoFails(t *testing.T) {
+	dsn := os.Getenv("DESKAPROVIDER_POSTGRES_DSN")
+	if dsn == "" { t.Skip("DESKAPROVIDER_POSTGRES_DSN is not configured") }
+	t.Setenv("DIGIFLAZZ_USERNAME", "test-user")
+	t.Setenv("DIGIFLAZZ_API_KEY", "test-key")
+	t.Setenv("DESKAPROVIDER_TRANSACTION_STORE_DRIVER", "postgres")
+	t.Setenv("DESKAPROVIDER_AUDIT_STORE_DRIVER", "postgres")
+	t.Setenv("DESKAPROVIDER_POSTGRES_DSN", dsn)
+
+	stages := []string{"after-provider-state-store", "after-router", "after-purchase-service", "before-ownership-transfer"}
+	for _, stage := range stages {
+		t.Run(stage, func(t *testing.T) {
+			expected := errors.New("injected shared constructor initialization failure")
+			cleanupErr := errors.New("injected shared constructor cleanup failure")
+			var captured *runtimeCleanupErrorDB
+			runtimeInitializationFailureHook = func(got string, ownership *runtimeDatabaseOwnership) error {
+				if got != stage { return nil }
+				if databaseCloserIsNil(ownership.transactionDB) { t.Fatal("expected shared transaction database ownership") }
+				if !databaseCloserIsNil(ownership.auditDB) { t.Fatal("shared audit ownership must be nil") }
+				captured = &runtimeCleanupErrorDB{delegate: ownership.transactionDB, err: cleanupErr}
+				ownership.transactionDB = captured
+				return expected
+			}
+			defer func() { runtimeInitializationFailureHook = nil }()
+
+			_, err := NewFromEnvironmentContext(context.Background(), nil)
+			if !errors.Is(err, expected) { t.Fatalf("expected primary initialization error, got %v", err) }
+			if !errors.Is(err, cleanupErr) { t.Fatalf("expected shared cleanup error to remain discoverable, got %v", err) }
+			if captured == nil || captured.closeCount != 1 { t.Fatalf("expected shared resource to close exactly once, got %#v", captured) }
+			if !strings.Contains(err.Error(), "close transaction database") { t.Fatalf("expected transaction cleanup context in error, got %v", err) }
+		})
+	}
+}
+
+func TestNewFromEnvironmentContextSharedOwnershipCleanupIsSingleShotAfterInitializationFailure(t *testing.T) {
+	dsn := os.Getenv("DESKAPROVIDER_POSTGRES_DSN")
+	if dsn == "" { t.Skip("DESKAPROVIDER_POSTGRES_DSN is not configured") }
+	t.Setenv("DIGIFLAZZ_USERNAME", "test-user")
+	t.Setenv("DIGIFLAZZ_API_KEY", "test-key")
+	t.Setenv("DESKAPROVIDER_TRANSACTION_STORE_DRIVER", "postgres")
+	t.Setenv("DESKAPROVIDER_AUDIT_STORE_DRIVER", "postgres")
+	t.Setenv("DESKAPROVIDER_POSTGRES_DSN", dsn)
+
+	expected := errors.New("injected shared ownership failure")
+	var captured *runtimeDatabaseOwnership
+	runtimeInitializationFailureHook = func(stage string, ownership *runtimeDatabaseOwnership) error {
+		if stage != "after-database-acquisition" { return nil }
+		captured = ownership
+		if databaseCloserIsNil(ownership.transactionDB) { t.Fatal("expected shared transaction database ownership") }
+		if !databaseCloserIsNil(ownership.auditDB) { t.Fatal("shared audit ownership must be nil") }
+		return expected
+	}
+	defer func() { runtimeInitializationFailureHook = nil }()
+
+	_, err := NewFromEnvironmentContext(context.Background(), nil)
+	if !errors.Is(err, expected) { t.Fatalf("expected injected initialization error, got %v", err) }
+	if captured == nil { t.Fatal("expected captured shared ownership") }
+	if !captured.closed { t.Fatal("expected shared ownership cleanup") }
+	if err := captured.closeOwned(); err != nil { t.Fatalf("repeated shared cleanup failed: %v", err) }
+}
+
 func TestNewFromEnvironmentContextCancellationBeforeOwnershipTransferClosesDedicatedAuditOwnership(t *testing.T) {
 	dsn := os.Getenv("DESKAPROVIDER_POSTGRES_DSN")
 	if dsn == "" { t.Skip("DESKAPROVIDER_POSTGRES_DSN is not configured") }
