@@ -6834,3 +6834,40 @@ Completed:
 
 - corrective test commit: `680ceac962d5130643a397b5cb5791c9a4550c8b`;
 - exact branch HEAD after this documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before milestone #153 is considered closed.
+
+
+### 154. Milestone Update — PostgreSQL Audit/Transaction Cross-Read Convergence
+
+**Date:** 2026-09-26
+
+Completed:
+
+- added real-PostgreSQL integration coverage for fresh readers observing both audit and transaction domains after their respective commits;
+- verified both committed audit events are visible as a complete ordered audit history;
+- verified the transaction domain is independently readable and remains in the explicitly committed `pending` state even when audit evidence already contains a terminal-looking event;
+- verified cross-domain reads converge to complete persisted records without exposing partial state or allowing audit evidence to upgrade transaction authority;
+- preserved dedicated PostgreSQL reader connections with isolated session `search_path` setup so the integration boundary is deterministic;
+- no production audit-store or transaction-store implementation change was required;
+- no transaction authority, provider submission authority, retry/failover behavior, ledger mutation, treasury movement, or provider funding behavior was broadened.
+
+### Safety Boundary
+
+- cross-domain visibility is an observation/reconciliation concern only;
+- audit history cannot upgrade a pending transaction into success or otherwise override the transaction store;
+- committed audit evidence and committed transaction state remain separate persistence domains with separate authority semantics;
+- transaction persistence remains the authoritative transaction-state and idempotency boundary.
+
+### Verification
+
+- test implementation commit: `a3e140aa74147aae228728a4cdf33f98fac0dcc5`;
+- exact branch HEAD after this status documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before this milestone is considered closed.
+
+### Known Limitations
+
+- the scenario validates one PostgreSQL instance with dedicated reader connections and explicit commits, not every replica-lag, isolation-level, or distributed transaction topology;
+- the test establishes convergence after both domains commit but does not introduce a cross-domain transaction mechanism;
+- audit remains operational evidence and is not a financial source of truth.
+
+### Next Milestone
+
+**#155 — PostgreSQL Audit/Transaction Cross-Read After Restart:** verify that the converged audit and transaction views remain consistent after connection close/reopen and service reconstruction, while preserving separate authority boundaries.
