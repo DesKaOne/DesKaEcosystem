@@ -4053,3 +4053,339 @@ func TestPostgresTransactionAuditStoreReadFailureThenRecovery(t *testing.T) {
 		t.Fatalf("recovered audit history changed: %#v", recovered)
 	}
 }
+
+
+func TestPostgresCrossDomainRecoveryFailureIsolationTransactionAuthority(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	schema := "cross_domain_tx_authority_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatalf("create isolated schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
+	})
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set search path: %v", err)
+	}
+	applyPostgresMigration(t, db)
+
+	transactionStore, err := NewPostgresTransactionStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	auditStore, err := NewPostgresTransactionAuditStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	registry := provider.NewRegistry()
+	mock := Mock.New(Mock.Config{
+		Products:      []provider.Product{{Code: "pln20", Name: "PLN 20"}},
+		ProviderCode: "00",
+		Message:      "success",
+		PurchaseStatus: provider.StatusSuccess,
+		Price:        20000,
+	})
+	if err := registry.Register("mock", mock); err != nil {
+		t.Fatal(err)
+	}
+	operationalStore := operational.NewMemoryStore()
+	if err := operationalStore.Put(operational.Snapshot{
+		ProviderName: "mock",
+		Balance:      100000,
+		Health:       operational.HealthHealthy,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	router, err := New(registry, operationalStore, map[string]int{"mock": 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := PurchaseRequest{
+		ProductCode: "pln20",
+		CustomerNo:  "08123456789",
+		ReferenceID: "cross-domain-tx-authority-ref",
+		Amount:      20000,
+	}
+	pending := TransactionState{
+		Request: req,
+		Execution: PurchaseExecution{
+			ProviderName: "mock",
+			Result: provider.PurchaseResult{
+				ReferenceID: req.ReferenceID,
+				ProductCode: req.ProductCode,
+				CustomerNo:  req.CustomerNo,
+				Status:      provider.StatusPending,
+			},
+		},
+	}
+	if err := transactionStore.PutContext(ctx, pending); err != nil {
+		t.Fatalf("persist durable transaction state: %v", err)
+	}
+	event := TransactionAuditEvent{
+		ReferenceID:  req.ReferenceID,
+		Action:       "PURCHASE_PENDING",
+		Next:         string(provider.StatusPending),
+		ProviderName: "mock",
+		Message:      "pending",
+		CreatedAt:    time.Now().UTC().Truncate(time.Microsecond),
+	}
+	if err := auditStore.AppendContext(ctx, event); err != nil {
+		t.Fatalf("persist durable audit evidence: %v", err)
+	}
+
+	auditConn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatalf("open isolated audit connection: %v", err)
+	}
+	if _, err := auditConn.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		auditConn.Close()
+		t.Fatalf("set audit connection search path: %v", err)
+	}
+	if err := auditConn.Close(); err != nil {
+		t.Fatal(err)
+	}
+	failedAuditStore, err := NewPostgresTransactionAuditStore(auditConn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := failedAuditStore.AllContextE(context.Background(), req.ReferenceID); err == nil {
+		t.Fatal("expected audit read failure")
+	}
+
+	service, err := NewServiceWithStoreContextAndAudit(ctx, router, transactionStore, failedAuditStore)
+	if err != nil {
+		t.Fatalf("transaction persistence must remain independently authoritative: %v", err)
+	}
+
+	result, err := service.Purchase(ctx, req)
+	if err != nil {
+		t.Fatalf("idempotent purchase from durable transaction state: %v", err)
+	}
+	if result.Result.Status != provider.StatusPending {
+		t.Fatalf("audit failure must not replace durable transaction state: %#v", result)
+	}
+	if got := mock.PurchaseCount(req.ReferenceID); got != 0 {
+		t.Fatalf("audit failure must not authorize provider resubmission, got %d submissions", got)
+	}
+
+	recoveredState, found, err := transactionStore.GetContextE(ctx, req.ReferenceID)
+	if err != nil || !found {
+		t.Fatalf("read authoritative transaction state after audit failure: found=%v err=%v", found, err)
+	}
+	if recoveredState != pending {
+		t.Fatalf("transaction state changed because audit was unavailable: before=%#v after=%#v", pending, recoveredState)
+	}
+	recoveredAudit, err := auditStore.AllContextE(ctx, req.ReferenceID)
+	if err != nil || len(recoveredAudit) != 1 || recoveredAudit[0] != event {
+		t.Fatalf("audit history changed or disappeared while failed audit adapter was isolated: events=%#v err=%v", recoveredAudit, err)
+	}
+}
+
+func TestPostgresCrossDomainRecoveryFailureIsolationAuditDoesNotReconstructTransaction(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	schema := "cross_domain_audit_observation_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatalf("create isolated schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
+	})
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set search path: %v", err)
+	}
+	applyPostgresMigration(t, db)
+
+	transactionStore, err := NewPostgresTransactionStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	auditStore, err := NewPostgresTransactionAuditStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	registry := provider.NewRegistry()
+	mock := Mock.New(Mock.Config{
+		Products:      []provider.Product{{Code: "pln20", Name: "PLN 20"}},
+		ProviderCode: "00",
+		Message:      "success",
+		PurchaseStatus: provider.StatusSuccess,
+		Price:        20000,
+	})
+	if err := registry.Register("mock", mock); err != nil {
+		t.Fatal(err)
+	}
+	operationalStore := operational.NewMemoryStore()
+	if err := operationalStore.Put(operational.Snapshot{
+		ProviderName: "mock",
+		Balance:      100000,
+		Health:       operational.HealthHealthy,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	router, err := New(registry, operationalStore, map[string]int{"mock": 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	referenceID := "cross-domain-audit-observation-ref"
+	event := TransactionAuditEvent{
+		ReferenceID:  referenceID,
+		Action:       "PURCHASE_RESULT",
+		Previous:     string(provider.StatusPending),
+		Next:         string(provider.StatusSuccess),
+		ProviderName: "mock",
+		Message:      "success evidence only",
+		CreatedAt:    time.Now().UTC().Truncate(time.Microsecond),
+	}
+	if err := auditStore.AppendContext(ctx, event); err != nil {
+		t.Fatalf("persist durable audit evidence: %v", err)
+	}
+
+	txConn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatalf("open isolated transaction connection: %v", err)
+	}
+	if _, err := txConn.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		txConn.Close()
+		t.Fatalf("set transaction connection search path: %v", err)
+	}
+	if err := txConn.Close(); err != nil {
+		t.Fatal(err)
+	}
+	failedTransactionStore, err := NewPostgresTransactionStore(txConn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, txErr := failedTransactionStore.GetContextE(context.Background(), referenceID)
+	if txErr == nil {
+		t.Fatal("expected transaction read failure")
+	}
+	if errors.Is(txErr, context.Canceled) || errors.Is(txErr, context.DeadlineExceeded) {
+		t.Fatalf("transaction persistence failure must remain ordinary persistence error: %v", txErr)
+	}
+
+	observedAudit, err := auditStore.AllContextE(ctx, referenceID)
+	if err != nil || len(observedAudit) != 1 || observedAudit[0] != event {
+		t.Fatalf("audit must remain independently observable: events=%#v err=%v", observedAudit, err)
+	}
+
+	service, err := NewServiceWithStoreContextAndAudit(ctx, router, failedTransactionStore, auditStore)
+	if err == nil {
+		t.Fatal("service must not initialize from audit evidence when transaction persistence is unavailable")
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("transaction initialization failure must not be misclassified as context termination: %v", err)
+	}
+	if got := mock.PurchaseCount(referenceID); got != 0 {
+		t.Fatalf("transaction persistence failure must not authorize provider submission, got %d submissions", got)
+	}
+}
+
+func TestPostgresCrossDomainRecoveryFailureIsolationNeitherDomainSynthesizesState(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	schema := "cross_domain_neither_synthesizes_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatalf("create isolated schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
+	})
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set search path: %v", err)
+	}
+	applyPostgresMigration(t, db)
+
+	transactionStore, err := NewPostgresTransactionStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	auditStore, err := NewPostgresTransactionAuditStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	registry := provider.NewRegistry()
+	mock := Mock.New(Mock.Config{
+		Products:      []provider.Product{{Code: "pln20", Name: "PLN 20"}},
+		ProviderCode: "00",
+		Message:      "success",
+		PurchaseStatus: provider.StatusSuccess,
+		Price:        20000,
+	})
+	if err := registry.Register("mock", mock); err != nil {
+		t.Fatal(err)
+	}
+	operationalStore := operational.NewMemoryStore()
+	if err := operationalStore.Put(operational.Snapshot{
+		ProviderName: "mock",
+		Balance:      100000,
+		Health:       operational.HealthHealthy,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	router, err := New(registry, operationalStore, map[string]int{"mock": 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	referenceID := "cross-domain-neither-synthesizes-ref"
+	state := postgresPendingState()
+	state.Request.ReferenceID = referenceID
+	state.Execution.Result.ReferenceID = referenceID
+	if err := transactionStore.PutContext(ctx, state); err != nil {
+		t.Fatalf("persist transaction state: %v", err)
+	}
+	event := TransactionAuditEvent{
+		ReferenceID:  referenceID,
+		Action:       "PURCHASE_PENDING",
+		Next:         string(provider.StatusPending),
+		ProviderName: "mock",
+		Message:      "pending evidence",
+		CreatedAt:    time.Now().UTC().Truncate(time.Microsecond),
+	}
+	if err := auditStore.AppendContext(ctx, event); err != nil {
+		t.Fatalf("persist audit evidence: %v", err)
+	}
+
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, txErr := transactionStore.GetContextE(context.Background(), referenceID)
+	if txErr == nil {
+		t.Fatal("expected transaction persistence failure after shared database close")
+	}
+	_, auditErr := auditStore.AllContextE(context.Background(), referenceID)
+	if auditErr == nil {
+		t.Fatal("expected audit persistence failure after shared database close")
+	}
+	if errors.Is(txErr, context.Canceled) || errors.Is(txErr, context.DeadlineExceeded) {
+		t.Fatalf("transaction failure must remain persistence error: %v", txErr)
+	}
+	if errors.Is(auditErr, context.Canceled) || errors.Is(auditErr, context.DeadlineExceeded) {
+		t.Fatalf("audit failure must remain persistence error: %v", auditErr)
+	}
+
+	service, err := NewServiceWithStoreContextAndAudit(ctx, router, transactionStore, auditStore)
+	if err == nil {
+		t.Fatal("service must not fabricate state when both persistence domains are unavailable")
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("combined persistence failure must not be classified as context termination: %v", err)
+	}
+	if got := mock.PurchaseCount(referenceID); got != 0 {
+		t.Fatalf("combined persistence failure must not authorize provider submission, got %d submissions", got)
+	}
+}
