@@ -7914,3 +7914,41 @@ Milestone #176 changes test coverage only. Production shutdown composition remai
 ### Next Milestone
 
 **#177 — Runtime Shutdown Error Precedence Across Dedicated PostgreSQL Ownership:** verify shutdown with independently owned transaction and audit PostgreSQL handles, preserving primary lifecycle error plus both cleanup-error identities, deterministic transaction-before-audit cleanup ordering, and repeated shutdown single-shot semantics.
+
+
+### Milestone #177 — Runtime Shutdown Error Precedence Across Dedicated PostgreSQL Ownership
+
+**Date:** 2026-09-27
+
+Completed:
+
+- added real PostgreSQL service-lifecycle coverage for dedicated transaction and audit database ownership after ownership transfer;
+- verified transaction and audit stores acquire independent PostgreSQL database handles in dedicated mode;
+- exercised the production Service.Run shutdown path with both dedicated database handles owned by the service;
+- injected independent transaction and audit cleanup errors through a test-only wrapper around the real PostgreSQL handles;
+- verified the primary lifecycle cancellation error remains discoverable together with both transaction and audit cleanup errors through errors.Is;
+- verified both cleanup errors retain their domain context: close transaction database and close audit database;
+- verified deterministic cleanup order is transaction database first, followed by audit database;
+- verified each dedicated PostgreSQL handle closes exactly once;
+- verified repeated Service.Close() does not close either database again and preserves both stored cleanup error identities;
+- preserved the existing ownership-transfer boundary and existing transaction/audit separation;
+- introduced no provider retry, failover, resubmission, ledger, treasury, funding, or cross-domain recovery behavior.
+
+### Verification
+
+- Test commit: b4e91be7e4f18359c8b25be3365cf3eb8dac36a2.
+- CI #1633: **GREEN** — go test ./..., go vet ./..., PostgreSQL service-backed integration tests, and go test -race ./....
+
+### Safety Boundary
+
+Milestone #177 changes test coverage only. Production shutdown composition remains unchanged. Dedicated transaction and audit database ownership remains independent, cleanup remains transaction-before-audit, and runtime ownership remains single-shot after transfer.
+
+### Known Limitations
+
+- Cleanup-error injection remains a test-only wrapper around real PostgreSQL handles; production database Close() behavior is not modified.
+- The test uses independent handles against the same PostgreSQL DSN; database ownership independence is validated by distinct *sql.DB handles and separate close tracking, not by separate PostgreSQL server instances.
+- Shutdown timeout behavior remains governed by the existing worker lifecycle boundary; this milestone does not alter worker cancellation or timeout policy.
+
+### Next Milestone
+
+**#178 — Runtime Shutdown Failure Matrix Across Shared and Dedicated Ownership:** consolidate shutdown coverage for primary lifecycle failure, worker shutdown failure, shared cleanup failure, dedicated transaction cleanup failure, dedicated audit cleanup failure, and repeated shutdown semantics without changing production behavior.
