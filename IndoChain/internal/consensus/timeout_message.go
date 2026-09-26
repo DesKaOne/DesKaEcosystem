@@ -1,6 +1,7 @@
 package consensus
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -14,7 +15,7 @@ var (
 	ErrTimeoutTargetRoundMismatch = errors.New("timeout target round mismatch")
 )
 
-const timeoutPayloadSize = 8
+const timeoutPayloadPrefixSize = 12
 
 // TimeoutAuthorityResolver resolves the public key used to authenticate a
 // validator's timeout message. The resolver is intentionally external to the
@@ -29,6 +30,7 @@ func NewTimeoutMessage(
 	state RoundState,
 	validatorID []byte,
 	nextRound uint64,
+	lockedProposal []byte,
 	signer crypto.Signer,
 ) (Message, error) {
 	if err := state.Validate(); err != nil {
@@ -52,7 +54,7 @@ func NewTimeoutMessage(
 		Round:           state.Round,
 		Sender:          append([]byte(nil), validatorID...),
 		Type:            MessageTypeTimeout,
-		Payload:         encodeTimeoutTargetRound(nextRound),
+		Payload:         encodeTimeoutEvidence(nextRound, lockedProposal),
 	}
 	signed, err := msg.Sign(signer)
 	if err != nil {
@@ -61,12 +63,20 @@ func NewTimeoutMessage(
 	return signed, nil
 }
 
-// TimeoutTargetRound decodes the canonical timeout payload.
+// TimeoutTargetRound decodes the target round from the canonical timeout payload.
 func TimeoutTargetRound(msg Message) (uint64, error) {
-	if msg.Type != MessageTypeTimeout || len(msg.Payload) != timeoutPayloadSize {
-		return 0, ErrInvalidTimeoutMessage
+	nextRound, _, err := decodeTimeoutEvidence(msg)
+	return nextRound, err
+}
+
+// TimeoutLockedProposal returns a defensive copy of the lock context carried
+// by a signed timeout message. An empty result means the sender carried no lock.
+func TimeoutLockedProposal(msg Message) ([]byte, error) {
+	_, lockedProposal, err := decodeTimeoutEvidence(msg)
+	if err != nil {
+		return nil, err
 	}
-	return binary.BigEndian.Uint64(msg.Payload), nil
+	return append([]byte(nil), lockedProposal...), nil
 }
 
 // ValidateTimeoutMessage validates structure, exact consensus context, sender
@@ -131,16 +141,24 @@ func NewTimeoutCertificateFromMessages(
 	}
 
 	var nextRound uint64
+	var lockedProposal []byte
 	senders := make([][]byte, 0, len(messages))
 	for i, msg := range messages {
 		target, err := ValidateTimeoutMessage(msg, state, validators, rules, resolver)
 		if err != nil {
 			return TimeoutCertificate{}, fmt.Errorf("timeout message %d: %w", i, err)
 		}
+		messageLock, err := TimeoutLockedProposal(msg)
+		if err != nil {
+			return TimeoutCertificate{}, fmt.Errorf("timeout message %d: %w", i, err)
+		}
 		if i == 0 {
 			nextRound = target
+			lockedProposal = append([]byte(nil), messageLock...)
 		} else if target != nextRound {
 			return TimeoutCertificate{}, ErrTimeoutTargetRoundMismatch
+		} else if !bytes.Equal(messageLock, lockedProposal) {
+			return TimeoutCertificate{}, ErrConflictingTimeoutLock
 		}
 		senders = append(senders, append([]byte(nil), msg.Sender...))
 	}
@@ -152,11 +170,29 @@ func NewTimeoutCertificateFromMessages(
 		threshold,
 		nextRound,
 		senders,
+		lockedProposal,
 	)
 }
 
-func encodeTimeoutTargetRound(nextRound uint64) []byte {
-	var payload [timeoutPayloadSize]byte
-	binary.BigEndian.PutUint64(payload[:], nextRound)
-	return payload[:]
+func encodeTimeoutEvidence(nextRound uint64, lockedProposal []byte) []byte {
+	if uint64(len(lockedProposal)) > uint64(^uint32(0)) {
+		return nil
+	}
+	payload := make([]byte, timeoutPayloadPrefixSize+len(lockedProposal))
+	binary.BigEndian.PutUint64(payload[:8], nextRound)
+	binary.BigEndian.PutUint32(payload[8:12], uint32(len(lockedProposal)))
+	copy(payload[12:], lockedProposal)
+	return payload
+}
+
+func decodeTimeoutEvidence(msg Message) (uint64, []byte, error) {
+	if msg.Type != MessageTypeTimeout || len(msg.Payload) < timeoutPayloadPrefixSize {
+		return 0, nil, ErrInvalidTimeoutMessage
+	}
+	nextRound := binary.BigEndian.Uint64(msg.Payload[:8])
+	lockLen := binary.BigEndian.Uint32(msg.Payload[8:12])
+	if uint64(timeoutPayloadPrefixSize)+uint64(lockLen) != uint64(len(msg.Payload)) {
+		return 0, nil, ErrInvalidTimeoutMessage
+	}
+	return nextRound, append([]byte(nil), msg.Payload[timeoutPayloadPrefixSize:]...), nil
 }
