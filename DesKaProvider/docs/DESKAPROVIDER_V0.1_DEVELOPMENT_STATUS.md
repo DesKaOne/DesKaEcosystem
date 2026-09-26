@@ -6487,3 +6487,40 @@ Completed:
 ### Next Milestone
 
 **#149 — PostgreSQL Audit Snapshot Cross-Check Under Transaction State Conflict:** verify that inconsistent audit evidence never overrides conflicting durable transaction state or authorizes provider execution.
+
+
+### 149. Milestone Update — PostgreSQL Audit Snapshot Cross-Check Under Transaction State Conflict
+
+**Date:** 2026-09-26
+
+Completed:
+
+- added real-PostgreSQL integration coverage where durable transaction state reaches terminal success while an intentionally conflicting audit event records a pending observation;
+- verified the conflicting audit evidence remains durably observable rather than being rewritten or silently discarded;
+- reread the authoritative PostgreSQL transaction state and verified the terminal success remains unchanged despite the contradictory audit evidence;
+- verified a repeated purchase follows the durable transaction state and does not submit to the provider a second time;
+- confirmed audit snapshot comparison is diagnostic only and cannot override transaction state or authorize provider execution;
+- no production audit-store or service implementation change was required;
+- no transaction authority, provider submission authority, retry/failover behavior, ledger mutation, treasury movement, or provider funding behavior was broadened.
+
+### Safety Boundary
+
+- transaction persistence remains the sole authoritative execution and idempotency boundary;
+- contradictory audit evidence is retained as operational evidence and does not become an alternate transaction state;
+- audit cross-checks must never be treated as authorization to retry, failover, resubmit, or mutate financial state;
+- provider execution remains gated by durable transaction state and service idempotency rules.
+
+### Verification
+
+- test implementation commit: `f1b5d9d91c2dcc22f1dc9cce71535e6d028bdba5`;
+- exact branch HEAD after this status documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before this milestone is considered closed.
+
+### Known Limitations
+
+- the scenario models a deliberately conflicting audit event on the same PostgreSQL instance; it does not cover every corruption, replica-lag, or partial-durability failure mode;
+- the test establishes the current service boundary but does not add a generic audit-vs-transaction reconciliation API;
+- audit remains operational evidence and is not a financial source of truth.
+
+### Next Milestone
+
+**#150 — PostgreSQL Audit Conflict Recovery Across Restart:** verify that contradictory audit evidence remains non-authoritative after connection restart/service reconstruction and cannot alter durable transaction outcomes.
