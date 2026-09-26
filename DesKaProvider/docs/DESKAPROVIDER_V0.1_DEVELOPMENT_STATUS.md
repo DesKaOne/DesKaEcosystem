@@ -5534,3 +5534,39 @@ Completed:
 ### Next milestone
 
 **#124 — PostgreSQL Mutation Error Coverage Completion**: cover remaining concrete PutContext PostgreSQL mutation branches only where the repository's DB abstraction permits deterministic verification, preserving the same safety boundaries.
+### 47. Milestone Update — PostgreSQL Mutation Error Coverage Completion
+
+**Date:** 2026-09-26
+
+Completed:
+
+- added integration coverage for `PutContext` INSERT failures caused by the PostgreSQL schema's positive-amount constraint;
+- verified the database constraint failure is classified as an insert persistence error rather than `ErrTransactionStateConflict`;
+- verified a failed initial INSERT does not create a durable transaction row;
+- retained the existing deterministic coverage for atomic update execution failures and `RowsAffected` failures;
+- retained the repository-compatible boundary: no artificial `*sql.Row` stubbing, no production behavior change, and no new retry/failover/resubmission path;
+- kept transaction persistence authoritative and audit/operational evidence non-authoritative.
+
+### Verification
+
+- implementation commit: `8658c6c1457585653b101eff855891ecd2e01389`;
+- CI #1246 / run `36237363703`: **GREEN** for exact HEAD;
+- CI #1247 / run `36237365650`: **GREEN** for exact HEAD;
+- CI jobs `test` and `race`: success;
+- test job `Vet`: success.
+
+### Safety Boundary
+
+- PostgreSQL INSERT constraint failures remain observable persistence errors;
+- failed initial persistence does not authorize provider submission;
+- persistence errors are not converted into state conflicts or retry authorization;
+- no provider failover, resubmission, ledger mutation, treasury movement, or provider funding behavior was introduced.
+
+### Known Limitations
+
+- the current `DBTX` contract returns concrete `*sql.Row`, so an isolated unit-test stub cannot deterministically inject arbitrary INSERT `Scan` failures without changing the production database abstraction;
+- the remaining INSERT `Scan` error path is therefore left to the real PostgreSQL integration layer rather than introducing a test-only seam.
+
+### Next milestone
+
+**#125 — PostgreSQL Read/Write Boundary Closure Review**: audit the completed mutation-error matrix against startup reconstruction, reconciliation, and atomic transition paths, then identify the next concrete reliability gap without broadening transaction authority.
