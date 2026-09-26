@@ -827,6 +827,30 @@ func TestCloseRuntimeDatabasesPropagatesCloseErrors(t *testing.T) {
 	if !transactionDB.closed || !auditDB.closed { t.Fatal("expected both database handles to be closed") }
 }
 
+type orderedCloseDB struct {
+	name string
+	order *[]string
+	err error
+	closeCount int
+}
+
+func (d *orderedCloseDB) Close() error {
+	d.closeCount++
+	*d.order = append(*d.order, d.name)
+	return d.err
+}
+
+func TestCloseRuntimeDatabasesClosesTransactionBeforeAuditAndContinuesAfterError(t *testing.T) {
+	order := []string{}
+	transactionErr := errors.New("transaction close failed")
+	transactionDB := &orderedCloseDB{name: "transaction", order: &order, err: transactionErr}
+	auditDB := &orderedCloseDB{name: "audit", order: &order}
+	err := closeRuntimeDatabases(transactionDB, auditDB)
+	if !errors.Is(err, transactionErr) { t.Fatalf("expected transaction cleanup error, got %v", err) }
+	if transactionDB.closeCount != 1 || auditDB.closeCount != 1 { t.Fatalf("expected both resources closed once: tx=%d audit=%d", transactionDB.closeCount, auditDB.closeCount) }
+	if len(order) != 2 || order[0] != "transaction" || order[1] != "audit" { t.Fatalf("unexpected cleanup order: %v", order) }
+}
+
 func TestCloseRuntimeDatabasesDoesNotDoubleCloseSharedHandle(t *testing.T) {
 	transactionDB := &closeErrorDB{}
 	err := closeRuntimeDatabases(transactionDB, transactionDB)
