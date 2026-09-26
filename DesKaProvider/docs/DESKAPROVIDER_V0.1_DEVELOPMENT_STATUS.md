@@ -7445,3 +7445,51 @@ Completed:
 ### Next Milestone
 
 **#166 — PostgreSQL Cross-Domain Recovery Failure Isolation:** verify a recoverable audit failure cannot cause transaction-store fallback mutation, and a recoverable transaction failure cannot cause audit-driven transaction reconstruction.
+
+
+### 166. Milestone Update — PostgreSQL Cross-Domain Recovery Failure Isolation
+
+**Date:** 2026-09-27
+
+Completed:
+
+- added deterministic real-PostgreSQL integration coverage for service-level cross-domain recovery isolation;
+- verified recoverable audit-store failure cannot replace, mutate, or invalidate authoritative transaction state;
+- verified an already durable transaction reference remains idempotent when the audit read adapter is unavailable;
+- verified audit failure does not authorize provider resubmission;
+- verified recoverable transaction-store failure cannot initialize service state from durable audit evidence;
+- verified audit history remains independently observable while the transaction persistence domain is unavailable;
+- verified simultaneous transaction/audit persistence failure does not fabricate success, empty state, or a synthetic transaction;
+- verified persistence failures remain ordinary persistence errors rather than `context.Canceled` or `context.DeadlineExceeded`;
+- preserved PostgreSQL transaction version semantics and existing idempotency behavior;
+- no production transaction-store, audit-store, provider, ledger, treasury, retry, failover, or resubmission behavior was broadened.
+
+### Safety Boundary
+
+- transaction persistence remains the only authoritative transaction-state and idempotency boundary;
+- audit persistence remains append-only operational evidence;
+- audit cannot reconstruct transaction state;
+- transaction persistence failure cannot be repaired from audit history;
+- neither recovery failure authorizes provider retry, failover, resubmission, ledger mutation, treasury movement, or provider funding;
+- recovery only reconstructs durable state belonging to the domain that owns that state;
+- no cross-domain lock or distributed transaction protocol was introduced.
+
+### Verification
+
+- implementation/test commit: `3f6bd4d5d995c35f06cf8d8179104307b354d06d`;
+- GitHub Actions push CI run #1554: **success**;
+- GitHub Actions PR CI run #1555: **success**;
+- both runs executed `go test ./...`, `go vet ./...`, and `go test -race ./...` through the repository workflow;
+- focused PostgreSQL integration coverage passed as part of the same CI test/race jobs;
+- local execution was not available in this environment because the checkout/network path could not reach GitHub and the local toolchain is Go 1.23.2 while the repository CI uses the declared Go 1.25.1; CI therefore remains the authoritative full-environment verification.
+
+### Known Limitations
+
+- coverage uses one PostgreSQL deployment and controlled connection close/reopen behavior; it does not cover every network partition, crash-recovery, replica-failover, or distributed replication topology;
+- service-level isolation is validated for the current transaction/audit service boundary and does not prove behavior of future projections, caches, or event consumers;
+- audit remains operational evidence and is not a financial source of truth;
+- provider live API behavior is outside this milestone.
+
+### Next Milestone
+
+**#167 — PostgreSQL Persistence Error Propagation and Recovery Boundary Hardening:** continue validating that persistence-domain errors remain explicit at service/runtime boundaries without introducing fallback state, retry authorization, or cross-domain coupling.
