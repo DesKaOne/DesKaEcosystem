@@ -5425,3 +5425,39 @@ Completed:
 ### Next milestone
 
 **#121 — PostgreSQL Persistence Error-Matrix Expansion**: extend deterministic coverage to additional startup/reconciliation persistence failure cases, especially cancellation versus non-cancellation errors, while retaining the same no-resubmission and no-financial-authorization invariants.
+
+### 44. Milestone Update — PostgreSQL Persistence Error-Matrix Expansion
+
+**Date:** 2026-09-26
+
+Completed:
+
+- added an error-aware transaction-store fixture for deterministic routing-layer persistence failure tests;
+- verified service startup propagates non-cancellation persistence read failures from AllContextE instead of treating them as empty state;
+- verified canceled initialization preserves context.Canceled rather than replacing it with an injected persistence error;
+- added reconciliation coverage proving a non-cancellation GetContextE database failure remains observable after provider status lookup;
+- verified the reconciliation read failure preserves the durable pending transaction and does not resubmit the provider purchase;
+- retained transaction persistence as the authoritative transaction state and kept audit/operational evidence non-authoritative.
+
+### Verification
+
+- implementation HEAD: 70c3687dc24668dc93f75a468f50b71edab6b18a;
+- CI #1232 / run 36235523288: **GREEN** for exact HEAD;
+- CI jobs test and race: success;
+- the test job includes successful go vet execution.
+
+### Safety Boundary
+
+- persistence read failures remain observable control/persistence errors and are not converted into missing transaction state;
+- cancellation remains a control-flow boundary and does not authorize retry, failover, resubmission, ledger mutation, treasury movement, or provider funding;
+- reconciliation database errors leave the durable pending state unchanged and cannot create a second provider submission;
+- no transaction model, routing policy, or financial authorization boundary was broadened.
+
+### Known Limitations
+
+- local full Go/PostgreSQL verification remains unavailable in this runtime because external Git/network access is unavailable;
+- live external-provider credential validation remains environment-gated.
+
+### Next milestone
+
+**#122 — PostgreSQL Persistence Mutation Error-Matrix Expansion**: extend deterministic coverage to persistence mutation failures, including atomic PutIfCurrentContext error propagation and insert/update failure boundaries, while preserving no-resubmission and no-financial-authorization invariants.
