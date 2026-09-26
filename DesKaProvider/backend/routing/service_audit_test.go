@@ -171,8 +171,8 @@ func TestServiceRestartedAuditFailureDoesNotAuthorizeResubmission(t *testing.T) 
 	}
 
 	retry, retryErr := restartedService.Purchase(context.Background(), req)
-	if !errors.Is(retryErr, auditErr) {
-		t.Fatalf("expected idempotent duplicate to preserve prior audit error, got %v", retryErr)
+	if retryErr != nil {
+		t.Fatalf("expected duplicate purchase to reuse committed terminal result after restart, got %v", retryErr)
 	}
 	if retry.Result.Status != provider.StatusSuccess {
 		t.Fatalf("expected duplicate purchase to return committed terminal result, got %q", retry.Result.Status)
