@@ -844,14 +844,14 @@ type blockingStatusProvider struct {
 	statusStarted chan struct{}
 }
 
-func (p *blockingStatusProvider) GetStatus(ctx context.Context, req provider.StatusRequest) (provider.PurchaseResult, error) {
+func (p *blockingStatusProvider) GetStatus(ctx context.Context, req provider.StatusRequest) (provider.PurchaseStatus, error) {
 	select {
 	case <-p.statusStarted:
 	default:
 		close(p.statusStarted)
 	}
 	<-ctx.Done()
-	return provider.PurchaseResult{ReferenceID: req.ReferenceID, CustomerNo: req.CustomerNo, ProductCode: req.ProductCode, Status: provider.StatusPending}, ctx.Err()
+	return provider.PurchaseStatus{ReferenceID: req.ReferenceID, CustomerNo: req.CustomerNo, ProductCode: req.ProductCode, Status: provider.StatusPending}, ctx.Err()
 }
 
 func TestServiceRestartReconcilesPendingWithoutResubmission(t *testing.T) {
