@@ -1949,9 +1949,9 @@ WHERE reference_id=$6 AND status='pending' AND version=$7`,
 		t.Fatalf("stage contradictory audit event: %v", err)
 	}
 
-	beforeCommit, err := transactionStore.GetContextE(ctx, state.Request.ReferenceID)
-	if err != nil {
-		t.Fatalf("read transaction before concurrent commits: %v", err)
+	beforeCommit, ok, err := transactionStore.GetContextE(ctx, state.Request.ReferenceID)
+	if err != nil || !ok {
+		t.Fatalf("read transaction before concurrent commits: ok=%v err=%v", ok, err)
 	}
 	if beforeCommit.Version != state.Version || beforeCommit.Execution.Result.Status != provider.StatusPending {
 		t.Fatalf("durable transaction must remain pending before concurrent commit, got %#v", beforeCommit.Execution.Result)
