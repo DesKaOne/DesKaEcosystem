@@ -33,6 +33,7 @@ type ValidatorRuntime struct {
 	votes          *VoteAggregator
 	proposal       []byte
 	lockedProposal []byte
+	lockedRound    uint64
 	certificate    *FinalityCertificate
 }
 
