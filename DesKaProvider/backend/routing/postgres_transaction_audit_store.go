@@ -20,6 +20,7 @@ func NewPostgresTransactionAuditStore(db DBTX) (*PostgresTransactionAuditStore, 
 }
 
 var _ TransactionAuditStore = (*PostgresTransactionAuditStore)(nil)
+var _ ContextReadTransactionAuditStore = (*PostgresTransactionAuditStore)(nil)
 
 const postgresAuditAppendSQL = `INSERT INTO provider_transaction_audit
 	(reference_id, action, previous_status, next_status, provider_name, message, created_at)
