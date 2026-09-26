@@ -1331,3 +1331,160 @@ func TestServiceRunCatalogStartFailurePreservesWorkerRollbackAndPostgresCleanupE
 		t.Fatal("expected audit PostgreSQL handle to be closed")
 	}
 }
+
+
+func TestServiceRunCancellationPreservesWorkerRollbackAndDedicatedPostgresCleanupErrors(t *testing.T) {
+	dsn := os.Getenv("DESKAPROVIDER_POSTGRES_DSN")
+	if dsn == "" {
+		t.Skip("DESKAPROVIDER_POSTGRES_DSN is not configured")
+	}
+
+	ctx := context.Background()
+	transactionCfg := Config{TransactionStoreDriver: "postgres", PostgresDSN: dsn}
+	auditCfg := Config{AuditStoreDriver: "postgres", PostgresDSN: dsn}
+	_, transactionDB, err := openTransactionStore(ctx, transactionCfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, auditDB, err := openAuditStore(ctx, auditCfg, nil)
+	if err != nil {
+		_ = transactionDB.Close()
+		t.Fatal(err)
+	}
+	if transactionDB == nil || auditDB == nil || transactionDB == auditDB {
+		if transactionDB != nil {
+			_ = transactionDB.Close()
+		}
+		if auditDB != nil {
+			_ = auditDB.Close()
+		}
+		t.Fatal("expected independent dedicated transaction and audit PostgreSQL handles")
+	}
+
+	transactionCleanupErr := errors.New("injected cancellation transaction cleanup failure")
+	auditCleanupErr := errors.New("injected cancellation audit cleanup failure")
+	workerRollbackErr := errors.New("injected cancellation balance worker rollback failure")
+	cleanupOrder := []string{}
+	wrappedTransactionDB := &runtimeCleanupErrorDB{
+		delegate: transactionDB,
+		err:      transactionCleanupErr,
+		name:     "transaction",
+		order:    &cleanupOrder,
+	}
+	wrappedAuditDB := &runtimeCleanupErrorDB{
+		delegate: auditDB,
+		err:      auditCleanupErr,
+		name:     "audit",
+		order:    &cleanupOrder,
+	}
+	ownership := newRuntimeDatabaseOwnership(wrappedTransactionDB, wrappedAuditDB)
+	ownership.transferToService()
+
+	registry := provider.NewRegistry()
+	balanceProvider := &balanceMock{Provider: mock.New(mock.Config{}), balance: 100000}
+	if err := registry.Register("mock", balanceProvider); err != nil {
+		t.Fatal(err)
+	}
+	syncService, err := operational.NewSyncService(registry, operational.NewMemoryStore(), "IDR", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalogStore, err := catalog.NewJSONFileStore(filepath.Join(t.TempDir(), "catalog.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalogSync, err := catalog.NewSyncService(registry, catalogStore)
+	if err != nil {
+		t.Fatal(err)
+	}
+	balanceLifecycle, err := operational.NewSyncWorkerLifecycle(syncService, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	service := &Service{
+		syncService:       syncService,
+		catalogSync:       catalogSync,
+		databaseOwnership: ownership,
+		balanceLifecycle:  balanceLifecycle,
+		interval:          time.Hour,
+		catalogInterval:   time.Hour,
+		balanceShutdown: func(ctx context.Context) error {
+			shutdownErr := balanceLifecycle.Shutdown(ctx)
+			if shutdownErr == nil {
+				return workerRollbackErr
+			}
+			return errors.Join(shutdownErr, workerRollbackErr)
+		},
+	}
+
+	runCtx, cancel := context.WithCancel(ctx)
+	result := make(chan error, 1)
+	go func() {
+		result <- service.Run(runCtx)
+	}()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for !balanceLifecycle.Running() || !service.catalogLifecycle.running {
+		if time.Now().After(deadline) {
+			cancel()
+			t.Fatal("timed out waiting for balance and catalog workers to start")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	cancel()
+
+	select {
+	case runErr := <-result:
+		if !errors.Is(runErr, context.Canceled) {
+			t.Fatalf("expected primary cancellation error, got %v", runErr)
+		}
+		if !errors.Is(runErr, workerRollbackErr) {
+			t.Fatalf("expected worker rollback error to remain discoverable, got %v", runErr)
+		}
+		if !errors.Is(runErr, transactionCleanupErr) {
+			t.Fatalf("expected transaction cleanup error to remain discoverable, got %v", runErr)
+		}
+		if !errors.Is(runErr, auditCleanupErr) {
+			t.Fatalf("expected audit cleanup error to remain discoverable, got %v", runErr)
+		}
+		if !strings.Contains(runErr.Error(), "close transaction database") {
+			t.Fatalf("expected transaction cleanup context, got %v", runErr)
+		}
+		if !strings.Contains(runErr.Error(), "close audit database") {
+			t.Fatalf("expected audit cleanup context, got %v", runErr)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for cancellation shutdown")
+	}
+
+	if balanceLifecycle.Running() {
+		t.Fatal("expected balance worker to stop during cancellation rollback")
+	}
+	if service.catalogLifecycle.running {
+		t.Fatal("expected catalog lifecycle to stop during cancellation rollback")
+	}
+	if wrappedTransactionDB.closeCount != 1 || wrappedAuditDB.closeCount != 1 {
+		t.Fatalf("expected dedicated databases to close exactly once: tx=%d audit=%d", wrappedTransactionDB.closeCount, wrappedAuditDB.closeCount)
+	}
+	if len(cleanupOrder) != 2 || cleanupOrder[0] != "transaction" || cleanupOrder[1] != "audit" {
+		t.Fatalf("expected transaction-before-audit cleanup order, got %v", cleanupOrder)
+	}
+	if !ownership.transferred() {
+		t.Fatal("expected database ownership to remain transferred during cancellation shutdown")
+	}
+
+	repeatedErr := service.Close()
+	if !errors.Is(repeatedErr, transactionCleanupErr) || !errors.Is(repeatedErr, auditCleanupErr) {
+		t.Fatalf("repeated service close must preserve both cleanup errors, got %v", repeatedErr)
+	}
+	if wrappedTransactionDB.closeCount != 1 || wrappedAuditDB.closeCount != 1 {
+		t.Fatalf("repeated service close must not close databases again: tx=%d audit=%d", wrappedTransactionDB.closeCount, wrappedAuditDB.closeCount)
+	}
+	if err := transactionDB.PingContext(ctx); err == nil {
+		t.Fatal("expected transaction PostgreSQL handle to be closed")
+	}
+	if err := auditDB.PingContext(ctx); err == nil {
+		t.Fatal("expected audit PostgreSQL handle to be closed")
+	}
+}
