@@ -2699,6 +2699,184 @@ func TestPostgresTransactionAuditStoreCrossDomainReadAfterRestartIsIdempotent(t 
 }
 
 
+func TestPostgresTransactionAuditStoreConcurrentCrossDomainReadsStable(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	schema := "audit_transaction_cross_read_concurrency_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatalf("create isolated schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
+	})
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set search path: %v", err)
+	}
+	applyPostgresMigration(t, db)
+
+	transactionStore, err := NewPostgresTransactionStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	auditStore, err := NewPostgresTransactionAuditStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	request := PurchaseRequest{
+		ProductCode: "pln20",
+		CustomerNo:  "08123456789",
+		ReferenceID: "cross-read-concurrency-ref",
+		Amount:      20000,
+	}
+	createdAt := time.Now().UTC().Truncate(time.Microsecond)
+	auditEvents := []TransactionAuditEvent{
+		{
+			ReferenceID:  request.ReferenceID,
+			Action:       "PURCHASE_PENDING",
+			Next:         string(provider.StatusPending),
+			ProviderName: "mock",
+			Message:      "pending",
+			CreatedAt:    createdAt,
+		},
+		{
+			ReferenceID:  request.ReferenceID,
+			Action:       "PURCHASE_RESULT",
+			Previous:     string(provider.StatusPending),
+			Next:         string(provider.StatusSuccess),
+			ProviderName: "mock",
+			Message:      "success",
+			CreatedAt:    createdAt,
+		},
+	}
+	for _, event := range auditEvents {
+		if err := auditStore.AppendContext(ctx, event); err != nil {
+			t.Fatalf("append audit event %s: %v", event.Action, err)
+		}
+	}
+	transaction := TransactionState{
+		Request: request,
+		Execution: PurchaseExecution{
+			ProviderName: "mock",
+			Result: provider.PurchaseResult{
+				ReferenceID: request.ReferenceID,
+				CustomerNo:  request.CustomerNo,
+				ProductCode: request.ProductCode,
+				Status:      provider.StatusSuccess,
+				ProviderCode: "00",
+				Message:      "success",
+				Price:        request.Amount,
+			},
+		},
+		Version: 2,
+	}
+	if err := transactionStore.PutContext(ctx, transaction); err != nil {
+		t.Fatalf("persist transaction state: %v", err)
+	}
+
+	baselineAudit, err := auditStore.AllContextE(ctx, request.ReferenceID)
+	if err != nil {
+		t.Fatalf("read baseline audit history: %v", err)
+	}
+	baselineTransaction, ok, err := transactionStore.GetContextE(ctx, request.ReferenceID)
+	if err != nil {
+		t.Fatalf("read baseline transaction state: %v", err)
+	}
+	if !ok {
+		t.Fatal("baseline transaction state missing")
+	}
+	if len(baselineAudit) != len(auditEvents) {
+		t.Fatalf("unexpected baseline audit history: %#v", baselineAudit)
+	}
+
+	const readers = 16
+	const rounds = 20
+	start := make(chan struct{})
+	errs := make(chan error, readers)
+	var wg sync.WaitGroup
+	wg.Add(readers)
+
+	for worker := 0; worker < readers; worker++ {
+		go func(worker int) {
+			defer wg.Done()
+			<-start
+			for round := 0; round < rounds; round++ {
+				conn, err := db.Conn(ctx)
+				if err != nil {
+					errs <- fmt.Errorf("worker %d round %d open connection: %w", worker, round, err)
+					return
+				}
+				if _, err := conn.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+					_ = conn.Close()
+					errs <- fmt.Errorf("worker %d round %d set search path: %w", worker, round, err)
+					return
+				}
+				readerAudit, err := NewPostgresTransactionAuditStore(conn)
+				if err != nil {
+					_ = conn.Close()
+					errs <- fmt.Errorf("worker %d round %d audit store: %w", worker, round, err)
+					return
+				}
+				readerTransaction, err := NewPostgresTransactionStore(conn)
+				if err != nil {
+					_ = conn.Close()
+					errs <- fmt.Errorf("worker %d round %d transaction store: %w", worker, round, err)
+					return
+				}
+
+				gotAudit, err := readerAudit.AllContextE(ctx, request.ReferenceID)
+				if err != nil {
+					_ = conn.Close()
+					errs <- fmt.Errorf("worker %d round %d audit read: %w", worker, round, err)
+					return
+				}
+				gotTransaction, ok, err := readerTransaction.GetContextE(ctx, request.ReferenceID)
+				if err != nil {
+					_ = conn.Close()
+					errs <- fmt.Errorf("worker %d round %d transaction read: %w", worker, round, err)
+					return
+				}
+				if !ok {
+					_ = conn.Close()
+					errs <- fmt.Errorf("worker %d round %d transaction disappeared", worker, round)
+					return
+				}
+				if len(gotAudit) != len(baselineAudit) {
+					_ = conn.Close()
+					errs <- fmt.Errorf("worker %d round %d audit count changed: got=%d want=%d", worker, round, len(gotAudit), len(baselineAudit))
+					return
+				}
+				for j := range baselineAudit {
+					if gotAudit[j] != baselineAudit[j] {
+						_ = conn.Close()
+						errs <- fmt.Errorf("worker %d round %d audit snapshot changed at %d: got=%#v want=%#v", worker, round, j, gotAudit[j], baselineAudit[j])
+						return
+					}
+				}
+				if gotTransaction != baselineTransaction {
+					_ = conn.Close()
+					errs <- fmt.Errorf("worker %d round %d transaction snapshot changed: got=%#v want=%#v", worker, round, gotTransaction, baselineTransaction)
+					return
+				}
+				if err := conn.Close(); err != nil {
+					errs <- fmt.Errorf("worker %d round %d close connection: %w", worker, round, err)
+					return
+				}
+			}
+		}(worker)
+	}
+
+	close(start)
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatal(err)
+	}
+}
+
+
 func TestPostgresTransactionAuditStoreAppendFailureThenRecovery(t *testing.T) {
 	db := postgresIntegrationDB(t)
 	schema := "audit_append_recovery_" + strconv.FormatInt(time.Now().UnixNano(), 10)
