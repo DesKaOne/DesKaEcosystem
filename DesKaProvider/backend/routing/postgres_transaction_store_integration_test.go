@@ -677,6 +677,91 @@ func TestPostgresConcurrentServiceReconcileConvergesWithoutResubmission(t *testi
 		t.Fatalf("expected durable success after concurrent reconciliation, got %q", durable.Execution.Result.Status)
 	}
 }
+func TestPostgresTransactionStoreSequentialVersionTransitionIsPreserved(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	schema := "sequential_version_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatalf("create isolated schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
+	})
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set isolated search path: %v", err)
+	}
+	applyPostgresMigration(t, db)
+
+	store, err := NewPostgresTransactionStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := PurchaseRequest{
+		ProductCode: "pln20",
+		CustomerNo:  "08123456789",
+		ReferenceID: postgresIntegrationReference(),
+		Amount:      20000,
+	}
+	pending := TransactionState{
+		Request: req,
+		Execution: PurchaseExecution{
+			ProviderName: "mock",
+			Result: PurchaseResult{
+				Status:       provider.StatusPending,
+				ProviderCode: "00",
+				Message:      "pending",
+				Price:        20000,
+			},
+		},
+		Version: 1,
+	}
+	if err := store.PutContext(ctx, pending); err != nil {
+		t.Fatalf("insert pending transaction: %v", err)
+	}
+
+	pendingRefresh := pending
+	pendingRefresh.Execution.Result.Message = "still pending"
+	if err := store.PutContext(ctx, pendingRefresh); err != nil {
+		t.Fatalf("sequential pending transition: %v", err)
+	}
+	current, ok := store.GetContext(ctx, req.ReferenceID)
+	if !ok {
+		t.Fatal("pending transaction disappeared after sequential transition")
+	}
+	if current.Version != 2 {
+		t.Fatalf("expected version 2 after pending transition, got %d", current.Version)
+	}
+	if current.Execution.Result.Message != "still pending" {
+		t.Fatalf("pending transition did not persist message: %#v", current.Execution.Result)
+	}
+
+	success := current
+	success.Execution.Result.Status = provider.StatusSuccess
+	success.Execution.Result.Message = "success"
+	if err := store.PutContext(ctx, success); err != nil {
+		t.Fatalf("sequential terminal transition: %v", err)
+	}
+	terminal, ok := store.GetContext(ctx, req.ReferenceID)
+	if !ok {
+		t.Fatal("terminal transaction disappeared after sequential transition")
+	}
+	if terminal.Version != 3 {
+		t.Fatalf("expected version 3 after terminal transition, got %d", terminal.Version)
+	}
+	if terminal.Execution.Result.Status != provider.StatusSuccess {
+		t.Fatalf("expected success terminal state, got %q", terminal.Execution.Result.Status)
+	}
+
+	stale := pendingRefresh
+	stale.Execution.Result.Message = "stale update"
+	if err := store.PutIfCurrentContext(ctx, req.ReferenceID, stale, success); err != ErrTransactionStateConflict {
+		t.Fatalf("expected stale version conflict after terminal transition, got %v", err)
+	}
+}
+
 func TestPostgresMigrationVerification(t *testing.T) {
 	sqlText := postgresMigrationSQL(t)
 	required := []string{
