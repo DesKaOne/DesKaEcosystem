@@ -156,9 +156,6 @@ func ValidateTimeoutCertificate(
 		}
 		seen[key] = struct{}{}
 		if !validators.Contains(sender) {
-			return TimeoutCertificate{}, ErrValidatorNotFound
-		}
-		if !validators.Contains(sender) {
 			return ErrValidatorNotFound
 		}
 		power, ok := votingPower.PowerOf(sender)
