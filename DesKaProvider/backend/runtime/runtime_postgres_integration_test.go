@@ -544,6 +544,57 @@ func TestNewFromEnvironmentContextStartupFailureMatrixClosesDedicatedAuditOwners
 	}
 }
 
+
+type runtimeCleanupErrorDB struct {
+	delegate databaseCloser
+	err      error
+	closeCount int
+}
+
+func (db *runtimeCleanupErrorDB) Close() error {
+	db.closeCount++
+	if db.delegate != nil {
+		if err := db.delegate.Close(); err != nil {
+			return errors.Join(db.err, err)
+		}
+	}
+	return db.err
+}
+
+func TestNewFromEnvironmentContextPreservesInitializationErrorWhenCleanupAlsoFails(t *testing.T) {
+	dsn := os.Getenv("DESKAPROVIDER_POSTGRES_DSN")
+	if dsn == "" { t.Skip("DESKAPROVIDER_POSTGRES_DSN is not configured") }
+	t.Setenv("DIGIFLAZZ_USERNAME", "test-user")
+	t.Setenv("DIGIFLAZZ_API_KEY", "test-key")
+	t.Setenv("DESKAPROVIDER_TRANSACTION_STORE_DRIVER", "json")
+	t.Setenv("DESKAPROVIDER_AUDIT_STORE_DRIVER", "postgres")
+	t.Setenv("DESKAPROVIDER_POSTGRES_DSN", dsn)
+
+	stages := []string{"after-provider-state-store", "after-router", "after-purchase-service", "before-ownership-transfer"}
+	for _, stage := range stages {
+		t.Run(stage, func(t *testing.T) {
+			t.Setenv("DESKAPROVIDER_PROVIDER_STATE_STORE_PATH", filepath.Join(t.TempDir(), "provider-state.json"))
+			expected := errors.New("injected constructor initialization failure")
+			cleanupErr := errors.New("injected constructor cleanup failure")
+			var captured *runtimeCleanupErrorDB
+			runtimeInitializationFailureHook = func(got string, ownership *runtimeDatabaseOwnership) error {
+				if got != stage { return nil }
+				if databaseCloserIsNil(ownership.auditDB) { t.Fatal("expected dedicated audit database ownership") }
+				captured = &runtimeCleanupErrorDB{delegate: ownership.auditDB, err: cleanupErr}
+				ownership.auditDB = captured
+				return expected
+			}
+			defer func() { runtimeInitializationFailureHook = nil }()
+
+			_, err := NewFromEnvironmentContext(context.Background(), nil)
+			if !errors.Is(err, expected) { t.Fatalf("expected primary initialization error, got %v", err) }
+			if !errors.Is(err, cleanupErr) { t.Fatalf("expected cleanup error to remain discoverable, got %v", err) }
+			if captured == nil || captured.closeCount != 1 { t.Fatalf("expected wrapped audit resource to close exactly once, got %#v", captured) }
+			if !strings.Contains(err.Error(), "close audit database") { t.Fatalf("expected audit cleanup context in error, got %v", err) }
+		})
+	}
+}
+
 func TestNewFromEnvironmentContextCancellationBeforeOwnershipTransferClosesDedicatedAuditOwnership(t *testing.T) {
 	dsn := os.Getenv("DESKAPROVIDER_POSTGRES_DSN")
 	if dsn == "" { t.Skip("DESKAPROVIDER_POSTGRES_DSN is not configured") }
