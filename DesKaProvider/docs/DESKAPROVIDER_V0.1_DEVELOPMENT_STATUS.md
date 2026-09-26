@@ -4289,3 +4289,35 @@ Completed:
 
 1. continue auditing restart recovery with independently constructed service instances and durable version boundaries;
 2. preserve the invariant that audit or operational evidence cannot authorize retry, failover, resubmission, ledger mutation, treasury movement, or provider funding.
+
+### 48. Milestone Update — Stale Restart Instance Terminalization Boundary
+
+**Date:** 2026-09-26
+
+Completed:
+
+- reviewed restart recovery with independently constructed service instances sharing the same durable transaction store;
+- added deterministic regression coverage where a fresh instance commits a terminal success and a stale instance later observes a divergent provider terminal result;
+- verified the stale instance returns the existing transaction-reference conflict rather than overwriting the durable terminal success;
+- verified stale reconciliation does not resubmit the provider purchase;
+- preserved transaction persistence as the authoritative state across restart and concurrent/stale writers;
+- kept operational and audit evidence non-authoritative.
+
+### Verification
+
+- regression test commit: `65e8aa84bc99bc7b285e7a5b78be1af95c58f3cb`;
+- CI #936 / run `36209987655`: **GREEN** for exact HEAD `65e8aa84bc99bc7b285e7a5b78be1af95c58f3cb`;
+- CI jobs `test`: success;
+- CI job `test` `vet`: success;
+- CI jobs `race`: success.
+
+### Safety Boundary
+
+- stale-instance conflict handling protects durable transaction integrity only;
+- a divergent stale terminal result cannot authorize overwrite, retry, failover, resubmission, ledger mutation, treasury movement, or provider funding;
+- provider submission count remains unchanged during stale-instance reconciliation.
+
+### Next Milestone
+
+1. continue auditing startup/restart reads with database errors and context cancellation around durable transaction recovery;
+2. preserve the invariant that audit or operational evidence cannot authorize retry, failover, resubmission, ledger mutation, treasury movement, or provider funding.
