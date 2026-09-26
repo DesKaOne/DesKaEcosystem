@@ -1100,3 +1100,54 @@ func TestRuntimeInitializationCleanupPreservesWrappedPrimaryAndCleanupIdentity(t
 		t.Fatalf("expected one cleanup close, got %d", transactionDB.closeCount)
 	}
 }
+
+
+func TestServiceRollbackUsesSingleCatalogShutdownCompletionBoundary(t *testing.T) {
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", &balanceMock{Provider: mock.New(mock.Config{}), balance: 100000}); err != nil {
+		t.Fatal(err)
+	}
+	syncService, err := operational.NewSyncService(registry, operational.NewMemoryStore(), "IDR", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	balanceLifecycle, err := operational.NewSyncWorkerLifecycle(syncService, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := New(syncService, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.balanceLifecycle = balanceLifecycle
+	service.catalogSync = &catalog.SyncService{}
+	service.catalogLifecycle = newCatalogWorkerLifecycle()
+	catalogStartErr := errors.New("injected catalog start failure")
+	catalogShutdownErr := errors.New("injected catalog shutdown completion failure")
+	shutdownCalls := 0
+	service.catalogStart = func(context.Context) (context.Context, error) {
+		return nil, catalogStartErr
+	}
+	service.catalogShutdown = func() error {
+		shutdownCalls++
+		service.catalogLifecycle.Shutdown()
+		return catalogShutdownErr
+	}
+
+	runErr := service.Run(context.Background())
+	if !errors.Is(runErr, catalogStartErr) {
+		t.Fatalf("expected catalog start error, got %v", runErr)
+	}
+	if !errors.Is(runErr, catalogShutdownErr) {
+		t.Fatalf("expected catalog shutdown completion error, got %v", runErr)
+	}
+	if shutdownCalls != 1 {
+		t.Fatalf("expected exactly one catalog shutdown completion call, got %d", shutdownCalls)
+	}
+	if service.catalogLifecycle.Running() {
+		t.Fatal("expected catalog lifecycle to be stopped after rollback")
+	}
+	if balanceLifecycle.Running() {
+		t.Fatal("expected balance lifecycle to be stopped after rollback")
+	}
+}
