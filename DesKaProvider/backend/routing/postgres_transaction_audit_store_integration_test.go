@@ -1981,7 +1981,11 @@ WHERE reference_id=$6 AND status='pending' AND version=$7`,
 	if beforeCommit.Version != 1 || beforeCommit.Execution.Result.Status != provider.StatusPending {
 		t.Fatalf("transaction state must remain pending before writer commit, got %#v", beforeCommit)
 	}
-	beforeAudit, err := auditStore.AllContextE(ctx, state.Request.ReferenceID)
+	readerAuditStore, err := NewPostgresTransactionAuditStore(readerConn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeAudit, err := readerAuditStore.AllContextE(ctx, state.Request.ReferenceID)
 	if err != nil {
 		t.Fatalf("read audit before concurrent commits: %v", err)
 	}
@@ -2007,7 +2011,7 @@ WHERE reference_id=$6 AND status='pending' AND version=$7`,
 		t.Fatalf("durable transaction state must remain authoritative, got %#v", persisted.Execution.Result)
 	}
 
-	events, err := auditStore.AllContextE(ctx, state.Request.ReferenceID)
+	events, err := readerAuditStore.AllContextE(ctx, state.Request.ReferenceID)
 	if err != nil {
 		t.Fatalf("read committed contradictory audit evidence: %v", err)
 	}
