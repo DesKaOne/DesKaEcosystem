@@ -4243,4 +4243,17 @@ Completed:
 1. continue auditing restart/reconciliation concurrency and atomic transition boundaries;
 2. preserve the invariant that audit or operational evidence cannot authorize retry, failover, resubmission, ledger mutation, treasury movement, or provider funding.
 
-<!-- CI refresh marker: 2026-09-26 -->
+### 39. Milestone Update — Atomic PostgreSQL Transition & Concurrent Reconciliation Validation
+Date 2026-09-26
+Completed:
+- validated the PostgreSQL compare-and-transition path against concurrent callers using the persisted transaction snapshot (including version and request/provider identity);
+- fixed integration-test scoping and PostgreSQL session setup so the atomic transition test remains deterministic under connection pooling;
+- verified concurrent terminalization produces one committed transition and one stale-state conflict, with the terminal state remaining durable;
+- verified concurrent reconciliation converges without resubmitting the provider purchase;
+- corrected CI PR checkout behavior to validate the actual PR head SHA rather than a stale synthetic merge ref.
+Verification:
+- HEAD 5c807e01a8f3ff028bccc2a78d625c02e4c414b3
+- CI #926: test = success, race = success
+Next milestone:
+1. continue auditing sequential PostgreSQL transaction version transitions and restart recovery boundaries;
+2. preserve the invariant that audit or operational evidence cannot authorize retry, failover, resubmission, ledger mutation, treasury movement, or provider funding.
