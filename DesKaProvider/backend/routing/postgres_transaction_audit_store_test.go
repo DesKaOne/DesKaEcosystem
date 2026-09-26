@@ -1,14 +1,14 @@
 package routing
 
 import (
+	"context"
 	"database/sql"
 	"database/sql/driver"
-	"context"
 	"errors"
-	"testing"
-	"time"
 	"io"
 	"strconv"
+	"testing"
+	"time"
 )
 
 func TestPostgresTransactionAuditStoreValidation(t *testing.T) {
@@ -48,6 +48,27 @@ func TestPostgresTransactionAuditStoreAppendContextPropagatesDatabaseError(t *te
 	}
 	if stub.query != postgresAuditAppendSQL {
 		t.Fatalf("expected audit append SQL, got %q", stub.query)
+	}
+}
+
+func TestPostgresTransactionAuditStoreAppendContextPropagatesDeadline(t *testing.T) {
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	t.Cleanup(cancel)
+
+	store, err := NewPostgresTransactionAuditStore(&postgresStoreDBStub{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = store.AppendContext(ctx, TransactionAuditEvent{
+		ReferenceID: "ref",
+		Action: "TEST",
+		CreatedAt: time.Now().UTC(),
+	})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected deadline exceeded, got %v", err)
+	}
+	if errors.Is(err, context.Canceled) {
+		t.Fatalf("deadline error must not be reported as cancellation: %v", err)
 	}
 }
 
@@ -269,6 +290,9 @@ func TestPostgresTransactionAuditStoreAllContextPropagatesScanError(t *testing.T
 	if err == nil || !errors.Is(err, wantErr) {
 		t.Fatalf("expected scan error to propagate, got %v", err)
 	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("ordinary scan error must not be classified as context termination: %v", err)
+	}
 }
 
 func TestPostgresTransactionAuditStoreAllContextPropagatesRowsError(t *testing.T) {
@@ -282,5 +306,8 @@ func TestPostgresTransactionAuditStoreAllContextPropagatesRowsError(t *testing.T
 	_, err = store.AllContextE(context.Background(), "ref")
 	if err == nil || !errors.Is(err, wantErr) {
 		t.Fatalf("expected rows iteration error to propagate, got %v", err)
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("ordinary rows error must not be classified as context termination: %v", err)
 	}
 }
