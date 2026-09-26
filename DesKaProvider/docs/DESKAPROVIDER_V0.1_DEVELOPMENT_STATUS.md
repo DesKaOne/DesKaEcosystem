@@ -4901,3 +4901,12 @@ Completed:
 ### Next Milestone
 
 **#128 — PostgreSQL Restart Read Consistency Boundary:** verify durable reads remain complete and authoritative after reconnect/restart while preserving transaction identity and version metadata.
+
+### 2026-09-26 — CI Validation Follow-up
+
+- final validation HEAD: `d228e81519afee2f8d17bccb2d700aeda0244f9f`;
+- CI #1100 / run `36220472799`: **GREEN**;
+- CI jobs `test`: success;
+- CI jobs `race`: success;
+- corrected PR workflow checkout to validate the explicit `pull_request.head.sha` instead of a stale synthetic merge ref;
+- repaired PostgreSQL integration-test variable scoping so recovery and concurrent reconciliation coverage execute against the intended store.
