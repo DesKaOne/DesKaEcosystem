@@ -5159,3 +5159,32 @@ Completed:
 1. audit cancellation and database-error propagation across `PutContext` and `Reconcile` boundaries;
 2. verify a canceled context cannot produce a partial durable transaction transition or accidental provider resubmission;
 3. preserve the no-resubmission/no-financial-authorization invariants.
+
+### 39. Milestone Update — Atomic Reconciliation Transition Verification
+
+**Date:** 2026-09-26
+
+Completed:
+
+- completed the PostgreSQL integration-test scope repair and deterministic concurrent reconciliation coverage;
+- verified the CI workflow now checks out the pull-request head SHA directly, preventing stale synthetic merge-ref validation;
+- verified the current branch HEAD reaches a completed CI run with both `test` and `race` jobs successful;
+- verified concurrent service reconciliation converges on the durable terminal provider result without a second provider purchase submission;
+- preserved transaction persistence as the authoritative state boundary and kept audit/operational evidence non-authoritative.
+
+### Verification
+
+- implementation HEAD: `0b6626e09664a2c10d5063fdf5ba2050e62b73d9`;
+- CI #1151 / run `36223880522`: **GREEN** for exact HEAD;
+- CI jobs `test`: success;
+- CI jobs `race`: success.
+
+### Safety Boundary
+
+- reconciliation may observe provider state and commit one durable terminal transition;
+- a losing concurrent transition cannot authorize a second provider purchase;
+- audit and operational evidence remain observational and cannot authorize retry, failover, resubmission, ledger mutation, treasury movement, or provider funding.
+
+### Next milestone
+
+**#117 — Sequential/Repeated Transaction Transition Review**: audit repeated pending-to-pending and terminal-idempotent persistence paths, especially version handling in the PostgreSQL store, without expanding transaction authority beyond the persisted transaction record.
