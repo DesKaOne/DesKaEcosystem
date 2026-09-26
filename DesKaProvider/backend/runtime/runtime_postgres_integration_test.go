@@ -922,3 +922,119 @@ func TestServiceRunShutdownPreservesPrimaryLifecycleAndDedicatedPostgresCleanupE
 		t.Fatal("expected audit PostgreSQL database handle to be closed")
 	}
 }
+
+
+func TestServiceClosePreservesDedicatedPostgresCleanupErrorsAfterExplicitWorkerShutdown(t *testing.T) {
+	dsn := os.Getenv("DESKAPROVIDER_POSTGRES_DSN")
+	if dsn == "" {
+		t.Skip("DESKAPROVIDER_POSTGRES_DSN is not configured")
+	}
+
+	ctx := context.Background()
+	transactionCfg := Config{TransactionStoreDriver: "postgres", PostgresDSN: dsn}
+	auditCfg := Config{AuditStoreDriver: "postgres", PostgresDSN: dsn}
+	_, transactionDB, err := openTransactionStore(ctx, transactionCfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, auditDB, err := openAuditStore(ctx, auditCfg, nil)
+	if err != nil {
+		_ = transactionDB.Close()
+		t.Fatal(err)
+	}
+	if transactionDB == nil || auditDB == nil || transactionDB == auditDB {
+		if transactionDB != nil {
+			_ = transactionDB.Close()
+		}
+		if auditDB != nil {
+			_ = auditDB.Close()
+		}
+		t.Fatal("expected independent dedicated transaction and audit PostgreSQL handles")
+	}
+
+	transactionCleanupErr := errors.New("injected explicit transaction shutdown cleanup failure")
+	auditCleanupErr := errors.New("injected explicit audit shutdown cleanup failure")
+	cleanupOrder := []string{}
+	wrappedTransactionDB := &runtimeCleanupErrorDB{
+		delegate: transactionDB,
+		err:      transactionCleanupErr,
+		name:     "transaction",
+		order:    &cleanupOrder,
+	}
+	wrappedAuditDB := &runtimeCleanupErrorDB{
+		delegate: auditDB,
+		err:      auditCleanupErr,
+		name:     "audit",
+		order:    &cleanupOrder,
+	}
+	ownership := newRuntimeDatabaseOwnership(wrappedTransactionDB, wrappedAuditDB)
+	ownership.transferToService()
+
+	registry := provider.NewRegistry()
+	balanceProvider := &balanceMock{Provider: mock.New(mock.Config{}), balance: 100000}
+	if err := registry.Register("mock", balanceProvider); err != nil {
+		t.Fatal(err)
+	}
+	syncService, err := operational.NewSyncService(registry, operational.NewMemoryStore(), "IDR", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	balanceLifecycle, err := operational.NewSyncWorkerLifecycle(syncService, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := &Service{
+		syncService:       syncService,
+		balanceLifecycle:  balanceLifecycle,
+		databaseOwnership: ownership,
+		interval:          time.Hour,
+	}
+
+	if err := balanceLifecycle.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for !balanceLifecycle.Running() {
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for balance worker to start")
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	shutdownErr := service.Close()
+	if !errors.Is(shutdownErr, transactionCleanupErr) {
+		t.Fatalf("expected explicit shutdown to preserve transaction cleanup error, got %v", shutdownErr)
+	}
+	if !errors.Is(shutdownErr, auditCleanupErr) {
+		t.Fatalf("expected explicit shutdown to preserve audit cleanup error, got %v", shutdownErr)
+	}
+	if !strings.Contains(shutdownErr.Error(), "close transaction database") {
+		t.Fatalf("expected transaction cleanup context, got %v", shutdownErr)
+	}
+	if !strings.Contains(shutdownErr.Error(), "close audit database") {
+		t.Fatalf("expected audit cleanup context, got %v", shutdownErr)
+	}
+	if balanceLifecycle.Running() {
+		t.Fatal("expected explicit service close to stop the owned worker")
+	}
+	if wrappedTransactionDB.closeCount != 1 || wrappedAuditDB.closeCount != 1 {
+		t.Fatalf("expected dedicated databases to close exactly once: tx=%d audit=%d", wrappedTransactionDB.closeCount, wrappedAuditDB.closeCount)
+	}
+	if len(cleanupOrder) != 2 || cleanupOrder[0] != "transaction" || cleanupOrder[1] != "audit" {
+		t.Fatalf("expected transaction-before-audit cleanup order, got %v", cleanupOrder)
+	}
+
+	repeatedErr := service.Close()
+	if !errors.Is(repeatedErr, transactionCleanupErr) || !errors.Is(repeatedErr, auditCleanupErr) {
+		t.Fatalf("repeated explicit close must preserve stored cleanup errors, got %v", repeatedErr)
+	}
+	if wrappedTransactionDB.closeCount != 1 || wrappedAuditDB.closeCount != 1 {
+		t.Fatalf("repeated explicit close must not close databases again: tx=%d audit=%d", wrappedTransactionDB.closeCount, wrappedAuditDB.closeCount)
+	}
+	if err := transactionDB.PingContext(ctx); err == nil {
+		t.Fatal("expected transaction PostgreSQL handle to be closed")
+	}
+	if err := auditDB.PingContext(ctx); err == nil {
+		t.Fatal("expected audit PostgreSQL handle to be closed")
+	}
+}
