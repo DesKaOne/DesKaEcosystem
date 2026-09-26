@@ -6448,3 +6448,42 @@ Completed:
 ### Next Milestone
 
 **#148 — PostgreSQL Audit Snapshot Recovery With Transaction-State Cross-Check:** verify the recovered audit snapshot can be read alongside durable transaction state while preserving transaction persistence as the sole execution/idempotency authority.
+
+
+### 148. Milestone Update — PostgreSQL Audit Snapshot Recovery With Transaction-State Cross-Check
+
+**Date:** 2026-09-26
+
+Completed:
+
+- added real-PostgreSQL integration coverage combining the durable transaction store and audit store around the same purchase reference;
+- verified the terminal transaction state and its complete audit lifecycle snapshot before the connection restart boundary;
+- closed the original PostgreSQL connection pool, reopened a fresh pool, restored the isolated schema context, and reread both persistence boundaries;
+- verified durable transaction state is byte-for-byte equivalent at the modeled field level before and after restart, including request, execution, and version;
+- verified the recovered audit snapshot has identical length, event content, and ordering before and after restart;
+- verified a repeated purchase using the recovered in-memory service state does not submit to the provider a second time, preserving transaction idempotency independently of audit history;
+- confirmed audit snapshot recovery is a cross-checking/observational path and cannot replace transaction persistence as the execution authority;
+- no production audit-store implementation change was required;
+- no transaction authority, provider submission authority, retry/failover behavior, ledger mutation, treasury movement, or provider funding behavior was broadened.
+
+### Safety Boundary
+
+- transaction persistence remains the sole authoritative execution and idempotency boundary;
+- audit history is cross-checked against transaction state for diagnostics and recovery verification only;
+- equality between recovered audit evidence and transaction state does not grant audit history authorization to initiate or repeat provider execution;
+- audit recovery cannot authorize provider retry, failover, resubmission, ledger mutation, treasury movement, or provider funding.
+
+### Verification
+
+- test implementation commit: `a9333a11dc1a22c888a6b624a3f815884ea4e6dc`;
+- exact branch HEAD after this status documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before this milestone is considered closed.
+
+### Known Limitations
+
+- the scenario verifies connection-pool close/reopen against the same durable PostgreSQL instance rather than a full database-server crash/restart;
+- the repeated purchase check uses the same service instance after persistence recovery, so it validates the durable transaction-state/idempotency boundary without modeling a second provider process with a fresh in-memory registry;
+- audit remains operational evidence and is not a financial source of truth.
+
+### Next Milestone
+
+**#149 — PostgreSQL Audit Snapshot Cross-Check Under Transaction State Conflict:** verify that inconsistent audit evidence never overrides conflicting durable transaction state or authorizes provider execution.
