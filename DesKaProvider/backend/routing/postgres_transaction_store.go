@@ -68,7 +68,7 @@ func (s *PostgresTransactionStore) PutContext(ctx context.Context, state Transac
  result, err := s.db.ExecContext(ctx, postgresTransitionSQL,
   state.Request.ReferenceID, next.Execution.Result.Status, next.Execution.Result.ProviderCode,
   next.Execution.Result.Message, next.Execution.Result.SerialNumber, next.Execution.Result.Price,
-  current.Version, current.Request.ProductCode, current.CustomerNo, current.Execution.ProviderName)
+  current.Version, current.Request.ProductCode, current.Request.CustomerNo, current.Execution.ProviderName)
  if err != nil { return fmt.Errorf("update transaction: %w", err) }
  n, err := result.RowsAffected()
  if err != nil { return fmt.Errorf("read transaction update result: %w", err) }
