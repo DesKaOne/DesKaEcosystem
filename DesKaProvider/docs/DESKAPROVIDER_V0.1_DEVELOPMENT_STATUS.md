@@ -7718,3 +7718,42 @@ Initialization cleanup is infrastructure-only. A partial runtime initialization 
 **#172 — PostgreSQL Runtime Startup Failure Rollback Integration**
 
 Next work should exercise runtime startup failure rollback closer to NewFromEnvironmentContext, including failures after transaction/audit acquisition and before ownership transfer, while preserving exact error identity and single-close guarantees.
+
+
+### Milestone #172 — PostgreSQL Runtime Startup Failure Rollback Integration
+
+**Date:** 2026-09-27
+
+Completed:
+
+- added a narrow internal startup-failure test seam immediately after transaction/audit database acquisition in NewFromEnvironmentContext;
+- verified the actual runtime constructor rollback path, rather than testing only the lower-level cleanup helper;
+- added real PostgreSQL integration coverage for shared transaction/audit database ownership when startup fails before ownership transfer;
+- added real PostgreSQL integration coverage for dedicated audit database ownership when startup fails before ownership transfer;
+- verified startup failure preserves the injected primary error identity;
+- verified database ownership is not transferred to the runtime service after startup failure;
+- verified acquired database ownership is closed by the constructor rollback defer and repeated ownership cleanup is single-shot;
+- verified shared audit mode does not acquire a second database owner and dedicated audit mode retains an independently owned database handle;
+- preserved the existing transaction/audit authority boundary and did not add provider retry, failover, resubmission, ledger, treasury, funding, or cross-domain recovery behavior.
+
+### Verification
+
+- Initial implementation commit: cf5e64045053357177427135030ef5100f5a9175.
+- CI #1594/#1595 initially failed because the startup-failure hook was invoked before the constructor rollback defer was registered; this was corrected in 66c3384949b69f075cae64e04312059c53ab16a2.
+- CI #1596/#1597 then exposed typed-nil *sql.DB interface assertions in the new integration tests; assertions were corrected to use the existing databaseCloserIsNil boundary in d6e38996035307e2e683d0aa17273773607e3467.
+- Final Push CI #1598: **GREEN** — go test ./..., go vet ./..., PostgreSQL service-backed integration tests, and go test -race ./....
+- Final PR CI #1599: **GREEN** — test, race.
+
+### Safety Boundary
+
+Runtime startup failure rollback is infrastructure-only. A failure after database acquisition but before successful initialization releases only the resources acquired by the constructor, preserves primary error identity, and prevents ownership transfer to a partially initialized service. Shared transaction/audit PostgreSQL handles remain single-owner resources; dedicated audit handles remain independently owned. Transaction persistence remains the authoritative transaction-state/idempotency boundary, while audit persistence remains observational evidence.
+
+### Known Limitations
+
+- The startup-failure seam is internal test instrumentation and has no production failure behavior when unset.
+- The integration tests validate constructor rollback against real PostgreSQL resources but do not attempt to enumerate every possible failure after provider-state persistence, router construction, purchase-service construction, or process termination.
+- database/sql close remains non-context-aware, and provider live API behavior remains outside this runtime milestone.
+
+### Next Milestone
+
+**#173 — PostgreSQL Runtime Startup Failure Matrix After Persistence Initialization:** extend constructor-level rollback coverage across provider-state persistence, router construction, purchase-service construction, and final initialization-context cancellation, while preserving exact error identity, cleanup ordering, and single-close ownership.
