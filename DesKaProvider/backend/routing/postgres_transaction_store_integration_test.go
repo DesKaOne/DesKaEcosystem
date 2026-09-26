@@ -1805,20 +1805,20 @@ func TestPostgresConcurrentReadTransitionObservesCompleteState(t *testing.T) {
 	}
 	applyPostgresMigration(t, db)
 
-	connA, err := db.Conn(ctx)
-	if err != nil { t.Fatalf("pin reader connection: %v", err) }
-	t.Cleanup(func() { _ = connA.Close() })
-	if _, err := connA.ExecContext(ctx, "SET search_path TO "+schema); err != nil { t.Fatalf("set reader search path: %v", err) }
-
-	connB, err := db.Conn(ctx)
-	if err != nil { t.Fatalf("pin writer connection: %v", err) }
-	t.Cleanup(func() { _ = connB.Close() })
-	if _, err := connB.ExecContext(ctx, "SET search_path TO "+schema); err != nil { t.Fatalf("set writer search path: %v", err) }
-
-	reader, err := NewPostgresTransactionStore(connA)
-	if err != nil { t.Fatal(err) }
-	writer, err := NewPostgresTransactionStore(connB)
-	if err != nil { t.Fatal(err) }
+	openStoreDB := func(role string) (*sql.DB, *PostgresTransactionStore) {
+		db, err := sql.Open("pgx", os.Getenv("DESKAPROVIDER_POSTGRES_DSN"))
+		if err != nil { t.Fatalf("open %s db: %v", role, err) }
+		t.Cleanup(func() { _ = db.Close() })
+		if err := db.PingContext(ctx); err != nil { t.Fatalf("ping %s db: %v", role, err) }
+		if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil { t.Fatalf("set %s search path: %v", role, err) }
+		store, err := NewPostgresTransactionStore(db)
+		if err != nil { t.Fatalf("new %s store: %v", role, err) }
+		return db, store
+	}
+	readerDB, reader := openStoreDB("reader")
+	writerDB, writer := openStoreDB("writer")
+	defer readerDB.Close()
+	defer writerDB.Close()
 
 	pending := postgresPendingState()
 	pending.Request.ReferenceID = postgresIntegrationReference()
@@ -1837,9 +1837,9 @@ func TestPostgresConcurrentReadTransitionObservesCompleteState(t *testing.T) {
 	success.Execution.Result.SerialNumber = "SN-SUCCESS"
 
 	var wg sync.WaitGroup
-	reads := make(chan TransactionState, 12)
+	reads := make(chan TransactionState, 24)
 	errs := make(chan error, 1)
-	const readers = 12
+	const readers = 24
 	for i := 0; i < readers; i++ {
 		wg.Add(1)
 		go func() {
@@ -1852,8 +1852,9 @@ func TestPostgresConcurrentReadTransitionObservesCompleteState(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		err := writer.PutIfCurrentContext(ctx, pending.Request.ReferenceID, pending, success)
-		if err != nil { errs <- err }
+		if err := writer.PutIfCurrentContext(ctx, pending.Request.ReferenceID, pending, success); err != nil {
+			errs <- err
+		}
 	}()
 	wg.Wait()
 	close(reads)
@@ -1871,6 +1872,7 @@ func TestPostgresConcurrentReadTransitionObservesCompleteState(t *testing.T) {
 			t.Fatalf("read observed partial transition state: %#v", state)
 		}
 	}
+
 	final, ok := reader.GetContext(ctx, pending.Request.ReferenceID)
 	if !ok { t.Fatal("final transaction disappeared") }
 	if final.Version != 2 || final.Execution.Result.Status != provider.StatusSuccess || final.Execution.Result.Message != "success" || final.Execution.Result.SerialNumber != "SN-SUCCESS" {
