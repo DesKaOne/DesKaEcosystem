@@ -18,6 +18,8 @@ const (
 	MessageTypeFinalityEvidence
 	MessageTypeValidatorSetUpdate
 	MessageTypeTimeout
+	MessageTypePrevote
+	MessageTypePrecommit
 )
 
 var (
@@ -79,7 +81,7 @@ func ValidateMessage(m Message, rules ValidationRules) error {
 	if m.ProtocolVersion != rules.ProtocolVersion { return ErrWrongProtocolVersion }
 	if m.ChainID != rules.ChainID { return ErrWrongChainID }
 	switch m.Type {
-	case MessageTypeProposal, MessageTypeVote, MessageTypeFinalityEvidence, MessageTypeValidatorSetUpdate, MessageTypeTimeout:
+	case MessageTypeProposal, MessageTypeVote, MessageTypeFinalityEvidence, MessageTypeValidatorSetUpdate, MessageTypeTimeout, MessageTypePrevote, MessageTypePrecommit:
 	default: return ErrInvalidMessageType
 	}
 	if rules.RequireSender && len(m.Sender) == 0 { return ErrMissingSender }
