@@ -51,7 +51,10 @@ func (s *PostgresTransactionStore) Get(referenceID string) (TransactionState, bo
 
 func (s *PostgresTransactionStore) PutContext(ctx context.Context, state TransactionState) error {
  if err := validatePostgresState(state); err != nil { return err }
- current, ok := s.GetContext(ctx, state.Request.ReferenceID)
+ current, ok, readErr := s.GetContextE(ctx, state.Request.ReferenceID)
+ if readErr != nil {
+  return fmt.Errorf("get transaction: %w", readErr)
+ }
  if !ok {
   var insertedReference string
   err := s.db.QueryRowContext(ctx, postgresInsertSQL, state.Request.ReferenceID, state.Request.ProductCode, state.Request.CustomerNo, state.Request.Amount, state.Request.Testing, state.Execution.ProviderName, state.Execution.Result.Status, state.Execution.Result.ProviderCode, state.Execution.Result.Message, state.Execution.Result.SerialNumber, state.Execution.Result.Price, 1).Scan(&insertedReference)
