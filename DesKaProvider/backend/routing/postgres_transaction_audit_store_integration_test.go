@@ -1996,7 +1996,19 @@ WHERE reference_id=$6 AND status='pending' AND version=$7`,
 		t.Fatalf("commit durable transaction update: %v", err)
 	}
 
-	persisted, ok, readErr := readerStore.GetContextE(ctx, state.Request.ReferenceID)
+	postCommitReaderConn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatalf("open post-commit reader connection: %v", err)
+	}
+	defer postCommitReaderConn.Close()
+	if _, err := postCommitReaderConn.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set post-commit reader search path: %v", err)
+	}
+	postCommitReaderStore, err := NewPostgresTransactionStore(postCommitReaderConn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	persisted, ok, readErr := postCommitReaderStore.GetContextE(ctx, state.Request.ReferenceID)
 	if readErr != nil || !ok {
 		t.Fatalf("read committed transaction update: ok=%v err=%v", ok, readErr)
 	}
