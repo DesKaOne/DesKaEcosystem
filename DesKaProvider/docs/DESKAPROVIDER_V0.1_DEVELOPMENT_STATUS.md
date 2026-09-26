@@ -1083,6 +1083,35 @@ Runtime wiring only composes existing boundaries. It does not introduce automati
 - Both `test` and `race` jobs were independently verified green.
 - Runtime wiring commits: `1c3d1d6d7b935e450ca4e0e4eac55a5e3eb53da0`, `14ed03b0e0d779c6102f21ea3f9c08a0d2d0ce7c`.
 
+
+### 39. Milestone Update — Concurrent Reconciliation Atomic Convergence
+
+**Date:** 2026-09-26
+
+Completed:
+
+- audited the PostgreSQL-backed service reconciliation path across independently constructed service instances;
+- repaired integration-test variable scope so PostgreSQL store handles remain local to their owning test;
+- preserved deterministic concurrency coverage proving two concurrent reconciliations converge on the same terminal provider result;
+- verified concurrent reconciliation does not resubmit the provider purchase and the durable PostgreSQL transaction remains terminally successful;
+- updated PR CI checkout to validate the actual pull-request head SHA instead of a stale synthetic merge ref;
+- verified exact implementation HEAD `96210d68e3c47b90687fa4dc2d694c76b50fc6a6` with CI `test`, `race`, and `vet` all successful;
+- preserved transaction persistence as authoritative state while audit and operational evidence remain non-authoritative.
+
+### Verification
+
+- implementation HEAD: `96210d68e3c47b90687fa4dc2d694c76b50fc6a6`;
+- CI #952 / run `36210907716`: **GREEN**;
+- CI jobs `test`: success;
+- CI jobs `race`: success;
+- CI step `vet`: success.
+
+### Safety Boundary
+
+- concurrent reconciliation converges on one durable terminal state and never creates a second provider purchase;
+- persistence conflicts remain a state-transition concern and do not authorize application-level resubmission;
+- audit or operational evidence cannot authorize retry, failover, resubmission, ledger mutation, treasury movement, or provider funding.
+
 ### Next milestone
 
 1. verify the CI result for runtime wiring;
