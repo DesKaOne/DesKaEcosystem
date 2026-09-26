@@ -4287,8 +4287,8 @@ Completed:
 
 ### Verification
 
-- latest implementation HEAD: `f5e346a04ddc028553229215fc84fd7d145fedd9`;
-- CI #1040 / run `36216022823`: **GREEN**;
+- latest implementation HEAD: `7e6ea2deddc493fa24f56f4b232417a630f7271e`;
+- CI #1090 / run `36219715105`: **GREEN**;
 - CI jobs `test`: success;
 - CI jobs `race`: success.
 
