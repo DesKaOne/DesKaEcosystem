@@ -4382,4 +4382,28 @@ Completed:
 
 ### Next Milestone
 
-**#50 — Transaction-Store Write Cancellation Boundary**: audit context cancellation during durable transaction writes and atomic transitions so canceled operations cannot be misclassified as persistence success or trigger retry/resubmission decisions.
+### 50. Milestone Update — Transaction-Store Write Cancellation Boundary
+
+**Date:** 2026-09-26
+
+Completed:
+
+- audited context propagation across durable transaction writes and atomic conditional transitions;
+- added deterministic PostgreSQL coverage proving canceled `PutContext` returns `context.Canceled` and leaves no transaction persisted;
+- added deterministic PostgreSQL coverage proving canceled `PutIfCurrentContext` returns `context.Canceled` and leaves the durable pending transaction unchanged;
+- preserved database-backed conditional transitions as the concurrency authority without converting cancellation into success or conflict semantics;
+- kept transaction persistence authoritative and operational/audit evidence non-authoritative.
+
+### Verification
+
+- implementation/test commit: `54a29ed3f994a7fbed4ebc8a82b807712cb030d8`;
+- CI for the new HEAD must complete `test` and `race` successfully before milestone #50 is considered closed.
+
+### Safety Boundary
+
+- write cancellation is an error-propagation boundary only;
+- canceled persistence cannot be treated as a committed state and cannot authorize provider retry, failover, resubmission, ledger mutation, treasury movement, or provider funding.
+
+### Next Milestone
+
+**#51 — PostgreSQL Write Error Classification Boundary**: verify non-context database write errors remain distinguishable from concurrency conflicts so the service cannot misclassify persistence failures as successful state transitions.
