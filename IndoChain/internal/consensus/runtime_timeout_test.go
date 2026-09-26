@@ -157,14 +157,14 @@ func TestValidatorRuntimeRejectsTimeoutLockConflictWithoutMutation(t *testing.T)
 func TestValidatorRuntimeAdoptsHigherTimeoutLockRound(t *testing.T) {
 	runtime, state, _, _ := runtimeFixture(t)
 	runtime.lockedProposal = []byte("locked-proposal")
-	runtime.lockedRound = state.Round
+	runtime.lockedRound = state.Round - 2
 	signerA, publicA := newTimeoutTestSigner(t)
 	signerB, publicB := newTimeoutTestSigner(t)
 	resolver := timeoutRuntimeAuthorityResolver{keys: map[string]ed25519.PublicKey{
 		"validator-a": publicA,
 		"validator-b": publicB,
 	}}
-	lockedRound := state.Round + 1
+	lockedRound := state.Round - 1
 	msgA, err := NewTimeoutMessageWithLockRound(state, []byte("validator-a"), state.Round+2, lockedRound, []byte("locked-proposal"), signerA)
 	if err != nil { t.Fatal(err) }
 	msgB, err := NewTimeoutMessageWithLockRound(state, []byte("validator-b"), state.Round+2, lockedRound, []byte("locked-proposal"), signerB)
@@ -180,21 +180,21 @@ func TestValidatorRuntimeAdoptsHigherTimeoutLockRound(t *testing.T) {
 func TestValidatorRuntimeRejectsLowerTimeoutLockRoundWithoutDowngrade(t *testing.T) {
 	runtime, state, _, _ := runtimeFixture(t)
 	runtime.lockedProposal = []byte("locked-proposal")
-	runtime.lockedRound = state.Round + 1
+	runtime.lockedRound = state.Round - 1
 	signerA, publicA := newTimeoutTestSigner(t)
 	signerB, publicB := newTimeoutTestSigner(t)
 	resolver := timeoutRuntimeAuthorityResolver{keys: map[string]ed25519.PublicKey{
 		"validator-a": publicA,
 		"validator-b": publicB,
 	}}
-	msgA, err := NewTimeoutMessageWithLockRound(state, []byte("validator-a"), state.Round+2, state.Round, []byte("locked-proposal"), signerA)
+	msgA, err := NewTimeoutMessageWithLockRound(state, []byte("validator-a"), state.Round+2, state.Round - 2, []byte("locked-proposal"), signerA)
 	if err != nil { t.Fatal(err) }
 	msgB, err := NewTimeoutMessageWithLockRound(state, []byte("validator-b"), state.Round+2, state.Round, []byte("locked-proposal"), signerB)
 	if err != nil { t.Fatal(err) }
 
 	_, err = runtime.AdvanceRoundWithTimeoutEvidence([]Message{msgA, msgB}, resolver)
 	if err != nil { t.Fatal(err) }
-	if runtime.lockedRound != state.Round+1 {
+	if runtime.lockedRound != state.Round-1 {
 		t.Fatalf("runtime lock round was downgraded: %d", runtime.lockedRound)
 	}
 }
