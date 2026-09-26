@@ -1621,6 +1621,82 @@ func TestPostgresRestartReadConcurrentObservation(t *testing.T) {
 	}
 }
 
+func TestPostgresContextCancellationPreservesDurableState(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	schema := "ctx_cancel_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatalf("create isolated schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
+	})
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set isolated search path: %v", err)
+	}
+	applyPostgresMigration(t, db)
+
+	conn := db
+	store, err := NewPostgresTransactionStore(conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	state := postgresPendingState()
+	state.Request.ReferenceID = postgresIntegrationReference()
+	state.Execution.Result.ReferenceID = state.Request.ReferenceID
+	if err := store.PutContext(ctx, state); err != nil {
+		t.Fatalf("persist pending transaction: %v", err)
+	}
+
+	durable, ok := store.GetContext(ctx, state.Request.ReferenceID)
+	if !ok {
+		t.Fatal("pending transaction missing before cancellation checks")
+	}
+	terminal := durable
+	terminal.Execution.Result.Status = provider.StatusSuccess
+	terminal.Execution.Result.ProviderCode = "00"
+	terminal.Execution.Result.Message = "success"
+	terminal.Execution.Result.Price = 20000
+	if err := store.PutIfCurrentContext(ctx, state.Request.ReferenceID, durable, terminal); err != nil {
+		t.Fatalf("commit terminal transaction: %v", err)
+	}
+
+	cancelledRead, cancelRead := context.WithCancel(context.Background())
+	cancelRead()
+	if _, ok := store.GetContext(cancelledRead, state.Request.ReferenceID); ok {
+		t.Fatal("canceled read must not return an authoritative transaction state")
+	}
+
+	before, ok := store.GetContext(context.Background(), state.Request.ReferenceID)
+	if !ok {
+		t.Fatal("terminal transaction missing after canceled read")
+	}
+
+	canceledWrite, cancelWrite := context.WithCancel(context.Background())
+	cancelWrite()
+	stale := before
+	stale.Execution.Result.Status = provider.StatusFailed
+	stale.Execution.Result.ProviderCode = "99"
+	stale.Execution.Result.Message = "canceled"
+	if err := store.PutIfCurrentContext(canceledWrite, state.Request.ReferenceID, before, stale); err == nil {
+		t.Fatal("canceled transition unexpectedly succeeded")
+	}
+
+	after, ok := store.GetContext(context.Background(), state.Request.ReferenceID)
+	if !ok {
+		t.Fatal("terminal transaction disappeared after canceled transition")
+	}
+	if after.Request != before.Request ||
+		after.Execution.ProviderName != before.Execution.ProviderName ||
+		!samePurchaseResult(after.Execution.Result, before.Execution.Result) ||
+		after.Version != before.Version {
+		t.Fatalf("canceled operations changed durable state: before=%#v after=%#v", before, after)
+	}
+}
+
 func TestPostgresMigrationVerification(t *testing.T) {
 	sqlText := postgresMigrationSQL(t)
 	required := []string{
