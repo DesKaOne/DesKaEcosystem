@@ -8264,3 +8264,52 @@ This milestone validates only auxiliary catalog shutdown completion and runtime 
 **#184 — Runtime Shutdown Error Composition Across Repeated Lifecycle Completion**
 
 Focus next on repeated/duplicate lifecycle completion calls, preserving idempotent catalog and balance shutdown behavior, single-shot database ownership cleanup, and stable error identity without introducing new provider or transaction recovery behavior.
+
+
+## 184. Milestone Update — Runtime Shutdown Error Composition Across Repeated Lifecycle Completion
+
+**Date:** 2026-09-27
+
+Completed:
+
+- reviewed the repeated lifecycle-completion path when catalog startup fails after the balance worker has already started;
+- identified that `rollbackStartedLifecycles()` shut down the catalog lifecycle directly and then the composed `shutdown()` path invoked `shutdownCatalogLifecycle()` again;
+- removed the duplicate catalog completion from the rollback helper so rollback only stops lifecycles that were actually started and the composed shutdown path owns catalog completion exactly once;
+- added deterministic regression coverage proving the catalog shutdown-completion boundary is invoked exactly once on catalog-start failure;
+- preserved the existing primary catalog-start error and catalog shutdown-completion error composition;
+- preserved balance-worker rollback, database ownership cleanup, transaction-before-audit cleanup order, and repeated Service.Close() idempotence;
+- no provider retry/failover, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, or synthetic transaction/audit reconstruction was introduced.
+
+### CI Failure and Correction
+
+CI #1683 on test commit `8df21973bbd92a5ef9f6ba9c01ba387eeed5c86f` was **RED** because the new regression test correctly exposed the pre-fix duplicate completion: the catalog shutdown-completion seam was invoked twice during catalog-start rollback.
+
+The runtime correction was committed as `4d7d7bdc59c6b8ba14659164502fe8135c4f8add` by removing the direct catalog shutdown from `rollbackStartedLifecycles()`. The composed shutdown path now performs catalog completion once.
+
+### Verification
+
+- Runtime correction commit: `4d7d7bdc59c6b8ba14659164502fe8135c4f8add`.
+- Regression test commit: `8df21973bbd92a5ef9f6ba9c01ba387eeed5c86f`.
+- CI #1683: RED — regression test exposed duplicate catalog completion.
+- CI #1685 on exact corrected HEAD: **GREEN**.
+  - `go test ./...` — PASS
+  - `go vet ./...` — PASS
+  - PostgreSQL service-backed integration tests — PASS
+  - `go test -race ./...` — PASS
+
+### Safety Boundary
+
+This milestone is limited to runtime lifecycle completion ownership and error composition. Catalog completion remains lifecycle-only; database cleanup remains under the existing runtime ownership boundary. The change does not introduce provider retry/failover, transaction resubmission, ledger mutation, treasury movement, provider funding, or cross-domain recovery authority.
+
+### Known Limitations
+
+- the production `catalogWorkerLifecycle.Shutdown()` contract remains void-returning; the completion error channel is still an internal test seam used to validate error composition;
+- PostgreSQL integration coverage requires `DESKAPROVIDER_POSTGRES_DSN` and is skipped when unavailable;
+- the milestone does not introduce a new production catalog error source;
+- database close remains non-context-aware.
+
+### Next Milestone
+
+**#185 — Runtime Shutdown Completion Ordering & Error Precedence Review**
+
+Focus next on the final ordering and precedence contract across balance-worker completion, catalog completion, and runtime database ownership closure, including repeated Service.Close() after a completed shutdown, without introducing new provider or transaction recovery behavior.
