@@ -6800,3 +6800,22 @@ Completed:
 ### Next Milestone
 
 **#154 — PostgreSQL Audit/Transaction Cross-Read Convergence:** verify fresh readers observing audit and transaction domains after both commits converge without ambiguous ordering or cross-domain partial state.
+
+
+### 153. Verification Correction — Audit Reader Session Scope
+
+**Date:** 2026-09-26
+
+- corrected the audit-first commit integration fixture to pin a dedicated reader connection and set its isolated PostgreSQL `search_path` before reading audit evidence;
+- the previous CI failure occurred because `SET search_path` is session-scoped while the audit adapter was reading through a different connection obtained from the pool, so the isolated audit table was not visible;
+- no production behavior changed;
+- the intended audit-first boundary remains unchanged: audit visibility is observational and cannot create or imply transaction authority.
+
+**Verification**
+
+- corrective test commit: `aabebda04cdcfd0324b0f59abcccd62b3725411a`;
+- exact branch HEAD after this documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before milestone #153 is considered closed.
+
+### Next Milestone
+
+**#154 — PostgreSQL Audit/Transaction Cross-Read Convergence:** verify fresh readers observing audit and transaction domains after both commits converge without ambiguous ordering or cross-domain partial state.
