@@ -6411,3 +6411,40 @@ Completed:
 ### Next Milestone
 
 **#147 — PostgreSQL Audit Snapshot Recovery After Database Restart:** verify durable audit history remains complete and ordered across an actual PostgreSQL service restart boundary, without using audit history as transaction authority.
+
+
+### 147. Milestone Update — PostgreSQL Audit Snapshot Recovery After Database Restart
+
+**Date:** 2026-09-26
+
+Completed:
+
+- added real-PostgreSQL integration coverage for a durable audit snapshot containing multiple events, including same-timestamp entries;
+- verified the complete ordered audit snapshot before the connection restart boundary;
+- closed the initial PostgreSQL connection pool and reopened a fresh PostgreSQL connection pool to the same durable database;
+- restored the isolated schema context and verified the recovered audit snapshot contains the same complete event set in the same deterministic `created_at, audit_id` order;
+- confirmed recovered audit history is observational evidence only and is not used to reconstruct provider execution authority, retry authorization, reconciliation authority, or transaction-state mutation;
+- no production audit-store implementation change was required;
+- no transaction authority, provider submission authority, retry/failover behavior, ledger mutation, treasury movement, or provider funding behavior was broadened.
+
+### Safety Boundary
+
+- durable audit recovery preserves evidence and ordering but does not replay or infer transaction execution;
+- `audit_id` remains an ordering identity only and does not become an execution or idempotency key;
+- recovery of the audit snapshot cannot authorize provider retry, failover, resubmission, ledger mutation, treasury movement, or provider funding;
+- transaction persistence remains the authoritative transaction-state and idempotency boundary.
+
+### Verification
+
+- test implementation commit: `d9f7cf819bc7cccb8144055abc011298d84a2079`;
+- exact branch HEAD after this status documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before this milestone is considered closed.
+
+### Known Limitations
+
+- the repository integration harness validates connection-pool close/reopen against the same durable PostgreSQL instance; it does not directly orchestrate a PostgreSQL server process restart inside the test;
+- the scenario does not cover every crash-recovery, failover, replication-lag, or filesystem-recovery timing variant;
+- audit remains operational evidence and is not a financial source of truth.
+
+### Next Milestone
+
+**#148 — PostgreSQL Audit Snapshot Recovery With Transaction-State Cross-Check:** verify the recovered audit snapshot can be read alongside durable transaction state while preserving transaction persistence as the sole execution/idempotency authority.
