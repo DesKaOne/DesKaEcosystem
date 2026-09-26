@@ -6697,3 +6697,18 @@ Completed:
 
 - corrective test commit: `745a9e7ce86f354a6043a435e20b5395f2eed5f7`;
 - exact branch HEAD after this documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before milestone #151 is considered closed.
+
+
+### 151. Verification Correction — Refresh Reader Snapshot After Commit
+
+**Date:** 2026-09-26
+
+- corrected the concurrent audit/transaction conflict integration test to use a fresh PostgreSQL reader connection after both concurrent writer transactions commit;
+- the previous failure came from reusing the same reader connection after its pre-commit snapshot had already observed the durable pending transaction, so the post-commit read remained on the older transaction snapshot;
+- preserved the intended production boundary: committed transaction state and committed audit evidence converge on a fresh read snapshot, while audit remains observational-only;
+- no production behavior changed.
+
+**Verification**
+
+- corrective test commit: `9424f060ef83122537450606aeccf903a205ac48`;
+- exact branch HEAD after this documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before milestone #151 is considered closed.
