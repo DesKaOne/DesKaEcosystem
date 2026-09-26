@@ -1248,4 +1248,4 @@ Commits:
 - timeout validator-membership hardening: `46ae55d052a1381a01d13d100ceb7697d4ff2fd1`
 - membership regression test: `bc9555c1efa4bc4f7f3bb49dff3ea3fb5afb5c82`
 
-Previous CI #1109 (run `36263385593`) failed at compile time because the timeout membership hardening returned `(TimeoutCertificate, error)` from an `error`-only validation function. Root cause fixed in `1feee926f1c1a8791cc1ae308c9662b76f317605`; a fresh CI run must be green before this milestone is considered complete.
+CI #1109 (run `36263385593`) first failed at compile time due to an incorrect validation return type. CI #1113 (run `36263420613`) then exposed missing membership enforcement during certificate construction. Both root causes are fixed; latest fix is `84995bf3ed1e86e33b883d861f8f5a98d4dcea40`. A fresh CI run must be green before this milestone is considered complete.
