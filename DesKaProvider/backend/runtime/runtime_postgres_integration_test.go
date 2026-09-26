@@ -511,3 +511,62 @@ func TestNewFromEnvironmentContextRollsBackDedicatedAuditPostgresOwnershipBefore
 	if !databaseCloserIsNil(captured.transactionDB) || databaseCloserIsNil(captured.auditDB) { t.Fatalf("expected only dedicated audit database ownership, got tx=%T audit=%T", captured.transactionDB, captured.auditDB) }
 	if err := captured.closeOwned(); err != nil { t.Fatalf("repeated ownership cleanup failed: %v", err) }
 }
+
+
+func TestNewFromEnvironmentContextStartupFailureMatrixClosesDedicatedAuditOwnership(t *testing.T) {
+	dsn := os.Getenv("DESKAPROVIDER_POSTGRES_DSN")
+	if dsn == "" { t.Skip("DESKAPROVIDER_POSTGRES_DSN is not configured") }
+	stages := []string{"after-provider-state-store", "after-router", "after-purchase-service"}
+	for _, stage := range stages {
+		t.Run(stage, func(t *testing.T) {
+			t.Setenv("DIGIFLAZZ_USERNAME", "test-user")
+			t.Setenv("DIGIFLAZZ_API_KEY", "test-key")
+			t.Setenv("DESKAPROVIDER_TRANSACTION_STORE_DRIVER", "json")
+			t.Setenv("DESKAPROVIDER_AUDIT_STORE_DRIVER", "postgres")
+			t.Setenv("DESKAPROVIDER_POSTGRES_DSN", dsn)
+			t.Setenv("DESKAPROVIDER_PROVIDER_STATE_STORE_PATH", filepath.Join(t.TempDir(), "provider-state.json"))
+			expected := errors.New("injected startup matrix failure")
+			var captured *runtimeDatabaseOwnership
+			runtimeInitializationFailureHook = func(got string, ownership *runtimeDatabaseOwnership) error {
+				if got != stage { t.Fatalf("unexpected initialization stage: %q", got) }
+				captured = ownership
+				return expected
+			}
+			defer func() { runtimeInitializationFailureHook = nil }()
+			_, err := NewFromEnvironmentContext(context.Background(), nil)
+			if !errors.Is(err, expected) { t.Fatalf("expected injected startup error, got %v", err) }
+			if captured == nil { t.Fatal("expected captured ownership") }
+			if captured.transferred() { t.Fatal("ownership transferred after startup failure") }
+			if databaseCloserIsNil(captured.auditDB) { t.Fatal("expected dedicated audit database ownership") }
+			if !captured.closed { t.Fatal("expected startup rollback to close dedicated audit database") }
+			if err := captured.closeOwned(); err != nil { t.Fatalf("repeated cleanup failed: %v", err) }
+		})
+	}
+}
+
+func TestNewFromEnvironmentContextCancellationBeforeOwnershipTransferClosesDedicatedAuditOwnership(t *testing.T) {
+	dsn := os.Getenv("DESKAPROVIDER_POSTGRES_DSN")
+	if dsn == "" { t.Skip("DESKAPROVIDER_POSTGRES_DSN is not configured") }
+	t.Setenv("DIGIFLAZZ_USERNAME", "test-user")
+	t.Setenv("DIGIFLAZZ_API_KEY", "test-key")
+	t.Setenv("DESKAPROVIDER_TRANSACTION_STORE_DRIVER", "json")
+	t.Setenv("DESKAPROVIDER_AUDIT_STORE_DRIVER", "postgres")
+	t.Setenv("DESKAPROVIDER_POSTGRES_DSN", dsn)
+	t.Setenv("DESKAPROVIDER_PROVIDER_STATE_STORE_PATH", filepath.Join(t.TempDir(), "provider-state.json"))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var captured *runtimeDatabaseOwnership
+	runtimeInitializationFailureHook = func(stage string, ownership *runtimeDatabaseOwnership) error {
+		if stage != "before-ownership-transfer" { return nil }
+		captured = ownership
+		cancel()
+		return nil
+	}
+	defer func() { runtimeInitializationFailureHook = nil }()
+	_, err := NewFromEnvironmentContext(ctx, nil)
+	if !errors.Is(err, context.Canceled) { t.Fatalf("expected context.Canceled, got %v", err) }
+	if captured == nil { t.Fatal("expected captured ownership") }
+	if captured.transferred() { t.Fatal("ownership transferred after canceled initialization") }
+	if captured.closed == false { t.Fatal("expected startup rollback to close dedicated audit database") }
+	if err := captured.closeOwned(); err != nil { t.Fatalf("repeated cleanup failed: %v", err) }
+}
