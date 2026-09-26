@@ -405,10 +405,21 @@ current := call.result.Result
 	if err := s.persistTransition(ctx, referenceID, expected, TransactionState{Request: call.request, Execution: next}); err != nil {
 		if errors.Is(err, ErrTransactionStateConflict) {
 			latest, ok, readErr := getTransactionContextE(ctx, s.Store, referenceID)
-			if readErr != nil { return PurchaseExecution{}, fmt.Errorf("reload transaction after conflict: %w", readErr) }
-			if ok && latest.Request == call.request &&
-				latest.Execution.ProviderName == call.result.ProviderName &&
-				samePurchaseResult(latest.Execution.Result, incoming) {
+			if readErr != nil {
+				return PurchaseExecution{}, fmt.Errorf("reload transaction after conflict: %w", readErr)
+			}
+			if !ok || latest.Request != call.request || latest.Execution.ProviderName != call.result.ProviderName {
+				return PurchaseExecution{}, ErrWebhookReferenceConflict
+			}
+			latestResult := latest.Execution.Result
+			if latestResult.Status == provider.StatusSuccess || latestResult.Status == provider.StatusFailed {
+				if samePurchaseResult(latestResult, incoming) {
+					call.result = latest.Execution
+					return call.result, nil
+				}
+				return PurchaseExecution{}, ErrWebhookReferenceConflict
+			}
+			if latestResult.Status == provider.StatusPending && incoming.Status == provider.StatusPending {
 				call.result = latest.Execution
 				return call.result, nil
 			}
