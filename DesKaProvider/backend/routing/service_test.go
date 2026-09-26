@@ -597,6 +597,77 @@ func TestServiceRestartRecoversDurableTransactionState(t *testing.T) {
 }
 
 
+
+func TestServiceStaleInstanceRecoversIdenticalTerminalizationAfterConflict(t *testing.T) {
+	registry := provider.NewRegistry()
+	mock := Mock.New(Mock.Config{
+		Products:       []provider.Product{{Code: "pln20", Name: "PLN 20"}},
+		ProviderCode:   "00",
+		Message:        "pending",
+		PurchaseStatus: provider.StatusPending,
+		Price:          20000,
+	})
+	if err := registry.Register("mock", mock); err != nil {
+		t.Fatal(err)
+	}
+
+	ops := operational.NewMemoryStore()
+	if err := ops.Put(operational.Snapshot{ProviderName: "mock", Balance: 100000, Health: operational.HealthHealthy}); err != nil {
+		t.Fatal(err)
+	}
+	router, err := New(registry, ops, map[string]int{"mock": 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	store := NewMemoryTransactionStore()
+	initial, err := NewServiceWithStore(router, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := PurchaseRequest{ProductCode: "pln20", CustomerNo: "08123456789", ReferenceID: "ref-identical-conflict-recovery", Amount: 20000}
+	if _, err := initial.Purchase(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+
+	staleInstance, err := NewServiceWithStore(router, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	freshInstance, err := NewServiceWithStore(router, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mock.SetTransactionStatus(req.ReferenceID, provider.StatusSuccess, "success")
+	fresh, err := freshInstance.Reconcile(context.Background(), req.ReferenceID)
+	if err != nil {
+		t.Fatalf("fresh reconciliation failed: %v", err)
+	}
+
+	stale, err := staleInstance.Reconcile(context.Background(), req.ReferenceID)
+	if err != nil {
+		t.Fatalf("stale reconciliation should recover identical terminal result: %v", err)
+	}
+	if !samePurchaseResult(stale.Result, fresh.Result) {
+		t.Fatalf("stale reconciliation result diverged after conflict recovery: %#v != %#v", stale.Result, fresh.Result)
+	}
+	if stale.Result.Status != provider.StatusSuccess {
+		t.Fatalf("expected recovered terminal success, got %#v", stale.Result)
+	}
+	if got := mock.PurchaseCount(req.ReferenceID); got != 1 {
+		t.Fatalf("conflict recovery must not resubmit provider purchase, got %d submissions", got)
+	}
+
+	durable, ok := store.Get(req.ReferenceID)
+	if !ok {
+		t.Fatal("durable transaction disappeared after conflict recovery")
+	}
+	if !samePurchaseResult(durable.Execution.Result, fresh.Result) {
+		t.Fatalf("durable result diverged after conflict recovery: %#v != %#v", durable.Execution.Result, fresh.Result)
+	}
+}
+
 func TestServiceRestartedStaleInstanceRejectsDivergentTerminalization(t *testing.T) {
 	registry := provider.NewRegistry()
 	mock := Mock.New(Mock.Config{
