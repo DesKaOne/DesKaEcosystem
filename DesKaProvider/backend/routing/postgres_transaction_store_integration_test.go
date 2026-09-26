@@ -537,21 +537,30 @@ func TestPostgresConcurrentServiceReconcileConvergesWithoutResubmission(t *testi
 	}
 	applyPostgresMigration(t, db)
 
-	pinnedDB, err := sql.Open("pgx", os.Getenv("DESKAPROVIDER_POSTGRES_DSN"))
-	if err != nil {
-		t.Fatalf("open pinned postgres: %v", err)
+	openStore := func() *PostgresTransactionStore {
+		conn, err := sql.Open("pgx", os.Getenv("DESKAPROVIDER_POSTGRES_DSN"))
+		if err != nil {
+			t.Fatalf("open concurrent postgres connection: %v", err)
+		}
+		t.Cleanup(func() { _ = conn.Close() })
+		conn.SetMaxOpenConns(1)
+		conn.SetMaxIdleConns(1)
+		if err := conn.PingContext(ctx); err != nil {
+			t.Fatalf("ping concurrent postgres connection: %v", err)
+		}
+		if _, err := conn.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+			t.Fatalf("set concurrent search path: %v", err)
+		}
+		store, err := NewPostgresTransactionStore(conn)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return store
 	}
-	t.Cleanup(func() { _ = pinnedDB.Close() })
-	if err := pinnedDB.PingContext(ctx); err != nil {
-		t.Fatalf("ping pinned postgres: %v", err)
-	}
-	if _, err := pinnedDB.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
-		t.Fatalf("set pinned search path: %v", err)
-	}
-	store, err := NewPostgresTransactionStore(pinnedDB)
-	if err != nil {
-		t.Fatal(err)
-	}
+
+	initialStore := openStore()
+	firstStore := openStore()
+	secondStore := openStore()
 
 	registry := provider.NewRegistry()
 	mock := Mock.New(Mock.Config{
@@ -569,7 +578,7 @@ func TestPostgresConcurrentServiceReconcileConvergesWithoutResubmission(t *testi
 	if err := operationalStore.Put(operational.Snapshot{
 		ProviderName: "mock",
 		Balance:      100000,
-		Health:        operational.HealthHealthy,
+		Health:       operational.HealthHealthy,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -584,7 +593,7 @@ func TestPostgresConcurrentServiceReconcileConvergesWithoutResubmission(t *testi
 		ReferenceID: postgresIntegrationReference(),
 		Amount:      20000,
 	}
-	initial, err := NewServiceWithStoreContext(ctx, router, store)
+	initial, err := NewServiceWithStoreContext(ctx, router, initialStore)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -597,56 +606,54 @@ func TestPostgresConcurrentServiceReconcileConvergesWithoutResubmission(t *testi
 
 	mock.SetTransactionStatus(req.ReferenceID, provider.StatusSuccess, "success")
 
-	first, err := NewServiceWithStoreContext(ctx, router, store)
+	first, err := NewServiceWithStoreContext(ctx, router, firstStore)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := NewServiceWithStoreContext(ctx, router, store)
+	second, err := NewServiceWithStoreContext(ctx, router, secondStore)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	const workers = 2
-	results := make(chan PurchaseExecution, workers)
-	errs := make(chan error, workers)
+	type result struct {
+		execution PurchaseExecution
+		err       error
+	}
+	results := make(chan result, 2)
 	var wg sync.WaitGroup
 	for _, service := range []*Service{first, second} {
 		wg.Add(1)
 		go func(service *Service) {
 			defer wg.Done()
-			result, err := service.Reconcile(ctx, req.ReferenceID)
-			results <- result
-			errs <- err
+			execution, err := service.Reconcile(ctx, req.ReferenceID)
+			results <- result{execution: execution, err: err}
 		}(service)
 	}
 	wg.Wait()
 	close(results)
-	close(errs)
 
 	var firstResult PurchaseExecution
-	var resultCount int
-	for err := range errs {
-		if err != nil {
-			t.Fatalf("concurrent service reconciliation failed: %v", err)
+	for i := 0; i < 2; i++ {
+		got := <-results
+		if got.err != nil {
+			t.Fatalf("concurrent service reconciliation failed: %v", got.err)
 		}
-	}
-	for i := 0; i < workers; i++ {
-		result := <-results
 		if i == 0 {
-			firstResult = result
-		} else if !samePurchaseResult(result.Result, firstResult.Result) {
-			t.Fatalf("concurrent reconciliation results diverged: %#v != %#v", result.Result, firstResult.Result)
+			firstResult = got.execution
+			continue
 		}
-		resultCount++
+		if !samePurchaseResult(got.execution.Result, firstResult.Result) {
+			t.Fatalf("concurrent reconciliation results diverged: %#v != %#v", got.execution.Result, firstResult.Result)
+		}
 	}
-	if resultCount != workers || firstResult.Result.Status != provider.StatusSuccess {
-		t.Fatalf("expected concurrent reconciliation to converge to success, got count=%d result=%#v", resultCount, firstResult)
+	if firstResult.Result.Status != provider.StatusSuccess {
+		t.Fatalf("expected concurrent reconciliation to converge to success, got %#v", firstResult)
 	}
 	if got := mock.PurchaseCount(req.ReferenceID); got != 1 {
 		t.Fatalf("concurrent reconciliation must not resubmit provider purchase, got %d submissions", got)
 	}
 
-	durable, ok := store.Get(req.ReferenceID)
+	durable, ok := firstStore.Get(req.ReferenceID)
 	if !ok {
 		t.Fatal("durable transaction disappeared after concurrent reconciliation")
 	}
@@ -654,7 +661,6 @@ func TestPostgresConcurrentServiceReconcileConvergesWithoutResubmission(t *testi
 		t.Fatalf("expected durable success after concurrent reconciliation, got %q", durable.Execution.Result.Status)
 	}
 }
-
 func TestPostgresMigrationVerification(t *testing.T) {
 	sqlText := postgresMigrationSQL(t)
 	required := []string{
