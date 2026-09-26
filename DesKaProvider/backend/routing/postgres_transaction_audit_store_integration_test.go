@@ -1950,11 +1950,10 @@ WHERE reference_id=$6 AND status='pending' AND version=$7`,
 	}
 
 	beforeCommit, err := transactionStore.GetContextE(ctx, state.Request.ReferenceID)
-	if err != nil || !beforeCommit.Version == false {
-		// Keep this read purely observational; the exact state must remain
-		// pending until the dedicated transaction commits.
+	if err != nil {
+		t.Fatalf("read transaction before concurrent commits: %v", err)
 	}
-	if beforeCommit.Execution.Result.Status != provider.StatusPending {
+	if beforeCommit.Version != state.Version || beforeCommit.Execution.Result.Status != provider.StatusPending {
 		t.Fatalf("durable transaction must remain pending before concurrent commit, got %#v", beforeCommit.Execution.Result)
 	}
 	beforeAudit, err := auditStore.AllContextE(ctx, state.Request.ReferenceID)
