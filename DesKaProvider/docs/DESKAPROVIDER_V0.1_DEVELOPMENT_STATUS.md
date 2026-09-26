@@ -5098,10 +5098,34 @@ Completed:
 - process termination between external provider observation and durable transition is outside this deterministic integration boundary;
 - schema/session isolation remains a test-fixture concern rather than application runtime configuration.
 
+### 42. Milestone Update — Cancellation & Durable Transition Propagation
+
+**Date:** 2026-09-26
+
+Completed:
+
+- added deterministic PostgreSQL regression coverage proving a canceled context does not create or transition a durable transaction;
+- verified canceled persistence operations return `context.Canceled` before mutating durable state;
+- preserved provider non-resubmission behavior while validating cancellation at the persistence boundary;
+- verified the new regression suite under both normal and race-enabled CI.
+
+### Verification
+
+- implementation HEAD: `62cca37d9d67258fc4d43205ddab7408304ade73`;
+- CI #1149 / run `36223780137`: **GREEN**;
+- CI job `test`: success;
+- CI job `race`: success.
+
+### Safety Boundary
+
+- cancellation is a control-flow/persistence boundary and never authorizes provider retry, failover, resubmission, ledger mutation, treasury movement, or provider funding;
+- a canceled persistence operation leaves the last durable transaction state unchanged;
+- audit and operational evidence remain non-authoritative.
+
 ### Next milestone
 
-1. audit cancellation and database-error propagation across `PutContext` and `Reconcile` boundaries;
-2. verify canceled contexts cannot produce partial durable transitions or accidental provider resubmission;
+1. audit database-error propagation and partial-write behavior across `PutContext` and `Reconcile`;
+2. verify non-cancellation database failures cannot be mistaken for empty/not-found transaction state;
 3. preserve no-resubmission and no-financial-authorization invariants.
 
 
