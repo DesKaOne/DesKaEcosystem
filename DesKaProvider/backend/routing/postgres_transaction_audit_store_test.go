@@ -192,8 +192,8 @@ func TestPostgresTransactionAuditStoreAllContextRejectsMidStreamCancellation(t *
 
 	scenario := &postgresAuditRowsScenario{
 		rows: [][]driver.Value{
-			{"ref", "TEST_1", nil, nil, "mock", "message-1", time.Now().UTC()},
-			{"ref", "TEST_2", nil, nil, "mock", "message-2", time.Now().UTC().Add(time.Second)},
+			{"ref", "TEST_1", "", "", "mock", "message-1", time.Now().UTC()},
+			{"ref", "TEST_2", "", "", "mock", "message-2", time.Now().UTC().Add(time.Second)},
 		},
 		cancelAfter: 0,
 		cancel:      cancel,
