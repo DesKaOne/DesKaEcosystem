@@ -4321,3 +4321,31 @@ Completed:
 
 1. continue auditing startup/restart reads with database errors and context cancellation around durable transaction recovery;
 2. preserve the invariant that audit or operational evidence cannot authorize retry, failover, resubmission, ledger mutation, treasury movement, or provider funding.
+
+### 49. Milestone Update — Restart Read Error & Deadline Propagation Boundary
+
+**Date:** 2026-09-26
+
+Completed:
+
+- audited startup/restart reads for database error propagation through the context-aware transaction-store interfaces;
+- added deterministic PostgreSQL integration coverage proving canceled context reads return `context.Canceled` instead of being treated as an empty store;
+- added deterministic PostgreSQL integration coverage proving expired deadlines return `context.DeadlineExceeded` for both single-record and list reads;
+- preserved `GetContextE`/`AllContextE` as the error-aware startup boundary while legacy store methods remain backward-compatible;
+- kept transaction persistence authoritative and operational/audit evidence non-authoritative.
+
+### Verification
+
+- regression test commit: `542035df53d89bed5488c1852b848e2392160f97`;
+- CI for this HEAD must complete `test` and `race` successfully before milestone #49 is considered closed.
+
+### Safety Boundary
+
+- context cancellation/deadline propagation protects startup and persistence error semantics only;
+- read failures are not converted into empty transaction state, preventing accidental resubmission decisions from incomplete recovery data;
+- audit or operational evidence cannot authorize retry, failover, resubmission, ledger mutation, treasury movement, or provider funding.
+
+### Next Milestone
+
+1. continue auditing transaction-store restart behavior under context cancellation during reconciliation and writes;
+2. preserve the invariant that transaction persistence is the sole transaction-state authority.
