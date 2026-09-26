@@ -4910,3 +4910,33 @@ Completed:
 - CI jobs `race`: success;
 - corrected PR workflow checkout to validate the explicit `pull_request.head.sha` instead of a stale synthetic merge ref;
 - repaired PostgreSQL integration-test variable scoping so recovery and concurrent reconciliation coverage execute against the intended store.
+
+### 52. Milestone Update — PR-Head CI Validation & PostgreSQL Integration Scope Closure
+
+**Date:** 2026-09-26
+
+Completed:
+
+- verified the PR workflow now checks out the explicit pull-request head SHA, eliminating validation against the stale synthetic merge ref;
+- repaired PostgreSQL integration-test variable scoping so isolated stores remain local to their intended tests;
+- verified the current branch head `93a61d0acfcf8534f6928af7a59a91846cb54626` completes both standard and race test suites successfully;
+- verified the `test` job and `race` job are both successful, with `test` also completing `vet` successfully;
+- retained the existing persistence boundary: durable transaction state is authoritative, operational/audit evidence remains non-authoritative.
+
+### Verification
+
+- implementation HEAD: `93a61d0acfcf8534f6928af7a59a91846cb54626`;
+- CI #1102 / run `36220559972`: **GREEN** for exact HEAD `93a61d0acfcf8534f6928af7a59a91846cb54626`;
+- CI jobs `test`: success;
+- CI jobs `race`: success;
+- CI job `test` completed `vet`: success.
+
+### Safety Boundary
+
+- CI checkout correctness and integration-test isolation are validation/infrastructure concerns only;
+- no retry, failover, resubmission, customer-ledger mutation, treasury movement, or provider-funding authorization is introduced;
+- atomic transaction transitions remain persistence-integrity mechanisms only.
+
+### Next Milestone
+
+**#129 — PostgreSQL Atomic Transition Version Discipline:** review every durable write path for monotonic version handling and ensure sequential pending updates and concurrent compare-and-transition operations use the persisted row version consistently.
