@@ -169,7 +169,6 @@ func NewFromEnvironmentContext(ctx context.Context,httpClient *http.Client)(serv
  transactionStore,transactionDB,e:=openTransactionStore(ctx,cfg);if e!=nil{return nil,e}
 auditStore,auditDB,e:=openAuditStore(ctx,cfg,transactionDB);if e!=nil{return nil,withRuntimeInitializationCleanupError(e,transactionDB,auditDB)}
 ownership:=newRuntimeDatabaseOwnership(transactionDB,auditDB)
-if e:=runRuntimeInitializationFailureHook("after-database-acquisition", ownership); e!=nil { return nil,e }
 defer func(){
 	if ownership == nil || ownership.transferred() { return }
 	if cleanupErr:=ownership.cleanupBeforeTransfer();cleanupErr!=nil {
@@ -177,6 +176,7 @@ defer func(){
 		service=nil
 	}
 }()
+if e:=runRuntimeInitializationFailureHook("after-database-acquisition", ownership); e!=nil { return nil,e }
 statePersistence,e:=operational.NewJSONFileProviderStateStore(cfg.ProviderStateStorePath);if e!=nil{return nil,e}
 stateStore,e:=operational.NewPersistentProviderStateStore(statePersistence);if e!=nil{return nil,e}
 for _, name:=range registry.Names(){state,ok:=stateStore.Get(name);if !ok{state,e=operational.NewProviderState(name);if e!=nil{return nil,e}};state.Capabilities=[]operational.Capability{operational.CapabilityPPOB,operational.CapabilityBalance,operational.CapabilityWebhook};if e=stateStore.Put(state);e!=nil{return nil,e}} // persist provider lifecycle/capability state before router construction
