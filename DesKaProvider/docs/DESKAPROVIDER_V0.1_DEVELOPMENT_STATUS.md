@@ -4281,8 +4281,8 @@ Completed:
 - verified concurrent reconciliation converges without resubmitting the provider purchase;
 - corrected CI PR checkout behavior to validate the actual PR head SHA rather than a stale synthetic merge ref.
 Verification:
-- HEAD 5c807e01a8f3ff028bccc2a78d625c02e4c414b3
-- CI #926: test = success, race = success
+- HEAD 5ad67a2c88150fa4b8dbeab3e526ce86c5f9ca3a
+- CI #954 / run 36210990858: test = success, race = success, vet = success
 Next milestone:
 1. continue auditing sequential PostgreSQL transaction version transitions and restart recovery boundaries;
 2. preserve the invariant that audit or operational evidence cannot authorize retry, failover, resubmission, ledger mutation, treasury movement, or provider funding.
@@ -4378,3 +4378,8 @@ Completed:
 
 1. continue auditing transaction-store restart behavior under context cancellation during reconciliation and writes;
 2. preserve the invariant that transaction persistence is the sole transaction-state authority.
+
+
+### Next Milestone
+
+**#40 — PostgreSQL Versioned Transition Semantics Review**: audit sequential pending-state transitions and version handling in `PutContext` so repeated writes cannot regress the expected optimistic-concurrency version boundary.
