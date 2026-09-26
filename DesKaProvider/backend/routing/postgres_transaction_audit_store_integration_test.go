@@ -1681,6 +1681,170 @@ func TestPostgresTransactionAuditStoreConflictingAuditDoesNotOverrideTransaction
 }
 
 
+func TestPostgresTransactionAuditStoreConflictingAuditRemainsNonAuthoritativeAfterRestart(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	schema := "audit_conflict_restart_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatalf("create isolated schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
+	})
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set search path: %v", err)
+	}
+	applyPostgresMigration(t, db)
+
+	transactionStore, err := NewPostgresTransactionStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	auditStore, err := NewPostgresTransactionAuditStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	registry := provider.NewRegistry()
+	mock := Mock.New(Mock.Config{
+		Products:       []provider.Product{{Code: "pln20", Name: "PLN 20"}},
+		ProviderCode:   "00",
+		Message:        "success",
+		PurchaseStatus: provider.StatusSuccess,
+		Price:          20000,
+	})
+	if err := registry.Register("mock", mock); err != nil {
+		t.Fatal(err)
+	}
+	ops := operational.NewMemoryStore()
+	if err := ops.Put(operational.Snapshot{
+		ProviderName: "mock",
+		Balance:      100000,
+		Health:       operational.HealthHealthy,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	router, err := New(registry, ops, map[string]int{"mock": 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := PurchaseRequest{
+		ProductCode: "pln20",
+		CustomerNo:  "08123456789",
+		ReferenceID: "audit-conflict-restart-ref",
+		Amount:      20000,
+	}
+	service, err := NewServiceWithStoreContextAndAudit(ctx, router, transactionStore, auditStore)
+	if err != nil {
+		t.Fatal(err)
+	}
+	initial, err := service.Purchase(ctx, req)
+	if err != nil {
+		t.Fatalf("initial purchase: %v", err)
+	}
+	if initial.Result.Status != provider.StatusSuccess {
+		t.Fatalf("expected terminal success, got %q", initial.Result.Status)
+	}
+	if mock.PurchaseCount(req.ReferenceID) != 1 {
+		t.Fatalf("expected one provider submission, got %d", mock.PurchaseCount(req.ReferenceID))
+	}
+
+	conflictingAudit := TransactionAuditEvent{
+		ReferenceID:  req.ReferenceID,
+		Action:       "RESTART_CONFLICTING_OBSERVATION",
+		Previous:     string(provider.StatusSuccess),
+		Next:         string(provider.StatusPending),
+		ProviderName: "mock",
+		Message:      "conflicting audit must remain observational after restart",
+		CreatedAt:    initial.ResultCreatedAtFallback(),
+	}
+	if conflictingAudit.CreatedAt.IsZero() {
+		conflictingAudit.CreatedAt = time.Now().UTC().Add(time.Second).Truncate(time.Microsecond)
+	}
+	if err := auditStore.AppendContext(ctx, conflictingAudit); err != nil {
+		t.Fatalf("append conflicting audit evidence: %v", err)
+	}
+
+	beforeRestart, err := auditStore.AllContextE(ctx, req.ReferenceID)
+	if err != nil {
+		t.Fatalf("read conflicting audit history before restart: %v", err)
+	}
+	if len(beforeRestart) != 3 || beforeRestart[2] != conflictingAudit {
+		t.Fatalf("unexpected audit history before restart: %#v", beforeRestart)
+	}
+	beforeTransaction, ok, err := transactionStore.GetContextE(ctx, req.ReferenceID)
+	if err != nil || !ok {
+		t.Fatalf("read transaction state before restart: ok=%v err=%v", ok, err)
+	}
+
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := sql.Open("pgx", os.Getenv("DESKAPROVIDER_POSTGRES_DSN"))
+	if err != nil {
+		t.Fatalf("reopen postgres: %v", err)
+	}
+	defer reopened.Close()
+	if err := reopened.PingContext(ctx); err != nil {
+		t.Fatalf("ping reopened postgres: %v", err)
+	}
+	if _, err := reopened.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("restore search path after restart: %v", err)
+	}
+
+	restartedTransactionStore, err := NewPostgresTransactionStore(reopened)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restartedAuditStore, err := NewPostgresTransactionAuditStore(reopened)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restartedService, err := NewServiceWithStoreContextAndAudit(ctx, router, restartedTransactionStore, restartedAuditStore)
+	if err != nil {
+		t.Fatalf("reconstruct service after restart: %v", err)
+	}
+
+	afterRestart, err := restartedAuditStore.AllContextE(ctx, req.ReferenceID)
+	if err != nil {
+		t.Fatalf("read conflicting audit history after restart: %v", err)
+	}
+	if len(afterRestart) != len(beforeRestart) {
+		t.Fatalf("audit history length changed after restart: before=%d after=%d", len(beforeRestart), len(afterRestart))
+	}
+	for i := range beforeRestart {
+		if afterRestart[i] != beforeRestart[i] {
+			t.Fatalf("audit history changed at %d after restart: before=%#v after=%#v", i, beforeRestart[i], afterRestart[i])
+		}
+	}
+
+	afterTransaction, ok, err := restartedTransactionStore.GetContextE(ctx, req.ReferenceID)
+	if err != nil || !ok {
+		t.Fatalf("read transaction state after restart: ok=%v err=%v", ok, err)
+	}
+	if afterTransaction != beforeTransaction {
+		t.Fatalf("durable transaction state changed after restart: before=%#v after=%#v", beforeTransaction, afterTransaction)
+	}
+	if afterTransaction.Execution.Result.Status != provider.StatusSuccess {
+		t.Fatalf("conflicting audit evidence must not override terminal transaction state after restart, got %q", afterTransaction.Execution.Result.Status)
+	}
+
+	retry, err := restartedService.Purchase(ctx, req)
+	if err != nil {
+		t.Fatalf("repeat purchase after restart must follow durable transaction state: %v", err)
+	}
+	if retry.Result.Status != provider.StatusSuccess {
+		t.Fatalf("repeat purchase changed terminal result after restart, got %q", retry.Result.Status)
+	}
+	if mock.PurchaseCount(req.ReferenceID) != 1 {
+		t.Fatalf("conflicting audit evidence must not authorize resubmission after restart, got %d", mock.PurchaseCount(req.ReferenceID))
+	}
+}
+
+
 func TestPostgresTransactionAuditStoreAppendFailureThenRecovery(t *testing.T) {
 	db := postgresIntegrationDB(t)
 	schema := "audit_append_recovery_" + strconv.FormatInt(time.Now().UnixNano(), 10)
