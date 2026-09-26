@@ -5333,7 +5333,7 @@ Completed:
 
 ### Verification
 
-- implementation commit: `34af4feee26e12d5cdb6f0423ad5355a5c5d89a0`;
+- implementation commit: `df8d369f8142c7d40cf4f91321e3ac5eb425e61f`;
 - CI for this HEAD must complete with both `test` and `race` jobs **success** before this milestone is considered closed.
 
 ### Safety Boundary
