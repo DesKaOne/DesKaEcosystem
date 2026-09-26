@@ -2230,6 +2230,31 @@ func TestPostgresPutContextRejectsConflictingTerminalRewrite(t *testing.T) {
 	if !ok || after.Version != 2 || after.Execution.Result.Status != provider.StatusSuccess {
 		t.Fatalf("conflicting terminal rewrite mutated durable state: %#v", after)
 	}
+
+	failedBase := postgresPendingState()
+	failedBase.Request.ReferenceID = postgresIntegrationReference()
+	failedBase.Execution.Result.ReferenceID = failedBase.Request.ReferenceID
+	if err := store.PutContext(ctx, failedBase); err != nil { t.Fatalf("insert failed-state pending: %v", err) }
+	failedBase.Execution.Result.Status = provider.StatusFailed
+	failedBase.Execution.Result.ProviderCode = "02"
+	failedBase.Execution.Result.Message = "failed"
+	if err := store.PutContext(ctx, failedBase); err != nil { t.Fatalf("transition to failed: %v", err) }
+	failedCurrent, ok := store.GetContext(ctx, failedBase.Request.ReferenceID)
+	if !ok || failedCurrent.Version != 2 || failedCurrent.Execution.Result.Status != provider.StatusFailed {
+		t.Fatalf("expected durable failed terminal state, got %#v", failedCurrent)
+	}
+
+	successRewrite := failedCurrent
+	successRewrite.Execution.Result.Status = provider.StatusSuccess
+	successRewrite.Execution.Result.ProviderCode = "00"
+	successRewrite.Execution.Result.Message = "success"
+	if err := store.PutContext(ctx, successRewrite); err != ErrReferenceConflict {
+		t.Fatalf("expected FAILED -> SUCCESS conflict, got %v", err)
+	}
+	failedAfterRewrite, ok := store.GetContext(ctx, failedBase.Request.ReferenceID)
+	if !ok || failedAfterRewrite.Version != 2 || failedAfterRewrite.Execution.Result.Status != provider.StatusFailed {
+		t.Fatalf("FAILED -> SUCCESS rewrite mutated durable state: %#v", failedAfterRewrite)
+	}
 }
 
 func TestPostgresMigrationVerification(t *testing.T) {
