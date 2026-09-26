@@ -776,8 +776,8 @@ func TestServiceRunShutdownPreservesPrimaryLifecycleAndSharedPostgresCleanupErro
 	if ownership.transferred() == false {
 		t.Fatal("expected database ownership to remain transferred during service shutdown")
 	}
-	if err := service.Close(); err != nil {
-		t.Fatalf("repeated service close must be single-shot, got %v", err)
+	if err := service.Close(); !errors.Is(err, cleanupErr) {
+		t.Fatalf("repeated service close must preserve the stored cleanup error without closing again, got %v", err)
 	}
 	if wrappedDB.closeCount != 1 {
 		t.Fatalf("expected repeated service close not to close shared database again, got %d", wrappedDB.closeCount)
