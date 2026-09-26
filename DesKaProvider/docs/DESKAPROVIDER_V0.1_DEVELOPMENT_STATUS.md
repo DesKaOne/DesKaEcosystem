@@ -5067,8 +5067,33 @@ Completed:
 - schema isolation currently relies on the test connection's session search path and remains test-fixture-specific rather than application configuration;
 - provider-specific eventual-consistency and network-partition behavior remain outside the deterministic mock boundary.
 
+### 40. Milestone Update — PostgreSQL Transaction Version Progression
+
+**Date:** 2026-09-26
+
+Completed:
+
+- audited the PostgreSQL `PutContext` transition path and confirmed it uses the current durable row version as the compare-and-transition precondition;
+- added deterministic regression coverage for repeated non-terminal persistence followed by terminal transition, validating version progression `1 → 2 → 3`;
+- verified the regression passes under both normal and race-enabled repository CI;
+- preserved the invariant that version advancement is persistence coordination only and cannot authorize provider resubmission or financial mutation.
+
+### Verification
+
+- implementation HEAD: `6e948be1acb0223a321fe8d2fe0469ca9de5be51`;
+- CI #1131 / run `36222360321`: **GREEN** for exact HEAD;
+- CI jobs `test`: success;
+- CI jobs `race`: success;
+- CI job `test` completed `vet`: success.
+
+### Safety Boundary
+
+- transaction version progression protects durable consistency only;
+- stale version conflicts remain coordination failures and never become permission to retry, fail over, resubmit, mutate customer ledger, move treasury funds, or fund a provider;
+- operational and audit evidence remain non-authoritative for transaction state.
+
 ### Next milestone
 
-1. audit sequential PostgreSQL transaction-version progression beyond the first atomic transition;
-2. ensure non-atomic `PutContext` cannot regress or accidentally reuse a stale version after repeated pending updates;
+1. audit cancellation and database-error propagation across `PutContext` and `Reconcile` boundaries;
+2. verify a canceled context cannot produce a partial durable transaction transition or accidental provider resubmission;
 3. preserve the no-resubmission/no-financial-authorization invariants.
