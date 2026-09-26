@@ -214,6 +214,31 @@ func TestPostgresTransactionAuditStoreAllContextRejectsMidStreamCancellation(t *
 	}
 }
 
+func TestPostgresTransactionAuditStoreAllContextPropagatesDeadline(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Nanosecond)
+	t.Cleanup(cancel)
+	time.Sleep(time.Millisecond)
+
+	scenario := &postgresAuditRowsScenario{
+		rows: [][]driver.Value{{
+			"ref", "TEST", "", "", "mock", "message", time.Now().UTC(),
+		}},
+	}
+	db := openPostgresAuditRowsDB(t, scenario)
+	store, err := NewPostgresTransactionAuditStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := store.AllContext(ctx, "ref")
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected deadline exceeded, got %v", err)
+	}
+	if result != nil {
+		t.Fatalf("deadline-exceeded audit read must not expose any history, got %#v", result)
+	}
+}
+
 func TestPostgresTransactionAuditStoreAllContextPropagatesQueryError(t *testing.T) {
 	wantErr := errors.New("audit query unavailable")
 	db := openPostgresAuditRowsDB(t, &postgresAuditRowsScenario{queryErr: wantErr})
