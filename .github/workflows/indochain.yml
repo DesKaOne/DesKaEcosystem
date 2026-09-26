@@ -1,0 +1,43 @@
+name: IndoChain CI
+
+on:
+  push:
+    branches:
+      - main
+      - "dev/**"
+
+  pull_request:
+    branches:
+      - main
+      - "dev/**"
+    paths:
+      - "IndoChain/**"
+      - ".github/workflows/indochain.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: IndoChain
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache: true
+          cache-dependency-path: IndoChain/go.mod
+
+      - name: Tidy
+        run: go mod tidy
+
+      - name: Test
+        run: go test ./...
+
+      - name: Vet
+        run: go vet ./...
