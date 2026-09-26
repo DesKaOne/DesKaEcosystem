@@ -85,6 +85,28 @@ func (r postgresStoreRowsAffectedErrorResult) RowsAffected() (int64, error) {
 	return 0, r.err
 }
 
+
+func TestPostgresTransactionStorePutIfCurrentPropagatesExecError(t *testing.T) {
+	wantErr := errors.New("database write unavailable")
+	stub := &postgresStoreDBStub{err: wantErr}
+	store, err := NewPostgresTransactionStore(stub)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	prev := postgresPendingState()
+	next := prev
+	next.Execution.Result.Status = provider.StatusSuccess
+
+	err = store.PutIfCurrent("ref-77", prev, next)
+	if err == nil || !errors.Is(err, wantErr) {
+		t.Fatalf("expected database exec error to propagate, got %v", err)
+	}
+	if errors.Is(err, ErrTransactionStateConflict) {
+		t.Fatalf("database exec error must not be collapsed into state conflict: %v", err)
+	}
+}
+
 func TestPostgresTransactionStorePutIfCurrentPropagatesRowsAffectedError(t *testing.T) {
 	wantErr := errors.New("rows affected unavailable")
 	stub := &postgresStoreDBStub{result: postgresStoreRowsAffectedErrorResult{err: wantErr}}
