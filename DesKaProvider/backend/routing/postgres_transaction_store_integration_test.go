@@ -2059,7 +2059,7 @@ func TestPostgresPutContextAdvancesVersionAcrossPendingUpdates(t *testing.T) {
 		t.Fatalf("expected version 2 after pending update, got %d", current.Version)
 	}
 
-	terminal := next
+	terminal := current
 	terminal.Execution.Result.Status = provider.StatusSuccess
 	terminal.Execution.Result.Message = "success"
 	if err := store.PutContext(ctx, terminal); err != nil {
