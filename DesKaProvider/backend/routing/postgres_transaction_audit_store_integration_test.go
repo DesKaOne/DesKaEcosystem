@@ -474,6 +474,103 @@ func TestPostgresTransactionAuditStoreTimestampCollisionUsesAuditIDOrder(t *test
 	}
 }
 
+func TestPostgresTransactionAuditStoreOrderingSurvivesRestart(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	schema := "audit_ordering_restart_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatalf("create isolated schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
+	})
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set search path: %v", err)
+	}
+	applyPostgresMigration(t, db)
+
+	store, err := NewPostgresTransactionAuditStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	createdAt := time.Now().UTC().Truncate(time.Microsecond)
+	events := []TransactionAuditEvent{
+		{
+			ReferenceID:  "audit-ordering-restart-ref",
+			Action:       "FIRST",
+			Next:         string(provider.StatusPending),
+			ProviderName: "mock",
+			Message:      "first",
+			CreatedAt:    createdAt,
+		},
+		{
+			ReferenceID:  "audit-ordering-restart-ref",
+			Action:       "SECOND",
+			Previous:     string(provider.StatusPending),
+			Next:         string(provider.StatusSuccess),
+			ProviderName: "mock",
+			Message:      "second",
+			CreatedAt:    createdAt,
+		},
+		{
+			ReferenceID:  "audit-ordering-restart-ref",
+			Action:       "THIRD",
+			Previous:     string(provider.StatusSuccess),
+			Next:         string(provider.StatusSuccess),
+			ProviderName: "mock",
+			Message:      "third",
+			CreatedAt:    createdAt,
+		},
+	}
+	for i, event := range events {
+		if err := store.AppendContext(ctx, event); err != nil {
+			t.Fatalf("append event %d: %v", i+1, err)
+		}
+	}
+
+	beforeRestart, err := store.AllContextE(ctx, events[0].ReferenceID)
+	if err != nil {
+		t.Fatalf("read audit ordering before restart: %v", err)
+	}
+	if len(beforeRestart) != len(events) {
+		t.Fatalf("expected %d events before restart, got %d", len(events), len(beforeRestart))
+	}
+
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := sql.Open("pgx", os.Getenv("DESKAPROVIDER_POSTGRES_DSN"))
+	if err != nil {
+		t.Fatalf("reopen postgres: %v", err)
+	}
+	defer reopened.Close()
+	if err := reopened.PingContext(ctx); err != nil {
+		t.Fatalf("ping reopened postgres: %v", err)
+	}
+	if _, err := reopened.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("restore search path after restart: %v", err)
+	}
+
+	restartedStore, err := NewPostgresTransactionAuditStore(reopened)
+	if err != nil {
+		t.Fatal(err)
+	}
+	afterRestart, err := restartedStore.AllContextE(ctx, events[0].ReferenceID)
+	if err != nil {
+		t.Fatalf("read audit ordering after restart: %v", err)
+	}
+	if len(afterRestart) != len(beforeRestart) {
+		t.Fatalf("audit row count changed after restart: before=%d after=%d", len(beforeRestart), len(afterRestart))
+	}
+	for i := range beforeRestart {
+		if afterRestart[i] != beforeRestart[i] {
+			t.Fatalf("audit ordering changed after restart at position %d: before=%#v after=%#v", i, beforeRestart[i], afterRestart[i])
+		}
+	}
+}
+
 func TestPostgresTransactionAuditStoreAppendFailureThenRecovery(t *testing.T) {
 	db := postgresIntegrationDB(t)
 	schema := "audit_append_recovery_" + strconv.FormatInt(time.Now().UnixNano(), 10)
