@@ -332,11 +332,6 @@ func TestPostgresTransactionStoreFailedRecoveryIsIdempotentAfterRestart(t *testi
 		t.Fatal(err)
 	}
 
-	store, err = NewPostgresTransactionStore(db)
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	registry := provider.NewRegistry()
 	mock := Mock.New(Mock.Config{
 		Products:       []provider.Product{{Code: "pln20", Name: "PLN 20"}},
