@@ -204,7 +204,7 @@ func TestPostgresTransactionStoreIntegration(t *testing.T) {
 		t.Fatalf("ping reopened postgres: %v", err)
 	}
 
-	restarted, err = NewPostgresTransactionStore(db)
+	restarted, err := NewPostgresTransactionStore(db)
 	if err != nil {
 		t.Fatal(err)
 	}
