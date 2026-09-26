@@ -3794,6 +3794,112 @@ func TestPostgresCrossDomainRecoveryOrderingSurvivesRestart(t *testing.T) {
 	}
 }
 
+func TestPostgresCrossDomainRecoveryFailureClassification(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	schema := "cross_domain_recovery_failure_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatalf("create isolated schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
+	})
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set search path: %v", err)
+	}
+	applyPostgresMigration(t, db)
+
+	transactionStore, err := NewPostgresTransactionStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	auditStore, err := NewPostgresTransactionAuditStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	state := postgresPendingState()
+	state.Request.ReferenceID = "cross-domain-recovery-failure-ref"
+	state.Execution.Result.ReferenceID = state.Request.ReferenceID
+	state.Version = 0
+	if err := transactionStore.PutContext(ctx, state); err != nil {
+		t.Fatalf("persist transaction baseline: %v", err)
+	}
+	event := TransactionAuditEvent{
+		ReferenceID:  state.Request.ReferenceID,
+		Action:       "PURCHASE_PENDING",
+		Next:         string(provider.StatusPending),
+		ProviderName: state.Execution.ProviderName,
+		Message:      "baseline",
+		CreatedAt:    time.Now().UTC().Truncate(time.Microsecond),
+	}
+	if err := auditStore.AppendContext(ctx, event); err != nil {
+		t.Fatalf("persist audit baseline: %v", err)
+	}
+
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, transactionErr := transactionStore.GetContextE(context.Background(), state.Request.ReferenceID)
+	if transactionErr == nil {
+		t.Fatal("expected transaction read failure after database close")
+	}
+	if errors.Is(transactionErr, context.Canceled) || errors.Is(transactionErr, context.DeadlineExceeded) {
+		t.Fatalf("transaction recovery failure must remain an ordinary persistence error: %v", transactionErr)
+	}
+
+	_, auditErr := auditStore.AllContextE(context.Background(), state.Request.ReferenceID)
+	if auditErr == nil {
+		t.Fatal("expected audit read failure after database close")
+	}
+	if errors.Is(auditErr, context.Canceled) || errors.Is(auditErr, context.DeadlineExceeded) {
+		t.Fatalf("audit recovery failure must remain an ordinary persistence error: %v", auditErr)
+	}
+
+	reopened, err := sql.Open("pgx", os.Getenv("DESKAPROVIDER_POSTGRES_DSN"))
+	if err != nil {
+		t.Fatalf("reopen postgres: %v", err)
+	}
+	defer reopened.Close()
+	if err := reopened.PingContext(ctx); err != nil {
+		t.Fatalf("ping reopened postgres: %v", err)
+	}
+	if _, err := reopened.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("restore search path after recovery: %v", err)
+	}
+
+	recoveredTransactionStore, err := NewPostgresTransactionStore(reopened)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recoveredAuditStore, err := NewPostgresTransactionAuditStore(reopened)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	recoveredState, ok, err := recoveredTransactionStore.GetContextE(ctx, state.Request.ReferenceID)
+	if err != nil || !ok {
+		t.Fatalf("recover transaction state: ok=%v err=%v", ok, err)
+	}
+	if recoveredState.Request != state.Request ||
+		recoveredState.Execution.ProviderName != state.Execution.ProviderName ||
+		recoveredState.Execution.Result != state.Execution.Result ||
+		recoveredState.Version != 1 {
+		t.Fatalf("transaction state changed across recovery failure path: %#v", recoveredState)
+	}
+
+	recoveredAudit, err := recoveredAuditStore.AllContextE(ctx, state.Request.ReferenceID)
+	if err != nil {
+		t.Fatalf("recover audit history: %v", err)
+	}
+	if len(recoveredAudit) != 1 || recoveredAudit[0] != event {
+		t.Fatalf("audit state changed across recovery failure path: %#v", recoveredAudit)
+	}
+}
+
 func TestPostgresTransactionAuditStoreAppendFailureThenRecovery(t *testing.T) {
 	db := postgresIntegrationDB(t)
 	schema := "audit_append_recovery_" + strconv.FormatInt(time.Now().UnixNano(), 10)
