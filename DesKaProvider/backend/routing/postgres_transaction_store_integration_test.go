@@ -212,20 +212,7 @@ func TestPostgresTransactionStoreTerminalRecoveryIsIdempotentAfterRestart(t *tes
 		t.Fatal(err)
 	}
 
-	// Keep the test's database connection pinned to the isolated schema so
-	// concurrent services cannot drift across pooled PostgreSQL connections.
-	pinnedDB, err := sql.Open("pgx", os.Getenv("DESKAPROVIDER_POSTGRES_DSN"))
-	if err != nil {
-		t.Fatalf("open pinned postgres connection: %v", err)
-	}
-	t.Cleanup(func() { _ = pinnedDB.Close() })
-	if err := pinnedDB.PingContext(ctx); err != nil {
-		t.Fatalf("ping pinned postgres: %v", err)
-	}
-	if _, err := pinnedDB.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
-		t.Fatalf("set pinned search path: %v", err)
-	}
-	pinnedStore, err := NewPostgresTransactionStore(pinnedDB)
+	store, err := NewPostgresTransactionStore(db)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -417,7 +404,7 @@ func TestPostgresTransactionStoreFailedRecoveryIsIdempotentAfterRestart(t *testi
 		t.Fatalf("terminal webhook must not resubmit purchase, got %d submissions", got)
 	}
 
-	durable, ok := pinnedStore.Get(req.ReferenceID)
+	durable, ok := store.Get(req.ReferenceID)
 	if !ok {
 		t.Fatal("failed terminal transaction disappeared after restart")
 	}
