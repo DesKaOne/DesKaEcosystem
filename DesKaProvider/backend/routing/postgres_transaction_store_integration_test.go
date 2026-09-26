@@ -207,7 +207,7 @@ func TestPostgresTransactionStoreTerminalRecoveryIsIdempotentAfterRestart(t *tes
 	}
 	applyPostgresMigration(t, db)
 
-	store, err = NewPostgresTransactionStore(db)
+	store, err := NewPostgresTransactionStore(db)
 	if err != nil {
 		t.Fatal(err)
 	}
