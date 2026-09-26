@@ -571,6 +571,7 @@ func TestPostgresTransactionAuditStoreOrderingSurvivesRestart(t *testing.T) {
 	}
 }
 
+
 func TestPostgresTransactionAuditStoreConcurrentTimestampCollisionPreservesInsertionOrder(t *testing.T) {
 	db := postgresIntegrationDB(t)
 	schema := "audit_concurrent_ordering_" + strconv.FormatInt(time.Now().UnixNano(), 10)
@@ -596,7 +597,21 @@ func TestPostgresTransactionAuditStoreConcurrentTimestampCollisionPreservesInser
 		i := i
 		go func() {
 			<-start
-			store, err := NewPostgresTransactionAuditStore(db)
+			workerCtx, workerCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer workerCancel()
+
+			conn, err := db.Conn(workerCtx)
+			if err != nil {
+				done <- err
+				return
+			}
+			defer conn.Close()
+			if _, err := conn.ExecContext(workerCtx, "SET search_path TO "+schema); err != nil {
+				done <- err
+				return
+			}
+
+			store, err := NewPostgresTransactionAuditStore(conn)
 			if err != nil {
 				done <- err
 				return
@@ -608,7 +623,7 @@ func TestPostgresTransactionAuditStoreConcurrentTimestampCollisionPreservesInser
 				Message:      "same timestamp",
 				CreatedAt:    createdAt,
 			}
-			done <- store.AppendContext(ctx, event)
+			done <- store.AppendContext(workerCtx, event)
 		}()
 	}
 	close(start)
@@ -619,7 +634,7 @@ func TestPostgresTransactionAuditStoreConcurrentTimestampCollisionPreservesInser
 	}
 
 	var rows int
-	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM provider_transaction_audit WHERE reference_id=$1", "audit-concurrent-ordering-ref").Scan(&rows); err != nil {
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+schema+".provider_transaction_audit WHERE reference_id=$1", "audit-concurrent-ordering-ref").Scan(&rows); err != nil {
 		t.Fatalf("count concurrent audit rows: %v", err)
 	}
 	if rows != writers {
@@ -627,7 +642,7 @@ func TestPostgresTransactionAuditStoreConcurrentTimestampCollisionPreservesInser
 	}
 
 	storedOrder, err := func() ([]int, error) {
-		rows, err := db.QueryContext(ctx, "SELECT action FROM provider_transaction_audit WHERE reference_id=$1 ORDER BY created_at, audit_id", "audit-concurrent-ordering-ref")
+		rows, err := db.QueryContext(ctx, "SELECT action FROM "+schema+".provider_transaction_audit WHERE reference_id=$1 ORDER BY created_at, audit_id", "audit-concurrent-ordering-ref")
 		if err != nil {
 			return nil, err
 		}
