@@ -7765,3 +7765,41 @@ Runtime startup failure rollback is infrastructure-only. A failure after databas
 - Push CI #1600: **GREEN** — test and race jobs successful.
 - PR CI #1601: **GREEN** — test and race jobs successful.
 - The GitHub commit-status aggregate endpoint may report pending because Actions workflow checks are not exposed there as status contexts; the authoritative workflow runs for this exact HEAD are #1600 and #1601, both successful.
+
+
+### Milestone #173 — PostgreSQL Runtime Startup Failure Matrix After Persistence Initialization
+
+**Date:** 2026-09-27
+
+Completed:
+
+- extended the constructor-level startup failure seam across post-database initialization stages;
+- added deterministic failure coverage after provider-state store initialization, after router construction, and after purchase-service construction;
+- added cancellation coverage immediately before ownership transfer, verifying context.Canceled remains the returned initialization error;
+- used real PostgreSQL dedicated-audit ownership in the matrix so acquired database resources are exercised through the actual constructor cleanup path;
+- verified each injected post-acquisition failure preserves its primary error identity;
+- verified ownership is never transferred after a failed or canceled initialization;
+- verified acquired dedicated audit resources are closed by startup rollback and repeated cleanup remains single-shot;
+- preserved transaction/audit authority boundaries and introduced no provider retry, failover, resubmission, ledger, treasury, funding, or cross-domain recovery behavior.
+
+### Verification
+
+- Implementation/test commits: 6fa1f92c6c22963c1d7a965621a9b4e5c2b85a33, 601a8728ea49da64102ddb611e0832b19aee440b, and 5998492e77742bb1f4367471d84de4cae28a68d8.
+- CI #1604/#1605 exposed an overly strict stage assertion; the matrix was corrected to skip earlier hook stages and inject only at the requested stage.
+- CI #1608/#1609 exposed a test-only compile error from an assertion edit applied to an existing test; that assertion was restored in 5998492e77742bb1f4367471d84de4cae28a68d8.
+- Final Push CI #1610: **GREEN** — go test ./..., go vet ./..., PostgreSQL service-backed integration tests, and go test -race ./....
+- Final PR CI #1611: **GREEN** — test, race.
+
+### Safety Boundary
+
+The startup matrix validates rollback mechanics only. Failure after persistence initialization, router construction, purchase-service construction, or cancellation before ownership transfer releases only constructor-owned resources and prevents a partially initialized runtime from taking ownership. No external provider submission is performed by startup rollback. Transaction persistence remains the authoritative transaction-state/idempotency boundary; audit persistence remains observational evidence.
+
+### Known Limitations
+
+- The stage hook is internal test instrumentation and is inert when unset.
+- The matrix uses a dedicated PostgreSQL audit store with a JSON transaction store for later constructor stages; shared PostgreSQL ownership is already covered by Milestone #172.
+- The matrix does not enumerate process termination or external-provider API failures during runtime startup because those are outside constructor ownership cleanup.
+
+### Next Milestone
+
+**#174 — Runtime Initialization Error Precedence Across Full Constructor Path:** verify primary initialization errors versus cleanup errors at each constructor stage, including joined-error identity and deterministic cleanup ordering, without changing runtime financial behavior.
