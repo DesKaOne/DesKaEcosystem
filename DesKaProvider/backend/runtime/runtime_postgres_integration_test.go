@@ -13,6 +13,8 @@ import (
 
 	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/routing"
 	provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
+	mock "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/Mock"
+	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/operational"
 )
 
 func TestOpenTransactionStorePostgresIntegration(t *testing.T) {
@@ -678,4 +680,110 @@ func TestNewFromEnvironmentContextCancellationBeforeOwnershipTransferClosesDedic
 	if captured.transferred() { t.Fatal("ownership transferred after canceled initialization") }
 	if captured.closed == false { t.Fatal("expected startup rollback to close dedicated audit database") }
 	if err := captured.closeOwned(); err != nil { t.Fatalf("repeated cleanup failed: %v", err) }
+}
+
+
+func TestServiceRunShutdownPreservesPrimaryLifecycleAndSharedPostgresCleanupErrors(t *testing.T) {
+	dsn := os.Getenv("DESKAPROVIDER_POSTGRES_DSN")
+	if dsn == "" {
+		t.Skip("DESKAPROVIDER_POSTGRES_DSN is not configured")
+	}
+
+	ctx := context.Background()
+	cfg := Config{TransactionStoreDriver: "postgres", AuditStoreDriver: "postgres", PostgresDSN: dsn}
+	transactionStore, transactionDB, err := openTransactionStore(ctx, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if transactionDB == nil {
+		t.Fatal("expected shared PostgreSQL transaction database handle")
+	}
+	transactionDB.SetMaxOpenConns(1)
+
+	auditStore, auditDB, err := openAuditStore(ctx, cfg, transactionDB)
+	if err != nil {
+		_ = transactionDB.Close()
+		t.Fatal(err)
+	}
+	if auditStore == nil {
+		_ = transactionDB.Close()
+		t.Fatal("expected shared PostgreSQL audit store")
+	}
+	if auditDB != nil {
+		_ = transactionDB.Close()
+		t.Fatalf("shared PostgreSQL audit store must not own a second database handle, got %T", auditDB)
+	}
+
+	cleanupErr := errors.New("injected shared shutdown cleanup failure")
+	wrappedDB := &runtimeCleanupErrorDB{delegate: transactionDB, err: cleanupErr}
+	ownership := newRuntimeDatabaseOwnership(wrappedDB, nil)
+	ownership.transferToService()
+
+	registry := provider.NewRegistry()
+	balanceProvider := &balanceMock{Provider: mock.New(mock.Config{}), balance: 100000}
+	if err := registry.Register("mock", balanceProvider); err != nil {
+		t.Fatal(err)
+	}
+	syncService, err := operational.NewSyncService(registry, operational.NewMemoryStore(), "IDR", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	balanceLifecycle, err := operational.NewSyncWorkerLifecycle(syncService, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := &Service{
+		syncService:      syncService,
+		balanceLifecycle: balanceLifecycle,
+		databaseOwnership: ownership,
+		interval:         time.Hour,
+	}
+
+	runCtx, cancel := context.WithCancel(ctx)
+	result := make(chan error, 1)
+	go func() {
+		result <- service.Run(runCtx)
+	}()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for !balanceLifecycle.Running() {
+		if time.Now().After(deadline) {
+			cancel()
+			t.Fatal("timed out waiting for balance worker to start")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	cancel()
+
+	select {
+	case err := <-result:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("expected primary lifecycle cancellation error, got %v", err)
+		}
+		if !errors.Is(err, cleanupErr) {
+			t.Fatalf("expected shared database cleanup error to remain discoverable, got %v", err)
+		}
+		if !strings.Contains(err.Error(), "close transaction database") {
+			t.Fatalf("expected transaction database cleanup context, got %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for service shutdown")
+	}
+
+	if wrappedDB.closeCount != 1 {
+		t.Fatalf("expected shared database to close exactly once, got %d", wrappedDB.closeCount)
+	}
+	if ownership.transferred() == false {
+		t.Fatal("expected database ownership to remain transferred during service shutdown")
+	}
+	if err := service.Close(); err != nil {
+		t.Fatalf("repeated service close must be single-shot, got %v", err)
+	}
+	if wrappedDB.closeCount != 1 {
+		t.Fatalf("expected repeated service close not to close shared database again, got %d", wrappedDB.closeCount)
+	}
+	if err := transactionDB.PingContext(ctx); err == nil {
+		t.Fatal("expected shared PostgreSQL database handle to be closed after service shutdown")
+	}
+	_ = transactionStore
 }
