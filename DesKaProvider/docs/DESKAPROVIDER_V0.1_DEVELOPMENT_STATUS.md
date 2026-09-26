@@ -4573,6 +4573,33 @@ Completed:
 - a canceled write leaves the prior durable transaction state intact;
 - audit and operational evidence remain non-authoritative.
 
+
+
+### 41. Milestone Update — PostgreSQL Transaction Read Consistency & Durable Result Identity
+
+**Date:** 2026-09-26
+
+Completed:
+
+- added deterministic PostgreSQL integration coverage for a terminal transaction read through the error-aware `GetContextE` path;
+- verified request identity, provider identity, purchase-result fields, and durable version are preserved exactly across a database read;
+- preserved the invariant that a durable terminal transaction is read as one coherent state and is not reconstructed from mixed request/result fields;
+- kept transaction persistence authoritative while audit/operational evidence remains non-authoritative.
+
+### Verification
+
+- regression test commit: `df2aa68190cbef72348267d1c8ca4d76bd993047`;
+- CI for this commit must finish with both `test` and `race` jobs **success** before this milestone is considered closed.
+
+### Safety Boundary
+
+- read consistency is a persistence-integrity concern only;
+- durable identity reads cannot authorize provider retry, failover, resubmission, ledger mutation, treasury movement, or provider funding.
+
+### Next Milestone
+
+**#120 — PostgreSQL Concurrent Read/Transition Observation Review**: verify concurrent durable reads observe either the prior complete state or the committed terminal state and never a partial field combination during a conditional transition.
+
 ### Next Milestone
 
 **#119 — PostgreSQL Transaction Read Consistency & Durable Result Identity Review**: verify restart/read paths preserve request/provider/result identity exactly and never expose mixed transaction fields during concurrent observation.
