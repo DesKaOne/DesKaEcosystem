@@ -1300,3 +1300,28 @@ CI history during hardening:
 - **IndoChain CI #1160** (run 36264730885) for final code/test state completed successfully; Tidy, Test, and Vet all passed.
 
 This remains a development-only highest-lock boundary. It does not yet define a full production locked-round BFT rule, proof-of-lock/precommit certificates, canonical block proposal encoding, validator-set transitions, or network-wide round synchronization.
+
+
+### 4.29 Consensus Explicit Prevote / Precommit + Proof-of-Lock Boundary
+
+Consensus messages now expose explicit MessageTypePrevote and MessageTypePrecommit values while retaining the existing generic MessageTypeVote for compatibility with earlier v0.1 development paths.
+
+A new PrecommitCertificate boundary in IndoChain/internal/consensus/precommit.go accepts only explicit precommit messages, requires quorum for one exact proposal/context, defensively clones evidence, and canonicalizes certificate votes by validator identifier. Validation independently enforces the same context, membership, voting-power, duplicate-vote, quorum, and canonical-order invariants without mutating the supplied certificate or round state.
+
+A new LockProof binds a claimed locked proposal and lock round to a validated PrecommitCertificate. Construction and validation reject mismatched proposal/round evidence and defensively copy nested certificate material. This creates an explicit proof-of-lock handoff object for the later timeout/round-change integration.
+
+Regression tests cover:
+- rejection of generic vote messages when an explicit precommit certificate is required;
+- deterministic canonical precommit vote ordering;
+- rejection of non-canonical certificate order;
+- lock-proof proposal/round binding;
+- defensive-copy behavior for lock-proof evidence.
+
+Commits:
+- explicit prevote/precommit message types: 52cb2a2ec7cc4b33ad132f0adb11f52c4a2e5bbb
+- precommit certificate + lock proof: 2b35a13632bf6922eab025b7a4050044e472f0aa
+- precommit/lock-proof regression tests: 3706d8807a471a658332348d8a9b8f1b94f9ee46
+
+CI gate: pending verification for the latest regression-test commit. The previous status-document gate remains green at IndoChain CI #1162 (run 36264768458). This milestone is not considered complete until the latest implementation/test commit passes Tidy, Test, and Vet.
+
+Limitation: this is still a development proof-of-lock boundary. The runtime has not yet been switched to a fully separate prevote/precommit aggregation lifecycle, and no production BFT locking algorithm, signature aggregation, validator-set transition, or network round synchronization is frozen by this milestone.
