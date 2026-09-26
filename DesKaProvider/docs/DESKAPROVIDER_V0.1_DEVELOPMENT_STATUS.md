@@ -8062,3 +8062,49 @@ This milestone validates lifecycle rollback and error propagation only. A catalo
 **#180 — Runtime Shutdown Error Composition Across Auxiliary Rollback and Cleanup**
 
 Focus next on the error-composition matrix when auxiliary lifecycle startup fails, balance-worker rollback returns an error, and database cleanup also returns errors, ensuring all independent error identities remain discoverable without changing production shutdown semantics.
+
+## 180. Milestone Update — Runtime Shutdown Error Composition Across Auxiliary Rollback and Cleanup
+
+**Date:** 2026-09-27
+
+Completed:
+
+- added a test-only internal balance-worker shutdown seam on Service so rollback error composition can be exercised deterministically without changing the default lifecycle implementation;
+- routed runtime balance-worker shutdown and auxiliary rollback through the seam while preserving the existing SyncWorkerLifecycle.Shutdown behavior by default;
+- added real PostgreSQL service-lifecycle coverage for catalog lifecycle startup failure after the balance worker has started;
+- injected a deterministic balance-worker rollback error while still executing the real worker shutdown first, ensuring the worker is stopped before database ownership cleanup;
+- verified the primary catalog lifecycle-start error remains discoverable through errors.Is;
+- verified the independent balance-worker rollback error remains discoverable through errors.Is;
+- verified independent dedicated transaction and audit PostgreSQL cleanup errors remain discoverable through errors.Is alongside both lifecycle errors;
+- verified cleanup error context remains attributable to:
+  - close transaction database
+  - close audit database
+- verified database cleanup remains deterministic and transaction-before-audit;
+- verified each dedicated PostgreSQL handle closes exactly once;
+- verified ownership remains transferred during runtime rollback;
+- verified repeated Service.Close() preserves the stored cleanup error identities without double-closing;
+- no provider retry/failover, transaction resubmission, ledger mutation, treasury movement, customer-balance mutation, or synthetic transaction/audit reconstruction was introduced.
+
+### Verification
+
+- CI run #1653 on implementation/test commit 266e9b94ab2ead1b3b8d0f88a582bda13b00f043: **GREEN**.
+  - go test ./... — PASS
+  - go vet ./... — PASS
+  - PostgreSQL service-backed integration tests — PASS
+  - go test -race ./... — PASS
+
+### Safety boundary
+
+This milestone validates only runtime shutdown error composition. The injected worker rollback error is test-only and is returned only after the real balance worker shutdown executes. Production behavior remains the existing lifecycle shutdown path. Database cleanup still occurs only after worker rollback has completed.
+
+### Known limitations
+
+- The existing SyncWorkerLifecycle contract does not expose a production worker rollback error injection mechanism; the new balanceShutdown field is an internal test seam and has no effect unless explicitly assigned.
+- PostgreSQL integration coverage requires DESKAPROVIDER_POSTGRES_DSN; tests skip when the runtime DSN is unavailable.
+- This milestone does not introduce new provider retry/failover or transaction recovery behavior.
+
+### Next milestone
+
+**#181 — Runtime Shutdown Error Composition Across Cancellation and Auxiliary Rollback**
+
+Focus next on cancellation-driven shutdown where the primary context.Canceled error, balance-worker rollback error, auxiliary lifecycle shutdown, and transaction/audit cleanup errors must remain independently discoverable and deterministically ordered.
