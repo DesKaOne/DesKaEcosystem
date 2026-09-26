@@ -6078,3 +6078,39 @@ Completed:
 ### Next Milestone
 
 **#140 — PostgreSQL Audit Ordering Under Concurrent Appends:** verify deterministic audit ordering when concurrent append operations share the same `created_at` timestamp, without allowing audit ordering to influence transaction authority.
+
+
+### 140. Milestone Update — PostgreSQL Audit Ordering Under Concurrent Appends
+
+**Date:** 2026-09-26
+
+Completed:
+
+- added real-PostgreSQL integration coverage for concurrent audit appends sharing the exact same `created_at` timestamp;
+- verified all concurrent append operations persist successfully without collapsing distinct audit evidence;
+- verified persisted rows are read using the existing `created_at, audit_id` ordering and every concurrently written event remains uniquely represented;
+- confirmed concurrent audit ordering is deterministic at the persisted-row level without making audit order an input to transaction execution authority;
+- no production audit-store implementation change was required because the existing schema identity and ordering query already provide the required deterministic tie-breaker;
+- no transaction authority, provider submission authority, retry/failover behavior, ledger mutation, treasury movement, or provider funding behavior was broadened.
+
+### Safety Boundary
+
+- concurrent audit append order is observational evidence only;
+- `audit_id` remains a storage-order identity and is not a transaction execution or idempotency key;
+- audit concurrency cannot authorize provider retry, failover, resubmission, ledger mutation, treasury movement, or provider funding;
+- transaction persistence remains the authoritative transaction-state and idempotency boundary.
+
+### Verification
+
+- test implementation commit: `d4e03a00443654b66f71b954276d07031199f0d5`;
+- exact branch HEAD after this status documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before this milestone is considered closed.
+
+### Known Limitations
+
+- concurrent PostgreSQL scheduling is nondeterministic, so the test validates uniqueness and deterministic persisted ordering rather than assuming goroutine completion order;
+- the scenario covers same-timestamp concurrent inserts on one PostgreSQL deployment, not cross-region replication ordering or clock-skew semantics;
+- audit remains operational evidence and is not a financial source of truth.
+
+### Next Milestone
+
+**#141 — PostgreSQL Audit Concurrent Read/Append Visibility:** verify readers never observe partially inserted audit rows while concurrent append operations are in flight, while preserving the observational-only audit boundary.
