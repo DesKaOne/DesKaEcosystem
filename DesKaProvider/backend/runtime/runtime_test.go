@@ -534,6 +534,74 @@ func TestNewFromEnvironmentPreservesEnabledProviderLifecycleAcrossRestart(t *tes
 	if !state.Supports(operational.CapabilityPPOB) || !state.Supports(operational.CapabilityBalance) || !state.Supports(operational.CapabilityWebhook) { t.Fatalf("unexpected capabilities after restart: %#v", state.Capabilities) }
 }
 
+func TestNewFromEnvironmentRestartSeparatesPersistedStateFromEphemeralRuntimeState(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("DIGIFLAZZ_USERNAME", "test-user")
+	t.Setenv("DIGIFLAZZ_API_KEY", "test-key")
+	t.Setenv("DESKAPROVIDER_OPERATIONAL_STORE_PATH", filepath.Join(root, "operational", "snapshots.json"))
+	t.Setenv("DESKAPROVIDER_PROVIDER_STATE_STORE_PATH", filepath.Join(root, "provider-state", "state.json"))
+	t.Setenv("DESKAPROVIDER_TRANSACTION_STORE_PATH", filepath.Join(root, "transactions", "state.json"))
+
+	first, err := NewFromEnvironment(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin, err := operational.NewProviderAdminService(first.providerState)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := admin.Enable("digiflazz"); err != nil {
+		t.Fatal(err)
+	}
+	if first.balanceLifecycle.Running() {
+		t.Fatal("persisted provider lifecycle state must not imply an active balance worker")
+	}
+	if first.databaseOwnership == nil || !first.databaseOwnership.transferred() {
+		t.Fatal("expected first runtime instance to own transferred database resources")
+	}
+	if first.databaseOwnership.closed {
+		t.Fatal("first runtime ownership must remain open before shutdown")
+	}
+
+	second, err := NewFromEnvironment(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, ok := second.providerState.Get("digiflazz")
+	if !ok || !state.Enabled() {
+		t.Fatalf("expected persisted provider lifecycle state to survive restart: %#v", state)
+	}
+	if second.balanceLifecycle.Running() {
+		t.Fatal("restart must not restore an active balance worker from persisted provider state")
+	}
+	if second.databaseOwnership == nil || !second.databaseOwnership.transferred() {
+		t.Fatal("expected second runtime instance to own newly transferred database resources")
+	}
+	if second.databaseOwnership.closed {
+		t.Fatal("second runtime ownership must start open after successful initialization")
+	}
+	if second.databaseOwnership == first.databaseOwnership {
+		t.Fatal("persisted provider state must not reuse prior runtime database ownership")
+	}
+	if second.balanceLifecycle == first.balanceLifecycle {
+		t.Fatal("persisted provider state must not reuse prior runtime lifecycle")
+	}
+
+	if err := first.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !first.databaseOwnership.closed {
+		t.Fatal("first runtime ownership should close after explicit shutdown")
+	}
+	if second.databaseOwnership.closed {
+		t.Fatal("closing the first runtime instance must not close the second runtime ownership")
+	}
+
+	if err := second.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestNewFromEnvironmentCreatesFreshRuntimeOwnershipPerInstance(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("DIGIFLAZZ_USERNAME", "test-user")
