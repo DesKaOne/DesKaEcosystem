@@ -5225,3 +5225,32 @@ Completed:
 **#118 — Database-Error Propagation Boundary Review**: verify non-cancellation PostgreSQL errors remain distinguishable from not-found/empty state across `GetContextE`, `PutContext`, and `Reconcile`, with no accidental retry authorization.
 
 **#117 — Sequential/Repeated Transaction Transition Review**: continue auditing repeated pending-to-pending persistence and terminal-idempotent behavior, especially PostgreSQL version progression, without widening transaction authority.
+
+### 39. Milestone Update — PostgreSQL Reconciliation Concurrency & CI Restoration
+
+**Date:** 2026-09-26
+
+Completed:
+
+- repaired PostgreSQL integration-test store scoping so isolated-schema fixtures remain local to each test and no cross-test variable leakage remains;
+- hardened the DesKaProvider CI checkout path so pull-request validation checks the PR head commit directly instead of a stale synthetic merge ref;
+- added deterministic coverage for concurrent service reconciliation converging on one durable terminal result without provider resubmission;
+- verified the routing package builds cleanly after the scope corrections;
+- preserved transaction persistence as the authoritative transaction state and kept audit/operational evidence non-authoritative.
+
+### Verification
+
+- latest verified HEAD: `1af1a0a67c08c0171fdded1b437fc027777f6b86`;
+- CI #1169 / run `36226066545`: **GREEN**;
+- CI jobs `test`: success;
+- CI jobs `race`: success.
+
+### Safety Boundary
+
+- CI checkout changes only affect validation provenance, not runtime authorization behavior;
+- concurrent reconciliation may converge on an already-committed durable transaction result, but cannot trigger a second provider purchase;
+- atomic transaction transition conflicts remain conflict signals and do not authorize retry, failover, ledger mutation, treasury movement, or provider funding.
+
+### Next milestone
+
+**#117 — Atomic Transition Version Semantics Review**: audit sequential and concurrent PostgreSQL transaction version transitions so every durable state mutation uses the current version and preserves idempotent terminal behavior across repeated writes and restart recovery.\n
