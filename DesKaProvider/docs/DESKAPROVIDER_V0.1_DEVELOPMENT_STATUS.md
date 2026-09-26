@@ -5287,3 +5287,36 @@ Completed:
 
 **#117 — PostgreSQL Transaction Versioning Review**: audit sequential `PutContext` updates against the durable version column so legitimate pending-state transitions remain correct after prior updates while stale writers still conflict atomically.
 
+### 40. Milestone Update — PostgreSQL Transaction Version Progression
+
+**Date:** 2026-09-26
+
+Completed:
+
+- audited `PostgresTransactionStore.PutContext` against the durable transaction `version` column;
+- added deterministic integration coverage for sequential pending → pending → success transitions;
+- verified the first pending update advances the durable version from 1 to 2;
+- verified the subsequent terminal transition uses the current version and advances it to 3;
+- preserved atomic stale-writer protection through version matching;
+- kept transaction persistence authoritative and unchanged as the source of transaction state.
+
+### Verification
+
+- implementation HEAD: `e3082a75f02480ebfc76b19158f7ae1feaa6f322`;
+- CI #1183 / run `36227055909`: **GREEN** for exact HEAD `e3082a75f02480ebfc76b19158f7ae1feaa6f322`;
+- CI jobs `test`: success;
+- CI step `vet`: success;
+- CI job `race`: success.
+
+### Safety Boundary
+
+- transaction version progression only protects durable transaction-state transitions;
+- version changes do not authorize provider retries, failover, resubmission, or financial mutation;
+- stale writers remain rejected by the atomic version predicate;
+- audit and operational evidence remain non-authoritative;
+- no customer ledger, treasury, or automatic provider-funding behavior is introduced.
+
+### Next milestone
+
+**#118 — PostgreSQL Sequential Writer Conflict Review**: add deterministic coverage proving a stale pending writer cannot overwrite a newer pending version, while an up-to-date writer can continue the legitimate transition.
+
