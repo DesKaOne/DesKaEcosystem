@@ -7100,3 +7100,40 @@ Completed:
 ### Next Milestone
 
 **#158 — PostgreSQL Audit/Transaction Cross-Read Context Cancellation:** verify concurrent cross-domain reads stop cleanly under cancellation/deadline without exposing partial audit history or incorrectly changing transaction-state interpretation.
+
+
+### 158. Milestone Update — PostgreSQL Audit/Transaction Cross-Read Context Cancellation
+
+**Date:** 2026-09-27
+
+Completed:
+
+- added real-PostgreSQL integration coverage for cross-domain audit and transaction reads using an already-canceled context;
+- verified audit `AllContextE` returns `context.Canceled` with a nil result and does not expose partial audit history;
+- verified transaction `GetContextE` returns `context.Canceled` without exposing the durable transaction state through the canceled read;
+- added corresponding expired-deadline coverage and verified audit and transaction reads preserve `context.DeadlineExceeded` distinctly;
+- confirmed cancellation/deadline outcomes across the two persistence domains remain request-control errors only and do not change transaction interpretation or authorize provider activity;
+- no production audit-store or transaction-store implementation change was required;
+- no cross-domain locking, transaction authority, provider submission authority, retry/failover behavior, ledger mutation, treasury movement, or provider funding behavior was broadened.
+
+### Safety Boundary
+
+- canceled or deadline-expired cross-domain reads expose no partial audit history or transaction state;
+- audit and transaction persistence remain separate domains with transaction persistence authoritative for execution state and idempotency;
+- read cancellation cannot authorize provider retry, failover, resubmission, reconciliation, or financial state mutation;
+- no cross-read path acquires execution authority from the other persistence domain.
+
+### Verification
+
+- implementation test commit: `a70b2919edafe289b58235aa3e49abdc379eb896`;
+- exact branch HEAD after this status documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before this milestone is considered closed.
+
+### Known Limitations
+
+- the test uses deterministic pre-canceled and expired contexts against the existing real PostgreSQL harness rather than reproducing every mid-flight cancellation timing or network timeout variant across both stores;
+- the read boundary is validated independently for audit and transaction persistence; it does not imply a distributed atomic read transaction spanning both domains;
+- audit remains operational evidence and is not a financial source of truth.
+
+### Next Milestone
+
+**#159 — PostgreSQL Audit/Transaction Cross-Read Error Isolation:** verify an ordinary failure in one persistence domain does not get flattened into an empty result or misclassified as a failure in the other domain, without widening cross-domain authority.
