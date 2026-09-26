@@ -6336,3 +6336,41 @@ Completed:
 ### Next Milestone
 
 **#145 — PostgreSQL Audit Snapshot Stability Under Writer Recovery:** verify that reader snapshots remain complete and ordered when writers experience connection recovery, without turning audit recovery into transaction authority.
+
+
+### 145. Milestone Update — PostgreSQL Audit Snapshot Stability Under Writer Recovery
+
+**Date:** 2026-09-26
+
+Completed:
+
+- added real-PostgreSQL integration coverage for an audit writer whose database connection is closed before an append attempt;
+- verified the failed writer append returns an operational database error and is not misclassified as `context.Canceled` or `context.DeadlineExceeded`;
+- verified the reader snapshot remains unchanged after the failed writer append;
+- reopened PostgreSQL for the writer, restored the isolated schema context, and explicitly appended the intended audit event after recovery;
+- verified the recovered reader observes the complete two-event sequence in deterministic `created_at, audit_id` order;
+- verified repeated final snapshots converge to the same complete sequence and exactly two durable rows exist for the reference;
+- no production audit-store implementation change was required;
+- no transaction authority, provider submission authority, retry/failover behavior, ledger mutation, treasury movement, or provider funding behavior was broadened.
+
+### Safety Boundary
+
+- writer recovery is an operational persistence concern only;
+- a failed or recovered audit writer cannot authorize provider retry, failover, resubmission, ledger mutation, treasury movement, or provider funding;
+- audit snapshot continuity and ordering remain observational evidence;
+- transaction persistence remains the authoritative transaction-state and idempotency boundary.
+
+### Verification
+
+- test implementation commit: `cf7c305dc1bcf99d87efcedb0c218cca0ff9f890`;
+- exact branch HEAD after this status documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before this milestone is considered closed.
+
+### Known Limitations
+
+- the scenario covers a writer connection pool close/reopen on one PostgreSQL deployment, not every network partition, failover, or replication topology;
+- the test validates an explicit recovered append and reader convergence, but does not simulate an ambiguous server-side outcome where an append may have committed immediately before a transport failure;
+- audit remains operational evidence and is not a financial source of truth.
+
+### Next Milestone
+
+**#146 — PostgreSQL Audit Snapshot Stability Under Ambiguous Writer Failure:** verify the audit boundary when a writer failure occurs near commit acknowledgment, without using audit evidence to infer transaction execution authority.
