@@ -5319,4 +5319,30 @@ Completed:
 ### Next milestone
 
 **#118 — PostgreSQL Sequential Writer Conflict Review**: add deterministic coverage proving a stale pending writer cannot overwrite a newer pending version, while an up-to-date writer can continue the legitimate transition.
+### 41. Milestone Update — PostgreSQL Sequential Writer Conflict Review
+
+**Date:** 2026-09-26
+
+Completed:
+
+- added deterministic PostgreSQL coverage for a stale pending writer attempting to overwrite a newer pending version;
+- verified the stale writer is rejected with `ErrTransactionStateConflict` and cannot change the durable pending record;
+- verified an up-to-date writer can continue the legitimate pending → success transition;
+- verified the durable version advances monotonically from 1 → 2 → 3 across the accepted writes;
+- preserved transaction persistence as the authoritative transaction state.
+
+### Verification
+
+- implementation commit: `34af4feee26e12d5cdb6f0423ad5355a5c5d89a0`;
+- CI for this HEAD must complete with both `test` and `race` jobs **success** before this milestone is considered closed.
+
+### Safety Boundary
+
+- stale-writer rejection is a transaction-state integrity boundary only;
+- version advancement does not authorize retries, failover, resubmission, ledger mutation, treasury movement, or provider funding;
+- audit and operational evidence remain non-authoritative.
+
+### Next milestone
+
+**#119 — PostgreSQL Terminal Idempotency Version Review**: verify repeated identical terminal writes remain idempotent without version churn, while conflicting terminal rewrites remain rejected.
 
