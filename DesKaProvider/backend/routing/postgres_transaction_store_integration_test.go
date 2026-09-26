@@ -783,6 +783,72 @@ func TestPostgresTransactionStoreContextReadHonorsDeadline(t *testing.T) {
 	}
 }
 
+func TestPostgresTransactionStoreContextWriteHonorsCancellation(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	store, err := NewPostgresTransactionStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending := postgresPendingState()
+	pending.Request.ReferenceID = postgresIntegrationReference()
+	pending.Execution.Result.ReferenceID = pending.Request.ReferenceID
+
+	if err := store.PutContext(ctx, pending); err == nil {
+		t.Fatal("expected canceled PutContext to return an error")
+	} else if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled from PutContext, got %v", err)
+	}
+
+	if _, ok := store.GetContext(pending.Request.ReferenceID); ok {
+		t.Fatal("canceled PutContext must not persist the transaction")
+	}
+}
+
+func TestPostgresTransactionStoreContextAtomicWriteHonorsCancellation(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	store, err := NewPostgresTransactionStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending := postgresPendingState()
+	pending.Request.ReferenceID = postgresIntegrationReference()
+	pending.Execution.Result.ReferenceID = pending.Request.ReferenceID
+	if err := store.PutContext(ctx, pending); err != nil {
+		t.Fatalf("insert pending transaction: %v", err)
+	}
+
+	current, ok := store.GetContext(pending.Request.ReferenceID)
+	if !ok {
+		t.Fatal("pending transaction was not persisted")
+	}
+	success := current
+	success.Execution.Result.Status = provider.StatusSuccess
+	success.Execution.Result.ProviderCode = "00"
+	success.Execution.Result.Message = "success"
+
+	cancel()
+
+	if err := store.PutIfCurrentContext(ctx, pending.Request.ReferenceID, current, success); err == nil {
+		t.Fatal("expected canceled PutIfCurrentContext to return an error")
+	} else if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled from PutIfCurrentContext, got %v", err)
+	}
+
+	recovered, ok := store.GetContext(pending.Request.ReferenceID)
+	if !ok {
+		t.Fatal("transaction disappeared after canceled atomic write")
+	}
+	if recovered.Execution.Result.Status != provider.StatusPending {
+		t.Fatalf("canceled atomic write must leave pending state unchanged, got %q", recovered.Execution.Result.Status)
+	}
+}
+
 func TestPostgresTransactionStoreContextReadHonorsCancellation(t *testing.T) {
 	db := postgresIntegrationDB(t)
 	ctx, cancel := context.WithCancel(context.Background())
