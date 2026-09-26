@@ -3536,6 +3536,121 @@ func TestPostgresTransactionAuditStoreCrossDomainReadAfterConcurrentAuditCommit(
 }
 
 
+func TestPostgresCrossDomainRecoveryOrderingAcrossSequentialCommits(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	schema := "audit_transaction_sequential_commits_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatalf("create isolated schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
+	})
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set search path: %v", err)
+	}
+	applyPostgresMigration(t, db)
+
+	transactionStore, err := NewPostgresTransactionStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	auditStore, err := NewPostgresTransactionAuditStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	state := postgresPendingState()
+	state.Request.ReferenceID = postgresIntegrationReference()
+	state.Execution.Result.ReferenceID = state.Request.ReferenceID
+	state.Version = 0
+	if err := transactionStore.PutContext(ctx, state); err != nil {
+		t.Fatalf("append baseline transaction state: %v", err)
+	}
+	baselineTransaction, found, err := transactionStore.GetContextE(ctx, state.Request.ReferenceID)
+	if err != nil || !found {
+		t.Fatalf("read baseline transaction state: found=%v err=%v", found, err)
+	}
+	if baselineTransaction.Request != state.Request ||
+		baselineTransaction.Execution.ProviderName != state.Execution.ProviderName ||
+		baselineTransaction.Execution.Result != state.Execution.Result ||
+		baselineTransaction.Version != 1 {
+		t.Fatalf("unexpected baseline transaction state: %#v", baselineTransaction)
+	}
+
+	baseCreatedAt := time.Now().UTC().Truncate(time.Microsecond)
+	auditBefore := TransactionAuditEvent{
+		ReferenceID:  state.Request.ReferenceID,
+		Action:       "AUDIT_COMMIT_ONE",
+		Next:         string(provider.StatusPending),
+		ProviderName: state.Execution.ProviderName,
+		Message:      "audit committed before transaction transition",
+		CreatedAt:    baseCreatedAt,
+	}
+	auditAfter := TransactionAuditEvent{
+		ReferenceID:  state.Request.ReferenceID,
+		Action:       "AUDIT_COMMIT_TWO",
+		Previous:     string(provider.StatusPending),
+		Next:         string(provider.StatusSuccess),
+		ProviderName: state.Execution.ProviderName,
+		Message:      "audit committed after transaction transition",
+		CreatedAt:    baseCreatedAt.Add(time.Microsecond),
+	}
+
+	if err := auditStore.AppendContext(ctx, auditBefore); err != nil {
+		t.Fatalf("commit first audit event: %v", err)
+	}
+	firstAudit, err := auditStore.AllContextE(ctx, state.Request.ReferenceID)
+	if err != nil || len(firstAudit) != 1 || firstAudit[0] != auditBefore {
+		t.Fatalf("unexpected audit history after first commit: events=%#v err=%v", firstAudit, err)
+	}
+
+	next := baselineTransaction
+	next.Execution.Result.Status = provider.StatusSuccess
+	next.Execution.Result.ProviderCode = "00"
+	next.Execution.Result.Message = "transaction committed after first audit"
+	next.Execution.Result.SerialNumber = "SN-SEQUENTIAL"
+	next.Version = baselineTransaction.Version + 1
+	if err := transactionStore.PutContext(ctx, next); err != nil {
+		t.Fatalf("commit transaction transition: %v", err)
+	}
+	afterTransaction, found, err := transactionStore.GetContextE(ctx, state.Request.ReferenceID)
+	if err != nil || !found {
+		t.Fatalf("read transaction after sequential commit: found=%v err=%v", found, err)
+	}
+	if afterTransaction.Request != baselineTransaction.Request ||
+		afterTransaction.Execution.ProviderName != baselineTransaction.Execution.ProviderName ||
+		afterTransaction.Execution.Result != next.Execution.Result ||
+		afterTransaction.Version != next.Version {
+		t.Fatalf("transaction state changed unexpectedly: %#v", afterTransaction)
+	}
+
+	if err := auditStore.AppendContext(ctx, auditAfter); err != nil {
+		t.Fatalf("commit second audit event: %v", err)
+	}
+
+	finalAudit, err := auditStore.AllContextE(ctx, state.Request.ReferenceID)
+	if err != nil {
+		t.Fatalf("read final audit history: %v", err)
+	}
+	if len(finalAudit) != 2 || finalAudit[0] != auditBefore || finalAudit[1] != auditAfter {
+		t.Fatalf("audit ordering changed across sequential cross-domain commits: %#v", finalAudit)
+	}
+
+	finalTransaction, found, err := transactionStore.GetContextE(ctx, state.Request.ReferenceID)
+	if err != nil || !found {
+		t.Fatalf("read final transaction state: found=%v err=%v", found, err)
+	}
+	if finalTransaction.Request != afterTransaction.Request ||
+		finalTransaction.Execution.ProviderName != afterTransaction.Execution.ProviderName ||
+		finalTransaction.Execution.Result != afterTransaction.Execution.Result ||
+		finalTransaction.Version != afterTransaction.Version {
+		t.Fatalf("audit commits must not synthesize transaction ordering/state: before=%#v after=%#v", afterTransaction, finalTransaction)
+	}
+}
+
 func TestPostgresTransactionAuditStoreAppendFailureThenRecovery(t *testing.T) {
 	db := postgresIntegrationDB(t)
 	schema := "audit_append_recovery_" + strconv.FormatInt(time.Now().UnixNano(), 10)
