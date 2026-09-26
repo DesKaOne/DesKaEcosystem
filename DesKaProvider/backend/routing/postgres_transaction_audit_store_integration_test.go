@@ -1848,25 +1848,21 @@ func TestPostgresTransactionAuditStoreConflictWithConcurrentTransactionUpdateRem
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+	migrationConn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatalf("open migration connection: %v", err)
+	}
+	defer migrationConn.Close()
+	if _, err := migrationConn.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
 		t.Fatalf("create isolated schema: %v", err)
 	}
 	t.Cleanup(func() {
 		_, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
 	})
-	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
-		t.Fatalf("set search path: %v", err)
+	if _, err := migrationConn.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set migration search path: %v", err)
 	}
-	applyPostgresMigration(t, db)
-
-	transactionStore, err := NewPostgresTransactionStore(db)
-	if err != nil {
-		t.Fatal(err)
-	}
-	auditStore, err := NewPostgresTransactionAuditStore(db)
-	if err != nil {
-		t.Fatal(err)
-	}
+	applyPostgresMigration(t, migrationConn)
 
 	state := postgresPendingState()
 	state.Request.ReferenceID = "audit-conflict-concurrent-tx-ref"
@@ -1876,6 +1872,19 @@ func TestPostgresTransactionAuditStoreConflictWithConcurrentTransactionUpdateRem
 	state.Execution.Result.Message = "pending"
 	state.Execution.Result.SerialNumber = ""
 	state.Execution.Result.Price = state.Request.Amount
+
+	transactionConn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatalf("open transaction connection: %v", err)
+	}
+	defer transactionConn.Close()
+	if _, err := transactionConn.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set transaction search path: %v", err)
+	}
+	transactionStore, err := NewPostgresTransactionStore(transactionConn)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := transactionStore.PutContext(ctx, state); err != nil {
 		t.Fatalf("persist pending transaction: %v", err)
 	}
@@ -1886,20 +1895,11 @@ func TestPostgresTransactionAuditStoreConflictWithConcurrentTransactionUpdateRem
 	next.Execution.Result.Message = "success"
 	next.Execution.Result.SerialNumber = "SN-CONCURRENT"
 
-	transitionConn, err := db.Conn(ctx)
-	if err != nil {
-		t.Fatalf("open concurrent transaction connection: %v", err)
-	}
-	defer transitionConn.Close()
-	if _, err := transitionConn.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
-		t.Fatalf("set transition search path: %v", err)
-	}
-	transitionTx, err := transitionConn.BeginTx(ctx, nil)
+	transitionTx, err := transactionConn.BeginTx(ctx, nil)
 	if err != nil {
 		t.Fatalf("begin durable transaction update: %v", err)
 	}
 	defer transitionTx.Rollback()
-
 	if _, err := transitionTx.ExecContext(ctx, `UPDATE provider_transactions
 SET status=$1, provider_code=$2, message=$3, serial_number=$4, price=$5, version=version+1
 WHERE reference_id=$6 AND status='pending' AND version=$7`,
@@ -1916,11 +1916,15 @@ WHERE reference_id=$6 AND status='pending' AND version=$7`,
 
 	auditConn, err := db.Conn(ctx)
 	if err != nil {
-		t.Fatalf("open concurrent audit connection: %v", err)
+		t.Fatalf("open audit connection: %v", err)
 	}
 	defer auditConn.Close()
 	if _, err := auditConn.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
 		t.Fatalf("set audit search path: %v", err)
+	}
+	auditStore, err := NewPostgresTransactionAuditStore(auditConn)
+	if err != nil {
+		t.Fatal(err)
 	}
 	auditTx, err := auditConn.BeginTx(ctx, nil)
 	if err != nil {
