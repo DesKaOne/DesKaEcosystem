@@ -727,7 +727,7 @@ func TestPostgresTransactionStoreSequentialVersionTransitionIsPreserved(t *testi
 	if err := store.PutContext(ctx, pendingRefresh); err != nil {
 		t.Fatalf("sequential pending transition: %v", err)
 	}
-	current, ok := store.GetContext(ctx, req.ReferenceID)
+	current, ok := store.GetContext(ctx, ctx, req.ReferenceID)
 	if !ok {
 		t.Fatal("pending transaction disappeared after sequential transition")
 	}
@@ -744,7 +744,7 @@ func TestPostgresTransactionStoreSequentialVersionTransitionIsPreserved(t *testi
 	if err := store.PutContext(ctx, success); err != nil {
 		t.Fatalf("sequential terminal transition: %v", err)
 	}
-	terminal, ok := store.GetContext(ctx, req.ReferenceID)
+	terminal, ok := store.GetContext(ctx, ctx, req.ReferenceID)
 	if !ok {
 		t.Fatal("terminal transaction disappeared after sequential transition")
 	}
@@ -802,7 +802,7 @@ func TestPostgresTransactionStoreContextWriteHonorsCancellation(t *testing.T) {
 		t.Fatalf("expected context.Canceled from PutContext, got %v", err)
 	}
 
-	if _, ok := store.GetContext(pending.Request.ReferenceID); ok {
+	if _, ok := store.GetContext(ctx, pending.Request.ReferenceID); ok {
 		t.Fatal("canceled PutContext must not persist the transaction")
 	}
 }
@@ -823,7 +823,7 @@ func TestPostgresTransactionStoreContextAtomicWriteHonorsCancellation(t *testing
 		t.Fatalf("insert pending transaction: %v", err)
 	}
 
-	current, ok := store.GetContext(pending.Request.ReferenceID)
+	current, ok := store.GetContext(ctx, pending.Request.ReferenceID)
 	if !ok {
 		t.Fatal("pending transaction was not persisted")
 	}
@@ -840,7 +840,7 @@ func TestPostgresTransactionStoreContextAtomicWriteHonorsCancellation(t *testing
 		t.Fatalf("expected context.Canceled from PutIfCurrentContext, got %v", err)
 	}
 
-	recovered, ok := store.GetContext(pending.Request.ReferenceID)
+	recovered, ok := store.GetContext(ctx, pending.Request.ReferenceID)
 	if !ok {
 		t.Fatal("transaction disappeared after canceled atomic write")
 	}
