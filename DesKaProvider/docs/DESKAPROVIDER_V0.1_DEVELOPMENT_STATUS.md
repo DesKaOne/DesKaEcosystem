@@ -6262,3 +6262,40 @@ Completed:
 ### Next Milestone
 
 **#143 — PostgreSQL Audit Read Consistency Across Repeated Concurrent Snapshots:** verify repeated audit reads converge on a stable committed sequence while concurrent appends occur, without making read sequence part of transaction authority.
+
+
+### 143. Milestone Update — PostgreSQL Audit Read Consistency Across Repeated Concurrent Snapshots
+
+**Date:** 2026-09-26
+
+Completed:
+
+- added real-PostgreSQL integration coverage for repeated audit snapshots while committed audit writers finish sequentially;
+- verified each snapshot contains only already-committed audit evidence and grows monotonically as new committed rows become visible;
+- verified every committed event remains present exactly once in the final snapshots and preserves the existing deterministic `created_at, audit_id` ordering;
+- verified repeated reads after all writers finish converge to the same complete durable audit sequence;
+- confirmed read convergence is a persistence/isolation property only and does not participate in transaction execution authority or provider submission authorization;
+- no production audit-store implementation change was required;
+- no transaction authority, provider submission authority, retry/failover behavior, ledger mutation, treasury movement, or provider funding behavior was broadened.
+
+### Safety Boundary
+
+- audit snapshots contain committed evidence only;
+- snapshot growth cannot authorize provider retry, failover, resubmission, ledger mutation, treasury movement, or provider funding;
+- audit sequence remains observational evidence, not a transaction execution or idempotency key;
+- transaction persistence remains the authoritative transaction-state and idempotency boundary.
+
+### Verification
+
+- test implementation commit: `28023ecbc288e89bd5c9acc10b47124b7d01f2f2`;
+- exact branch HEAD after this status documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before this milestone is considered closed.
+
+### Known Limitations
+
+- the test models repeated snapshots across sequential commits on one real PostgreSQL deployment, not every replica-lag or distributed consistency topology;
+- monotonic snapshot validation assumes the test reader uses a pinned connection and the existing committed-row semantics of PostgreSQL;
+- audit remains operational evidence and is not a financial source of truth.
+
+### Next Milestone
+
+**#144 — PostgreSQL Audit Snapshot Ordering After Connection Recovery:** verify repeated reader snapshots remain complete and deterministically ordered after reader connection close/reopen, without introducing any audit-derived execution authority.
