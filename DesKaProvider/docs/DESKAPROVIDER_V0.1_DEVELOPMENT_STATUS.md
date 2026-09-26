@@ -7331,3 +7331,40 @@ Completed:
 ### Next Milestone
 
 **#163 — PostgreSQL Cross-Domain Recovery Ordering After Sequential Commits:** verify that sequential commits across audit and transaction domains preserve each domain's own durable ordering and never create a false cross-domain causal sequence.
+
+
+### 163. Milestone Update — PostgreSQL Cross-Domain Recovery Ordering After Sequential Commits
+
+**Date:** 2026-09-27
+
+Completed:
+
+- added real-PostgreSQL integration coverage for sequential commits that alternate between the transaction and audit persistence domains;
+- verified the first audit commit is visible only in audit history while the transaction row remains at its previously durable baseline;
+- verified the transaction-domain commit advances only the transaction state and version without rewriting prior audit evidence;
+- verified the subsequent audit commit extends audit history in deterministic order without changing the already-committed transaction state;
+- verified final reads preserve each domain's own durable ordering and state, with no synthetic cross-domain causal sequence inferred from audit ordering;
+- no production audit-store or transaction-store implementation change was required;
+- no cross-domain locking, distributed commit protocol, transaction authority, provider submission authority, retry/failover behavior, ledger mutation, treasury movement, or provider funding behavior was broadened.
+
+### Safety Boundary
+
+- sequential persistence events retain independent domain authority: transaction commits change transaction state, audit commits add operational evidence;
+- audit ordering is not a causal source of transaction execution authority;
+- transaction persistence remains the authoritative transaction-state and idempotency boundary;
+- audit remains append-only observational evidence and cannot authorize provider retry, failover, resubmission, or financial state mutation.
+
+### Verification
+
+- test implementation commit: `e84042bd7e9da89ccfc349f4d4b1e03bfab9edd3`;
+- exact branch HEAD after this status documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before this milestone is considered closed.
+
+### Known Limitations
+
+- the scenario validates one PostgreSQL deployment and sequential commits within one test flow; it does not establish a distributed atomic commit protocol;
+- the test verifies the exercised transaction and audit rows remain independent but does not cover arbitrary future projections, caches, or event-driven consumers;
+- audit remains operational evidence and is not a financial source of truth.
+
+### Next Milestone
+
+**#164 — PostgreSQL Cross-Domain Recovery Ordering Across Restart:** verify sequentially committed transaction and audit changes preserve their independent order and state after database connection close/reopen and service reconstruction.
