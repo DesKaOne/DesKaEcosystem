@@ -2014,3 +2014,72 @@ func TestPostgresTransactionStoreRestartRecoveryReconcilesWithoutResubmission(t 
 		t.Fatalf("expected durable pending state after reconciliation, got %q", recovered.Execution.Result.Status)
 	}
 }
+
+
+func TestPostgresConcurrentReadDuringAtomicTransitionSeesCompleteState(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	applyPostgresMigration(t, db)
+	if _, err := db.ExecContext(ctx, "TRUNCATE provider_transactions"); err != nil {
+		t.Fatalf("truncate provider transactions: %v", err)
+	}
+
+	store, err := NewPostgresTransactionStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending := postgresPendingState()
+	pending.Request.ReferenceID = postgresIntegrationReference()
+	pending.Execution.Result.ReferenceID = pending.Request.ReferenceID
+	pending.Execution.Result.Status = provider.StatusPending
+	pending.Execution.Result.ProviderCode = "00"
+	pending.Execution.Result.Message = "pending"
+	pending.Execution.Result.SerialNumber = ""
+	pending.Execution.Result.Price = pending.Request.Amount
+	if err := store.Put(pending); err != nil {
+		t.Fatalf("insert pending transaction: %v", err)
+	}
+
+	next := pending
+	next.Execution.Result.Status = provider.StatusSuccess
+	next.Execution.Result.ProviderCode = "00"
+	next.Execution.Result.Message = "success"
+	next.Execution.Result.SerialNumber = "SN-ATOMIC"
+
+	start := make(chan struct{})
+	transitionDone := make(chan error, 1)
+	go func() {
+		<-start
+		transitionDone <- store.PutIfCurrentContext(ctx, pending.Request.ReferenceID, pending, next)
+	}()
+	close(start)
+
+	const reads = 32
+	for i := 0; i < reads; i++ {
+		observed, ok, err := store.GetContextE(ctx, pending.Request.ReferenceID)
+		if err != nil {
+			t.Fatalf("read %d failed: %v", i, err)
+		}
+		if !ok {
+			t.Fatalf("read %d lost transaction row", i)
+		}
+		result := observed.Execution.Result
+		pendingComplete := result.Status == provider.StatusPending && result.ProviderCode == "00" && result.Message == "pending" && result.SerialNumber == "" && result.Price == pending.Request.Amount
+		successComplete := result.Status == provider.StatusSuccess && result.ProviderCode == "00" && result.Message == "success" && result.SerialNumber == "SN-ATOMIC" && result.Price == pending.Request.Amount
+		if !pendingComplete && !successComplete {
+			t.Fatalf("read %d observed mixed transaction state: %#v", i, result)
+		}
+	}
+
+	if err := <-transitionDone; err != nil {
+		t.Fatalf("atomic transition failed: %v", err)
+	}
+	final, ok, err := store.GetContextE(ctx, pending.Request.ReferenceID)
+	if err != nil || !ok {
+		t.Fatalf("read final transaction: ok=%v err=%v", ok, err)
+	}
+	if final.Execution.Result.Status != provider.StatusSuccess || final.Execution.Result.SerialNumber != "SN-ATOMIC" {
+		t.Fatalf("expected committed complete success state, got %#v", final.Execution.Result)
+	}
+}
