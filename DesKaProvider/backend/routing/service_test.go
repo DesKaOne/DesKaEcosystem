@@ -15,6 +15,111 @@ import (
 
 
 
+type errorAwareTransactionStore struct {
+	base    *MemoryTransactionStore
+	getErr  error
+	allErr  error
+}
+
+func (s *errorAwareTransactionStore) Get(referenceID string) (TransactionState, bool) {
+	return s.base.Get(referenceID)
+}
+
+func (s *errorAwareTransactionStore) Put(state TransactionState) error {
+	return s.base.Put(state)
+}
+
+func (s *errorAwareTransactionStore) All() []TransactionState {
+	return s.base.All()
+}
+
+func (s *errorAwareTransactionStore) GetContext(ctx context.Context, referenceID string) (TransactionState, bool) {
+	if err := ctx.Err(); err != nil {
+		return TransactionState{}, false
+	}
+	return s.base.Get(referenceID)
+}
+
+func (s *errorAwareTransactionStore) PutContext(ctx context.Context, state TransactionState) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return s.base.Put(state)
+}
+
+func (s *errorAwareTransactionStore) AllContext(ctx context.Context) []TransactionState {
+	if err := ctx.Err(); err != nil {
+		return nil
+	}
+	return s.base.All()
+}
+
+func (s *errorAwareTransactionStore) PutIfCurrentContext(ctx context.Context, referenceID string, previous, next TransactionState) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return s.base.PutIfCurrent(referenceID, previous, next)
+}
+
+func (s *errorAwareTransactionStore) GetContextE(ctx context.Context, referenceID string) (TransactionState, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return TransactionState{}, false, err
+	}
+	if s.getErr != nil {
+		return TransactionState{}, false, s.getErr
+	}
+	return s.base.Get(referenceID)
+}
+
+func (s *errorAwareTransactionStore) AllContextE(ctx context.Context) ([]TransactionState, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if s.allErr != nil {
+		return nil, s.allErr
+	}
+	return s.base.All(), nil
+}
+
+var _ ContextReadTransactionStore = (*errorAwareTransactionStore)(nil)
+
+func newTestRouter(t *testing.T) *Router {
+	t.Helper()
+	registry := provider.NewRegistry()
+	mock := Mock.New(Mock.Config{Products: []provider.Product{{Code: "pln20", Name: "PLN 20"}}, PurchaseStatus: provider.StatusSuccess})
+	if err := registry.Register("mock", mock); err != nil {
+		t.Fatal(err)
+	}
+	store := operational.NewMemoryStore()
+	if err := store.Put(operational.Snapshot{ProviderName: "mock", Balance: 100000, Health: operational.HealthHealthy}); err != nil {
+		t.Fatal(err)
+	}
+	router, err := New(registry, store, map[string]int{"mock": 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return router
+}
+
+func TestNewServiceWithStoreContextPropagatesDatabaseError(t *testing.T) {
+	wantErr := errors.New("database unavailable")
+	store := &errorAwareTransactionStore{base: NewMemoryTransactionStore(), allErr: wantErr}
+	_, err := NewServiceWithStoreContext(context.Background(), newTestRouter(t), store)
+	if err == nil || !errors.Is(err, wantErr) {
+		t.Fatalf("expected startup database error to propagate, got %v", err)
+	}
+}
+
+func TestNewServiceWithStoreContextPreservesCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	store := &errorAwareTransactionStore{base: NewMemoryTransactionStore(), allErr: errors.New("database unavailable")}
+	_, err := NewServiceWithStoreContext(ctx, newTestRouter(t), store)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context cancellation to win over persistence read, got %v", err)
+	}
+}
+
 type failPutTransactionStore struct {
 	base      TransactionStore
 	failAfter int
