@@ -130,3 +130,316 @@ func TestCloseRuntimeDatabasesClosesSharedAndDedicatedHandles(t *testing.T) {
 	if err := dedicatedDB.PingContext(ctx); err == nil { t.Fatal("expected dedicated PostgreSQL audit handle to be closed") }
 	if err := dedicatedOwnership.closeOwned(); err != nil { t.Fatal(err) }
 }
+
+
+func TestPostgresRuntimeReopenPreservesSharedTransactionAndAuditOwnership(t *testing.T) {
+	dsn := os.Getenv("DESKAPROVIDER_POSTGRES_DSN")
+	if dsn == "" {
+		t.Skip("DESKAPROVIDER_POSTGRES_DSN is not configured")
+	}
+	ctx := context.Background()
+	cfg := Config{TransactionStoreDriver: "postgres", AuditStoreDriver: "postgres", PostgresDSN: dsn}
+
+	transactionStore, firstDB, err := openTransactionStore(ctx, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstDB.SetMaxOpenConns(1)
+	schema := "runtime_reopen_shared_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	if _, err := firstDB.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+		_ = firstDB.Close()
+		t.Fatal(err)
+	}
+	defer func() {
+		cleanupDB, err := sql.Open("pgx", dsn)
+		if err == nil {
+			defer cleanupDB.Close()
+			_, _ = cleanupDB.ExecContext(ctx, "DROP SCHEMA "+schema+" CASCADE")
+		}
+	}()
+	if _, err := firstDB.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		_ = firstDB.Close()
+		t.Fatal(err)
+	}
+	migration, err := os.ReadFile(filepath.Join("..", "migrations", "001_provider_transactions.sql"))
+	if err != nil {
+		_ = firstDB.Close()
+		t.Fatal(err)
+	}
+	if _, err := firstDB.ExecContext(ctx, string(migration)); err != nil {
+		_ = firstDB.Close()
+		t.Fatal(err)
+	}
+
+	auditStore, auditDB, err := openAuditStore(ctx, cfg, firstDB)
+	if err != nil {
+		_ = firstDB.Close()
+		t.Fatal(err)
+	}
+	if auditDB != nil {
+		t.Fatalf("shared audit store must not acquire a second database handle, got %T", auditDB)
+	}
+
+	reference := "runtime-reopen-shared-" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	state := routing.TransactionState{
+		Request: routing.PurchaseRequest{ProductCode: "xld10", CustomerNo: "087800001232", ReferenceID: reference, Amount: 10000},
+		Execution: routing.PurchaseExecution{
+			ProviderName: "mock",
+			Result: provider.PurchaseResult{
+				ReferenceID: reference,
+				CustomerNo: "087800001232",
+				ProductCode: "xld10",
+				Status: provider.StatusSuccess,
+				ProviderCode: "00",
+				Message: "ok",
+				Price: 10000,
+			},
+		},
+	}
+	pgStore := transactionStore.(*routing.PostgresTransactionStore)
+	if err := pgStore.PutContext(ctx, routing.TransactionState{
+		Request: state.Request,
+		Execution: routing.PurchaseExecution{
+			ProviderName: state.Execution.ProviderName,
+			Result: provider.PurchaseResult{
+				ReferenceID: reference,
+				CustomerNo: state.Request.CustomerNo,
+				ProductCode: state.Request.ProductCode,
+				Status: provider.StatusPending,
+				ProviderCode: "00",
+				Message: "pending",
+			},
+		},
+	}); err != nil {
+		_ = firstDB.Close()
+		t.Fatal(err)
+	}
+	if err := pgStore.PutIfCurrentContext(ctx, reference, routing.TransactionState{
+		Request: state.Request,
+		Execution: routing.PurchaseExecution{
+			ProviderName: state.Execution.ProviderName,
+			Result: provider.PurchaseResult{
+				ReferenceID: reference,
+				CustomerNo: state.Request.CustomerNo,
+				ProductCode: state.Request.ProductCode,
+				Status: provider.StatusPending,
+				ProviderCode: "00",
+				Message: "pending",
+			},
+		},
+	}, state); err != nil {
+		_ = firstDB.Close()
+		t.Fatal(err)
+	}
+	event := routing.TransactionAuditEvent{
+		ReferenceID: reference,
+		Action: "REOPEN_CHECK",
+		Previous: "pending",
+		Next: "success",
+		ProviderName: "mock",
+		Message: "durable before reopen",
+		CreatedAt: time.Now().UTC(),
+	}
+	if err := auditStore.AppendContext(ctx, event); err != nil {
+		_ = firstDB.Close()
+		t.Fatal(err)
+	}
+
+	ownership := newRuntimeDatabaseOwnership(firstDB, firstDB)
+	ownership.transferToService()
+	if err := ownership.closeOwned(); err != nil {
+		t.Fatal(err)
+	}
+	if err := firstDB.PingContext(ctx); err == nil {
+		t.Fatal("expected first shared database handle to be closed before reopen")
+	}
+
+	reopenedStore, secondDB, err := openTransactionStore(ctx, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondDB.SetMaxOpenConns(1)
+	if _, err := secondDB.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		_ = secondDB.Close()
+		t.Fatal(err)
+	}
+	reopenedAuditStore, reopenedAuditDB, err := openAuditStore(ctx, cfg, secondDB)
+	if err != nil {
+		_ = secondDB.Close()
+		t.Fatal(err)
+	}
+	if reopenedAuditDB != nil {
+		_ = secondDB.Close()
+		t.Fatalf("reopened shared audit store must reuse the new transaction database handle, got %T", reopenedAuditDB)
+	}
+	defer secondDB.Close()
+
+	reloaded, err := reopenedStore.(*routing.PostgresTransactionStore).GetContextE(ctx, reference)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reloaded.Execution.Result.Status != provider.StatusSuccess || reloaded.Version != state.Version {
+		t.Fatalf("unexpected transaction after reopen: %#v", reloaded)
+	}
+	events, err := reopenedAuditStore.(*routing.PostgresTransactionAuditStore).AllContextE(ctx, reference)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 || events[0].Action != event.Action || events[0].Next != event.Next {
+		t.Fatalf("unexpected audit history after reopen: %#v", events)
+	}
+	if secondDB == firstDB {
+		t.Fatal("reopen must acquire a fresh database handle")
+	}
+}
+
+func TestPostgresRuntimeReopenPreservesDedicatedAuditOwnership(t *testing.T) {
+	dsn := os.Getenv("DESKAPROVIDER_POSTGRES_DSN")
+	if dsn == "" {
+		t.Skip("DESKAPROVIDER_POSTGRES_DSN is not configured")
+	}
+	ctx := context.Background()
+	transactionCfg := Config{TransactionStoreDriver: "postgres", PostgresDSN: dsn}
+	auditCfg := Config{AuditStoreDriver: "postgres", PostgresDSN: dsn}
+
+	transactionStore, transactionDB, err := openTransactionStore(ctx, transactionCfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transactionDB.SetMaxOpenConns(1)
+	schema := "runtime_reopen_dedicated_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	if _, err := transactionDB.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+		_ = transactionDB.Close()
+		t.Fatal(err)
+	}
+	defer func() {
+		cleanupDB, err := sql.Open("pgx", dsn)
+		if err == nil {
+			defer cleanupDB.Close()
+			_, _ = cleanupDB.ExecContext(ctx, "DROP SCHEMA "+schema+" CASCADE")
+		}
+	}()
+	if _, err := transactionDB.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		_ = transactionDB.Close()
+		t.Fatal(err)
+	}
+	migration, err := os.ReadFile(filepath.Join("..", "migrations", "001_provider_transactions.sql"))
+	if err != nil {
+		_ = transactionDB.Close()
+		t.Fatal(err)
+	}
+	if _, err := transactionDB.ExecContext(ctx, string(migration)); err != nil {
+		_ = transactionDB.Close()
+		t.Fatal(err)
+	}
+
+	auditStore, auditDB, err := openAuditStore(ctx, auditCfg, nil)
+	if err != nil {
+		_ = transactionDB.Close()
+		t.Fatal(err)
+	}
+	auditDB.SetMaxOpenConns(1)
+	if _, err := auditDB.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		_ = transactionDB.Close()
+		_ = auditDB.Close()
+		t.Fatal(err)
+	}
+
+	reference := "runtime-reopen-dedicated-" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	state := routing.TransactionState{
+		Request: routing.PurchaseRequest{ProductCode: "xld10", CustomerNo: "087800001232", ReferenceID: reference, Amount: 10000},
+		Execution: routing.PurchaseExecution{
+			ProviderName: "mock",
+			Result: provider.PurchaseResult{
+				ReferenceID: reference,
+				CustomerNo: "087800001232",
+				ProductCode: "xld10",
+				Status: provider.StatusSuccess,
+				ProviderCode: "00",
+				Message: "ok",
+				Price: 10000,
+			},
+		},
+	}
+	pgStore := transactionStore.(*routing.PostgresTransactionStore)
+	pending := state
+	pending.Execution.Result.Status = provider.StatusPending
+	pending.Execution.Result.Message = "pending"
+	if err := pgStore.PutContext(ctx, pending); err != nil {
+		_ = transactionDB.Close()
+		_ = auditDB.Close()
+		t.Fatal(err)
+	}
+	if err := pgStore.PutIfCurrentContext(ctx, reference, pending, state); err != nil {
+		_ = transactionDB.Close()
+		_ = auditDB.Close()
+		t.Fatal(err)
+	}
+	event := routing.TransactionAuditEvent{
+		ReferenceID: reference,
+		Action: "REOPEN_DEDICATED_CHECK",
+		Previous: "pending",
+		Next: "success",
+		ProviderName: "mock",
+		Message: "durable before reopen",
+		CreatedAt: time.Now().UTC(),
+	}
+	if err := auditStore.AppendContext(ctx, event); err != nil {
+		_ = transactionDB.Close()
+		_ = auditDB.Close()
+		t.Fatal(err)
+	}
+
+	ownership := newRuntimeDatabaseOwnership(transactionDB, auditDB)
+	ownership.transferToService()
+	if err := ownership.closeOwned(); err != nil {
+		t.Fatal(err)
+	}
+	if err := transactionDB.PingContext(ctx); err == nil {
+		t.Fatal("expected transaction database handle to be closed before reopen")
+	}
+	if err := auditDB.PingContext(ctx); err == nil {
+		t.Fatal("expected dedicated audit database handle to be closed before reopen")
+	}
+
+	reopenedTransactionStore, reopenedTransactionDB, err := openTransactionStore(ctx, transactionCfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopenedTransactionDB.SetMaxOpenConns(1)
+	if _, err := reopenedTransactionDB.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		_ = reopenedTransactionDB.Close()
+		t.Fatal(err)
+	}
+	reopenedAuditStore, reopenedAuditDB, err := openAuditStore(ctx, auditCfg, nil)
+	if err != nil {
+		_ = reopenedTransactionDB.Close()
+		t.Fatal(err)
+	}
+	reopenedAuditDB.SetMaxOpenConns(1)
+	if _, err := reopenedAuditDB.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		_ = reopenedTransactionDB.Close()
+		_ = reopenedAuditDB.Close()
+		t.Fatal(err)
+	}
+	defer reopenedTransactionDB.Close()
+	defer reopenedAuditDB.Close()
+
+	reloaded, err := reopenedTransactionStore.(*routing.PostgresTransactionStore).GetContextE(ctx, reference)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reloaded.Execution.Result.Status != provider.StatusSuccess {
+		t.Fatalf("unexpected transaction after dedicated reopen: %#v", reloaded)
+	}
+	events, err := reopenedAuditStore.(*routing.PostgresTransactionAuditStore).AllContextE(ctx, reference)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 || events[0].Action != event.Action || events[0].Next != event.Next {
+		t.Fatalf("unexpected dedicated audit history after reopen: %#v", events)
+	}
+	if reopenedTransactionDB == reopenedAuditDB {
+		t.Fatal("dedicated transaction and audit stores must acquire independent database handles")
+	}
+}
