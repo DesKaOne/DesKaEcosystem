@@ -761,6 +761,29 @@ func TestLoadConfigPostgresAuditRequiresDSN(t *testing.T) {
 	if _, err := LoadConfig(); err == nil { t.Fatal("expected PostgreSQL DSN requirement for audit store") }
 }
 
+func TestLoadConfigPostgresDSNRequirementMatrix(t *testing.T) {
+	tests := []struct {
+		name string
+		transactionDriver string
+		auditDriver string
+		want string
+	}{
+		{name: "transaction only", transactionDriver: "postgres", auditDriver: "memory", want: "DESKAPROVIDER_TRANSACTION_STORE_DRIVER=postgres"},
+		{name: "audit only", transactionDriver: "json", auditDriver: "postgres", want: "DESKAPROVIDER_AUDIT_STORE_DRIVER=postgres"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("DESKAPROVIDER_TRANSACTION_STORE_DRIVER", tc.transactionDriver)
+			t.Setenv("DESKAPROVIDER_AUDIT_STORE_DRIVER", tc.auditDriver)
+			t.Setenv("DESKAPROVIDER_POSTGRES_DSN", "")
+			_, err := LoadConfig()
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("expected DSN validation to identify %s, got %v", tc.want, err)
+			}
+		})
+	}
+}
+
 func TestLoadConfigAcceptsPostgresAuditStore(t *testing.T) {
 	t.Setenv("DESKAPROVIDER_AUDIT_STORE_DRIVER", "postgres")
 	t.Setenv("DESKAPROVIDER_POSTGRES_DSN", "postgres://test")
