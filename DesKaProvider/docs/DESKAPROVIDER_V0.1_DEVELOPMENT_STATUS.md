@@ -7249,3 +7249,27 @@ Completed:
 ### Next Milestone
 
 **#162 — PostgreSQL Audit/Transaction Cross-Read Recovery After Concurrent Commit:** verify that after a concurrent writer commits in one domain during recovery activity, readers converge to the complete new state only in that domain and never synthesize the change into the other domain.
+
+
+### 161A. Milestone Update — PostgreSQL Audit/Transaction Cross-Read Recovery Concurrency CI Fix
+
+**Date:** 2026-09-27
+
+Completed:
+
+- corrected the new cross-domain recovery concurrency integration test after CI exposed a PostgreSQL session-scoping issue;
+- pinned each concurrent reader to its own PostgreSQL connection and explicitly applied the isolated schema `search_path` before reading either persistence domain;
+- retained independent transaction/audit recovery-failure exercises so a closed connection remains isolated to its own domain;
+- preserved the intended assertion that concurrent readers see the same already-durable transaction state and audit history without cross-domain reconstruction;
+- no production audit-store or transaction-store implementation change was required;
+- no transaction authority, provider submission authority, retry/failover behavior, ledger mutation, treasury movement, or provider funding behavior was broadened.
+
+### Verification
+
+- CI failure root cause was `relation "provider_transactions" does not exist` from a pooled connection that had not inherited the test's session-local `search_path`;
+- test fix commit: `bc51b4f2a83003dfe428ef19933a1433b6866a3f`;
+- exact branch HEAD after this status documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before #161 is considered closed.
+
+### Next Milestone
+
+**#162 — PostgreSQL Audit/Transaction Cross-Read Recovery After Concurrent Commit:** verify that after a concurrent writer commits in one domain during recovery activity, readers converge to the complete new state only in that domain and never synthesize the change into the other domain.
