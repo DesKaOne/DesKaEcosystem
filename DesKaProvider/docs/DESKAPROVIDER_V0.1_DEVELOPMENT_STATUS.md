@@ -4706,6 +4706,32 @@ Completed:
 - reconstructed reads cannot authorize provider retry, failover, resubmission, ledger mutation, treasury movement, or provider funding;
 - stale observations remain non-authoritative and cannot replace a committed terminal result.
 
+### 46. Milestone Update — PostgreSQL Context Cancellation During Durable Read/Transition
+
+**Date:** 2026-09-26
+
+Completed:
+
+- added deterministic PostgreSQL regression coverage for canceled durable reads and canceled atomic transitions;
+- verified a canceled read does not return an authoritative transaction state;
+- verified a canceled write does not mutate or remove a committed terminal transaction;
+- verified the committed request identity, provider identity, terminal result payload, and version remain unchanged after canceled operations;
+- preserved transaction persistence as the authoritative transaction state while audit/operational evidence remains non-authoritative.
+
+### Verification
+
+- implementation commit: `22057310eec9c4a58f35470e20b0f2d3af25ea35`;
+- CI #1036 / run `36215868824`: **GREEN** for exact HEAD `22057310eec9c4a58f35470e20b0f2d3af25ea35`;
+- CI jobs `test`: success;
+- CI jobs `vet`: success;
+- CI jobs `race`: success.
+
+### Safety Boundary
+
+- context cancellation is a persistence-operation boundary only;
+- canceled reads and writes cannot authorize provider retry, failover, resubmission, ledger mutation, treasury movement, or provider funding;
+- cancellation never downgrades or replaces an already committed terminal transaction.
+
 ### Next Milestone
 
-**#124 — PostgreSQL Context Cancellation During Durable Read/Transition:** verify canceled PostgreSQL operations terminate without partial transaction mutation and without changing the authority boundary.
+**#125 — PostgreSQL Sequential Pending Transition Version Integrity:** verify successive durable pending transitions advance versions consistently and stale versions remain rejected.
