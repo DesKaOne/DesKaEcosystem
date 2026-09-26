@@ -7137,3 +7137,41 @@ Completed:
 ### Next Milestone
 
 **#159 — PostgreSQL Audit/Transaction Cross-Read Error Isolation:** verify an ordinary failure in one persistence domain does not get flattened into an empty result or misclassified as a failure in the other domain, without widening cross-domain authority.
+
+
+### 159. Milestone Update — PostgreSQL Audit/Transaction Cross-Read Error Isolation
+
+**Date:** 2026-09-27
+
+Completed:
+
+- added deterministic audit-store unit coverage proving ordinary audit database errors remain observable and do not flatten into an empty successful history;
+- added deterministic transaction-store unit coverage proving ordinary transaction database read errors remain observable and do not flatten into a successful not-found result;
+- added real-PostgreSQL integration coverage where an isolated closed audit connection fails while transaction reads on the healthy connection still return the durable transaction state;
+- verified the healthy audit connection can still read its durable audit history after the isolated audit connection failure;
+- verified the reverse case: an isolated closed transaction connection fails while the healthy audit connection continues to read the same durable audit history;
+- confirmed errors in one persistence domain are not reclassified as errors in the other domain and do not alter the authoritative transaction-state interpretation;
+- no production audit-store or transaction-store implementation change was required;
+- no cross-domain locking, transaction authority, provider submission authority, retry/failover behavior, ledger mutation, treasury movement, or provider funding behavior was broadened.
+
+### Safety Boundary
+
+- an audit persistence failure remains an audit persistence error and does not imply transaction-store failure;
+- a transaction persistence failure remains a transaction persistence error and does not imply audit-store failure;
+- cross-domain read diagnostics never synthesize missing state, empty-success semantics, or execution authority from the other persistence domain;
+- transaction persistence remains the authoritative transaction-state and idempotency boundary, while audit remains observational evidence.
+
+### Verification
+
+- implementation/test commits: `364e3e68e3044e29ebe8c1b4b618ae9f69f73640`, `c76aa2652923b88bfcfabd5ae1c5e3d45cdfe4a4`, `2c3785ad3f9b558fc1d628ce97e6fd2f2e86dda6`;
+- exact branch HEAD after this status documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before this milestone is considered closed.
+
+### Known Limitations
+
+- the integration scenario isolates failures by closing dedicated PostgreSQL connections rather than reproducing every network partition, proxy failure, or replica outage pattern;
+- unit fixtures establish domain-specific error isolation deterministically, while real PostgreSQL integration establishes connection-level behavior;
+- audit remains operational evidence and is not a financial source of truth.
+
+### Next Milestone
+
+**#160 — PostgreSQL Audit/Transaction Cross-Read Error Recovery:** verify that after one domain recovers from an ordinary persistence error, both domains converge to their previously durable data without accidental cross-domain reconstruction or state mutation.
