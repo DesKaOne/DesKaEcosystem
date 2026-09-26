@@ -5608,3 +5608,42 @@ Completed:
 ### Next Milestone
 
 **#127 — PostgreSQL Audit Read Error Matrix Review**: verify audit `QueryContext`, row-scan, and iteration failures remain observable and cannot be mistaken for an empty audit history, without broadening the audit or transaction authority boundaries.
+
+
+### 127. Milestone Update — PostgreSQL Audit Read Error Matrix Review
+
+**Date:** 2026-09-26
+
+Completed:
+
+- extended deterministic PostgreSQL audit-read coverage across the three concrete `AllContext` database error boundaries;
+- added a repository-local `database/sql/driver` fixture so `QueryContext` failures can be injected without changing the production `DBTX` abstraction;
+- verified query execution failures remain observable through the audit adapter and are not converted into an empty history;
+- verified row-read/scan-path failures remain observable through the audit adapter and are not converted into partial audit history;
+- verified iteration failures returned from the underlying rows stream remain observable and are not converted into a successful empty/partial result;
+- retained the existing real-PostgreSQL durability, ordering, restart/reconnect, cancellation, and append-failure coverage;
+- no production audit-store behavior or database abstraction was broadened.
+
+### Safety Boundary
+
+- audit read failures are operational persistence errors only;
+- audit history remains observational evidence and cannot authorize provider retry, failover, resubmission, ledger mutation, treasury movement, or provider funding;
+- transaction persistence remains the authoritative transaction-state boundary;
+- no provider-specific or financial authorization boundary was broadened.
+
+### Verification
+
+- test implementation commit: `f42679bae2cafb0b76e5f78a3e8d987b28287e5f`;
+- this commit corrects the deterministic row fixture so its injected row error is actually returned through the `database/sql` read path;
+- status documentation update follows after implementation verification;
+- latest branch HEAD requires fresh `test`, `vet`, and `race` CI before milestone closure.
+
+### Known Limitations
+
+- the deterministic fixture exercises database/sql driver behavior rather than reproducing every PostgreSQL-driver-specific wire failure;
+- real PostgreSQL integration remains the boundary for driver/schema-specific read behavior;
+- audit remains operational evidence and is not a financial source of truth.
+
+### Next Milestone
+
+**#128 — PostgreSQL Audit Read Cancellation & Partial-Result Safety:** verify canceled/deadline audit reads stop without exposing a partial authoritative history and preserve the existing observational-only audit boundary.
