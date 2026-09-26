@@ -4382,4 +4382,4 @@ Completed:
 
 ### Next Milestone
 
-**#40 — PostgreSQL Versioned Transition Semantics Review**: audit sequential pending-state transitions and version handling in `PutContext` so repeated writes cannot regress the expected optimistic-concurrency version boundary.
+**#50 — Transaction-Store Write Cancellation Boundary**: audit context cancellation during durable transaction writes and atomic transitions so canceled operations cannot be misclassified as persistence success or trigger retry/resubmission decisions.
