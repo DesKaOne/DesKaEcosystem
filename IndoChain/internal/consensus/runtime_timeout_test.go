@@ -111,14 +111,18 @@ func TestValidatorRuntimeRejectsTamperedTimeoutEvidenceWithoutMutation(t *testin
 }
 
 
-func timeoutLockProofAtRound(t *testing.T, state RoundState, validators ValidatorSet, power VotingPowerSet, lockedRound uint64, proposal string) LockProof {
+func timeoutLockProofAtRound(t *testing.T, state RoundState, validators ValidatorSet, power VotingPowerSet, lockedRound uint64, proposal string, signerA, signerB timeoutTestSigner) LockProof {
 	t.Helper()
 	lockState := state
 	lockState.Round = lockedRound
-	votes := []Message{
-		{ProtocolVersion: lockState.ProtocolVersion, ChainID: lockState.ChainID, Epoch: lockState.Epoch, Height: lockState.Height, Round: lockState.Round, Sender: []byte("validator-a"), Type: MessageTypePrecommit, Payload: []byte(proposal)},
-		{ProtocolVersion: lockState.ProtocolVersion, ChainID: lockState.ChainID, Epoch: lockState.Epoch, Height: lockState.Height, Round: lockState.Round, Sender: []byte("validator-b"), Type: MessageTypePrecommit, Payload: []byte(proposal)},
-	}
+	voteA := runtimeMessage(lockState, "validator-a", MessageTypePrecommit, proposal)
+	voteB := runtimeMessage(lockState, "validator-b", MessageTypePrecommit, proposal)
+	var err error
+	voteA, err = voteA.Sign(signerA)
+	if err != nil { t.Fatal(err) }
+	voteB, err = voteB.Sign(signerB)
+	if err != nil { t.Fatal(err) }
+	votes := []Message{voteA, voteB}
 	certificate, err := NewPrecommitCertificate(lockState, validators, power, QuorumThreshold{Numerator: 2, Denominator: 3}, []byte(proposal), votes)
 	if err != nil { t.Fatal(err) }
 	proof, err := NewLockProof(lockedRound, []byte(proposal), certificate)
