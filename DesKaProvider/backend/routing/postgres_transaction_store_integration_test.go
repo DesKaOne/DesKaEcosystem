@@ -1287,6 +1287,109 @@ func TestPostgresConcurrentReadDuringAtomicTransitionObservesCompleteState(t *te
 	}
 }
 
+func TestPostgresTerminalReadRemainsIdempotentAcrossRestart(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	schema := "terminal_read_restart_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatalf("create isolated schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
+	})
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set isolated search path: %v", err)
+	}
+	applyPostgresMigration(t, db)
+
+	store, err := NewPostgresTransactionStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	request := PurchaseRequest{
+		ProductCode: "pln20",
+		CustomerNo:  "08123456789",
+		ReferenceID: postgresIntegrationReference(),
+		Amount:      20000,
+	}
+	terminal := TransactionState{
+		Request: request,
+		Execution: PurchaseExecution{
+			ProviderName: "mock",
+			Result: provider.PurchaseResult{
+				ReferenceID: request.ReferenceID,
+				ProductCode: request.ProductCode,
+				CustomerNo: request.CustomerNo,
+				Status: provider.StatusSuccess,
+				ProviderCode: "00",
+				Message: "success",
+				SerialNumber: "SN-RESTART-1",
+				Price: 20000,
+			},
+		},
+		Version: 2,
+	}
+	if err := seedTerminalTransactionContext(ctx, store, terminal); err != nil {
+		t.Fatalf("seed terminal transaction: %v", err)
+	}
+
+	read := func(s *PostgresTransactionStore) TransactionState {
+		got, ok, err := s.GetContextE(ctx, request.ReferenceID)
+		if err != nil {
+			t.Fatalf("read terminal transaction: %v", err)
+		}
+		if !ok {
+			t.Fatal("terminal transaction missing")
+		}
+		return got
+	}
+
+	first := read(store)
+	if !samePurchaseResult(first.Execution.Result, terminal.Execution.Result) || first.Version != terminal.Version ||
+		first.Request != terminal.Request || first.Execution.ProviderName != terminal.Execution.ProviderName {
+		t.Fatalf("initial terminal read changed durable state: got=%#v want=%#v", first, terminal)
+	}
+
+	_ = db.Close()
+	db, err = sql.Open("pgx", os.Getenv("DESKAPROVIDER_POSTGRES_DSN"))
+	if err != nil {
+		t.Fatalf("reopen postgres: %v", err)
+	}
+	defer db.Close()
+	if err := db.PingContext(ctx); err != nil {
+		t.Fatalf("ping reopened postgres: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set restarted search path: %v", err)
+	}
+	restarted, err := NewPostgresTransactionStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for i := 0; i < 3; i++ {
+		got := read(restarted)
+		if !samePurchaseResult(got.Execution.Result, terminal.Execution.Result) || got.Version != terminal.Version ||
+			got.Request != terminal.Request || got.Execution.ProviderName != terminal.Execution.ProviderName {
+			t.Fatalf("restart read %d changed committed terminal state: got=%#v want=%#v", i, got, terminal)
+		}
+	}
+
+	durable, ok, err := restarted.GetContextE(ctx, request.ReferenceID)
+	if err != nil {
+		t.Fatalf("final durable read: %v", err)
+	}
+	if !ok {
+		t.Fatal("final terminal transaction missing")
+	}
+	if durable.Version != terminal.Version || !samePurchaseResult(durable.Execution.Result, terminal.Execution.Result) {
+		t.Fatalf("repeated terminal reads changed persisted version/result: got=%#v want=%#v", durable, terminal)
+	}
+}
+ 
 func TestPostgresTerminalResultRemainsImmutableAgainstStaleObservation(t *testing.T) {
 	db := postgresIntegrationDB(t)
 	schema := "terminal_immutable_" + strconv.FormatInt(time.Now().UnixNano(), 10)
