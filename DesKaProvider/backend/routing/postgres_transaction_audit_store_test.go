@@ -141,6 +141,7 @@ func (r *postgresAuditRowsRows) Next(dest []driver.Value) error {
 	copy(dest, r.scenario.rows[r.index])
 	if r.scenario.cancelAfter == r.index && r.scenario.cancel != nil {
 		r.scenario.cancel()
+		r.scenario.rowsErr = context.Canceled
 	}
 	return nil
 }
