@@ -7876,3 +7876,41 @@ Milestone #175 changes test coverage only. Production shared PostgreSQL ownershi
 ### Next Milestone
 
 **#176 — Runtime Shutdown Error Precedence After Ownership Transfer:** verify service shutdown preserves the primary lifecycle error together with database cleanup errors, including shared PostgreSQL single-handle cleanup and repeated shutdown semantics.
+
+
+### Milestone #176 — Runtime Shutdown Error Precedence After Ownership Transfer
+
+**Date:** 2026-09-27
+
+Completed:
+
+- added real PostgreSQL service-lifecycle coverage for shutdown after database ownership has already transferred to the running service;
+- verified shared transaction/audit PostgreSQL ownership uses one database handle, with the audit store reusing the transaction handle and no second audit database ownership;
+- exercised the production Service.Run shutdown path rather than calling ownership cleanup directly;
+- verified the primary lifecycle cancellation error remains discoverable together with the injected shared database cleanup error through errors.Is;
+- verified cleanup error context retains close transaction database;
+- verified the shared PostgreSQL database handle closes exactly once after service shutdown;
+- verified repeated Service.Close() is single-shot: it does not close the database again and preserves the stored cleanup error identity;
+- preserved the existing ownership-transfer boundary: shutdown cleanup is performed only after ownership has transferred to the service;
+- introduced no provider retry, failover, resubmission, ledger, treasury, funding, or cross-domain recovery behavior.
+
+### Verification
+
+- Initial CI #1627: RED only because the new test incorrectly expected repeated Service.Close() to return nil after a cleanup error.
+- Existing runtime semantics intentionally retain the first cleanup error in runtimeDatabaseOwnership.closeErr; repeated cleanup does not call Close() again and returns the stored error.
+- Corrected test commit: 866b4406c107530e6a416b2592b31326a19ce8e6.
+- Final CI #1629: GREEN — go test ./..., go vet ./..., PostgreSQL service-backed integration tests, and go test -race ./....
+
+### Safety Boundary
+
+Milestone #176 changes test coverage only. Production shutdown composition remains unchanged: Service.Run combines the lifecycle cancellation/error with worker shutdown and Service.Close(); transferred database ownership is closed through the existing single-shot ownership guard. Shared PostgreSQL audit persistence continues to reuse the transaction database handle without separate ownership.
+
+### Known Limitations
+
+- Cleanup-error injection remains a test-only wrapper around the real PostgreSQL database handle; production PostgreSQL Close() behavior is not modified.
+- This milestone covers the shared PostgreSQL ownership path. Dedicated transaction/audit ownership remains separately covered by the existing runtime reopen and startup-cleanup integration tests.
+- A shutdown timeout while the worker itself remains active can still prevent database cleanup because Service.Close() intentionally requires the worker to have stopped; this preserves the existing lifecycle ownership boundary.
+
+### Next Milestone
+
+**#177 — Runtime Shutdown Error Precedence Across Dedicated PostgreSQL Ownership:** verify shutdown with independently owned transaction and audit PostgreSQL handles, preserving primary lifecycle error plus both cleanup-error identities, deterministic transaction-before-audit cleanup ordering, and repeated shutdown single-shot semantics.
