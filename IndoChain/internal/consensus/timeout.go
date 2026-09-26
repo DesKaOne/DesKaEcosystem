@@ -155,6 +155,12 @@ func ValidateTimeoutCertificate(
 			return fmt.Errorf("%w: duplicate validator", ErrInvalidTimeoutCertificate)
 		}
 		seen[key] = struct{}{}
+		if !validators.Contains(sender) {
+			return TimeoutCertificate{}, ErrValidatorNotFound
+		}
+		if !validators.Contains(sender) {
+			return ErrValidatorNotFound
+		}
 		power, ok := votingPower.PowerOf(sender)
 		if !ok {
 			return ErrVoteSenderNotInVotingPower
