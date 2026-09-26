@@ -4763,6 +4763,35 @@ Completed:
 - canceled reads and writes cannot authorize provider retry, failover, resubmission, ledger mutation, treasury movement, or provider funding;
 - cancellation never downgrades or replaces an already committed terminal transaction.
 
+### 47. Milestone Update — PostgreSQL Sequential Pending Transition Version Integrity
+
+**Date:** 2026-09-26
+
+Completed:
+
+- audited `PostgresTransactionStore.PutContext` sequential transition logic against the PostgreSQL versioned transition predicate;
+- verified each mutable transition uses the currently persisted `Version` in the atomic update condition;
+- verified sequential pending -> pending transition advances version from 1 to 2 and preserves the updated pending payload;
+- verified subsequent pending -> terminal transition advances version from 2 to 3;
+- verified a stale pre-transition version is rejected after the terminal transition;
+- preserved transaction persistence as the authoritative transaction state while audit/operational evidence remains non-authoritative.
+
+### Verification
+
+- implementation HEAD: `da7b6015b8089dc83b277ffe6bef07b54a9eeb2c`;
+- CI #1046 / run `36216669655`: **GREEN** for exact HEAD `da7b6015b8089dc83b277ffe6bef07b54a9eeb2c`;
+- CI jobs `test`: success;
+- CI jobs `vet`: success;
+- CI jobs `race`: success;
+- existing deterministic integration test `TestPostgresTransactionStoreSequentialVersionTransitionIsPreserved` covers the version progression and stale-version rejection.
+
+### Safety Boundary
+
+- version correctness is a persistence-integrity property only;
+- stale durable observations remain non-authoritative;
+- versioned transitions cannot authorize provider retry, failover, resubmission, ledger mutation, treasury movement, or provider funding.
+
 ### Next Milestone
 
-**#125 — PostgreSQL Sequential Pending Transition Version Integrity:** verify successive durable pending transitions advance versions consistently and stale versions remain rejected.
+**#126 — PostgreSQL Concurrent Read/Transition Observation Atomicity:** verify concurrent durable reads observe only complete transaction states while an atomic transition commits, without exposing mixed fields or authorizing side effects.
+
