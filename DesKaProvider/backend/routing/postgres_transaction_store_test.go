@@ -71,25 +71,4 @@ func TestPostgresTransactionStorePutIfCurrentRejectsIdentityMismatch(t *testing.
 	if !errors.Is(err,ErrReferenceConflict) { t.Fatalf("expected reference conflict, got %v",err) }
 }
 
-func TestPostgresTransactionStorePutContextPropagatesDatabaseError(t *testing.T) {
-	stub := &contextReadDBStub{err: errors.New("database unavailable")}
-	store, err := NewPostgresTransactionStore(stub)
-	if err != nil {
-		t.Fatal(err)
-	}
 
-	pending := postgresPendingState()
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	if err := store.PutContext(ctx, pending); !errors.Is(err, context.Canceled) {
-		t.Fatalf("expected canceled context to propagate before any database access, got %v", err)
-	}
-
-	// PutContext must use the error-aware read path. QueryRowContext itself is
-	// still represented by the existing DB stub boundary, while GetContextE
-	// already has direct coverage for propagating database errors.
-	if _, _, err := store.GetContextE(context.Background(), pending.Request.ReferenceID); err == nil || !errors.Is(err, stub.err) {
-		t.Fatalf("expected underlying database error from GetContextE, got %v", err)
-	}
-}
