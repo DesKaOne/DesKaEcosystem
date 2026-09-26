@@ -1759,10 +1759,7 @@ func TestPostgresTransactionAuditStoreConflictingAuditRemainsNonAuthoritativeAft
 		Next:         string(provider.StatusPending),
 		ProviderName: "mock",
 		Message:      "conflicting audit must remain observational after restart",
-		CreatedAt:    initial.ResultCreatedAtFallback(),
-	}
-	if conflictingAudit.CreatedAt.IsZero() {
-		conflictingAudit.CreatedAt = time.Now().UTC().Add(time.Second).Truncate(time.Microsecond)
+		CreatedAt:    time.Now().UTC().Add(time.Second).Truncate(time.Microsecond),
 	}
 	if err := auditStore.AppendContext(ctx, conflictingAudit); err != nil {
 		t.Fatalf("append conflicting audit evidence: %v", err)
