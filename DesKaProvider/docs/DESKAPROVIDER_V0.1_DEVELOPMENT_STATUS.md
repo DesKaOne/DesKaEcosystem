@@ -5970,3 +5970,39 @@ Completed:
 ### Next Milestone
 
 **#137 — PostgreSQL Audit Append Idempotency Boundary:** determine and lock the behavior of repeated identical audit append attempts, especially around recovery/retry, without turning the audit table into a transaction-authority or deduplication mechanism.
+
+
+### 137. Milestone Update — PostgreSQL Audit Append Idempotency Boundary
+
+**Date:** 2026-09-26
+
+Completed:
+
+- added real-PostgreSQL integration coverage for repeated identical audit append attempts;
+- verified two explicit identical `AppendContext` calls produce two durable audit rows with the same evidence payload, preserving the repository's append-only audit semantics;
+- verified repeated identical audit appends do not overwrite prior evidence and do not create transaction-state rows;
+- confirmed the audit table is not being used as an implicit deduplication or transaction-authority mechanism;
+- no production audit-store implementation change was required because the current SQL is append-only by design;
+- no transaction authority, provider submission authority, retry/failover behavior, ledger mutation, treasury movement, or provider funding behavior was broadened.
+
+### Safety Boundary
+
+- identical audit events are evidence records, not idempotency keys for transaction execution;
+- audit append repetition cannot authorize provider retry, failover, resubmission, ledger mutation, treasury movement, or provider funding;
+- transaction persistence remains the authoritative transaction-state and idempotency boundary;
+- any future audit deduplication must remain separate from transaction execution authority and must not silently discard operational evidence.
+
+### Verification
+
+- test implementation commit: `ce861e6b79292e02e059f4fff9733b629617f590`;
+- exact branch HEAD after this status documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before this milestone is considered closed.
+
+### Known Limitations
+
+- the test locks the current append-only behavior for repeated identical payloads; it does not define idempotency for semantically equivalent but differently encoded or timestamped events;
+- transaction execution idempotency continues to be governed by durable transaction state, not by the audit table;
+- audit remains operational evidence and is not a financial source of truth.
+
+### Next Milestone
+
+**#138 — PostgreSQL Audit Ordering & Timestamp Collision Boundary:** verify deterministic ordering when multiple audit events share the same `created_at` timestamp and ensure ordering remains observational without influencing transaction authority.
