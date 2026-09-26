@@ -4469,5 +4469,32 @@ Completed:
 
 ### Next Milestone
 
-**#117 — PostgreSQL Transaction Version Progression Review**: inspect sequential pending-state updates and version handling in the PostgreSQL transaction store so multi-step pending transitions cannot regress or conflict solely because the persistence path uses a stale version expectation.
+### 52. Milestone Update — PostgreSQL Transaction Version Progression Review
+
+**Date:** 2026-09-26
+
+Completed:
+
+- audited PostgresTransactionStore.PutContext and confirmed sequential state transitions load the current persisted version before issuing the conditional PostgreSQL update;
+- verified pending-to-pending updates advance the durable version monotonically instead of reusing a stale hard-coded version;
+- retained terminal-state protection and compare-and-transition semantics through the shared conditional update path;
+- verified deterministic integration coverage for two sequential pending refreshes followed by a terminal transition and stale-version conflict detection;
+- preserved transaction persistence as the authoritative transaction-state boundary.
+
+### Verification
+
+- implementation HEAD: `cc92e43d219be479af09bc4bd415539ca0b8591f`;
+- CI #989 / run `36212904436`: **GREEN** for exact HEAD `cc92e43d219be479af09bc4bd415539ca0b8591f`;
+- CI jobs `test`: success;
+- CI jobs `test` `vet`: success;
+- CI jobs `race`: success.
+
+### Safety Boundary
+
+- version progression is a persistence-integrity concern only;
+- stale version conflicts remain persistence/concurrency failures and cannot authorize provider retry, failover, resubmission, ledger mutation, treasury movement, or provider funding.
+
+### Next Milestone
+
+**#118 — PostgreSQL Sequential Terminal Idempotency & Conflict Review**: verify repeated identical terminal writes remain idempotent across service/store boundaries while divergent terminal writes remain rejected after version progression.
 
