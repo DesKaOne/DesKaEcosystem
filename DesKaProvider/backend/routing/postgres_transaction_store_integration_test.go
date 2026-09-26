@@ -2047,14 +2047,26 @@ func TestPostgresConcurrentReadDuringAtomicTransitionSeesCompleteState(t *testin
 	next.Execution.Result.Message = "success"
 	next.Execution.Result.SerialNumber = "SN-ATOMIC"
 
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatalf("pin transition connection: %v", err)
+	}
+	defer conn.Close()
+	if _, err := conn.ExecContext(ctx, "SET search_path TO public"); err != nil {
+		t.Fatalf("set transition search path: %v", err)
+	}
+	transitionStore, err := NewPostgresTransactionStore(conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	transitionStarted := make(chan struct{})
 	transitionDone := make(chan error, 1)
 	go func() {
-		transitionDone <- store.PutIfCurrentContext(ctx, pending.Request.ReferenceID, pending, next)
+		close(transitionStarted)
+		transitionDone <- transitionStore.PutIfCurrentContext(ctx, pending.Request.ReferenceID, pending, next)
 	}()
-
-	if err := <-transitionDone; err != nil {
-		t.Fatalf("atomic transition failed before read validation: %v", err)
-	}
+	<-transitionStarted
 
 	const reads = 32
 	for i := 0; i < reads; i++ {
@@ -2073,6 +2085,9 @@ func TestPostgresConcurrentReadDuringAtomicTransitionSeesCompleteState(t *testin
 		}
 	}
 
+	if err := <-transitionDone; err != nil {
+		t.Fatalf("atomic transition failed: %v", err)
+	}
 	final, ok, err := store.GetContextE(ctx, pending.Request.ReferenceID)
 	if err != nil || !ok {
 		t.Fatalf("read final transaction: ok=%v err=%v", ok, err)
