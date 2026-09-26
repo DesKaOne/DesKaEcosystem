@@ -6374,3 +6374,40 @@ Completed:
 ### Next Milestone
 
 **#146 — PostgreSQL Audit Snapshot Stability Under Ambiguous Writer Failure:** verify the audit boundary when a writer failure occurs near commit acknowledgment, without using audit evidence to infer transaction execution authority.
+
+
+### 146. Milestone Update — PostgreSQL Audit Snapshot Stability Under Ambiguous Writer Failure
+
+**Date:** 2026-09-26
+
+Completed:
+
+- added real-PostgreSQL integration coverage for the boundary where an audit append has committed before the writer connection is subsequently closed;
+- verified the committed audit event is durably readable before the simulated transport/connection loss;
+- closed the writer connection and reopened PostgreSQL through a fresh connection pool;
+- verified recovery returns exactly the previously committed audit event once, with no duplicate row introduced by the recovery boundary;
+- confirmed recovery inspection remains observational and does not infer provider execution, retry authorization, reconciliation authority, or transaction-state mutation from the audit record;
+- no production audit-store implementation change was required;
+- no transaction authority, provider submission authority, retry/failover behavior, ledger mutation, treasury movement, or provider funding behavior was broadened.
+
+### Safety Boundary
+
+- an audit commit that is followed by writer connection loss remains a persistence-recovery concern;
+- after recovery, existing committed audit evidence is read as evidence and is not replayed automatically;
+- audit recovery cannot authorize provider retry, failover, resubmission, ledger mutation, treasury movement, or provider funding;
+- transaction persistence remains the authoritative transaction-state and idempotency boundary.
+
+### Verification
+
+- test implementation commit: `aab001ba13a757981e147cae192f4b36b13fde22`;
+- exact branch HEAD after this status documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before this milestone is considered closed.
+
+### Known Limitations
+
+- the scenario simulates ambiguous writer loss by closing the connection after a successful append rather than forcing a real network failure after server-side commit but before client acknowledgment;
+- it does not cover every PostgreSQL failover, replication, or network-partition timing variant;
+- audit remains operational evidence and is not a financial source of truth.
+
+### Next Milestone
+
+**#147 — PostgreSQL Audit Snapshot Recovery After Database Restart:** verify durable audit history remains complete and ordered across an actual PostgreSQL service restart boundary, without using audit history as transaction authority.
