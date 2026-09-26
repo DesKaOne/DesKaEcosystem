@@ -146,7 +146,7 @@ func (r *ValidatorRuntime) AdvanceRoundWithTimeoutEvidence(
 	); err != nil {
 		return TimeoutCertificate{}, err
 	}
-	if len(r.lockedProposal) > 0 && !bytes.Equal(r.lockedProposal, certificate.LockedProposal) {
+	if len(r.lockedProposal) > 0 && (!bytes.Equal(r.lockedProposal, certificate.LockedProposal) || r.lockedRound != certificate.LockedRound) {
 		return TimeoutCertificate{}, ErrConflictingTimeoutLock
 	}
 	if err := r.AdvanceRound(certificate.NextRound); err != nil {
@@ -154,6 +154,7 @@ func (r *ValidatorRuntime) AdvanceRoundWithTimeoutEvidence(
 	}
 	if len(certificate.LockedProposal) > 0 {
 		r.lockedProposal = append([]byte(nil), certificate.LockedProposal...)
+		r.lockedRound = certificate.LockedRound
 	}
 	return certificate, nil
 }
@@ -275,7 +276,8 @@ func (r *ValidatorRuntime) AddVote(msg Message) error {
 			return err
 		}
 		if reached {
-			r.lockedProposal = append([]byte(nil), r.proposal...)
+					r.lockedProposal = append([]byte(nil), r.proposal...)
+			r.lockedRound = r.state.Round
 			r.state.Phase = PhasePrecommit
 		}
 	}
