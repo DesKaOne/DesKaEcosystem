@@ -136,7 +136,7 @@ func (l *catalogWorkerLifecycle) Shutdown() {
 	cancel()
 }
 
-type Service struct{syncService *operational.SyncService;purchaseService *routing.Service;catalogSync *catalog.SyncService;providerState *operational.ProviderStateStore;databaseOwnership *runtimeDatabaseOwnership;balanceLifecycle *operational.SyncWorkerLifecycle;catalogLifecycle *catalogWorkerLifecycle;interval,catalogInterval time.Duration;catalogStart func(context.Context) (context.Context,error);balanceStart func(context.Context) error;balanceShutdown func(context.Context) error}
+type Service struct{syncService *operational.SyncService;purchaseService *routing.Service;catalogSync *catalog.SyncService;providerState *operational.ProviderStateStore;databaseOwnership *runtimeDatabaseOwnership;balanceLifecycle *operational.SyncWorkerLifecycle;catalogLifecycle *catalogWorkerLifecycle;interval,catalogInterval time.Duration;catalogStart func(context.Context) (context.Context,error);balanceStart func(context.Context) error;balanceShutdown func(context.Context) error;catalogShutdown func() error}
 
 func LoadConfig()(Config,error){
  cfg:=Config{StorePath:os.Getenv("DESKAPROVIDER_OPERATIONAL_STORE_PATH"),TransactionStoreDriver:os.Getenv("DESKAPROVIDER_TRANSACTION_STORE_DRIVER"),AuditStoreDriver:os.Getenv("DESKAPROVIDER_AUDIT_STORE_DRIVER"),PostgresDSN:os.Getenv("DESKAPROVIDER_POSTGRES_DSN"),ProviderStateStorePath:os.Getenv("DESKAPROVIDER_PROVIDER_STATE_STORE_PATH"),TransactionStorePath:os.Getenv("DESKAPROVIDER_TRANSACTION_STORE_PATH"),SyncInterval:defaultSyncInterval,FailureThreshold:defaultFailureThreshold,Currency:os.Getenv("DESKAPROVIDER_OPERATIONAL_CURRENCY"),CatalogStorePath:os.Getenv("DESKAPROVIDER_CATALOG_STORE_PATH"),CatalogSyncInterval:defaultCatalogSyncInterval,CatalogMaxAge:defaultCatalogMaxAge,OperationalSnapshotMaxAge:defaultOperationalSnapshotMaxAge}
@@ -214,9 +214,9 @@ func runtimeShutdownContext(parent context.Context) (context.Context, context.Ca
 func (s *Service) Run(ctx context.Context) error {
 	if ctx == nil { return errors.New("context is required") }
 
-	shutdown := func(primary, workerErr error) error {
-		s.catalogLifecycle.Shutdown()
-		return combineRuntimeShutdownError(combineRuntimeShutdownError(primary, workerErr), s.Close())
+shutdown := func(primary, workerErr error) error {
+		catalogErr := s.shutdownCatalogLifecycle()
+		return combineRuntimeShutdownError(combineRuntimeShutdownError(combineRuntimeShutdownError(primary, workerErr), catalogErr), s.Close())
 	}
 
 	if s.balanceLifecycle == nil {
@@ -306,7 +306,14 @@ func (s *Service) rollbackStartedLifecycles(ctx context.Context) error {
 		err = s.shutdownBalanceWorker(ctx)
 	}
 	s.catalogLifecycle.Shutdown()
-	return err
+	return combineRuntimeShutdownError(err, s.shutdownCatalogLifecycle())
+}
+
+func (s *Service) shutdownCatalogLifecycle() error {
+	if s == nil || s.catalogLifecycle == nil { return nil }
+	if s.catalogShutdown != nil { return s.catalogShutdown() }
+	s.catalogLifecycle.Shutdown()
+	return nil
 }
 
 func checkRuntimeInitializationContext(ctx context.Context) error {
