@@ -1871,6 +1871,7 @@ func TestPostgresTransactionAuditStoreConflictWithConcurrentTransactionUpdateRem
 	state.Execution.Result.ProviderCode = ""
 	state.Execution.Result.Message = "pending"
 	state.Execution.Result.SerialNumber = ""
+	state.Request.Amount = 20000
 	state.Execution.Result.Price = state.Request.Amount
 
 	seedConn, err := db.Conn(ctx)
