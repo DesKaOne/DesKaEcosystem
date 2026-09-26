@@ -1089,6 +1089,144 @@ func TestPostgresTransactionAuditStoreSnapshotOrderingAfterReaderRecovery(t *tes
 }
 
 
+func TestPostgresTransactionAuditStoreSnapshotStabilityUnderWriterRecovery(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	schema := "audit_writer_recovery_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatalf("create isolated schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
+	})
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set search path: %v", err)
+	}
+	applyPostgresMigration(t, db)
+
+	readerStore, err := NewPostgresTransactionAuditStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	createdAt := time.Now().UTC().Truncate(time.Microsecond)
+	initial := TransactionAuditEvent{
+		ReferenceID:  "audit-writer-recovery-ref",
+		Action:       "INITIAL",
+		Next:         string(provider.StatusPending),
+		ProviderName: "mock",
+		Message:      "initial committed evidence",
+		CreatedAt:    createdAt,
+	}
+	if err := readerStore.AppendContext(ctx, initial); err != nil {
+		t.Fatalf("append initial audit event: %v", err)
+	}
+
+	before, err := readerStore.AllContextE(ctx, initial.ReferenceID)
+	if err != nil {
+		t.Fatalf("read initial snapshot: %v", err)
+	}
+	if len(before) != 1 || before[0] != initial {
+		t.Fatalf("unexpected initial audit snapshot: %#v", before)
+	}
+
+	writerDB, err := sql.Open("pgx", os.Getenv("DESKAPROVIDER_POSTGRES_DSN"))
+	if err != nil {
+		t.Fatalf("open writer postgres: %v", err)
+	}
+	writerAlive := true
+	defer func() {
+		if writerAlive {
+			_ = writerDB.Close()
+		}
+	}()
+
+	if err := writerDB.PingContext(ctx); err != nil {
+		t.Fatalf("ping writer postgres: %v", err)
+	}
+	if _, err := writerDB.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set writer search path: %v", err)
+	}
+	writerStore, err := NewPostgresTransactionAuditStore(writerDB)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	writerEvent := TransactionAuditEvent{
+		ReferenceID:  initial.ReferenceID,
+		Action:       "RECOVERED_WRITER_APPEND",
+		Previous:     string(provider.StatusPending),
+		Next:         string(provider.StatusSuccess),
+		ProviderName: "mock",
+		Message:      "writer recovered before append",
+		CreatedAt:    createdAt,
+	}
+
+	if err := writerDB.Close(); err != nil {
+		t.Fatalf("close writer connection pool: %v", err)
+	}
+	writerAlive = false
+
+	if err := writerStore.AppendContext(context.Background(), writerEvent); err == nil {
+		t.Fatal("expected append failure while writer connection is closed")
+	} else if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("writer recovery failure must not be classified as context termination: %v", err)
+	}
+
+	unchanged, err := readerStore.AllContextE(ctx, initial.ReferenceID)
+	if err != nil {
+		t.Fatalf("read snapshot after failed writer append: %v", err)
+	}
+	if len(unchanged) != 1 || unchanged[0] != initial {
+		t.Fatalf("failed writer append must not alter committed audit snapshot: %#v", unchanged)
+	}
+
+	reopened, err := sql.Open("pgx", os.Getenv("DESKAPROVIDER_POSTGRES_DSN"))
+	if err != nil {
+		t.Fatalf("reopen writer postgres: %v", err)
+	}
+	defer reopened.Close()
+	if err := reopened.PingContext(ctx); err != nil {
+		t.Fatalf("ping reopened writer postgres: %v", err)
+	}
+	if _, err := reopened.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("restore writer search path after recovery: %v", err)
+	}
+	recoveredWriter, err := NewPostgresTransactionAuditStore(reopened)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := recoveredWriter.AppendContext(ctx, writerEvent); err != nil {
+		t.Fatalf("append after writer recovery: %v", err)
+	}
+
+	final, err := readerStore.AllContextE(ctx, initial.ReferenceID)
+	if err != nil {
+		t.Fatalf("read final audit snapshot after writer recovery: %v", err)
+	}
+	if len(final) != 2 || final[0] != initial || final[1] != writerEvent {
+		t.Fatalf("final audit snapshot changed unexpectedly after writer recovery: %#v", final)
+	}
+
+	secondFinal, err := readerStore.AllContextE(ctx, initial.ReferenceID)
+	if err != nil {
+		t.Fatalf("repeat final audit snapshot read: %v", err)
+	}
+	if len(secondFinal) != len(final) || secondFinal[0] != final[0] || secondFinal[1] != final[1] {
+		t.Fatalf("repeated final audit snapshots did not converge: first=%#v second=%#v", final, secondFinal)
+	}
+
+	var count int
+	if err := reopened.QueryRowContext(ctx, "SELECT COUNT(*) FROM provider_transaction_audit WHERE reference_id=$1", initial.ReferenceID).Scan(&count); err != nil {
+		t.Fatalf("count writer recovery audit rows: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("writer recovery should produce exactly two committed audit rows, got %d", count)
+	}
+}
+
+
 func TestPostgresTransactionAuditStoreAppendFailureThenRecovery(t *testing.T) {
 	db := postgresIntegrationDB(t)
 	schema := "audit_append_recovery_" + strconv.FormatInt(time.Now().UnixNano(), 10)
