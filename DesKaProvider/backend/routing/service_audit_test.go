@@ -379,6 +379,8 @@ func TestServiceAuditReadFailureCannotAuthorizeProviderAction(t *testing.T) {
 	}
 }
 
+var _ ContextReadTransactionAuditStore = (*auditReadFailureStore)(nil)
+
 type auditReadFailureStore struct {
 	err error
 }
@@ -389,3 +391,12 @@ func (s *auditReadFailureStore) AllContextE(context.Context, string) ([]Transact
 	return nil, s.err
 }
 
+func TestServiceAuditStoreCompatibilityReadRemainsNonAuthoritative(t *testing.T) {
+	store := NewMemoryTransactionAuditStore()
+	if _, ok := interface{}(store).(ContextReadTransactionAuditStore); !ok {
+		t.Fatal("memory audit store must expose the error-aware read capability")
+	}
+	if events := store.All("unknown-reference"); events != nil {
+		t.Fatalf("compatibility All must remain an observational empty read, got %#v", events)
+	}
+}
