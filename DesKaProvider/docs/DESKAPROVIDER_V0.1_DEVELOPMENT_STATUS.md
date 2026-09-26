@@ -4973,3 +4973,35 @@ Completed:
 ### Next Milestone
 
 **#130 — PostgreSQL Reconciliation Conflict Recovery:** verify stale service instances recover cleanly from `ErrTransactionStateConflict` by reloading the durable transaction and returning the committed terminal result when observations are identical.
+
+### 54. Milestone Update — PostgreSQL Reconciliation Conflict Recovery
+
+**Date:** 2026-09-26
+
+Completed:
+
+- added deterministic service-level regression coverage for a stale instance whose reconciliation loses the atomic compare-and-transition race;
+- verified an identical committed terminal result is reloaded from durable state after `ErrTransactionStateConflict` and returned to the stale caller;
+- verified divergent terminal observations remain rejected and do not mutate the durable transaction;
+- verified conflict recovery never triggers a second provider purchase submission;
+- preserved transaction persistence as the authoritative state while operational/audit evidence remains non-authoritative.
+
+### Verification
+
+- implementation HEAD: `abfa361f8f9f6e9a81bba8fe2c22a0385d986aab`;
+- CI #1114 / run `36221384173`: **GREEN** for exact HEAD `abfa361f8f9f6e9a81bba8fe2c22a0385d986aab`;
+- CI jobs `test`: success;
+- CI jobs `race`: success;
+- CI job `test` completed `vet`: success.
+
+### Safety Boundary
+
+- reconciliation conflict recovery is a persistence-integrity property only;
+- reloading an identical terminal result cannot authorize provider retry, failover, resubmission, customer-ledger mutation, treasury movement, or provider funding;
+- divergent durable results remain conflicts and do not get overwritten;
+- operational and audit evidence remain non-authoritative for transaction state.
+
+### Next Milestone
+
+1. continue auditing PostgreSQL reconciliation behavior for cancellation/error boundaries after durable conflict recovery;
+2. preserve the no-resubmission and no-financial-authorization invariants across all reconciliation outcomes.
