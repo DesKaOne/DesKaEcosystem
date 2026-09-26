@@ -6726,3 +6726,39 @@ Completed:
 
 - corrective test commit: `b72ec35ab26e5f36f45eaecf3d6d94e719e90385`;
 - exact branch HEAD after this documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before milestone #151 is considered closed.
+
+
+### 152. Milestone Update — PostgreSQL Audit/Transaction Commit Ordering
+
+**Date:** 2026-09-26
+
+Completed:
+
+- added real-PostgreSQL integration coverage for independent transaction-state and audit commits occurring in different orders;
+- verified that when the durable transaction commits first, the transaction reader observes the terminal transaction state while the uncommitted audit evidence remains invisible;
+- verified that after the audit transaction commits, the complete audit evidence becomes observable without altering the already durable terminal transaction state;
+- confirmed the commit ordering boundary remains domain-specific: transaction persistence is authoritative for transaction state, while audit persistence is observational evidence;
+- no production audit-store or transaction-store implementation change was required;
+- no provider submission authority, retry/failover behavior, ledger mutation, treasury movement, or provider funding behavior was broadened.
+
+### Safety Boundary
+
+- audit and transaction commits are independent persistence operations and must not be treated as interchangeable authority signals;
+- audit visibility after commit cannot promote an audit event into transaction execution authority;
+- transaction state remains the authoritative source for retry/idempotency and reconciliation decisions;
+- audit remains operational evidence only.
+
+### Verification
+
+- test implementation commit: `a19ed5783765a57e67cc5dfbb605d8c17bca84ce`;
+- exact branch HEAD after this status documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before this milestone is considered closed.
+
+### Known Limitations
+
+- the test explicitly validates transaction-first then audit commit ordering; the inverse ordering is represented by the independent-domain invariant but is not separately executed in this test;
+- the scenario uses one PostgreSQL instance and does not cover distributed replication or cross-region commit visibility;
+- audit remains operational evidence and is not a financial source of truth.
+
+### Next Milestone
+
+**#153 — PostgreSQL Audit-First Commit Ordering:** explicitly exercise the inverse ordering where audit evidence commits before transaction state and verify the early audit visibility cannot authorize or imply the pending transaction transition.
