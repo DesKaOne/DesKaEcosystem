@@ -77,6 +77,7 @@ func (s *PostgresTransactionStore) PutContext(ctx context.Context, state Transac
  if current.Execution.Result.Status != provider.StatusPending {
   return ErrReferenceConflict
  }
+ if state.Version != 0 && state.Version != current.Version { return ErrTransactionStateConflict }
  next := state
  result, err := s.db.ExecContext(ctx, postgresTransitionSQL,
   state.Request.ReferenceID, next.Execution.Result.Status, next.Execution.Result.ProviderCode,
