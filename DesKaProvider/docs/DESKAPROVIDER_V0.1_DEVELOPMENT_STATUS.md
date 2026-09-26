@@ -5718,3 +5718,38 @@ Completed:
 ### Next Milestone
 
 **#130 — PostgreSQL Audit Read Deadline/Error Classification:** verify deadline-driven audit reads preserve `context.DeadlineExceeded` distinctly from ordinary database/iteration failures and do not expose partial history.
+
+
+### 130. Milestone Update — PostgreSQL Audit Read Deadline/Error Classification
+
+**Date:** 2026-09-26
+
+Completed:
+
+- corrected the canceled-read fixture to use scan-safe string values so cancellation coverage is isolated from unrelated `database/sql` NULL conversion errors;
+- added deterministic coverage for `PostgresTransactionAuditStore.AllContext` with an expired deadline;
+- verified deadline-driven audit reads preserve `context.DeadlineExceeded` and do not return any audit history;
+- retained the existing production implementation because its context pre-check and error-aware `nil,error` read paths already preserve cancellation/deadline classification and prevent partial history exposure;
+- no production audit-store behavior, database abstraction, retry/failover logic, transaction authority, or financial authorization boundary was broadened.
+
+### Verification
+
+- test implementation commit: `a62eacbe4bb9ea24241fc90a28d9bd8786934301`;
+- exact branch HEAD after this change must pass both push and PR CI with `test`, `vet`, and `race` successful before this milestone is considered closed.
+
+### Safety Boundary
+
+- deadline expiration is an operational read-control outcome only;
+- `context.DeadlineExceeded` remains distinguishable from ordinary database/iteration failures;
+- deadline/error paths cannot authorize provider retry, failover, resubmission, ledger mutation, treasury movement, or provider funding;
+- transaction persistence remains the authoritative transaction-state boundary and audit remains observational evidence.
+
+### Known Limitations
+
+- this milestone uses an already-expired deadline for deterministic classification rather than reproducing every wire-level timeout timing pattern;
+- mid-stream cancellation behavior remains covered separately by milestone #129;
+- real PostgreSQL integration remains the boundary for driver-specific deadline and timeout behavior.
+
+### Next Milestone
+
+**#131 — PostgreSQL Audit Read Service Boundary Review:** trace audit-read error handling through service-layer callers to ensure database cancellation/deadline/error outcomes are not flattened into empty history or used to trigger provider actions.
