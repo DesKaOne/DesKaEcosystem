@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/routing"
+	provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
 )
 
 func TestOpenTransactionStorePostgresIntegration(t *testing.T) {
@@ -183,6 +184,7 @@ func TestPostgresRuntimeReopenPreservesSharedTransactionAndAuditOwnership(t *tes
 	reference := "runtime-reopen-shared-" + strconv.FormatInt(time.Now().UnixNano(), 10)
 	state := routing.TransactionState{
 		Request: routing.PurchaseRequest{ProductCode: "xld10", CustomerNo: "087800001232", ReferenceID: reference, Amount: 10000},
+		Version: 1,
 		Execution: routing.PurchaseExecution{
 			ProviderName: "mock",
 			Result: provider.PurchaseResult{
@@ -364,6 +366,7 @@ func TestPostgresRuntimeReopenPreservesDedicatedAuditOwnership(t *testing.T) {
 	pgStore := transactionStore.(*routing.PostgresTransactionStore)
 	pending := state
 	pending.Execution.Result.Status = provider.StatusPending
+	pending.Version = 1
 	pending.Execution.Result.Message = "pending"
 	if err := pgStore.PutContext(ctx, pending); err != nil {
 		_ = transactionDB.Close()
