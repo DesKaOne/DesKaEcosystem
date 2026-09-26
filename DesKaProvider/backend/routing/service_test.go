@@ -207,6 +207,111 @@ func TestServiceReconcilePropagatesDatabaseReadErrorWithoutResubmission(t *testi
 	}
 }
 
+type contextPutErrorStore struct {
+	base   *MemoryTransactionStore
+	putErr error
+}
+
+func (s *contextPutErrorStore) Get(referenceID string) (TransactionState, bool) {
+	return s.base.Get(referenceID)
+}
+
+func (s *contextPutErrorStore) Put(state TransactionState) error {
+	return s.base.Put(state)
+}
+
+func (s *contextPutErrorStore) All() []TransactionState {
+	return s.base.All()
+}
+
+func (s *contextPutErrorStore) GetContext(ctx context.Context, referenceID string) (TransactionState, bool) {
+	if err := ctx.Err(); err != nil {
+		return TransactionState{}, false
+	}
+	return s.base.Get(referenceID)
+}
+
+func (s *contextPutErrorStore) PutContext(ctx context.Context, state TransactionState) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if s.putErr != nil {
+		return s.putErr
+	}
+	return s.base.Put(state)
+}
+
+func (s *contextPutErrorStore) AllContext(ctx context.Context) []TransactionState {
+	if err := ctx.Err(); err != nil {
+		return nil
+	}
+	return s.base.All()
+}
+
+func (s *contextPutErrorStore) PutIfCurrentContext(ctx context.Context, referenceID string, previous, next TransactionState) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return s.base.PutIfCurrent(referenceID, previous, next)
+}
+
+func (s *contextPutErrorStore) GetContextE(ctx context.Context, referenceID string) (TransactionState, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return TransactionState{}, false, err
+	}
+	return s.base.Get(referenceID)
+}
+
+func (s *contextPutErrorStore) AllContextE(ctx context.Context) ([]TransactionState, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return s.base.All(), nil
+}
+
+var _ ContextReadTransactionStore = (*contextPutErrorStore)(nil)
+
+func TestServicePurchasePropagatesContextPutErrorWithoutSubmission(t *testing.T) {
+	registry := provider.NewRegistry()
+	mock := Mock.New(Mock.Config{
+		Products:       []provider.Product{{Code: "pln20", Name: "PLN 20"}},
+		ProviderCode:   "00",
+		PurchaseStatus: provider.StatusSuccess,
+		Price:          20000,
+	})
+	if err := registry.Register("mock", mock); err != nil {
+		t.Fatal(err)
+	}
+	ops := operational.NewMemoryStore()
+	if err := ops.Put(operational.Snapshot{ProviderName: "mock", Balance: 100000, Health: operational.HealthHealthy}); err != nil {
+		t.Fatal(err)
+	}
+	router, err := New(registry, ops, map[string]int{"mock": 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantErr := errors.New("database write unavailable")
+	transactionStore := &contextPutErrorStore{base: NewMemoryTransactionStore(), putErr: wantErr}
+	service, err := NewServiceWithStoreContext(context.Background(), router, transactionStore)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := PurchaseRequest{
+		ProductCode: "pln20",
+		CustomerNo:  "08123456789",
+		ReferenceID: "ref-context-put-error",
+		Amount:      20000,
+	}
+	_, err = service.Purchase(context.Background(), req)
+	if err == nil || !errors.Is(err, wantErr) {
+		t.Fatalf("expected context-aware persistence error to propagate, got %v", err)
+	}
+	if mock.PurchaseCount(req.ReferenceID) != 0 {
+		t.Fatalf("context-aware persistence failure must block provider submission, got %d", mock.PurchaseCount(req.ReferenceID))
+	}
+}
+
 func TestServicePurchasePersistsPendingBeforeSubmission(t *testing.T) {
 	registry := provider.NewRegistry()
 	mock := Mock.New(Mock.Config{Products: []provider.Product{{Code: "pln20", Name: "PLN 20"}}, ProviderCode: "00", PurchaseStatus: provider.StatusSuccess, Price: 20000})
