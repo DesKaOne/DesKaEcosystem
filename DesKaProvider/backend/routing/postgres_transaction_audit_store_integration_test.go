@@ -1089,6 +1089,103 @@ func TestPostgresTransactionAuditStoreSnapshotOrderingAfterReaderRecovery(t *tes
 }
 
 
+func TestPostgresTransactionAuditStoreAmbiguousWriterCommitRecovery(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	schema := "audit_ambiguous_commit_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatalf("create isolated schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
+	})
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set search path: %v", err)
+	}
+	applyPostgresMigration(t, db)
+
+	writerDB, err := sql.Open("pgx", os.Getenv("DESKAPROVIDER_POSTGRES_DSN"))
+	if err != nil {
+		t.Fatalf("open writer postgres: %v", err)
+	}
+	defer writerDB.Close()
+	if err := writerDB.PingContext(ctx); err != nil {
+		t.Fatalf("ping writer postgres: %v", err)
+	}
+	if _, err := writerDB.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set writer search path: %v", err)
+	}
+
+	writerStore, err := NewPostgresTransactionAuditStore(writerDB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	event := TransactionAuditEvent{
+		ReferenceID:  "audit-ambiguous-commit-ref",
+		Action:       "COMMIT_BEFORE_CONNECTION_LOSS",
+		Previous:     string(provider.StatusPending),
+		Next:         string(provider.StatusSuccess),
+		ProviderName: "mock",
+		Message:      "commit acknowledged before connection loss",
+		CreatedAt:    time.Now().UTC().Truncate(time.Microsecond),
+	}
+
+	if err := writerStore.AppendContext(ctx, event); err != nil {
+		t.Fatalf("append committed audit event: %v", err)
+	}
+
+	readerStore, err := NewPostgresTransactionAuditStore(writerDB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeFailure, err := readerStore.AllContextE(ctx, event.ReferenceID)
+	if err != nil {
+		t.Fatalf("read committed audit event before simulated transport loss: %v", err)
+	}
+	if len(beforeFailure) != 1 || beforeFailure[0] != event {
+		t.Fatalf("expected exactly one committed audit event before writer loss, got %#v", beforeFailure)
+	}
+
+	if err := writerDB.Close(); err != nil {
+		t.Fatalf("close writer after commit: %v", err)
+	}
+
+	reopened, err := sql.Open("pgx", os.Getenv("DESKAPROVIDER_POSTGRES_DSN"))
+	if err != nil {
+		t.Fatalf("reopen postgres after ambiguous writer failure: %v", err)
+	}
+	defer reopened.Close()
+	if err := reopened.PingContext(ctx); err != nil {
+		t.Fatalf("ping reopened postgres: %v", err)
+	}
+	if _, err := reopened.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("restore search path after ambiguous writer failure: %v", err)
+	}
+
+	recoveredStore, err := NewPostgresTransactionAuditStore(reopened)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recovered, err := recoveredStore.AllContextE(ctx, event.ReferenceID)
+	if err != nil {
+		t.Fatalf("read audit history after ambiguous writer recovery: %v", err)
+	}
+	if len(recovered) != 1 || recovered[0] != event {
+		t.Fatalf("recovered audit history must contain exactly the committed event once, got %#v", recovered)
+	}
+
+	var count int
+	if err := reopened.QueryRowContext(ctx, "SELECT COUNT(*) FROM provider_transaction_audit WHERE reference_id=$1", event.ReferenceID).Scan(&count); err != nil {
+		t.Fatalf("count recovered audit rows: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("ambiguous writer recovery must not create a duplicate audit row, got %d", count)
+	}
+}
+
+
 func TestPostgresTransactionAuditStoreSnapshotStabilityUnderWriterRecovery(t *testing.T) {
 	db := postgresIntegrationDB(t)
 	schema := "audit_writer_recovery_" + strconv.FormatInt(time.Now().UnixNano(), 10)
