@@ -6600,3 +6600,16 @@ Completed:
 ### Next Milestone
 
 **#152 — PostgreSQL Audit/Transaction Commit Ordering:** verify behavior when audit and transaction commits occur in different orders, ensuring neither ordering can promote audit evidence into transaction authority.
+
+### 151. Verification Correction
+
+**Date:** 2026-09-26
+
+- corrected the concurrent-conflict integration test to consume the PostgreSQL transaction read API's three return values (`state`, `ok`, `err`);
+- no production behavior changed;
+- previous CI failure was a compile-time test assertion mismatch only.
+
+**Verification**
+
+- corrective test commit: `78260b98a0fb140a379d7189bf60130d6dc28eff`;
+- exact branch HEAD after this documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before milestone #151 is considered closed.
