@@ -1801,15 +1801,15 @@ func TestPostgresConcurrentReadTransitionObservesCompleteState(t *testing.T) {
 		_, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
 	})
 
-	conn, err := db.Conn(ctx)
+	migrationConn, err := db.Conn(ctx)
 	if err != nil {
 		t.Fatalf("pin migration connection: %v", err)
 	}
-	defer conn.Close()
-	if _, err := conn.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+	defer migrationConn.Close()
+	if _, err := migrationConn.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
 		t.Fatalf("set isolated search path: %v", err)
 	}
-	applyPostgresMigration(t, conn)
+	applyPostgresMigration(t, migrationConn)
 
 	openStore := func(role string) (*sql.Conn, *PostgresTransactionStore) {
 		conn, err := db.Conn(ctx)
@@ -1838,24 +1838,29 @@ func TestPostgresConcurrentReadTransitionObservesCompleteState(t *testing.T) {
 	pending.Execution.Result.SerialNumber = "SN-PENDING"
 	pending.Execution.Result.Price = 20000
 	pending.Version = 1
-	if err := writer.PutContext(ctx, pending); err != nil { t.Fatalf("insert pending: %v", err) }
+	if err := writer.PutContext(ctx, pending); err != nil {
+		t.Fatalf("insert pending: %v", err)
+	}
 
 	success := pending
 	success.Execution.Result.Status = provider.StatusSuccess
 	success.Execution.Result.Message = "success"
 	success.Execution.Result.SerialNumber = "SN-SUCCESS"
 
-	var wg sync.WaitGroup
-	reads := make(chan TransactionState, 24)
-	errs := make(chan error, 1)
 	const readers = 24
+	reads := make(chan TransactionState, readers)
+	errs := make(chan error, 1)
+	var wg sync.WaitGroup
 	for i := 0; i < readers; i++ {
 		wg.Add(1)
-		go func() {
+		go func(i int) {
 			defer wg.Done()
-			state, ok := reader.GetContext(ctx, pending.Request.ReferenceID)
-			if ok { reads <- state }
-		}()
+			_, store := openStore(fmt.Sprintf("reader-%d", i))
+			state, ok := store.GetContext(ctx, pending.Request.ReferenceID)
+			if ok {
+				reads <- state
+			}
+		}(i)
 	}
 
 	wg.Add(1)
@@ -1869,7 +1874,9 @@ func TestPostgresConcurrentReadTransitionObservesCompleteState(t *testing.T) {
 	close(reads)
 	close(errs)
 
-	for err := range errs { t.Fatalf("atomic transition failed: %v", err) }
+	for err := range errs {
+		t.Fatalf("atomic transition failed: %v", err)
+	}
 	for state := range reads {
 		if state.Request != pending.Request || state.Execution.ProviderName != pending.Execution.ProviderName {
 			t.Fatalf("read observed mixed identity fields: %#v", state)
@@ -1883,7 +1890,9 @@ func TestPostgresConcurrentReadTransitionObservesCompleteState(t *testing.T) {
 	}
 
 	final, ok := reader.GetContext(ctx, pending.Request.ReferenceID)
-	if !ok { t.Fatal("final transaction disappeared") }
+	if !ok {
+		t.Fatal("final transaction disappeared")
+	}
 	if final.Version != 2 || final.Execution.Result.Status != provider.StatusSuccess || final.Execution.Result.Message != "success" || final.Execution.Result.SerialNumber != "SN-SUCCESS" {
 		t.Fatalf("unexpected final transaction state: %#v", final)
 	}
