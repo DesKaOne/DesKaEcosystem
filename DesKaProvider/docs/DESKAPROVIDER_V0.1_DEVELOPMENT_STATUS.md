@@ -6981,3 +6981,42 @@ Completed:
 ### Next Milestone
 
 **#158 — PostgreSQL Audit/Transaction Cross-Read Context Cancellation:** verify concurrent cross-domain reads stop cleanly under cancellation/deadline without exposing partial audit history or incorrectly changing transaction-state interpretation.
+
+
+### 157. Milestone Update — PostgreSQL Audit/Transaction Cross-Read Concurrency Stability
+
+**Date:** 2026-09-27
+
+Completed:
+
+- added real-PostgreSQL integration coverage for repeated concurrent cross-domain reads against already committed audit and transaction records;
+- executed multiple reader goroutines across repeated rounds using separate PostgreSQL connections and isolated schema contexts;
+- verified every concurrent audit snapshot remained identical to the durable baseline, including deterministic same-timestamp audit ordering;
+- verified every concurrent transaction snapshot remained identical to the durable baseline and the transaction row was never observed as missing or partially mutated;
+- verified the concurrent cross-domain read workload introduces no audit/transaction write side effects;
+- fixed the integration test imports required by the concurrency coverage after CI identified the missing `fmt` and `sync` dependencies;
+- no production audit-store or transaction-store implementation change was required;
+- no cross-domain locking, transaction authority, provider submission authority, retry/failover behavior, ledger mutation, treasury movement, or provider funding behavior was broadened.
+
+### Safety Boundary
+
+- concurrent cross-domain reads are observational consistency checks only;
+- audit and transaction persistence remain separate domains with transaction persistence authoritative for execution state and idempotency;
+- audit ordering cannot upgrade, override, or mutate transaction state;
+- no read path acquires new execution authority from the other persistence domain.
+
+### Verification
+
+- implementation/fix commit: `72aa2a9d761d18048a621c2a13149e09505d9d9d`;
+- prior test implementation commit: `31d3d83203a7597efe78b927e8fe92518495d2cf`;
+- exact branch HEAD after this status documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before this milestone is considered closed.
+
+### Known Limitations
+
+- the test uses one PostgreSQL deployment with multiple pooled connections and repeated concurrent reads; it does not cover replica lag, cross-region topology, or distributed transaction coordinators;
+- concurrency checks establish snapshot stability for the committed dataset but do not prove behavior under concurrent writes, which remains covered by the dedicated append/visibility milestones;
+- audit remains operational evidence and is not a financial source of truth.
+
+### Next Milestone
+
+**#158 — PostgreSQL Audit/Transaction Cross-Read Context Cancellation:** verify concurrent cross-domain reads stop cleanly under cancellation/deadline without exposing partial audit history or incorrectly changing transaction-state interpretation.
