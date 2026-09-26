@@ -25,7 +25,18 @@ func (s *postgresStoreDBStub) ExecContext(_ context.Context, query string, args 
 	return s.result,nil
 }
 func (s *postgresStoreDBStub) QueryContext(context.Context,string,...any) (*sql.Rows,error) { return nil, errors.New("not used") }
-func (s *postgresStoreDBStub) QueryRowContext(context.Context,string,...any) *sql.Row { panic("not used") }
+func (s *postgresStoreDBStub) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
+	s.query = query
+	s.args = args
+	return sqlmockRow(ctx, s.err)
+}
+
+func sqlmockRow(_ context.Context, err error) *sql.Row {
+	if err == nil {
+		return sql.NewRow(nil, errors.New("not used"))
+	}
+	return sql.NewRow(nil, err)
+}
 
 func postgresPendingState() TransactionState {
 	return TransactionState{
