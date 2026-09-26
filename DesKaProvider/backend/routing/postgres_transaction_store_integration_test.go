@@ -2007,6 +2007,74 @@ func TestPostgresCanceledContextDoesNotWriteTransaction(t *testing.T) {
 }
 
 
+func TestPostgresPutContextAdvancesVersionAcrossPendingUpdates(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	schema := "version_progress_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatalf("create isolated schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
+	})
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set isolated search path: %v", err)
+	}
+	applyPostgresMigration(t, db)
+
+	store, err := NewPostgresTransactionStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ref := postgresIntegrationReference()
+	base := TransactionState{
+		Request: PurchaseRequest{ReferenceID: ref, ProductCode: "pln20", CustomerNo: "08123456789", Amount: 20000},
+		Execution: PurchaseExecution{
+			ProviderName: "mock",
+			Result: provider.PurchaseResult{
+				ReferenceID: ref, ProductCode: "pln20", CustomerNo: "08123456789",
+				Status: provider.StatusPending, ProviderCode: "00", Message: "pending", Price: 20000,
+			},
+		},
+		Version: 1,
+	}
+	if err := store.PutContext(ctx, base); err != nil {
+		t.Fatalf("insert initial pending state: %v", err)
+	}
+
+	next := base
+	next.Execution.Result.Message = "pending-refresh"
+	if err := store.PutContext(ctx, next); err != nil {
+		t.Fatalf("update pending state: %v", err)
+	}
+
+	current, ok := store.GetContext(ctx, ref)
+	if !ok {
+		t.Fatal("pending transaction disappeared after versioned update")
+	}
+	if current.Version != 2 {
+		t.Fatalf("expected version 2 after pending update, got %d", current.Version)
+	}
+
+	terminal := next
+	terminal.Execution.Result.Status = provider.StatusSuccess
+	terminal.Execution.Result.Message = "success"
+	if err := store.PutContext(ctx, terminal); err != nil {
+		t.Fatalf("terminal transition after version 2: %v", err)
+	}
+
+	current, ok = store.GetContext(ctx, ref)
+	if !ok {
+		t.Fatal("terminal transaction disappeared after versioned transition")
+	}
+	if current.Version != 3 || current.Execution.Result.Status != provider.StatusSuccess {
+		t.Fatalf("expected version 3 success after sequential transitions, got version=%d status=%q", current.Version, current.Execution.Result.Status)
+	}
+}
+
 func TestPostgresMigrationVerification(t *testing.T) {
 	sqlText := postgresMigrationSQL(t)
 	required := []string{
