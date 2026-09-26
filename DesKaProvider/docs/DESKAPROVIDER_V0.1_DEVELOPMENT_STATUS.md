@@ -6683,3 +6683,17 @@ Completed:
 
 - corrective test commit: `6c286964f3d70ce1983cb7973be977fa3b6b29a3`;
 - exact branch HEAD after this documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before milestone #151 is considered closed.
+
+
+### 151. Verification Correction — Remove Obsolete Pooled Audit Store
+
+**Date:** 2026-09-26
+
+- removed the now-unused pooled audit-store variable from the concurrent audit/transaction conflict integration test after the audit reader was correctly pinned to its dedicated PostgreSQL connection;
+- the previous CI failure was a Go compile error caused by the obsolete variable remaining after the session-scoping correction;
+- no production behavior changed.
+
+**Verification**
+
+- corrective test commit: `745a9e7ce86f354a6043a435e20b5395f2eed5f7`;
+- exact branch HEAD after this documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before milestone #151 is considered closed.
