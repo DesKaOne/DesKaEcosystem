@@ -118,6 +118,13 @@ func (l *catalogWorkerLifecycle) Start(parent context.Context) (context.Context,
 	return ctx, nil
 }
 
+func (l *catalogWorkerLifecycle) Running() bool {
+	if l == nil { return false }
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.running
+}
+
 func (l *catalogWorkerLifecycle) Shutdown() {
 	if l == nil { return }
 	l.mu.Lock()
