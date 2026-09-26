@@ -3108,7 +3108,6 @@ func TestPostgresAuditTransactionCrossReadRecoveryConverges(t *testing.T) {
 	state.Request.Amount = 20000
 	state.Execution.Result.ReferenceID = referenceID
 	state.Execution.Result.Price = state.Request.Amount
-	state.Execution.Result.Price = state.Request.Amount
 	if err := transactionStore.PutContext(ctx, state); err != nil {
 		t.Fatalf("persist transaction fixture: %v", err)
 	}
