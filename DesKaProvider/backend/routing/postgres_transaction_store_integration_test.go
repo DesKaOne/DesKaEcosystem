@@ -88,18 +88,18 @@ func applyPostgresMigration(t *testing.T, db *sql.DB) {
 }
 
 func seedTerminalTransactionContext(ctx context.Context, store *PostgresTransactionStore, state TransactionState) error {
-	if err := store.PutContext(ctx, state); err != nil {
+	pending := state
+	pending.Version = 1
+	pending.Execution.Result.Status = provider.StatusPending
+	pending.Execution.Result.ProviderCode = "00"
+	pending.Execution.Result.Message = "pending"
+	pending.Execution.Result.SerialNumber = ""
+	if err := store.PutContext(ctx, pending); err != nil {
 		return err
 	}
 	if state.Execution.Result.Status == provider.StatusPending {
 		return nil
 	}
-	pending := state
-	pending.Version = state.Version - 1
-	pending.Execution.Result.Status = provider.StatusPending
-	pending.Execution.Result.ProviderCode = "00"
-	pending.Execution.Result.Message = "pending"
-	pending.Execution.Result.SerialNumber = ""
 	return store.PutIfCurrentContext(ctx, state.Request.ReferenceID, pending, state)
 }
 
