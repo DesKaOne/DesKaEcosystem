@@ -1346,3 +1346,6 @@ Regression coverage now exercises explicit prevote/precommit lifecycle, rejectio
 Implementation commits: runtime split 52e73298f5a03c46fdf245de7f5d31e3f0adcd22; runtime lifecycle tests 53eeed970f450e19b71009b7973094429ffce40e; timeout test alignment 3d2bf2c2dea8c884a70cf4e65b9b9dfc754c17a0.
 
 CI gate: pending verification for the split-runtime changes.
+
+
+CI correction: IndoChain CI #1184 (run 36265751480) failed at compile time because the split-runtime constructor created prevote/precommit aggregators but the returned ValidatorRuntime literal still referenced the removed legacy `votes`/`aggregator` fields. Commit d9680e7baf0b28820508a7e99ae22e236be6312a wires both new aggregators into the runtime. No behavioral rollback was made.
