@@ -7408,3 +7408,40 @@ Completed:
 ### Next Milestone
 
 **#165 — PostgreSQL Cross-Domain Recovery Failure Classification:** verify connection recovery failures in transaction and audit domains retain distinct error classification and cannot trigger cross-domain fallback or transaction mutation.
+
+
+### 165. Milestone Update — PostgreSQL Cross-Domain Recovery Failure Classification
+
+**Date:** 2026-09-27
+
+Completed:
+
+- added real-PostgreSQL integration coverage for simultaneous transaction-store and audit-store recovery failures after the shared database connection is closed;
+- verified transaction read failure remains an ordinary persistence error and is not misclassified as `context.Canceled` or `context.DeadlineExceeded`;
+- verified audit read failure remains an ordinary persistence error and is not misclassified as `context.Canceled` or `context.DeadlineExceeded`;
+- reopened PostgreSQL and verified the durable transaction state and audit history remain intact and independently recoverable;
+- confirmed recovery failures in one persistence domain do not create synthetic fallback state in the other domain;
+- no production transaction-store or audit-store implementation change was required;
+- no cross-domain fallback, transaction authority, provider submission authority, retry/failover behavior, ledger mutation, treasury movement, or provider funding behavior was broadened.
+
+### Safety Boundary
+
+- database recovery failures are persistence errors only and do not authorize cross-domain fallback;
+- transaction and audit recovery remain independent: transaction persistence governs transaction state, audit persistence governs operational evidence;
+- neither domain's recovery error may be interpreted as authority to mutate the other domain;
+- transaction persistence remains the authoritative transaction-state and idempotency boundary.
+
+### Verification
+
+- test implementation commit: `e29f25f944a96fd6e9ddc5d9559e5c4f4bd69400`;
+- exact branch HEAD after this status documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before this milestone is considered closed.
+
+### Known Limitations
+
+- the scenario exercises a shared database connection close/reopen against one PostgreSQL deployment and does not cover every network partition or distributed failure topology;
+- classification is validated at the adapter boundary; higher-level infrastructure may add its own wrapping while preserving the underlying sentinel identity;
+- audit remains operational evidence and is not a financial source of truth.
+
+### Next Milestone
+
+**#166 — PostgreSQL Cross-Domain Recovery Failure Isolation:** verify a recoverable audit failure cannot cause transaction-store fallback mutation, and a recoverable transaction failure cannot cause audit-driven transaction reconstruction.
