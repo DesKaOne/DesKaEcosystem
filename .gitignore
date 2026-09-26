@@ -1,1 +1,21 @@
-DesKaProvider/prompts/001.md
+# Secrets / local environment
+.env
+.env.*
+!.env.example
+*.secret
+*.secrets
+
+# Go build/test artifacts
+**/bin/
+**/dist/
+**/coverage/
+**/*.test
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+
+# Logs
+*.log
+

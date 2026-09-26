@@ -1,0 +1,402 @@
+package routing
+
+import (
+	"context"
+	"errors"
+	"path/filepath"
+	"testing"
+
+	provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
+	Mock "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/Mock"
+	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/operational"
+)
+
+type failTransactionAuditStore struct {
+	err error
+}
+
+func (s failTransactionAuditStore) Append(TransactionAuditEvent) error {
+	return s.err
+}
+
+func (s failTransactionAuditStore) All(string) []TransactionAuditEvent {
+	return nil
+}
+
+func newAuditTestService(t *testing.T, mock provider.PPOBProvider, audit TransactionAuditStore) *Service {
+	t.Helper()
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", mock); err != nil {
+		t.Fatal(err)
+	}
+	store := operational.NewMemoryStore()
+	if err := store.Put(operational.Snapshot{
+		ProviderName: "mock",
+		Balance:      100000,
+		Health:       operational.HealthHealthy,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	router, err := New(registry, store, map[string]int{"mock": 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewServiceWithStoreAndAudit(router, NewMemoryTransactionStore(), audit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return service
+}
+
+func TestServiceAuditRecordsPurchaseLifecycleAndTerminalConflict(t *testing.T) {
+	mock := Mock.New(Mock.Config{
+		Products:       []provider.Product{{Code: "pln20", Name: "PLN 20"}},
+		ProviderCode:   "00",
+		Message:        "success",
+		PurchaseStatus: provider.StatusSuccess,
+		Price:          20000,
+	})
+	audit := NewMemoryTransactionAuditStore()
+	service := newAuditTestService(t, mock, audit)
+
+	req := PurchaseRequest{
+		ProductCode: "pln20",
+		CustomerNo:  "08123456789",
+		ReferenceID: "ref-audit-lifecycle",
+		Amount:      20000,
+	}
+	if _, err := service.Purchase(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+
+	events := audit.All(req.ReferenceID)
+	if len(events) != 2 {
+		t.Fatalf("expected purchase pending/result audit events, got %d", len(events))
+	}
+	if events[0].Action != "PURCHASE_PENDING" || events[1].Action != "PURCHASE_RESULT" {
+		t.Fatalf("unexpected purchase audit actions: %#v", events)
+	}
+
+	_, err := service.HandleWebhook(context.Background(), provider.WebhookEvent{
+		ReferenceID:  req.ReferenceID,
+		ProductCode:  req.ProductCode,
+		CustomerNo:   req.CustomerNo,
+		Status:       provider.StatusFailed,
+		ProviderCode: "99",
+		Message:      "conflicting observation",
+	})
+	if !errors.Is(err, ErrWebhookReferenceConflict) {
+		t.Fatalf("expected terminal webhook conflict, got %v", err)
+	}
+
+	events = audit.All(req.ReferenceID)
+	if len(events) != 3 || events[2].Action != "WEBHOOK_TERMINAL_CONFLICT" {
+		t.Fatalf("expected terminal conflict audit event, got %#v", events)
+	}
+	if got := mock.PurchaseCount(req.ReferenceID); got != 1 {
+		t.Fatalf("expected one provider submission, got %d", got)
+	}
+}
+
+func TestServiceRestartedAuditFailureDoesNotAuthorizeResubmission(t *testing.T) {
+	storePath := filepath.Join(t.TempDir(), "transactions", "state.json")
+	registry := provider.NewRegistry()
+	mock := Mock.New(Mock.Config{
+		Products:       []provider.Product{{Code: "pln20", Name: "PLN 20"}},
+		ProviderCode:   "00",
+		Message:        "pending",
+		PurchaseStatus: provider.StatusPending,
+		Price:          20000,
+	})
+	if err := registry.Register("mock", mock); err != nil {
+		t.Fatal(err)
+	}
+	ops := operational.NewMemoryStore()
+	if err := ops.Put(operational.Snapshot{
+		ProviderName: "mock",
+		Balance:      100000,
+		Health:       operational.HealthHealthy,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	router, err := New(registry, ops, map[string]int{"mock": 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	store, err := NewJSONFileTransactionStore(storePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstService, err := NewServiceWithStoreAndAudit(router, store, NewMemoryTransactionAuditStore())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := PurchaseRequest{ProductCode: "pln20", CustomerNo: "08123456789", ReferenceID: "ref-restart-audit-failure", Amount: 20000}
+	first, err := firstService.Purchase(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Result.Status != provider.StatusPending {
+		t.Fatalf("expected pending transaction before restart, got %q", first.Result.Status)
+	}
+	if got := mock.PurchaseCount(req.ReferenceID); got != 1 {
+		t.Fatalf("expected one provider submission before restart, got %d", got)
+	}
+
+	mock.SetTransactionStatus(req.ReferenceID, provider.StatusSuccess, "success after restart reconciliation")
+
+	restartedStore, err := NewJSONFileTransactionStore(storePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	auditErr := errors.New("audit unavailable after restart")
+	restartedService, err := NewServiceWithStoreAndAudit(router, restartedStore, failTransactionAuditStore{err: auditErr})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	reconciled, err := restartedService.Reconcile(context.Background(), req.ReferenceID)
+	if !errors.Is(err, auditErr) {
+		t.Fatalf("expected audit failure after durable reconciliation, got %v", err)
+	}
+	if reconciled.Result.Status != provider.StatusSuccess {
+		t.Fatalf("expected durable terminal success to remain authoritative, got %q", reconciled.Result.Status)
+	}
+
+	persisted, ok := restartedStore.Get(req.ReferenceID)
+	if !ok || persisted.Execution.Result.Status != provider.StatusSuccess {
+		t.Fatalf("expected terminal transaction state to remain durable, got %#v", persisted)
+	}
+
+	retry, retryErr := restartedService.Purchase(context.Background(), req)
+	if retryErr != nil {
+		t.Fatalf("expected duplicate purchase to reuse committed terminal result after restart, got %v", retryErr)
+	}
+	if retry.Result.Status != provider.StatusSuccess {
+		t.Fatalf("expected duplicate purchase to return committed terminal result, got %q", retry.Result.Status)
+	}
+	if got := mock.PurchaseCount(req.ReferenceID); got != 1 {
+		t.Fatalf("audit failure after restart must not authorize provider resubmission, got %d submissions", got)
+	}
+}
+
+
+func TestServiceAuditFailureDoesNotResubmitOrRevertTerminalState(t *testing.T) {
+	mock := Mock.New(Mock.Config{
+		Products:       []provider.Product{{Code: "pln20", Name: "PLN 20"}},
+		ProviderCode:   "00",
+		Message:        "success",
+		PurchaseStatus: provider.StatusSuccess,
+		Price:          20000,
+	})
+	auditErr := errors.New("audit unavailable")
+	service := newAuditTestService(t, mock, failTransactionAuditStore{err: auditErr})
+
+	req := PurchaseRequest{
+		ProductCode: "pln20",
+		CustomerNo:  "08123456789",
+		ReferenceID: "ref-audit-failure",
+		Amount:      20000,
+	}
+	execution, err := service.Purchase(context.Background(), req)
+	if !errors.Is(err, auditErr) {
+		t.Fatalf("expected audit error after durable terminal state, got %v", err)
+	}
+	if execution.Result.Status != provider.StatusSuccess {
+		t.Fatalf("expected terminal success to remain visible, got %q", execution.Result.Status)
+	}
+	if got := mock.PurchaseCount(req.ReferenceID); got != 1 {
+		t.Fatalf("expected exactly one provider submission, got %d", got)
+	}
+
+	persisted, ok := service.Store.Get(req.ReferenceID)
+	if !ok || persisted.Execution.Result.Status != provider.StatusSuccess {
+		t.Fatalf("expected durable terminal success after audit failure, got %#v", persisted)
+	}
+
+	execution, err = service.Purchase(context.Background(), req)
+	if !errors.Is(err, auditErr) {
+		t.Fatalf("expected original audit error on idempotent duplicate, got %v", err)
+	}
+	if execution.Result.Status != provider.StatusSuccess {
+		t.Fatalf("expected idempotent terminal result, got %q", execution.Result.Status)
+	}
+	if got := mock.PurchaseCount(req.ReferenceID); got != 1 {
+		t.Fatalf("audit failure must not authorize a second provider submission, got %d", got)
+	}
+}
+
+
+func TestServiceAuditRecordsReconciliationTransition(t *testing.T) {
+	mock := Mock.New(Mock.Config{
+		Products:       []provider.Product{{Code: "pln20", Name: "PLN 20"}},
+		ProviderCode:   "00",
+		Message:        "pending",
+		PurchaseStatus: provider.StatusPending,
+		Price:          20000,
+	})
+	audit := NewMemoryTransactionAuditStore()
+	service := newAuditTestService(t, mock, audit)
+
+	req := PurchaseRequest{
+		ProductCode: "pln20",
+		CustomerNo:  "08123456789",
+		ReferenceID: "ref-audit-reconcile",
+		Amount:      20000,
+	}
+	if _, err := service.Purchase(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	mock.SetTransactionStatus(req.ReferenceID, provider.TransactionStatus("success"), "success")
+	if execution, err := service.Reconcile(context.Background(), req.ReferenceID); err != nil {
+		t.Fatal(err)
+	} else if execution.Result.Status != provider.StatusSuccess {
+		t.Fatalf("expected reconciliation to reach success, got %q", execution.Result.Status)
+	}
+
+	events := audit.All(req.ReferenceID)
+	if len(events) != 3 {
+		t.Fatalf("expected purchase pending/result plus reconciliation audit events, got %d", len(events))
+	}
+	if events[2].Action != "RECONCILIATION" ||
+		events[2].Previous != string(provider.StatusPending) ||
+		events[2].Next != string(provider.StatusSuccess) {
+		t.Fatalf("unexpected reconciliation audit event: %#v", events[2])
+	}
+	if got := mock.PurchaseCount(req.ReferenceID); got != 1 {
+		t.Fatalf("reconciliation must not resubmit provider purchase, got %d", got)
+	}
+}
+
+
+func TestServiceWebhookAuditFailureKeepsCommittedTerminalState(t *testing.T) {
+	mock := Mock.New(Mock.Config{
+		Products:       []provider.Product{{Code: "pln20", Name: "PLN 20"}},
+		ProviderCode:   "00",
+		Message:        "pending",
+		PurchaseStatus: provider.StatusPending,
+		Price:          20000,
+	})
+	service := newAuditTestService(t, mock, NewMemoryTransactionAuditStore())
+	req := PurchaseRequest{ProductCode: "pln20", CustomerNo: "08123456789", ReferenceID: "ref-audit-webhook-failure", Amount: 20000}
+	if _, err := service.Purchase(context.Background(), req); err != nil { t.Fatal(err) }
+
+	service.AuditStore = failTransactionAuditStore{err: errors.New("webhook audit unavailable")}
+	execution, err := service.HandleWebhook(context.Background(), provider.WebhookEvent{
+		ReferenceID: req.ReferenceID, ProductCode: req.ProductCode, CustomerNo: req.CustomerNo,
+		Status: provider.StatusSuccess, ProviderCode: "00", Message: "success", Price: 20000,
+	})
+	if !errors.Is(err, service.AuditStore.(failTransactionAuditStore).err) {
+		t.Fatalf("expected webhook audit error after durable terminal state, got %v", err)
+	}
+	if execution.Result.Status != provider.StatusSuccess { t.Fatalf("expected committed terminal success, got %q", execution.Result.Status) }
+	persisted, ok := service.Store.Get(req.ReferenceID)
+	if !ok || persisted.Execution.Result.Status != provider.StatusSuccess { t.Fatalf("expected durable terminal success, got %#v", persisted) }
+
+	// A repeated webhook must converge from the committed state and must not resubmit.
+	execution, err = service.HandleWebhook(context.Background(), provider.WebhookEvent{
+		ReferenceID: req.ReferenceID, ProductCode: req.ProductCode, CustomerNo: req.CustomerNo,
+		Status: provider.StatusSuccess, ProviderCode: "00", Message: "success", Price: 20000,
+	})
+	if err != nil || execution.Result.Status != provider.StatusSuccess { t.Fatalf("expected repeated webhook to converge idempotently, got execution=%#v err=%v", execution, err) }
+	if got := mock.PurchaseCount(req.ReferenceID); got != 1 { t.Fatalf("webhook audit failure must not authorize provider resubmission, got %d", got) }
+}
+
+func TestServiceReconciliationAuditFailureKeepsCommittedTerminalState(t *testing.T) {
+	mock := Mock.New(Mock.Config{
+		Products:       []provider.Product{{Code: "pln20", Name: "PLN 20"}},
+		ProviderCode:   "00",
+		Message:        "pending",
+		PurchaseStatus: provider.StatusPending,
+		Price:          20000,
+	})
+	service := newAuditTestService(t, mock, NewMemoryTransactionAuditStore())
+	req := PurchaseRequest{ProductCode: "pln20", CustomerNo: "08123456789", ReferenceID: "ref-audit-reconcile-failure", Amount: 20000}
+	if _, err := service.Purchase(context.Background(), req); err != nil { t.Fatal(err) }
+	mock.SetTransactionStatus(req.ReferenceID, provider.TransactionStatus("success"), "success")
+
+	auditErr := errors.New("reconciliation audit unavailable")
+	service.AuditStore = failTransactionAuditStore{err: auditErr}
+	execution, err := service.Reconcile(context.Background(), req.ReferenceID)
+	if !errors.Is(err, auditErr) { t.Fatalf("expected reconciliation audit error after durable terminal state, got %v", err) }
+	if execution.Result.Status != provider.StatusSuccess { t.Fatalf("expected committed terminal success, got %q", execution.Result.Status) }
+	persisted, ok := service.Store.Get(req.ReferenceID)
+	if !ok || persisted.Execution.Result.Status != provider.StatusSuccess { t.Fatalf("expected durable terminal success, got %#v", persisted) }
+	if got := mock.PurchaseCount(req.ReferenceID); got != 1 { t.Fatalf("reconciliation audit failure must not authorize provider resubmission, got %d", got) }
+
+	// Reconciliation reads the provider status again; it must converge without Purchase.
+	execution, err = service.Reconcile(context.Background(), req.ReferenceID)
+	if err != nil || execution.Result.Status != provider.StatusSuccess { t.Fatalf("expected repeated reconciliation to converge idempotently, got execution=%#v err=%v", execution, err) }
+	if got := mock.PurchaseCount(req.ReferenceID); got != 1 { t.Fatalf("reconciliation audit failure must not authorize a second provider submission, got %d", got) }
+}
+
+func TestServiceAuditReadFailureCannotAuthorizeProviderAction(t *testing.T) {
+	mock := Mock.New(Mock.Config{
+		Products:       []provider.Product{{Code: "pln20", Name: "PLN 20"}},
+		ProviderCode:   "00",
+		Message:        "pending",
+		PurchaseStatus: provider.StatusPending,
+		Price:          20000,
+	})
+	auditErr := context.DeadlineExceeded
+	service := newAuditTestService(t, mock, &auditReadFailureStore{err: auditErr})
+
+	req := PurchaseRequest{ProductCode: "pln20", CustomerNo: "08123456789", ReferenceID: "ref-audit-read-boundary", Amount: 20000}
+	execution, err := service.Purchase(context.Background(), req)
+	if !errors.Is(err, auditErr) {
+		t.Fatalf("expected audit error to remain observable, got execution=%#v err=%v", execution, err)
+	}
+	if execution.Result.Status != provider.StatusPending {
+		t.Fatalf("expected pending state after audit failure, got %q", execution.Result.Status)
+	}
+	if got := mock.PurchaseCount(req.ReferenceID); got != 1 {
+		t.Fatalf("expected one initial provider submission, got %d", got)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 0)
+	defer cancel()
+	events, readErr := service.AuditStore.(interface {
+		AllContextE(context.Context, string) ([]TransactionAuditEvent, error)
+	}).AllContextE(ctx, req.ReferenceID)
+	if !errors.Is(readErr, auditErr) {
+		t.Fatalf("expected audit read deadline error to remain observable, got %v", readErr)
+	}
+	if events != nil {
+		t.Fatalf("deadline audit read must not expose partial history, got %#v", events)
+	}
+
+	retry, retryErr := service.Purchase(context.Background(), req)
+	if !errors.Is(retryErr, auditErr) {
+		t.Fatalf("expected idempotent purchase to retain audit error, got execution=%#v err=%v", retry, retryErr)
+	}
+	if retry.Result.Status != provider.StatusPending {
+		t.Fatalf("expected committed pending state on idempotent retry, got %q", retry.Result.Status)
+	}
+	if got := mock.PurchaseCount(req.ReferenceID); got != 1 {
+		t.Fatalf("audit read failure must not authorize provider resubmission, got %d submissions", got)
+	}
+}
+
+var _ ContextReadTransactionAuditStore = (*auditReadFailureStore)(nil)
+
+type auditReadFailureStore struct {
+	err error
+}
+
+func (s *auditReadFailureStore) Append(TransactionAuditEvent) error { return s.err }
+func (s *auditReadFailureStore) All(string) []TransactionAuditEvent { return nil }
+func (s *auditReadFailureStore) AllContextE(context.Context, string) ([]TransactionAuditEvent, error) {
+	return nil, s.err
+}
+
+func TestServiceAuditStoreCompatibilityReadRemainsNonAuthoritative(t *testing.T) {
+	store := NewMemoryTransactionAuditStore()
+	if _, ok := interface{}(store).(ContextReadTransactionAuditStore); !ok {
+		t.Fatal("memory audit store must expose the error-aware read capability")
+	}
+	if events := store.All("unknown-reference"); events != nil {
+		t.Fatalf("compatibility All must remain an observational empty read, got %#v", events)
+	}
+}
