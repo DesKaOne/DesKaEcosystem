@@ -1325,3 +1325,6 @@ Commits:
 CI gate: pending verification for the latest regression-test commit. The previous status-document gate remains green at IndoChain CI #1162 (run 36264768458). This milestone is not considered complete until the latest implementation/test commit passes Tidy, Test, and Vet.
 
 Limitation: this is still a development proof-of-lock boundary. The runtime has not yet been switched to a fully separate prevote/precommit aggregation lifecycle, and no production BFT locking algorithm, signature aggregation, validator-set transition, or network round synchronization is frozen by this milestone.
+
+
+CI correction follow-up: IndoChain CI #1170 (run 36265180575) failed in Test because VoteAggregator still accepted only the legacy MessageTypeVote and rejected the new explicit MessageTypePrecommit. The root cause was isolated from the job log; Tidy passed and the failure was confined to the new consensus tests. Commit ff9f13bd81625adfefb197f051854326a1d3a1e3 widens the existing aggregation boundary to accept legacy Vote, explicit Prevote, and explicit Precommit messages without changing duplicate-vote, membership, quorum, or cloning invariants. A fresh CI gate is required.
