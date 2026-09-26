@@ -5860,3 +5860,40 @@ Completed:
 
 **#134 — PostgreSQL Audit Store Error Taxonomy Review:** verify wrapped audit read/append errors preserve errors.Is matching and distinguish cancellation/deadline from ordinary database failures without changing transaction authority.
 
+
+### 134. Milestone Update — PostgreSQL Audit Store Error Taxonomy Review
+
+**Date:** 2026-09-26
+
+Completed:
+
+- locked the PostgreSQL audit append/read error taxonomy with deterministic `errors.Is` coverage;
+- verified ordinary append database failures preserve their sentinel identity through the adapter's wrapped error;
+- added explicit append deadline coverage and verified `context.DeadlineExceeded` is preserved distinctly from `context.Canceled`;
+- verified query, scan-path, and rows-iteration failures preserve their sentinel identity through the adapter's wrapped errors;
+- verified ordinary query/scan/iteration failures are not misclassified as `context.Canceled` or `context.DeadlineExceeded`;
+- retained the existing nil-result behavior for canceled/deadline/read-error paths so partial audit history is never exposed after an error;
+- no production audit-store implementation change was required because existing `%w` wrapping already preserves the underlying error taxonomy;
+- no transaction authority, provider submission authority, retry/failover behavior, ledger mutation, treasury movement, or provider funding behavior was broadened.
+
+### Safety Boundary
+
+- `context.Canceled` and `context.DeadlineExceeded` remain operational request-control outcomes only;
+- ordinary database/query/scan/iteration errors remain distinguishable operational persistence failures;
+- error classification cannot authorize provider retry, failover, resubmission, or financial state mutation;
+- transaction persistence remains the authoritative transaction-state boundary and audit remains observational evidence only.
+
+### Verification
+
+- test implementation commit: `47a7bfdb8278476978150ed6f6b5cdcf6198a98d`;
+- exact branch HEAD after this status documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before this milestone is considered closed.
+
+### Known Limitations
+
+- the deterministic fixture validates adapter error taxonomy and `errors.Is` semantics without reproducing every PostgreSQL wire/network failure timing variant;
+- real PostgreSQL integration remains the boundary for driver-specific error behavior;
+- compatibility `All()` intentionally flattens read errors to nil and remains unsuitable when callers require error classification.
+
+### Next Milestone
+
+**#135 — PostgreSQL Audit Integration Recovery Observability:** verify audit append/read failures remain diagnosable across real PostgreSQL integration/restart scenarios without turning audit state into transaction authority.
