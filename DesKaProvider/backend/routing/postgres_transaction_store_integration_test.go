@@ -139,7 +139,7 @@ func TestPostgresTransactionStoreIntegration(t *testing.T) {
 	if _, err := conn.ExecContext(ctx, "SET search_path TO public"); err != nil {
 		t.Fatalf("set pinned search path: %v", err)
 	}
-	store, err := NewPostgresTransactionStore(conn)
+	store, err = NewPostgresTransactionStore(conn)
 	if err != nil {
 		t.Fatal(err)
 	}
