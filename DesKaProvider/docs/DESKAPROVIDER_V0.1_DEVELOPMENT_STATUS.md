@@ -6907,3 +6907,40 @@ Completed:
 ### Next Milestone
 
 **#156 — PostgreSQL Audit/Transaction Cross-Read Restart Idempotency:** verify repeated reads after restart remain stable and do not append new audit evidence or mutate transaction state, including terminal-looking audit history.
+
+
+### 156. Milestone Update — PostgreSQL Audit/Transaction Cross-Read Restart Idempotency
+
+**Date:** 2026-09-27
+
+Completed:
+
+- added real-PostgreSQL integration coverage for repeated audit and transaction reads after database connection close/reopen;
+- verified the first and second restart reads return identical persisted audit history and identical transaction state;
+- verified repeated reads do not append new audit evidence, overwrite existing evidence, or mutate the persisted transaction row;
+- verified terminal-looking audit evidence still cannot upgrade the independently persisted transaction state from `pending`;
+- verified persistence counts remain stable after repeated restart reads;
+- no production audit-store or transaction-store implementation change was required;
+- no transaction authority, provider submission authority, retry/failover behavior, ledger mutation, treasury movement, or provider funding behavior was broadened.
+
+### Safety Boundary
+
+- restart read idempotency is an observational persistence property only;
+- repeated audit reads do not replay, re-emit, deduplicate, or mutate transaction execution;
+- audit history cannot upgrade or override transaction state;
+- transaction persistence remains the authoritative transaction-state and idempotency boundary.
+
+### Verification
+
+- test implementation commit: `7ae6a8a5e2d8596b221f815ce12ccd467e7c0b5b`;
+- exact branch HEAD after this status documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before this milestone is considered closed.
+
+### Known Limitations
+
+- the scenario validates repeated reads after one database connection close/reopen cycle and does not cover every crash-recovery or distributed-reader topology;
+- repeated reads are checked for persistence stability but do not establish idempotency semantics for external consumers that independently trigger new audit writes;
+- audit remains operational evidence and is not a financial source of truth.
+
+### Next Milestone
+
+**#157 — PostgreSQL Audit/Transaction Cross-Read Concurrency Stability:** verify repeated concurrent cross-domain reads remain stable while audit and transaction records are already committed, without introducing locks or cross-domain authority.
