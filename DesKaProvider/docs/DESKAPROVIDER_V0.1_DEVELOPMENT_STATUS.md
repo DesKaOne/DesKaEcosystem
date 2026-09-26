@@ -6627,3 +6627,17 @@ Completed:
 
 - corrective test commit: `a78b0781376fad2aaab1da5efe95fbdb84aee647`;
 - exact branch HEAD after this documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before milestone #151 is considered closed.
+
+### 151. Verification Correction — Dedicated Concurrent Reader
+
+**Date:** 2026-09-26
+
+- corrected the concurrent audit/transaction conflict integration test to use a dedicated reader connection with its own isolated `search_path`;
+- preserved separate connections for the durable transaction writer, contradictory audit writer, and pre/post-commit reader observations;
+- no production behavior changed;
+- previous CI failure was caused by the integration test reader session, not by the transaction or audit production boundaries.
+
+**Verification**
+
+- corrective test commit: `5048d22678869e7a3fd7bc9de9757ab769482675`;
+- exact branch HEAD after this documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before milestone #151 is considered closed.
