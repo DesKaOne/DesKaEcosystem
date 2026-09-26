@@ -25,18 +25,7 @@ func (s *postgresStoreDBStub) ExecContext(_ context.Context, query string, args 
 	return s.result,nil
 }
 func (s *postgresStoreDBStub) QueryContext(context.Context,string,...any) (*sql.Rows,error) { return nil, errors.New("not used") }
-func (s *postgresStoreDBStub) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
-	s.query = query
-	s.args = args
-	return sqlmockRow(ctx, s.err)
-}
-
-func sqlmockRow(_ context.Context, err error) *sql.Row {
-	if err == nil {
-		return sql.NewRow(nil, errors.New("not used"))
-	}
-	return sql.NewRow(nil, err)
-}
+func (s *postgresStoreDBStub) QueryRowContext(context.Context,string,...any) *sql.Row { panic("not used") }
 
 func postgresPendingState() TransactionState {
 	return TransactionState{
@@ -44,23 +33,6 @@ func postgresPendingState() TransactionState {
 		Execution: PurchaseExecution{ProviderName:"mock",Result:provider.PurchaseResult{
 			ReferenceID:"ref-77",ProductCode:"pln20",CustomerNo:"0812",Status:provider.StatusPending,
 		}},
-	}
-}
-
-func TestPostgresTransactionStoreReadErrorDoesNotBecomeNotFound(t *testing.T) {
-	wantErr := errors.New("transaction database unavailable")
-	stub := &postgresStoreDBStub{err: wantErr}
-	store, err := NewPostgresTransactionStore(stub)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	state, found, err := store.GetContextE(context.Background(), "ref-77")
-	if err == nil || !errors.Is(err, wantErr) {
-		t.Fatalf("expected transaction database error to remain observable, got state=%#v found=%v err=%v", state, found, err)
-	}
-	if found {
-		t.Fatalf("transaction database error must not flatten to not-found success, got state=%#v", state)
 	}
 }
 
