@@ -3651,6 +3651,149 @@ func TestPostgresCrossDomainRecoveryOrderingAcrossSequentialCommits(t *testing.T
 	}
 }
 
+func TestPostgresCrossDomainRecoveryOrderingSurvivesRestart(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	schema := "audit_transaction_restart_ordering_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatalf("create isolated schema: %v", err)
+	}
+	cleanup := func() { _, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE") }
+	t.Cleanup(cleanup)
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set search path: %v", err)
+	}
+	applyPostgresMigration(t, db)
+
+	transactionStore, err := NewPostgresTransactionStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	auditStore, err := NewPostgresTransactionAuditStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	state := postgresPendingState()
+	state.Request.ReferenceID = postgresIntegrationReference()
+	state.Execution.Result.ReferenceID = state.Request.ReferenceID
+	if err := transactionStore.PutContext(ctx, state); err != nil {
+		t.Fatalf("persist baseline transaction: %v", err)
+	}
+	baseline, found, err := transactionStore.GetContextE(ctx, state.Request.ReferenceID)
+	if err != nil || !found {
+		t.Fatalf("read baseline transaction: found=%v err=%v", found, err)
+	}
+	if baseline.Version != 1 {
+		t.Fatalf("expected initial durable version 1, got %d", baseline.Version)
+	}
+
+	createdAt := time.Now().UTC().Truncate(time.Microsecond)
+	auditEvents := []TransactionAuditEvent{
+		{
+			ReferenceID:  state.Request.ReferenceID,
+			Action:       "RESTART_AUDIT_ONE",
+			Next:         string(provider.StatusPending),
+			ProviderName: state.Execution.ProviderName,
+			Message:      "audit before transaction commit",
+			CreatedAt:    createdAt,
+		},
+		{
+			ReferenceID:  state.Request.ReferenceID,
+			Action:       "RESTART_AUDIT_TWO",
+			Previous:     string(provider.StatusPending),
+			Next:         string(provider.StatusSuccess),
+			ProviderName: state.Execution.ProviderName,
+			Message:      "audit after transaction commit",
+			CreatedAt:    createdAt.Add(time.Microsecond),
+		},
+	}
+	if err := auditStore.AppendContext(ctx, auditEvents[0]); err != nil {
+		t.Fatalf("persist first audit event: %v", err)
+	}
+
+	next := baseline
+	next.Execution.Result.Status = provider.StatusSuccess
+	next.Execution.Result.ProviderCode = "00"
+	next.Execution.Result.Message = "transaction committed before restart"
+	next.Execution.Result.SerialNumber = "SN-RESTART"
+	next.Version = baseline.Version + 1
+	if err := transactionStore.PutIfCurrentContext(ctx, state.Request.ReferenceID, baseline, next); err != nil {
+		t.Fatalf("persist transaction commit: %v", err)
+	}
+	if err := auditStore.AppendContext(ctx, auditEvents[1]); err != nil {
+		t.Fatalf("persist second audit event: %v", err)
+	}
+
+	beforeAudit, err := auditStore.AllContextE(ctx, state.Request.ReferenceID)
+	if err != nil {
+		t.Fatalf("read audit before restart: %v", err)
+	}
+	if len(beforeAudit) != 2 || beforeAudit[0] != auditEvents[0] || beforeAudit[1] != auditEvents[1] {
+		t.Fatalf("unexpected audit history before restart: %#v", beforeAudit)
+	}
+	beforeTransaction, found, err := transactionStore.GetContextE(ctx, state.Request.ReferenceID)
+	if err != nil || !found {
+		t.Fatalf("read transaction before restart: found=%v err=%v", found, err)
+	}
+	if beforeTransaction.Request != next.Request ||
+		beforeTransaction.Execution.ProviderName != next.Execution.ProviderName ||
+		beforeTransaction.Execution.Result != next.Execution.Result ||
+		beforeTransaction.Version != next.Version {
+		t.Fatalf("unexpected transaction before restart: %#v", beforeTransaction)
+	}
+
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := sql.Open("pgx", os.Getenv("DESKAPROVIDER_POSTGRES_DSN"))
+	if err != nil {
+		t.Fatalf("reopen postgres: %v", err)
+	}
+	defer reopened.Close()
+	if err := reopened.PingContext(ctx); err != nil {
+		t.Fatalf("ping reopened postgres: %v", err)
+	}
+	if _, err := reopened.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("restore search path after restart: %v", err)
+	}
+
+	restartedTransactionStore, err := NewPostgresTransactionStore(reopened)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restartedAuditStore, err := NewPostgresTransactionAuditStore(reopened)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	afterAudit, err := restartedAuditStore.AllContextE(ctx, state.Request.ReferenceID)
+	if err != nil {
+		t.Fatalf("read audit after restart: %v", err)
+	}
+	if len(afterAudit) != len(beforeAudit) {
+		t.Fatalf("audit history length changed after restart: before=%d after=%d", len(beforeAudit), len(afterAudit))
+	}
+	for i := range beforeAudit {
+		if afterAudit[i] != beforeAudit[i] {
+			t.Fatalf("audit history ordering/state changed after restart at %d: before=%#v after=%#v", i, beforeAudit[i], afterAudit[i])
+		}
+	}
+
+	afterTransaction, found, err := restartedTransactionStore.GetContextE(ctx, state.Request.ReferenceID)
+	if err != nil || !found {
+		t.Fatalf("read transaction after restart: found=%v err=%v", found, err)
+	}
+	if afterTransaction.Request != beforeTransaction.Request ||
+		afterTransaction.Execution.ProviderName != beforeTransaction.Execution.ProviderName ||
+		afterTransaction.Execution.Result != beforeTransaction.Execution.Result ||
+		afterTransaction.Version != beforeTransaction.Version {
+		t.Fatalf("transaction state changed after restart: before=%#v after=%#v", beforeTransaction, afterTransaction)
+	}
+}
+
 func TestPostgresTransactionAuditStoreAppendFailureThenRecovery(t *testing.T) {
 	db := postgresIntegrationDB(t)
 	schema := "audit_append_recovery_" + strconv.FormatInt(time.Now().UnixNano(), 10)
