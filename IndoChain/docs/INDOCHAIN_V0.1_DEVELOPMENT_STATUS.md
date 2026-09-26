@@ -1375,4 +1375,4 @@ Milestone ini menghubungkan bukti lock dari explicit precommit dengan timeout ev
 
 Regression coverage mencakup signed proof round-trip, conflicting proof, unproven lock rejection, runtime proof adoption, higher/lower lock-round behavior, serta defensive-copy boundaries.
 
-Status CI untuk commit implementasi terakhir masih menunggu completion; release gate belum dinyatakan hijau sampai workflow selesai.
+CI gate untuk implementasi milestone ini: **CI #1230 — SUCCESS**; Tidy/Test/Vet passed pada commit `5234e26866c1bcb11831f3fa737c8d8b97b5cb30`.
