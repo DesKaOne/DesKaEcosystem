@@ -1697,6 +1697,91 @@ func TestPostgresContextCancellationPreservesDurableState(t *testing.T) {
 	}
 }
 
+func TestPostgresSequentialPendingTransitionVersionIntegrity(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	schema := "sequential_version_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatalf("create isolated schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
+	})
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set isolated search path: %v", err)
+	}
+	applyPostgresMigration(t, db)
+
+	store, err := NewPostgresTransactionStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	state := postgresPendingState()
+	state.Request.ReferenceID = postgresIntegrationReference()
+	state.Execution.Result.ReferenceID = state.Request.ReferenceID
+	if err := store.PutContext(ctx, state); err != nil {
+		t.Fatalf("persist initial pending transaction: %v", err)
+	}
+
+	first, ok := store.GetContext(ctx, state.Request.ReferenceID)
+	if !ok {
+		t.Fatal("initial pending transaction missing")
+	}
+	if first.Version != 1 {
+		t.Fatalf("expected initial version 1, got %d", first.Version)
+	}
+
+	second := first
+	second.Execution.Result.Message = "pending-refresh-1"
+	if err := store.PutContext(ctx, second); err != nil {
+		t.Fatalf("persist first pending transition: %v", err)
+	}
+
+	afterFirst, ok := store.GetContext(ctx, state.Request.ReferenceID)
+	if !ok {
+		t.Fatal("transaction missing after first pending transition")
+	}
+	if afterFirst.Version != first.Version+1 {
+		t.Fatalf("expected version to advance after first pending transition, before=%d after=%d", first.Version, afterFirst.Version)
+	}
+	if afterFirst.Execution.Result.Status != provider.StatusPending || afterFirst.Execution.Result.Message != "pending-refresh-1" {
+		t.Fatalf("unexpected first pending transition state: %#v", afterFirst)
+	}
+
+	third := afterFirst
+	third.Execution.Result.Message = "pending-refresh-2"
+	if err := store.PutContext(ctx, third); err != nil {
+		t.Fatalf("persist second pending transition: %v", err)
+	}
+
+	afterSecond, ok := store.GetContext(ctx, state.Request.ReferenceID)
+	if !ok {
+		t.Fatal("transaction missing after second pending transition")
+	}
+	if afterSecond.Version != afterFirst.Version+1 {
+		t.Fatalf("expected version to advance sequentially, first=%d second=%d", afterFirst.Version, afterSecond.Version)
+	}
+	if afterSecond.Execution.Result.Message != "pending-refresh-2" {
+		t.Fatalf("unexpected second pending transition state: %#v", afterSecond)
+	}
+
+	stale := afterFirst
+	stale.Execution.Result.Message = "stale-write"
+	if err := store.PutIfCurrentContext(ctx, state.Request.ReferenceID, afterFirst, stale); !errors.Is(err, ErrTransactionStateConflict) {
+		t.Fatalf("expected stale version transition to conflict, got %v", err)
+	}
+
+	final, ok := store.GetContext(ctx, state.Request.ReferenceID)
+	if !ok {
+		t.Fatal("transaction missing after stale version rejection")
+	}
+	if final.Version != afterSecond.Version || final.Execution.Result.Message != afterSecond.Execution.Result.Message {
+		t.Fatalf("stale version changed durable state: before=%#v after=%#v", afterSecond, final)
+	}
+}
 func TestPostgresMigrationVerification(t *testing.T) {
 	sqlText := postgresMigrationSQL(t)
 	required := []string{
