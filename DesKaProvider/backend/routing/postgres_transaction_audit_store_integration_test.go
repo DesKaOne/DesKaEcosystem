@@ -2259,6 +2259,134 @@ func TestPostgresAuditFirstCommitDoesNotAuthorizeTransactionTransition(t *testin
 	}
 }
 
+func TestPostgresAuditTransactionCrossReadConvergesAfterBothCommits(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	schema := "audit_transaction_convergence_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatalf("create isolated schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
+	})
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set search path: %v", err)
+	}
+	applyPostgresMigration(t, db)
+
+	auditReaderConn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatalf("open audit reader connection: %v", err)
+	}
+	defer auditReaderConn.Close()
+	if _, err := auditReaderConn.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set audit reader search path: %v", err)
+	}
+	auditStore, err := NewPostgresTransactionAuditStore(auditReaderConn)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	transactionReaderConn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatalf("open transaction reader connection: %v", err)
+	}
+	defer transactionReaderConn.Close()
+	if _, err := transactionReaderConn.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set transaction reader search path: %v", err)
+	}
+	transactionStore, err := NewPostgresTransactionStore(transactionReaderConn)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	request := PurchaseRequest{
+		ProductCode: "pln20",
+		CustomerNo:  "08123456789",
+		ReferenceID: "cross-read-convergence-ref",
+		Amount:      20000,
+	}
+	createdAt := time.Now().UTC().Truncate(time.Microsecond)
+	first := TransactionAuditEvent{
+		ReferenceID:  request.ReferenceID,
+		Action:       "PURCHASE_PENDING",
+		Next:         string(provider.StatusPending),
+		ProviderName: "mock",
+		Message:      "pending committed before transaction state",
+		CreatedAt:    createdAt,
+	}
+	second := TransactionAuditEvent{
+		ReferenceID:  request.ReferenceID,
+		Action:       "PURCHASE_RESULT",
+		Previous:     string(provider.StatusPending),
+		Next:         string(provider.StatusSuccess),
+		ProviderName: "mock",
+		Message:      "terminal evidence committed before transaction state",
+		CreatedAt:    createdAt,
+	}
+
+	writerConn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatalf("open convergence writer connection: %v", err)
+	}
+	defer writerConn.Close()
+	if _, err := writerConn.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set convergence writer search path: %v", err)
+	}
+
+	auditTx, err := writerConn.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatalf("begin audit commit transaction: %v", err)
+	}
+	for _, event := range []TransactionAuditEvent{first, second} {
+		if _, err := auditTx.ExecContext(ctx, postgresAuditAppendSQL,
+			event.ReferenceID, event.Action, event.Previous, event.Next,
+			event.ProviderName, event.Message, event.CreatedAt.UTC(),
+		); err != nil {
+			auditTx.Rollback()
+			t.Fatalf("stage audit event %s: %v", event.Action, err)
+		}
+	}
+	if err := auditTx.Commit(); err != nil {
+		t.Fatalf("commit audit evidence: %v", err)
+	}
+
+	pending := TransactionState{
+		Request: request,
+		Execution: PurchaseExecution{
+			ProviderName: "mock",
+			Result: provider.PurchaseResult{
+				ReferenceID: request.ReferenceID,
+				CustomerNo:  request.CustomerNo,
+				ProductCode: request.ProductCode,
+				Status:       provider.StatusPending,
+			},
+		},
+		Version: 1,
+	}
+	if err := transactionStore.PutContext(ctx, pending); err != nil {
+		t.Fatalf("commit transaction state after audit evidence: %v", err)
+	}
+
+	auditEvents, err := auditStore.AllContextE(ctx, request.ReferenceID)
+	if err != nil {
+		t.Fatalf("read converged audit history: %v", err)
+	}
+	if len(auditEvents) != 2 || auditEvents[0] != first || auditEvents[1] != second {
+		t.Fatalf("unexpected converged audit history: %#v", auditEvents)
+	}
+
+	transactionState, ok, err := transactionStore.GetContextE(ctx, request.ReferenceID)
+	if err != nil || !ok {
+		t.Fatalf("read converged transaction state: ok=%v err=%v", ok, err)
+	}
+	if transactionState.Execution.Result.Status != provider.StatusPending {
+		t.Fatalf("audit terminal-looking evidence must not upgrade transaction state, got %q", transactionState.Execution.Result.Status)
+	}
+}
+
 func TestPostgresTransactionAuditStoreAppendFailureThenRecovery(t *testing.T) {
 	db := postgresIntegrationDB(t)
 	schema := "audit_append_recovery_" + strconv.FormatInt(time.Now().UnixNano(), 10)
