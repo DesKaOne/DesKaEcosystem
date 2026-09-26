@@ -45,12 +45,16 @@ func timeoutMessageRules(state RoundState) ValidationRules {
 }
 
 
-func timeoutLockProof(t *testing.T, state RoundState, validators ValidatorSet, power VotingPowerSet, proposal string) LockProof {
+func timeoutLockProof(t *testing.T, state RoundState, validators ValidatorSet, power VotingPowerSet, proposal string, signerA, signerB timeoutTestSigner) LockProof {
 	t.Helper()
-	votes := []Message{
-		runtimeMessage(state, "validator-a", MessageTypePrecommit, proposal),
-		runtimeMessage(state, "validator-b", MessageTypePrecommit, proposal),
-	}
+	voteA := runtimeMessage(state, "validator-a", MessageTypePrecommit, proposal)
+	voteB := runtimeMessage(state, "validator-b", MessageTypePrecommit, proposal)
+	var err error
+	voteA, err = voteA.Sign(signerA)
+	if err != nil { t.Fatal(err) }
+	voteB, err = voteB.Sign(signerB)
+	if err != nil { t.Fatal(err) }
+	votes := []Message{voteA, voteB}
 	certificate, err := NewPrecommitCertificate(state, validators, power, QuorumThreshold{Numerator: 2, Denominator: 3}, []byte(proposal), votes)
 	if err != nil { t.Fatal(err) }
 	proof, err := NewLockProof(state.Round, []byte(proposal), certificate)
@@ -215,7 +219,7 @@ func TestTimeoutMessagesCarryCanonicalLockProof(t *testing.T) {
 		"validator-a": publicA, "validator-b": publicB,
 	}}
 	rules := timeoutMessageRules(state)
-	proof := timeoutLockProof(t, state, validators, power, "locked-proposal")
+	proof := timeoutLockProof(t, state, validators, power, "locked-proposal", signerA, signerB)
 
 	msgA, err := NewTimeoutMessageWithLockProof(state, []byte("validator-a"), state.Round+1, proof, signerA)
 	if err != nil { t.Fatal(err) }
@@ -245,8 +249,8 @@ func TestTimeoutCertificateRejectsConflictingLockProof(t *testing.T) {
 		"validator-a": publicA, "validator-b": publicB,
 	}}
 	rules := timeoutMessageRules(state)
-	proofA := timeoutLockProof(t, state, validators, power, "lock-a")
-	proofB := timeoutLockProof(t, state, validators, power, "lock-b")
+	proofA := timeoutLockProof(t, state, validators, power, "lock-a", signerA, signerB)
+	proofB := timeoutLockProof(t, state, validators, power, "lock-b", signerA, signerB)
 	msgA, err := NewTimeoutMessageWithLockProof(state, []byte("validator-a"), state.Round+1, proofA, signerA)
 	if err != nil { t.Fatal(err) }
 	msgB, err := NewTimeoutMessageWithLockProof(state, []byte("validator-b"), state.Round+1, proofB, signerB)
