@@ -2155,7 +2155,15 @@ func TestPostgresAuditFirstCommitDoesNotAuthorizeTransactionTransition(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	transactionStore, err := NewPostgresTransactionStore(db)
+	transactionReaderConn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatalf("open transaction reader connection: %v", err)
+	}
+	defer transactionReaderConn.Close()
+	if _, err := transactionReaderConn.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set transaction reader search path: %v", err)
+	}
+	transactionStore, err := NewPostgresTransactionStore(transactionReaderConn)
 	if err != nil {
 		t.Fatal(err)
 	}
