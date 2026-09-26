@@ -1355,3 +1355,6 @@ CI correction follow-up: IndoChain CI #1186 (run 36265792077) exposed downstream
 
 
 CI correction follow-up: IndoChain CI #1190 (run 36265853559) showed legacy integration tests reached Precommit but had no explicit precommit message, so FinalizeProposal correctly rejected the empty precommit certificate. To preserve existing v0.1 integration callers without weakening the new certificate boundary, a legacy MessageTypeVote that reaches prevote quorum is now mirrored into the explicit precommit evidence bucket after validation. Explicit MessageTypePrecommit remains the canonical path for new code; FinalizeProposal still derives finality only from the precommit bucket.
+
+
+CI correction: IndoChain CI #1196 (run 36265903053) failed on an implementation compile error: the legacyVote compatibility flag was referenced at prevote-quorum handling but was not declared in the current AddVote scope. Commit bbcfcae3a9b102b7ff026b75f77655816097fbf2 adds the flag at the start of AddVote. No protocol behavior beyond the intended compatibility path changed.
