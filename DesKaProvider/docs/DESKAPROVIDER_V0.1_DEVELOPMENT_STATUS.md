@@ -7212,3 +7212,40 @@ Completed:
 ### Next Milestone
 
 **#161 — PostgreSQL Audit/Transaction Cross-Read Recovery Concurrency:** verify repeated concurrent cross-domain reads during recovery do not expose inconsistent domain state or introduce cross-domain execution authority.
+
+
+### 161. Milestone Update — PostgreSQL Audit/Transaction Cross-Read Recovery Concurrency
+
+**Date:** 2026-09-27
+
+Completed:
+
+- added real-PostgreSQL integration coverage with multiple concurrent readers repeatedly reading both durable transaction state and durable audit history while recovery connections are intentionally closed and recreated;
+- verified transaction readers continue to observe the same previously durable transaction state and audit readers continue to observe the same previously durable audit evidence during independent recovery failures;
+- verified closed adapters fail in their own persistence domain without affecting healthy reads from the other domain;
+- verified no reader observes synthesized, empty-success, mixed, or cross-reconstructed state during repeated recovery exercises;
+- confirmed persistence-domain recovery remains an access/recovery concern only: transaction state is still authoritative for execution/idempotency and audit remains observational evidence;
+- no production audit-store or transaction-store implementation change was required;
+- no cross-domain locking, transaction authority, provider submission authority, retry/failover behavior, ledger mutation, treasury movement, or provider funding behavior was broadened.
+
+### Safety Boundary
+
+- concurrent recovery failures remain isolated to the affected persistence connection;
+- audit reads cannot manufacture transaction state from missing transaction reads, and transaction reads cannot manufacture audit history from missing audit reads;
+- repeated concurrent observations do not change or authorize persisted transaction execution state;
+- transaction persistence remains the authoritative transaction-state and idempotency boundary.
+
+### Verification
+
+- test implementation commit: `2c0adab68b6b9f9babce0d0dcb223fdebcd70b43`;
+- exact branch HEAD after this status documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before this milestone is considered closed.
+
+### Known Limitations
+
+- the concurrency scenario exercises one PostgreSQL deployment and pooled/fresh connections rather than every multi-region, replica-lag, proxy, or distributed-failover topology;
+- the readers validate convergence to already durable baseline records and do not establish a distributed atomic commit protocol across transaction and audit domains;
+- audit remains operational evidence and is not a financial source of truth.
+
+### Next Milestone
+
+**#162 — PostgreSQL Audit/Transaction Cross-Read Recovery After Concurrent Commit:** verify that after a concurrent writer commits in one domain during recovery activity, readers converge to the complete new state only in that domain and never synthesize the change into the other domain.
