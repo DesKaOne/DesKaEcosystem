@@ -3,7 +3,6 @@ package consensus
 import (
 	"bytes"
 	"encoding/binary"
-	"errors"
 	"fmt"
 
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/crypto"
@@ -103,14 +102,6 @@ func NewTimeoutMessageWithLockProof(
 	if len(validatorID) == 0 { return Message{}, ErrMissingSender }
 	if nextRound <= state.Round { return Message{}, ErrInvalidTimeoutRound }
 	if signer == nil { return Message{}, ErrMissingSignature }
-	if err := validateTimeoutLockProof(proof, state, ValidatorSet{}, VotingPowerSet{}); err != nil {
-		// Structural validation is repeated by certificate construction where
-		// validator membership and voting power are available. Here only bind
-		// proposal/round/context shape; avoid pretending this proves quorum.
-		if !errors.Is(err, ErrValidatorNotFound) && !errors.Is(err, ErrVoteSenderNotInVotingPower) && !errors.Is(err, ErrInvalidVotingPowerSet) {
-			return Message{}, err
-		}
-	}
 	encoded, err := EncodeLockProof(proof)
 	if err != nil { return Message{}, err }
 	if proof.LockedRound > state.Round { return Message{}, ErrInvalidTimeoutRound }
