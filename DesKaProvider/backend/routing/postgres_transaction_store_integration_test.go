@@ -872,6 +872,49 @@ func TestPostgresTransactionStoreContextReadHonorsCancellation(t *testing.T) {
 	}
 }
 
+
+type postgresExecErrorDB struct {
+	err error
+}
+
+func (d postgresExecErrorDB) ExecContext(context.Context, string, ...any) (sql.Result, error) {
+	return nil, d.err
+}
+
+func (postgresExecErrorDB) QueryContext(context.Context, string, ...any) (*sql.Rows, error) {
+	return nil, errors.New("unexpected QueryContext call")
+}
+
+func (postgresExecErrorDB) QueryRowContext(context.Context, string, ...any) *sql.Row {
+	return nil
+}
+
+func TestPostgresTransactionStoreAtomicWritePreservesDatabaseErrorClassification(t *testing.T) {
+	dbErr := errors.New("simulated database outage")
+	store, err := NewPostgresTransactionStore(postgresExecErrorDB{err: dbErr})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending := postgresPendingState()
+	pending.Request.ReferenceID = postgresIntegrationReference()
+	pending.Execution.Result.ReferenceID = pending.Request.ReferenceID
+	next := pending
+	next.Execution.Result.Status = provider.StatusSuccess
+	next.Execution.Result.ProviderCode = "00"
+	next.Execution.Result.Message = "success"
+
+	err = store.PutIfCurrentContext(context.Background(), pending.Request.ReferenceID, pending, next)
+	if err == nil {
+		t.Fatal("expected database error from atomic transition")
+	}
+	if errors.Is(err, ErrTransactionStateConflict) {
+		t.Fatalf("database error must not be classified as transaction-state conflict: %v", err)
+	}
+	if !errors.Is(err, dbErr) {
+		t.Fatalf("database error was not preserved through wrapping: %v", err)
+	}
+}
+
 func TestPostgresMigrationVerification(t *testing.T) {
 	sqlText := postgresMigrationSQL(t)
 	required := []string{
