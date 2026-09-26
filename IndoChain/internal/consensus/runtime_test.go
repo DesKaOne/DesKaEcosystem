@@ -76,17 +76,23 @@ func TestValidatorRuntimeAdvancesAndFinalizesAfterQuorum(t *testing.T) {
 	if err := runtime.AcceptProposal(runtimeMessage(state, "validator-a", MessageTypeProposal, "block-8")); err != nil {
 		t.Fatal(err)
 	}
-	if err := runtime.AddVote(runtimeMessage(state, "validator-a", MessageTypeVote, "block-8")); err != nil {
+	if err := runtime.AddVote(runtimeMessage(state, "validator-a", MessageTypePrevote, "block-8")); err != nil {
 		t.Fatal(err)
 	}
 	if runtime.State().Phase != PhasePrevote {
 		t.Fatalf("expected prevote before quorum, got %v", runtime.State().Phase)
 	}
-	if err := runtime.AddVote(runtimeMessage(state, "validator-b", MessageTypeVote, "block-8")); err != nil {
+	if err := runtime.AddVote(runtimeMessage(state, "validator-b", MessageTypePrevote, "block-8")); err != nil {
 		t.Fatal(err)
 	}
 	if runtime.State().Phase != PhasePrecommit {
-		t.Fatalf("expected precommit after quorum, got %v", runtime.State().Phase)
+		t.Fatalf("expected precommit after prevote quorum, got %v", runtime.State().Phase)
+	}
+	if err := runtime.AddVote(runtimeMessage(runtime.State(), "validator-a", MessageTypePrecommit, "block-8")); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.AddVote(runtimeMessage(runtime.State(), "validator-b", MessageTypePrecommit, "block-8")); err != nil {
+		t.Fatal(err)
 	}
 
 	certificate, err := runtime.FinalizeProposal()
@@ -106,24 +112,24 @@ func TestValidatorRuntimeRejectsVoteConflictingWithLockedProposal(t *testing.T) 
 	if err := runtime.AcceptProposal(runtimeMessage(state, "validator-a", MessageTypeProposal, "block-8")); err != nil {
 		t.Fatal(err)
 	}
-	if err := runtime.AddVote(runtimeMessage(state, "validator-a", MessageTypeVote, "block-8")); err != nil {
+	if err := runtime.AddVote(runtimeMessage(state, "validator-a", MessageTypePrevote, "block-8")); err != nil {
 		t.Fatal(err)
 	}
-	if err := runtime.AddVote(runtimeMessage(state, "validator-b", MessageTypeVote, "block-8")); err != nil {
+	if err := runtime.AddVote(runtimeMessage(state, "validator-b", MessageTypePrevote, "block-8")); err != nil {
 		t.Fatal(err)
 	}
 	if runtime.State().Phase != PhasePrecommit {
 		t.Fatalf("expected precommit after locking proposal, got %v", runtime.State().Phase)
 	}
 
-	err := runtime.AddVote(runtimeMessage(state, "validator-c", MessageTypeVote, "conflicting-block"))
+	err := runtime.AddVote(runtimeMessage(state, "validator-c", MessageTypePrevote, "conflicting-block"))
 	if !errors.Is(err, ErrConflictingLockedProposal) {
 		t.Fatalf("expected locked-proposal conflict, got %v", err)
 	}
 	if runtime.State().Phase != PhasePrecommit {
 		t.Fatalf("runtime phase changed after conflicting locked vote")
 	}
-	if votes := runtime.votes.VotesForPayload([]byte("conflicting-block")); len(votes) != 0 {
+	if votes := runtime.prevotes.VotesForPayload([]byte("conflicting-block")); len(votes) != 0 {
 		t.Fatalf("conflicting vote was recorded: %d", len(votes))
 	}
 }
@@ -133,10 +139,10 @@ func TestValidatorRuntimeAdvancesRoundPreservingLock(t *testing.T) {
 	if err := runtime.AcceptProposal(runtimeMessage(state, "validator-a", MessageTypeProposal, "block-8")); err != nil {
 		t.Fatal(err)
 	}
-	if err := runtime.AddVote(runtimeMessage(state, "validator-a", MessageTypeVote, "block-8")); err != nil {
+	if err := runtime.AddVote(runtimeMessage(state, "validator-a", MessageTypePrevote, "block-8")); err != nil {
 		t.Fatal(err)
 	}
-	if err := runtime.AddVote(runtimeMessage(state, "validator-b", MessageTypeVote, "block-8")); err != nil {
+	if err := runtime.AddVote(runtimeMessage(state, "validator-b", MessageTypePrevote, "block-8")); err != nil {
 		t.Fatal(err)
 	}
 	if err := runtime.AdvanceRound(1); err != nil {
@@ -145,7 +151,7 @@ func TestValidatorRuntimeAdvancesRoundPreservingLock(t *testing.T) {
 	if got := runtime.State(); got.Round != 1 || got.Phase != PhaseProposal {
 		t.Fatalf("unexpected round state after round change: round=%d phase=%v", got.Round, got.Phase)
 	}
-	if runtime.proposal != nil || len(runtime.votes.Votes) != 0 {
+	if runtime.proposal != nil || len(runtime.prevotes.Votes) != 0 {
 		t.Fatal("round-local proposal or votes were not reset")
 	}
 
@@ -160,10 +166,10 @@ func TestValidatorRuntimeRejectsConflictingProposalAfterRoundChange(t *testing.T
 	if err := runtime.AcceptProposal(runtimeMessage(state, "validator-a", MessageTypeProposal, "block-8")); err != nil {
 		t.Fatal(err)
 	}
-	if err := runtime.AddVote(runtimeMessage(state, "validator-a", MessageTypeVote, "block-8")); err != nil {
+	if err := runtime.AddVote(runtimeMessage(state, "validator-a", MessageTypePrevote, "block-8")); err != nil {
 		t.Fatal(err)
 	}
-	if err := runtime.AddVote(runtimeMessage(state, "validator-b", MessageTypeVote, "block-8")); err != nil {
+	if err := runtime.AddVote(runtimeMessage(state, "validator-b", MessageTypePrevote, "block-8")); err != nil {
 		t.Fatal(err)
 	}
 	if err := runtime.AdvanceRound(1); err != nil {
@@ -188,10 +194,10 @@ func TestValidatorRuntimeRejectsRoundChangeAfterFinalization(t *testing.T) {
 	if err := runtime.AcceptProposal(runtimeMessage(state, "validator-a", MessageTypeProposal, "block-8")); err != nil {
 		t.Fatal(err)
 	}
-	if err := runtime.AddVote(runtimeMessage(state, "validator-a", MessageTypeVote, "block-8")); err != nil {
+	if err := runtime.AddVote(runtimeMessage(state, "validator-a", MessageTypePrevote, "block-8")); err != nil {
 		t.Fatal(err)
 	}
-	if err := runtime.AddVote(runtimeMessage(state, "validator-b", MessageTypeVote, "block-8")); err != nil {
+	if err := runtime.AddVote(runtimeMessage(state, "validator-b", MessageTypePrevote, "block-8")); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := runtime.FinalizeProposal(); err != nil {
@@ -210,7 +216,7 @@ func TestValidatorRuntimeDoesNotFinalizeWithoutQuorum(t *testing.T) {
 	if err := runtime.AcceptProposal(runtimeMessage(state, "validator-a", MessageTypeProposal, "block-8")); err != nil {
 		t.Fatal(err)
 	}
-	if err := runtime.AddVote(runtimeMessage(state, "validator-a", MessageTypeVote, "block-8")); err != nil {
+	if err := runtime.AddVote(runtimeMessage(state, "validator-a", MessageTypePrevote, "block-8")); err != nil {
 		t.Fatal(err)
 	}
 	_, err := runtime.FinalizeProposal()
@@ -274,8 +280,8 @@ func TestValidatorRuntimeRejectsBlockProposalFromWrongContext(t *testing.T) {
 func TestValidatorRuntimeExposesClonedFinalityCertificate(t *testing.T) {
 	runtime, state, _, _ := runtimeFixture(t)
 	if err := runtime.AcceptProposal(runtimeMessage(state, "validator-a", MessageTypeProposal, "block-8")); err != nil { t.Fatal(err) }
-	if err := runtime.AddVote(runtimeMessage(state, "validator-a", MessageTypeVote, "block-8")); err != nil { t.Fatal(err) }
-	if err := runtime.AddVote(runtimeMessage(state, "validator-b", MessageTypeVote, "block-8")); err != nil { t.Fatal(err) }
+	if err := runtime.AddVote(runtimeMessage(state, "validator-a", MessageTypePrevote, "block-8")); err != nil { t.Fatal(err) }
+	if err := runtime.AddVote(runtimeMessage(state, "validator-b", MessageTypePrevote, "block-8")); err != nil { t.Fatal(err) }
 	if _, err := runtime.FinalizeProposal(); err != nil { t.Fatal(err) }
 	certificate, err := runtime.FinalizedCertificate(); if err != nil { t.Fatal(err) }
 	certificate.Payload[0] = 'X'
