@@ -2041,12 +2041,6 @@ func TestPostgresConcurrentReadDuringAtomicTransitionSeesCompleteState(t *testin
 		t.Fatalf("insert pending transaction: %v", err)
 	}
 
-	next := pending
-	next.Execution.Result.Status = provider.StatusSuccess
-	next.Execution.Result.ProviderCode = "00"
-	next.Execution.Result.Message = "success"
-	next.Execution.Result.SerialNumber = "SN-ATOMIC"
-
 	conn, err := db.Conn(ctx)
 	if err != nil {
 		t.Fatalf("pin transition connection: %v", err)
@@ -2059,12 +2053,21 @@ func TestPostgresConcurrentReadDuringAtomicTransitionSeesCompleteState(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
+	current, ok := transitionStore.GetContext(ctx, pending.Request.ReferenceID)
+	if !ok {
+		t.Fatal("pending transaction was not visible on dedicated transition connection")
+	}
+	next := current
+	next.Execution.Result.Status = provider.StatusSuccess
+	next.Execution.Result.ProviderCode = "00"
+	next.Execution.Result.Message = "success"
+	next.Execution.Result.SerialNumber = "SN-ATOMIC"
 
 	transitionStarted := make(chan struct{})
 	transitionDone := make(chan error, 1)
 	go func() {
 		close(transitionStarted)
-		transitionDone <- transitionStore.PutIfCurrentContext(ctx, pending.Request.ReferenceID, pending, next)
+		transitionDone <- transitionStore.PutIfCurrentContext(ctx, current.Request.ReferenceID, current, next)
 	}()
 	<-transitionStarted
 
