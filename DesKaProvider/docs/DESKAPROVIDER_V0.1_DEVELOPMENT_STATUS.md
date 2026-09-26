@@ -4862,13 +4862,41 @@ Completed:
 
 ### Verification
 
-- implementation HEAD: `204b45eb241a0461a9d0a6d372f2e5bf1d44ac4a`;
-- the new HEAD must complete CI jobs `test` and `race` successfully before this milestone is considered closed.
+- implementation HEAD: `47e6e1a51bd0d6ff8ca88c78cc0f42753ce47dbd`;
+- CI #1092 / run `36219817809`: **GREEN** for exact HEAD `47e6e1a51bd0d6ff8ca88c78cc0f42753ce47dbd`;
+- CI jobs `test`: success;
+- CI jobs `race`: success;
+- CI job `test` completed `vet`: success.
 
 ### Safety Boundary
 
 - read/transition atomicity is a persistence-integrity property only;
 - no read observation can authorize provider retry, failover, resubmission, customer-ledger mutation, treasury movement, or provider funding.
+
+### 51. Milestone Update — PostgreSQL Restart Read Consistency Boundary
+
+**Date:** 2026-09-26
+
+Completed:
+
+- verified durable PostgreSQL transaction reads remain complete after reconnecting a fresh database session;
+- verified transaction identity, provider identity, terminal status, and version metadata survive reconnect without field-level drift;
+- added deterministic restart/read regression coverage for a terminal transaction recovered after reconnect;
+- preserved transaction persistence as the authoritative transaction state while operational/audit evidence remains non-authoritative.
+
+### Verification
+
+- implementation HEAD: `47e6e1a51bd0d6ff8ca88c78cc0f42753ce47dbd`;
+- CI #1092 / run `36219817809`: **GREEN**;
+- CI jobs `test`: success;
+- CI jobs `race`: success;
+- CI job `test` completed `vet`: success.
+
+### Safety Boundary
+
+- restart read consistency is a persistence/recovery property only;
+- reconnecting a transaction store does not authorize retry, failover, resubmission, customer-ledger mutation, treasury movement, or provider funding;
+- operational and audit evidence remain non-authoritative for transaction state.
 
 ### Next Milestone
 
