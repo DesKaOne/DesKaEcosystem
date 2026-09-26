@@ -4791,8 +4791,6 @@ Completed:
 - stale durable observations remain non-authoritative;
 - versioned transitions cannot authorize provider retry, failover, resubmission, ledger mutation, treasury movement, or provider funding.
 
-### Next Milestone
-
 ### 48. Milestone Update — Restart/Reconciliation Concurrency Boundary
 
 **Date:** 2026-09-26
