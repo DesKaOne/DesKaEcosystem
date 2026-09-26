@@ -5825,3 +5825,38 @@ Completed:
 
 **#133 — PostgreSQL Audit Read Compatibility & Adoption Review:** identify any remaining internal callers that still use compatibility All() and determine whether they should migrate to AllContextE where error classification materially matters, without making audit authoritative.
 
+### 133. Milestone Update — PostgreSQL Audit Read Compatibility & Adoption Review
+
+**Date:** 2026-09-26
+
+Completed:
+
+- audited the current DesKaProvider routing/service source tree for audit-history consumers;
+- confirmed no production/service caller currently uses compatibility TransactionAuditStore.All() to make provider, retry, failover, reconciliation, or transaction-state decisions;
+- kept All() as a compatibility/observational API rather than forcing a needless production migration;
+- retained ContextReadTransactionAuditStore.AllContextE as the explicit error-aware capability for future callers that materially need cancellation, deadline, or database-error classification;
+- added a test-level compile-time capability assertion for the audit read failure fixture and a compatibility test confirming the memory store still exposes the error-aware capability while All() remains observational;
+- no production provider authority, transaction authority, retry/failover behavior, ledger mutation, treasury movement, or provider funding behavior was broadened.
+
+### Safety Boundary
+
+- compatibility All() is not an authorization source and remains unsuitable when the caller needs error classification;
+- AllContextE is the supported error-aware audit-read boundary;
+- transaction persistence remains authoritative for transaction state and idempotency;
+- audit remains operational evidence only.
+
+### Verification
+
+- implementation/test commit: 37f4abb639189c9abf8a001ec7929027e326e40c;
+- exact branch HEAD after this documentation update must pass both push and PR CI with test, vet, and race successful before this milestone is considered closed.
+
+### Known Limitations
+
+- there are currently no production audit-history consumers to migrate, so adoption review is based on the current source tree rather than a production caller migration;
+- compatibility All() intentionally flattens read errors to nil;
+- real PostgreSQL driver/network behavior remains the integration boundary for driver-specific read failures.
+
+### Next Milestone
+
+**#134 — PostgreSQL Audit Store Error Taxonomy Review:** verify wrapped audit read/append errors preserve errors.Is matching and distinguish cancellation/deadline from ordinary database failures without changing transaction authority.
+
