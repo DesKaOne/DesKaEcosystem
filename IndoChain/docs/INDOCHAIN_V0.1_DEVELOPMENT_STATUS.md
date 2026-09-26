@@ -1328,3 +1328,6 @@ Limitation: this is still a development proof-of-lock boundary. The runtime has 
 
 
 CI correction follow-up: IndoChain CI #1170 (run 36265180575) failed in Test because VoteAggregator still accepted only the legacy MessageTypeVote and rejected the new explicit MessageTypePrecommit. The root cause was isolated from the job log; Tidy passed and the failure was confined to the new consensus tests. Commit ff9f13bd81625adfefb197f051854326a1d3a1e3 widens the existing aggregation boundary to accept legacy Vote, explicit Prevote, and explicit Precommit messages without changing duplicate-vote, membership, quorum, or cloning invariants. A fresh CI gate is required.
+
+
+CI verification completed: IndoChain CI #1173 (run 36265218628) for precommit aggregation fix ff9f13bd81625adfefb197f051854326a1d3a1e3 completed successfully. Tidy, Test, and Vet all passed. The explicit precommit/lock-proof milestone is now code/test-green; the status-document commit below is still subject to its own CI gate.
