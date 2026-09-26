@@ -5005,3 +5005,32 @@ Completed:
 
 1. continue auditing PostgreSQL reconciliation behavior for cancellation/error boundaries after durable conflict recovery;
 2. preserve the no-resubmission and no-financial-authorization invariants across all reconciliation outcomes.
+
+
+### 39. Milestone Update — PostgreSQL Atomic Reconciliation Boundary
+
+**Date:** 2026-09-26
+
+Completed:
+
+- repaired PostgreSQL integration-test scope/ownership around isolated schemas and reopened database handles;
+- corrected the PR CI checkout boundary so pull-request validation executes the actual head commit instead of a stale synthetic merge ref;
+- added deterministic coverage for concurrent service reconciliation converging on one durable terminal transaction without provider resubmission;
+- preserved compare-and-transition semantics through the PostgreSQL conditional update and transaction identity checks.
+
+### Verification
+
+- implementation HEAD: `f325259d4c0e1438927ec065e100dd9249628015`;
+- CI #1120 / run `36221718448`: **GREEN**;
+- CI jobs `test`: success;
+- CI jobs `race`: success.
+
+### Safety Boundary
+
+- PostgreSQL remains the transaction-state authority for persisted purchase state;
+- concurrent reconciliation may observe the same provider terminal result but cannot create a second provider submission;
+- audit and operational evidence remain non-authoritative for retry, failover, resubmission, ledger mutation, treasury movement, or provider funding.
+
+### Next milestone
+
+**#117 — Reconciliation Conflict Matrix Review**: expand deterministic coverage across identical terminal convergence, conflicting terminal observations, stale pending versions, and restart boundaries without widening financial authority.
