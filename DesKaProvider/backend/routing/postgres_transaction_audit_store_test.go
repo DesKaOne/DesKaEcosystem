@@ -69,10 +69,12 @@ func TestPostgresTransactionAuditStoreAppendContextPropagatesCancellation(t *tes
 }
 
 type postgresAuditRowsScenario struct {
-	queryErr error
-	rows     [][]driver.Value
-	scanErr  error
-	rowsErr  error
+	queryErr    error
+	rows        [][]driver.Value
+	scanErr     error
+	rowsErr     error
+	cancelAfter int
+	cancel      context.CancelFunc
 }
 
 type postgresAuditRowsDriver struct {
@@ -137,6 +139,9 @@ func (r *postgresAuditRowsRows) Next(dest []driver.Value) error {
 		return r.scenario.scanErr
 	}
 	copy(dest, r.scenario.rows[r.index])
+	if r.scenario.cancelAfter == r.index && r.scenario.cancel != nil {
+		r.scenario.cancel()
+	}
 	return nil
 }
 
@@ -178,6 +183,33 @@ func TestPostgresTransactionAuditStoreAllContextPropagatesCancellation(t *testin
 	}
 	if result != nil {
 		t.Fatalf("canceled audit read must not expose any history, got %#v", result)
+	}
+}
+
+func TestPostgresTransactionAuditStoreAllContextRejectsMidStreamCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	scenario := &postgresAuditRowsScenario{
+		rows: [][]driver.Value{
+			{"ref", "TEST_1", nil, nil, "mock", "message-1", time.Now().UTC()},
+			{"ref", "TEST_2", nil, nil, "mock", "message-2", time.Now().UTC().Add(time.Second)},
+		},
+		cancelAfter: 0,
+		cancel:      cancel,
+	}
+	db := openPostgresAuditRowsDB(t, scenario)
+	store, err := NewPostgresTransactionAuditStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := store.AllContext(ctx, "ref")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected mid-stream cancellation, got %v", err)
+	}
+	if result != nil {
+		t.Fatalf("mid-stream cancellation must not expose accumulated audit history, got %#v", result)
 	}
 }
 
