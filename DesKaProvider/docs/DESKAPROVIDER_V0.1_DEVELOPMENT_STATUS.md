@@ -5647,3 +5647,39 @@ Completed:
 ### Next Milestone
 
 **#128 — PostgreSQL Audit Read Cancellation & Partial-Result Safety:** verify canceled/deadline audit reads stop without exposing a partial authoritative history and preserve the existing observational-only audit boundary.
+
+
+### 128. Milestone Update — PostgreSQL Audit Read Cancellation & Partial-Result Safety
+
+**Date:** 2026-09-26
+
+Completed:
+
+- added deterministic coverage for PostgresTransactionAuditStore.AllContext with an already-canceled context;
+- verified cancellation is returned as context.Canceled before any audit history is exposed;
+- verified a canceled audit read returns a nil result rather than partial or stale history;
+- preserved the existing query, row-read/scan-path, and rows-iteration failure coverage from milestone #127;
+- retained the existing production implementation because its pre-query context check plus nil,error returns on read failures already enforce the required no-partial-history behavior;
+- no production audit-store behavior, database abstraction, retry/failover logic, transaction authority, or financial authorization boundary was broadened.
+
+### Verification
+
+- test implementation commit: `00e596cd34df56ca2d52959acd53d88a88a3e8ea`;
+- exact branch HEAD after the test change must pass both push and PR CI with `test`, `vet`, and `race` successful before this milestone is considered closed.
+
+### Safety Boundary
+
+- audit cancellation is an operational read-control outcome only;
+- cancellation cannot authorize provider retry, failover, resubmission, ledger mutation, treasury movement, or provider funding;
+- transaction persistence remains the authoritative transaction-state boundary;
+- audit history remains observational evidence and cannot be used as a financial source of truth.
+
+### Known Limitations
+
+- this milestone deterministically verifies an already-canceled read; it does not attempt to emulate every PostgreSQL wire-level mid-stream cancellation timing scenario;
+- the database/sql driver fixture remains a repository-local test boundary for deterministic failure injection;
+- real PostgreSQL integration remains the boundary for driver-specific cancellation and wire behavior.
+
+### Next Milestone
+
+**#129 — PostgreSQL Audit Mid-Stream Cancellation Safety:** add deterministic coverage for cancellation occurring after audit rows have begun streaming, proving the adapter does not expose the rows accumulated before cancellation.
