@@ -4219,3 +4219,26 @@ Completed:
 
 1. continue the restart boundary review across routing, transaction persistence, and audit evidence;
 2. ensure persisted operational snapshots never authorize transaction resubmission, failover, or financial mutation by themselves.
+
+### 38. Milestone Update — Transaction Authority Across Restart & Audit Failure
+
+**Date:** 2026-09-26
+
+Completed:
+
+- reviewed restart recovery of durable transaction state together with the audit-evidence boundary;
+- added deterministic regression coverage proving a restarted service reconciles a durable pending transaction without resubmitting the provider purchase;
+- verified an audit failure after successful reconciliation does not revert the durable terminal transaction state;
+- verified a repeated purchase request after restart returns the committed transaction result and does not trigger a second provider submission;
+- preserved transaction persistence as the authoritative state and audit persistence as operational evidence only.
+
+### Verification
+
+- milestone test commit: `8b05e02300ddcc0428776ddf97ebb77cf62a9dc9`;
+- prior HEAD CI #870 for milestone #115: **success**;
+- the new HEAD must complete both `test` and `race` jobs with **success** before this milestone is considered closed.
+
+### Next milestone
+
+1. continue auditing restart/reconciliation concurrency and atomic transition boundaries;
+2. preserve the invariant that audit or operational evidence cannot authorize retry, failover, resubmission, ledger mutation, treasury movement, or provider funding.
