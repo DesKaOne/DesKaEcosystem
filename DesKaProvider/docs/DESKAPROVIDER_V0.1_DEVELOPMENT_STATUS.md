@@ -4265,7 +4265,10 @@ Completed:
 
 - milestone test commit: `8b05e02300ddcc0428776ddf97ebb77cf62a9dc9`;
 - prior HEAD CI #870 for milestone #115: **success**;
-- the new HEAD must complete both `test` and `race` jobs with **success** before this milestone is considered closed.
+- CI #1110 / run `36221224850`: **success** for exact validation HEAD `aadf692eeb51f16e810628579e28176ab6f9ede7`;
+- CI jobs `test`: success;
+- CI jobs `race`: success;
+- CI job `vet`: success.
 
 ### Next milestone
 
