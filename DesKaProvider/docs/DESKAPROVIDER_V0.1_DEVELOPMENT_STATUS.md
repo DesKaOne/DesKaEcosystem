@@ -7839,3 +7839,40 @@ Milestone #174 changes test coverage only. Runtime initialization continues to t
 ### Next Milestone
 
 **#175 — Runtime Initialization Error Precedence Across Shared PostgreSQL Ownership:** extend the same primary-vs-cleanup error identity and deterministic ordering coverage to shared transaction/audit PostgreSQL ownership, including single-handle cleanup semantics.
+
+### Milestone #175 — Runtime Initialization Error Precedence Across Shared PostgreSQL Ownership
+
+**Date:** 2026-09-27
+
+Completed:
+
+- added real PostgreSQL constructor-path coverage for shared transaction/audit ownership;
+- verified the shared PostgreSQL runtime owns one transaction database handle while the audit store reuses that same handle without separate ownership;
+- injected a primary initialization failure immediately after database acquisition while the shared transaction handle also returns a deterministic cleanup error;
+- verified the returned error preserves both primary initialization identity and cleanup-error identity through `errors.Is`;
+- verified the cleanup error retains the `close transaction database` context;
+- verified the shared database resource is closed exactly once during constructor rollback;
+- verified repeated ownership cleanup is single-shot after initialization failure;
+- preserved transaction-before-audit cleanup ordering and single-handle semantics;
+- introduced no provider retry, failover, resubmission, ledger, treasury, funding, or cross-domain recovery behavior.
+
+### Verification
+
+- Initial test attempt was rejected by CI #1621 because the shared PostgreSQL constructor test attempted later constructor stages without applying the `provider_transactions` migration to the default schema.
+- The test was narrowed to the ownership-acquisition stage, which is the deterministic boundary required to verify shared cleanup precedence without coupling the test to transaction schema initialization.
+- Corrected implementation/test commit: `3403ae41cd8c86cdcf6c0cd3657f6775c4dc9f80`.
+- Final Push/PR CI #1623: **GREEN** — `go test ./...`, `go vet ./...`, PostgreSQL service-backed integration tests, and `go test -race ./...`.
+
+### Safety Boundary
+
+Milestone #175 changes test coverage only. Production shared PostgreSQL ownership behavior is unchanged: the audit store reuses the transaction database handle, ownership transfers only after successful runtime initialization, and constructor rollback closes the shared handle once. Transaction persistence remains the authoritative transaction-state/idempotency boundary; audit persistence remains observational evidence.
+
+### Known Limitations
+
+- Cleanup-error injection is a test-only wrapper around the real shared PostgreSQL transaction handle; production PostgreSQL `Close` behavior is not modified.
+- Shared cleanup precedence is tested at the post-acquisition rollback boundary; later constructor stages are already covered by the existing startup failure matrix and do not need to duplicate schema setup for this ownership-specific assertion.
+- Process termination and external-provider failures during runtime operation remain outside constructor cleanup semantics.
+
+### Next Milestone
+
+**#176 — Runtime Shutdown Error Precedence After Ownership Transfer:** verify service shutdown preserves the primary lifecycle error together with database cleanup errors, including shared PostgreSQL single-handle cleanup and repeated shutdown semantics.
