@@ -5193,4 +5193,35 @@ Completed:
 
 ### Next milestone
 
+### 40. Milestone Update — Sequential/Repeated Transaction Transition Review
+
+**Date:** 2026-09-26
+
+Completed:
+
+- audited repeated PostgreSQL pending-state persistence and terminal transition behavior;
+- verified the integration suite already covers sequential durable version progression and stale-version rejection;
+- verified repeated pending transitions advance the persisted version monotonically while preserving the latest pending result;
+- verified terminal transition advances the version once and stale writers cannot mutate the committed terminal result;
+- confirmed terminal idempotency remains read/replay-safe without authorizing provider resubmission or financial mutation;
+- kept transaction persistence authoritative and operational/audit evidence non-authoritative.
+
+### Verification
+
+- validated implementation HEAD: `3764d7f24e9fbc96527bb4fb1aa45eb69beb92f3`;
+- CI #1163 / run `36225513104`: **GREEN**;
+- CI jobs `test`: success;
+- CI job `race`: success;
+- CI job `test` completed `vet`: success.
+
+### Safety Boundary
+
+- PostgreSQL version increments are coordination metadata only;
+- stale version conflicts remain persistence conflicts and never authorize retry, failover, resubmission, customer-ledger mutation, treasury movement, or provider funding;
+- terminal idempotency does not create a second provider submission path.
+
+### Next milestone
+
+**#118 — Database-Error Propagation Boundary Review**: verify non-cancellation PostgreSQL errors remain distinguishable from not-found/empty state across `GetContextE`, `PutContext`, and `Reconcile`, with no accidental retry authorization.
+
 **#117 — Sequential/Repeated Transaction Transition Review**: continue auditing repeated pending-to-pending persistence and terminal-idempotent behavior, especially PostgreSQL version progression, without widening transaction authority.
