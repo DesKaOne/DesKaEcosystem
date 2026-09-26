@@ -44,6 +44,20 @@ func timeoutMessageRules(state RoundState) ValidationRules {
 	}
 }
 
+
+func timeoutLockProof(t *testing.T, state RoundState, validators ValidatorSet, power VotingPowerSet, proposal string) LockProof {
+	t.Helper()
+	votes := []Message{
+		runtimeMessage(state, "validator-a", MessageTypePrecommit, proposal),
+		runtimeMessage(state, "validator-b", MessageTypePrecommit, proposal),
+	}
+	certificate, err := NewPrecommitCertificate(state, validators, power, QuorumThreshold{Numerator: 2, Denominator: 3}, []byte(proposal), votes)
+	if err != nil { t.Fatal(err) }
+	proof, err := NewLockProof(state.Round, []byte(proposal), certificate)
+	if err != nil { t.Fatal(err) }
+	return proof
+}
+
 func TestTimeoutMessageAuthenticatesAndBuildsCertificate(t *testing.T) {
 	_, state, validators, power := runtimeFixture(t)
 	signerA, publicA := newTimeoutTestSigner(t)
@@ -193,60 +207,64 @@ func TestTimeoutMessageRejectsStaleTargetRound(t *testing.T) {
 
 
 
-func TestTimeoutMessagesCarryCanonicalLockContext(t *testing.T) {
+func TestTimeoutMessagesCarryCanonicalLockProof(t *testing.T) {
 	_, state, validators, power := runtimeFixture(t)
 	signerA, publicA := newTimeoutTestSigner(t)
 	signerB, publicB := newTimeoutTestSigner(t)
 	resolver := timeoutTestAuthorityResolver{keys: map[string]ed25519.PublicKey{
-		"validator-a": publicA,
-		"validator-b": publicB,
+		"validator-a": publicA, "validator-b": publicB,
 	}}
 	rules := timeoutMessageRules(state)
-	locked := []byte("locked-proposal")
+	proof := timeoutLockProof(t, state, validators, power, "locked-proposal")
 
-	msgA, err := NewTimeoutMessageWithLock(state, []byte("validator-a"), state.Round+1, locked, signerA)
+	msgA, err := NewTimeoutMessageWithLockProof(state, []byte("validator-a"), state.Round+1, proof, signerA)
 	if err != nil { t.Fatal(err) }
-	msgB, err := NewTimeoutMessageWithLock(state, []byte("validator-b"), state.Round+1, locked, signerB)
+	msgB, err := NewTimeoutMessageWithLockProof(state, []byte("validator-b"), state.Round+1, proof, signerB)
 	if err != nil { t.Fatal(err) }
 
-	decoded, err := TimeoutLockedProposal(msgA)
+	decoded, err := TimeoutLockProof(msgA)
 	if err != nil { t.Fatal(err) }
-	if !bytes.Equal(decoded, locked) { t.Fatalf("unexpected lock context: %q", decoded) }
+	if decoded == nil || !bytes.Equal(decoded.Proposal, proof.Proposal) || decoded.LockedRound != proof.LockedRound { t.Fatal("timeout message lost lock proof") }
 
 	certificate, err := NewTimeoutCertificateFromMessages(
 		state, validators, power, QuorumThreshold{Numerator: 2, Denominator: 3},
 		[]Message{msgA, msgB}, rules, resolver,
 	)
 	if err != nil { t.Fatal(err) }
-	if !bytes.Equal(certificate.LockedProposal, locked) {
-		t.Fatalf("certificate lost lock context: %q", certificate.LockedProposal)
-	}
-	decoded[0]++
-	if bytes.Equal(certificate.LockedProposal, decoded) {
-		t.Fatal("certificate lock context aliases decoded message data")
-	}
+	if certificate.LockProof == nil { t.Fatal("timeout certificate lost lock proof") }
+	if !bytes.Equal(certificate.LockedProposal, proof.Proposal) { t.Fatalf("certificate lock context: %q", certificate.LockedProposal) }
+	decoded.Proposal[0]++
+	if bytes.Equal(certificate.LockProof.Proposal, decoded.Proposal) { t.Fatal("certificate lock proof aliases decoded message data") }
 }
 
-func TestTimeoutCertificateRejectsConflictingLockEvidence(t *testing.T) {
+func TestTimeoutCertificateRejectsConflictingLockProof(t *testing.T) {
 	_, state, validators, power := runtimeFixture(t)
 	signerA, publicA := newTimeoutTestSigner(t)
 	signerB, publicB := newTimeoutTestSigner(t)
 	resolver := timeoutTestAuthorityResolver{keys: map[string]ed25519.PublicKey{
-		"validator-a": publicA,
-		"validator-b": publicB,
+		"validator-a": publicA, "validator-b": publicB,
 	}}
 	rules := timeoutMessageRules(state)
-
-	msgA, err := NewTimeoutMessageWithLock(state, []byte("validator-a"), state.Round+1, []byte("lock-a"), signerA)
+	proofA := timeoutLockProof(t, state, validators, power, "lock-a")
+	proofB := timeoutLockProof(t, state, validators, power, "lock-b")
+	msgA, err := NewTimeoutMessageWithLockProof(state, []byte("validator-a"), state.Round+1, proofA, signerA)
 	if err != nil { t.Fatal(err) }
-	msgB, err := NewTimeoutMessageWithLock(state, []byte("validator-b"), state.Round+1, []byte("lock-b"), signerB)
+	msgB, err := NewTimeoutMessageWithLockProof(state, []byte("validator-b"), state.Round+1, proofB, signerB)
 	if err != nil { t.Fatal(err) }
+	_, err = NewTimeoutCertificateFromMessages(state, validators, power, QuorumThreshold{Numerator: 2, Denominator: 3}, []Message{msgA, msgB}, rules, resolver)
+	if !errors.Is(err, ErrConflictingTimeoutLock) { t.Fatalf("expected conflicting lock proof error, got %v", err) }
+}
 
-	_, err = NewTimeoutCertificateFromMessages(
-		state, validators, power, QuorumThreshold{Numerator: 2, Denominator: 3},
-		[]Message{msgA, msgB}, rules, resolver,
-	)
-	if !errors.Is(err, ErrConflictingTimeoutLock) {
-		t.Fatalf("expected conflicting lock error, got %v", err)
-	}
+func TestTimeoutCertificateRejectsLockWithoutProof(t *testing.T) {
+	_, state, validators, power := runtimeFixture(t)
+	signerA, publicA := newTimeoutTestSigner(t)
+	signerB, publicB := newTimeoutTestSigner(t)
+	resolver := timeoutTestAuthorityResolver{keys: map[string]ed25519.PublicKey{"validator-a": publicA, "validator-b": publicB}}
+	rules := timeoutMessageRules(state)
+	msgA, err := NewTimeoutMessageWithLock(state, []byte("validator-a"), state.Round+1, []byte("unproven"), signerA)
+	if err != nil { t.Fatal(err) }
+	msgB, err := NewTimeoutMessageWithLock(state, []byte("validator-b"), state.Round+1, []byte("unproven"), signerB)
+	if err != nil { t.Fatal(err) }
+	_, err = NewTimeoutCertificateFromMessages(state, validators, power, QuorumThreshold{Numerator: 2, Denominator: 3}, []Message{msgA, msgB}, rules, resolver)
+	if !errors.Is(err, ErrInvalidLockProof) { t.Fatalf("expected missing lock proof error, got %v", err) }
 }
