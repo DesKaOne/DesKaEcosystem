@@ -3613,7 +3613,7 @@ func TestPostgresCrossDomainRecoveryOrderingAcrossSequentialCommits(t *testing.T
 	next.Execution.Result.Message = "transaction committed after first audit"
 	next.Execution.Result.SerialNumber = "SN-SEQUENTIAL"
 	next.Version = baselineTransaction.Version + 1
-	if err := transactionStore.PutContext(ctx, next); err != nil {
+	if err := transactionStore.PutIfCurrentContext(ctx, state.Request.ReferenceID, baselineTransaction, next); err != nil {
 		t.Fatalf("commit transaction transition: %v", err)
 	}
 	afterTransaction, found, err := transactionStore.GetContextE(ctx, state.Request.ReferenceID)
