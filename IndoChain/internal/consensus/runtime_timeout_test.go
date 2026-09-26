@@ -116,8 +116,8 @@ func timeoutLockProofAtRound(t *testing.T, state RoundState, validators Validato
 	lockState := state
 	lockState.Round = lockedRound
 	votes := []Message{
-		runtimeMessage(lockState, "validator-a", MessageTypePrecommit, proposal),
-		runtimeMessage(lockState, "validator-b", MessageTypePrecommit, proposal),
+		{ProtocolVersion: lockState.ProtocolVersion, ChainID: lockState.ChainID, Epoch: lockState.Epoch, Height: lockState.Height, Round: lockState.Round, Sender: append([]byte(nil), validators.Validators[0]...), Type: MessageTypePrecommit, Payload: []byte(proposal)},
+		{ProtocolVersion: lockState.ProtocolVersion, ChainID: lockState.ChainID, Epoch: lockState.Epoch, Height: lockState.Height, Round: lockState.Round, Sender: append([]byte(nil), validators.Validators[1]...), Type: MessageTypePrecommit, Payload: []byte(proposal)},
 	}
 	certificate, err := NewPrecommitCertificate(lockState, validators, power, QuorumThreshold{Numerator: 2, Denominator: 3}, []byte(proposal), votes)
 	if err != nil { t.Fatal(err) }
