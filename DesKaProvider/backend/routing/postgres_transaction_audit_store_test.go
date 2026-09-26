@@ -23,6 +23,30 @@ func TestPostgresTransactionAuditStoreValidation(t *testing.T) {
 	}
 }
 
+func TestPostgresTransactionAuditStoreAppendContextPropagatesDatabaseError(t *testing.T) {
+	wantErr := errors.New("database unavailable")
+	stub := &postgresStoreDBStub{err: wantErr}
+	store, err := NewPostgresTransactionAuditStore(stub)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = store.AppendContext(context.Background(), TransactionAuditEvent{
+		ReferenceID: "ref",
+		Action: "PURCHASE_RESULT",
+		CreatedAt: time.Now().UTC(),
+	})
+	if err == nil || !errors.Is(err, wantErr) {
+		t.Fatalf("expected database append error to propagate, got %v", err)
+	}
+	if errors.Is(err, context.Canceled) {
+		t.Fatalf("database append error must not be reported as cancellation: %v", err)
+	}
+	if stub.query != postgresAuditAppendSQL {
+		t.Fatalf("expected audit append SQL, got %q", stub.query)
+	}
+}
+
 func TestPostgresTransactionAuditStoreAppendContextPropagatesCancellation(t *testing.T) {
 	store, err := NewPostgresTransactionAuditStore(&postgresStoreDBStub{})
 	if err != nil {
