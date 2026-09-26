@@ -11,6 +11,7 @@ var (
 	ErrUnexpectedProposer        = errors.New("unexpected consensus proposer")
 	ErrInvalidRuntimePhase       = errors.New("invalid consensus runtime phase")
 	ErrConflictingLockedProposal = errors.New("conflicting locked proposal")
+	ErrInvalidRuntimeVoteType   = errors.New("invalid runtime vote type")
 	ErrRoundChangeFinalized      = errors.New("cannot change round after finalization")
 )
 
@@ -30,7 +31,8 @@ type ValidatorRuntime struct {
 	votingPower VotingPowerSet
 	threshold   QuorumThreshold
 	proposer    ProposerSelector
-	votes          *VoteAggregator
+	prevotes       *VoteAggregator
+	precommits     *VoteAggregator
 	proposal       []byte
 	lockedProposal []byte
 	lockedRound    uint64
@@ -58,7 +60,16 @@ func NewValidatorRuntime(config RuntimeConfig) (*ValidatorRuntime, error) {
 		return nil, ErrInvalidConsensusRuntime
 	}
 
-	aggregator, err := NewVoteAggregator(
+	prevotes, err := NewVoteAggregator(
+		config.Rules,
+		config.State,
+		config.Validators,
+		config.VotingPower,
+	)
+	if err != nil {
+		return nil, err
+	}
+	precommits, err := NewVoteAggregator(
 		config.Rules,
 		config.State,
 		config.Validators,
@@ -99,7 +110,16 @@ func (r *ValidatorRuntime) AdvanceRound(next uint64) error {
 	if err != nil {
 		return err
 	}
-	aggregator, err := NewVoteAggregator(
+	prevotes, err := NewVoteAggregator(
+		r.rules,
+		nextState,
+		r.validators,
+		r.votingPower,
+	)
+	if err != nil {
+		return err
+	}
+	precommits, err := NewVoteAggregator(
 		r.rules,
 		nextState,
 		r.validators,
@@ -110,7 +130,8 @@ func (r *ValidatorRuntime) AdvanceRound(next uint64) error {
 	}
 
 	r.state = nextState
-	r.votes = &aggregator
+	r.prevotes = &prevotes
+	r.precommits = &precommits
 	r.proposal = nil
 	r.certificate = nil
 	return nil
@@ -262,6 +283,12 @@ func (r *ValidatorRuntime) AddVote(msg Message) error {
 	if len(r.proposal) == 0 {
 		return ErrInvalidConsensusRuntime
 	}
+	if r.state.Phase == PhasePrevote && msg.Type != MessageTypePrevote {
+		return ErrInvalidRuntimeVoteType
+	}
+	if r.state.Phase == PhasePrecommit && msg.Type != MessageTypePrecommit {
+		return ErrInvalidRuntimeVoteType
+	}
 	if err := ValidateConsensusMessage(msg, MessageValidationContext{
 		Rules: r.rules, State: r.state, Validators: r.validators,
 	}); err != nil {
@@ -273,21 +300,24 @@ func (r *ValidatorRuntime) AddVote(msg Message) error {
 	if len(r.lockedProposal) > 0 && !bytes.Equal(r.lockedProposal, msg.Payload) {
 		return fmt.Errorf("%w: locked=%q received=%q", ErrConflictingLockedProposal, r.lockedProposal, msg.Payload)
 	}
-	if err := r.votes.AddVote(msg); err != nil {
-		return err
-	}
+
 	if r.state.Phase == PhasePrevote {
-		reached, err := r.votes.QuorumForPayload(r.proposal, r.threshold)
+		if err := r.prevotes.AddVote(msg); err != nil {
+			return err
+		}
+		reached, err := r.prevotes.QuorumForPayload(r.proposal, r.threshold)
 		if err != nil {
 			return err
 		}
 		if reached {
-					r.lockedProposal = append([]byte(nil), r.proposal...)
+			r.lockedProposal = append([]byte(nil), r.proposal...)
 			r.lockedRound = r.state.Round
 			r.state.Phase = PhasePrecommit
 		}
+		return nil
 	}
-	return nil
+
+	return r.precommits.AddVote(msg)
 }
 
 func (r *ValidatorRuntime) FinalizeProposal() (FinalityCertificate, error) {
@@ -300,13 +330,34 @@ func (r *ValidatorRuntime) FinalizeProposal() (FinalityCertificate, error) {
 	if len(r.lockedProposal) == 0 || !bytes.Equal(r.lockedProposal, r.proposal) {
 		return FinalityCertificate{}, ErrConflictingLockedProposal
 	}
+
+	precommitCertificate, err := NewPrecommitCertificate(
+		r.state,
+		r.validators,
+		r.votingPower,
+		r.threshold,
+		r.proposal,
+		r.precommits.VotesForPayload(r.proposal),
+	)
+	if err != nil {
+		return FinalityCertificate{}, err
+	}
+	if err := ValidatePrecommitCertificate(
+		precommitCertificate,
+		r.state,
+		r.validators,
+		r.votingPower,
+	); err != nil {
+		return FinalityCertificate{}, err
+	}
+
 	certificate, err := NewFinalityCertificate(
 		r.state,
 		r.validators,
 		r.votingPower,
 		r.threshold,
 		r.proposal,
-		r.votes.VotesForPayload(r.proposal),
+		precommitCertificate.Votes,
 	)
 	if err != nil {
 		return FinalityCertificate{}, err
@@ -316,9 +367,6 @@ func (r *ValidatorRuntime) FinalizeProposal() (FinalityCertificate, error) {
 	return certificate, nil
 }
 
-// FinalizedCertificate returns the certificate produced by this runtime after
-// the proposal reached the Finalized phase. The returned certificate is cloned
-// so callers cannot mutate runtime-owned consensus evidence.
 func (r *ValidatorRuntime) FinalizedCertificate() (FinalityCertificate, error) {
 	if r == nil {
 		return FinalityCertificate{}, ErrInvalidConsensusRuntime
