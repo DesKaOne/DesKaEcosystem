@@ -1,6 +1,7 @@
 package consensus
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"errors"
 	"testing"
@@ -107,4 +108,47 @@ func TestValidatorRuntimeRejectsTamperedTimeoutEvidenceWithoutMutation(t *testin
 	if runtime.state != before {
 		t.Fatal("runtime state mutated after invalid timeout signature")
 	}
+}
+
+
+func TestValidatorRuntimeAdoptsTimeoutLockEvidenceAtomically(t *testing.T) {
+	runtime, state, _, _ := runtimeFixture(t)
+	signerA, publicA := newTimeoutTestSigner(t)
+	signerB, publicB := newTimeoutTestSigner(t)
+	resolver := timeoutRuntimeAuthorityResolver{keys: map[string]ed25519.PublicKey{
+		"validator-a": publicA,
+		"validator-b": publicB,
+	}}
+	locked := []byte("locked-proposal")
+	msgA, err := NewTimeoutMessageWithLock(state, []byte("validator-a"), state.Round+1, locked, signerA)
+	if err != nil { t.Fatal(err) }
+	msgB, err := NewTimeoutMessageWithLock(state, []byte("validator-b"), state.Round+1, locked, signerB)
+	if err != nil { t.Fatal(err) }
+
+	certificate, err := runtime.AdvanceRoundWithTimeoutEvidence([]Message{msgA, msgB}, resolver)
+	if err != nil { t.Fatal(err) }
+	if !bytes.Equal(certificate.LockedProposal, locked) { t.Fatalf("certificate lock mismatch: %q", certificate.LockedProposal) }
+	if !bytes.Equal(runtime.lockedProposal, locked) { t.Fatalf("runtime did not adopt lock: %q", runtime.lockedProposal) }
+}
+
+func TestValidatorRuntimeRejectsTimeoutLockConflictWithoutMutation(t *testing.T) {
+	runtime, state, _, _ := runtimeFixture(t)
+	runtime.lockedProposal = []byte("local-lock")
+	signerA, publicA := newTimeoutTestSigner(t)
+	signerB, publicB := newTimeoutTestSigner(t)
+	resolver := timeoutRuntimeAuthorityResolver{keys: map[string]ed25519.PublicKey{
+		"validator-a": publicA,
+		"validator-b": publicB,
+	}}
+	msgA, err := NewTimeoutMessageWithLock(state, []byte("validator-a"), state.Round+1, []byte("remote-lock"), signerA)
+	if err != nil { t.Fatal(err) }
+	msgB, err := NewTimeoutMessageWithLock(state, []byte("validator-b"), state.Round+1, []byte("remote-lock"), signerB)
+	if err != nil { t.Fatal(err) }
+
+	beforeState := runtime.state
+	beforeLock := append([]byte(nil), runtime.lockedProposal...)
+	_, err = runtime.AdvanceRoundWithTimeoutEvidence([]Message{msgA, msgB}, resolver)
+	if !errors.Is(err, ErrConflictingTimeoutLock) { t.Fatalf("expected lock conflict, got %v", err) }
+	if runtime.state != beforeState { t.Fatal("runtime state mutated after timeout lock conflict") }
+	if !bytes.Equal(runtime.lockedProposal, beforeLock) { t.Fatal("runtime lock mutated after timeout lock conflict") }
 }
