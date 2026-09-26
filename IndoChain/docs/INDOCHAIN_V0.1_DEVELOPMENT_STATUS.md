@@ -1349,3 +1349,6 @@ CI gate: pending verification for the split-runtime changes.
 
 
 CI correction: IndoChain CI #1184 (run 36265751480) failed at compile time because the split-runtime constructor created prevote/precommit aggregators but the returned ValidatorRuntime literal still referenced the removed legacy `votes`/`aggregator` fields. Commit d9680e7baf0b28820508a7e99ae22e236be6312a wires both new aggregators into the runtime. No behavioral rollback was made.
+
+
+CI correction follow-up: IndoChain CI #1186 (run 36265792077) exposed downstream tests still constructing legacy MessageTypeVote evidence. The runtime split remains intact; for v0.1 compatibility, AddVote now normalizes a legacy generic vote into the current phase's explicit Prevote or Precommit bucket before validation. Explicit phase-specific messages remain the canonical path, and FinalizeProposal still requires a separately accumulated PrecommitCertificate. Runtime evidence tests were updated to reference the split prevote aggregator.
