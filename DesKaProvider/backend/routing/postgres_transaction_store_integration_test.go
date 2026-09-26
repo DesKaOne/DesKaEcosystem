@@ -535,6 +535,85 @@ func TestPostgresTransactionStoreTerminalConflictsAfterRestartDoNotResubmit(t *t
 	}
 }
 
+func TestPostgresConcurrentPutInitialCreationConverges(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	schema := "initial_create_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatalf("create isolated schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
+	})
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set isolated search path: %v", err)
+	}
+	applyPostgresMigration(t, db)
+
+	store, err := NewPostgresTransactionStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	state := TransactionState{
+		Request: PurchaseRequest{
+			ProductCode: "pln20",
+			CustomerNo: "08123456789",
+			ReferenceID: postgresIntegrationReference(),
+			Amount: 20000,
+		},
+		Execution: PurchaseExecution{
+			ProviderName: "mock",
+			Result: provider.PurchaseResult{
+				ReferenceID: postgresIntegrationReference(),
+				ProductCode: "pln20",
+				CustomerNo: "08123456789",
+				Status: provider.StatusPending,
+			},
+		},
+		Version: 1,
+	}
+	state.Execution.Result.ReferenceID = state.Request.ReferenceID
+
+	const workers = 2
+	errs := make(chan error, workers)
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errs <- store.PutContext(ctx, state)
+		}()
+	}
+	wg.Wait()
+	close(errs)
+
+	var successes, conflicts int
+	for err := range errs {
+		switch {
+		case err == nil:
+			successes++
+		case errors.Is(err, ErrTransactionStateConflict):
+			conflicts++
+		default:
+			t.Fatalf("unexpected concurrent initial creation error: %v", err)
+		}
+	}
+	if successes != 1 || conflicts != 1 {
+		t.Fatalf("expected one initial insert and one conflict, got successes=%d conflicts=%d", successes, conflicts)
+	}
+
+	stored, ok := store.Get(state.Request.ReferenceID)
+	if !ok {
+		t.Fatal("initial transaction was not persisted")
+	}
+	if stored.Request != state.Request || stored.Execution.ProviderName != state.Execution.ProviderName {
+		t.Fatalf("persisted initial transaction identity changed: %#v", stored)
+	}
+}
+ 
 func TestPostgresConcurrentServiceReconcileConvergesWithoutResubmission(t *testing.T) {
 	db := postgresIntegrationDB(t)
 	schema := "service_reconcile_" + strconv.FormatInt(time.Now().UnixNano(), 10)
