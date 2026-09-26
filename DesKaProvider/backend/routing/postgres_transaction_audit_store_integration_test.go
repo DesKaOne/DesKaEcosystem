@@ -2879,6 +2879,88 @@ func TestPostgresTransactionAuditStoreConcurrentCrossDomainReadsStable(t *testin
 }
 
 
+func TestPostgresAuditTransactionCrossReadCancellation(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	schema := "audit_transaction_cross_cancel_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatalf("create isolated schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
+	})
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set search path: %v", err)
+	}
+	applyPostgresMigration(t, db)
+
+	auditStore, err := NewPostgresTransactionAuditStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transactionStore, err := NewPostgresTransactionStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	referenceID := "cross-read-cancel-ref"
+	state := postgresPendingState()
+	state.Request.ReferenceID = referenceID
+	state.Execution.Result.ReferenceID = referenceID
+	if err := transactionStore.PutContext(ctx, state); err != nil {
+		t.Fatalf("persist transaction fixture: %v", err)
+	}
+	event := TransactionAuditEvent{
+		ReferenceID:  referenceID,
+		Action:       "PURCHASE_PENDING",
+		Next:         string(provider.StatusPending),
+		ProviderName: "mock",
+		Message:      "pending",
+		CreatedAt:    time.Now().UTC().Truncate(time.Microsecond),
+	}
+	if err := auditStore.AppendContext(ctx, event); err != nil {
+		t.Fatalf("persist audit fixture: %v", err)
+	}
+
+	canceled, cancelRead := context.WithCancel(context.Background())
+	cancelRead()
+
+	gotAudit, auditErr := auditStore.AllContextE(canceled, referenceID)
+	if !errors.Is(auditErr, context.Canceled) {
+		t.Fatalf("expected audit read cancellation, got %v", auditErr)
+	}
+	if gotAudit != nil {
+		t.Fatalf("canceled audit read must not expose partial history, got %#v", gotAudit)
+	}
+
+	gotTransaction, found, transactionErr := transactionStore.GetContextE(canceled, referenceID)
+	if !errors.Is(transactionErr, context.Canceled) {
+		t.Fatalf("expected transaction read cancellation, got %v", transactionErr)
+	}
+	if found || gotTransaction != (TransactionState{}) {
+		t.Fatalf("canceled transaction read must not expose state, found=%v state=%#v", found, gotTransaction)
+	}
+
+	deadlineCtx, deadlineCancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer deadlineCancel()
+	gotAudit, auditErr = auditStore.AllContextE(deadlineCtx, referenceID)
+	if !errors.Is(auditErr, context.DeadlineExceeded) {
+		t.Fatalf("expected audit read deadline, got %v", auditErr)
+	}
+	if gotAudit != nil {
+		t.Fatalf("deadline audit read must not expose partial history, got %#v", gotAudit)
+	}
+
+	gotTransaction, found, transactionErr = transactionStore.GetContextE(deadlineCtx, referenceID)
+	if !errors.Is(transactionErr, context.DeadlineExceeded) {
+		t.Fatalf("expected transaction read deadline, got %v", transactionErr)
+	}
+	if found || gotTransaction != (TransactionState{}) {
+		t.Fatalf("deadline transaction read must not expose state, found=%v state=%#v", found, gotTransaction)
+	}
+}
+
 func TestPostgresTransactionAuditStoreAppendFailureThenRecovery(t *testing.T) {
 	db := postgresIntegrationDB(t)
 	schema := "audit_append_recovery_" + strconv.FormatInt(time.Now().UnixNano(), 10)
