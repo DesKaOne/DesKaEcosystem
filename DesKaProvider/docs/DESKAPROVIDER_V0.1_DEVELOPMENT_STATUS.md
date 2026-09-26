@@ -6042,3 +6042,39 @@ Completed:
 ### Next Milestone
 
 **#139 — PostgreSQL Audit Ordering Across Restart:** verify that persisted audit ordering remains unchanged after database connection close/reopen and service reconstruction, without turning audit ordering into execution authority.
+
+
+### 139. Milestone Update — PostgreSQL Audit Ordering Across Restart
+
+**Date:** 2026-09-26
+
+Completed:
+
+- added real-PostgreSQL integration coverage for persisted audit ordering before and after database connection close/reopen;
+- verified audit history retains the same event sequence after reopening PostgreSQL and reconstructing the audit-store adapter;
+- verified timestamp-collision ordering remains stable across restart because persisted `audit_id` ordering is retained;
+- confirmed restart/read behavior does not use audit ordering to authorize provider retry, reconciliation, transaction-state mutation, or financial state transitions;
+- no production audit-store implementation change was required because the existing ordering query is already based on durable `created_at, audit_id` values;
+- no transaction authority, provider submission authority, retry/failover behavior, ledger mutation, treasury movement, or provider funding behavior was broadened.
+
+### Safety Boundary
+
+- persisted audit ordering is deterministic observational evidence only;
+- restart reconstruction must not infer transaction execution authority from audit sequence;
+- `audit_id` remains an audit-row ordering key, not a transaction execution or idempotency key;
+- transaction persistence remains the authoritative transaction-state and idempotency boundary.
+
+### Verification
+
+- test implementation commit: `fd941c1a0f9403debb276e8af9fed2185c6f6490`;
+- exact branch HEAD after this status documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before this milestone is considered closed.
+
+### Known Limitations
+
+- the restart scenario uses connection close/reopen against the existing real PostgreSQL harness and does not cover every crash-recovery or multi-primary replication timing;
+- ordering stability assumes the audit table's durable `audit_id` identity remains intact across restart;
+- audit remains operational evidence and is not a financial source of truth.
+
+### Next Milestone
+
+**#140 — PostgreSQL Audit Ordering Under Concurrent Appends:** verify deterministic audit ordering when concurrent append operations share the same `created_at` timestamp, without allowing audit ordering to influence transaction authority.
