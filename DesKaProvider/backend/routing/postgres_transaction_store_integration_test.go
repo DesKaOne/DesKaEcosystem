@@ -840,7 +840,9 @@ func TestPostgresTransactionStoreContextAtomicWriteHonorsCancellation(t *testing
 		t.Fatalf("expected context.Canceled from PutIfCurrentContext, got %v", err)
 	}
 
-	recovered, ok := store.GetContext(ctx, pending.Request.ReferenceID)
+	checkCtx, checkCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer checkCancel()
+	recovered, ok := store.GetContext(checkCtx, pending.Request.ReferenceID)
 	if !ok {
 		t.Fatal("transaction disappeared after canceled atomic write")
 	}
