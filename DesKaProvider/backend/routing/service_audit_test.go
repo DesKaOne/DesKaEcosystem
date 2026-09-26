@@ -331,3 +331,61 @@ func TestServiceReconciliationAuditFailureKeepsCommittedTerminalState(t *testing
 	if err != nil || execution.Result.Status != provider.StatusSuccess { t.Fatalf("expected repeated reconciliation to converge idempotently, got execution=%#v err=%v", execution, err) }
 	if got := mock.PurchaseCount(req.ReferenceID); got != 1 { t.Fatalf("reconciliation audit failure must not authorize a second provider submission, got %d", got) }
 }
+
+func TestServiceAuditReadFailureCannotAuthorizeProviderAction(t *testing.T) {
+	mock := Mock.New(Mock.Config{
+		Products:       []provider.Product{{Code: "pln20", Name: "PLN 20"}},
+		ProviderCode:   "00",
+		Message:        "pending",
+		PurchaseStatus: provider.StatusPending,
+		Price:          20000,
+	})
+	auditErr := context.DeadlineExceeded
+	service := newAuditTestService(t, mock, &auditReadFailureStore{err: auditErr})
+
+	req := PurchaseRequest{ProductCode: "pln20", CustomerNo: "08123456789", ReferenceID: "ref-audit-read-boundary", Amount: 20000}
+	execution, err := service.Purchase(context.Background(), req)
+	if !errors.Is(err, auditErr) {
+		t.Fatalf("expected audit error to remain observable, got execution=%#v err=%v", execution, err)
+	}
+	if execution.Result.Status != provider.StatusPending {
+		t.Fatalf("expected pending state after audit failure, got %q", execution.Result.Status)
+	}
+	if got := mock.PurchaseCount(req.ReferenceID); got != 1 {
+		t.Fatalf("expected one initial provider submission, got %d", got)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 0)
+	defer cancel()
+	events, readErr := service.AuditStore.(interface {
+		AllContext(context.Context, string) ([]TransactionAuditEvent, error)
+	}).AllContext(ctx, req.ReferenceID)
+	if !errors.Is(readErr, auditErr) {
+		t.Fatalf("expected audit read deadline error to remain observable, got %v", readErr)
+	}
+	if events != nil {
+		t.Fatalf("deadline audit read must not expose partial history, got %#v", events)
+	}
+
+	retry, retryErr := service.Purchase(context.Background(), req)
+	if !errors.Is(retryErr, auditErr) {
+		t.Fatalf("expected idempotent purchase to retain audit error, got execution=%#v err=%v", retry, retryErr)
+	}
+	if retry.Result.Status != provider.StatusPending {
+		t.Fatalf("expected committed pending state on idempotent retry, got %q", retry.Result.Status)
+	}
+	if got := mock.PurchaseCount(req.ReferenceID); got != 1 {
+		t.Fatalf("audit read failure must not authorize provider resubmission, got %d submissions", got)
+	}
+}
+
+type auditReadFailureStore struct {
+	err error
+}
+
+func (s *auditReadFailureStore) Append(TransactionAuditEvent) error { return s.err }
+func (s *auditReadFailureStore) All(string) []TransactionAuditEvent { return nil }
+func (s *auditReadFailureStore) AllContext(context.Context, string) ([]TransactionAuditEvent, error) {
+	return nil, s.err
+}
+
