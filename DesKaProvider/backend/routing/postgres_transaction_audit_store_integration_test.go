@@ -2029,6 +2029,102 @@ WHERE reference_id=$6 AND status='pending' AND version=$7`,
 	}
 }
 
+func TestPostgresTransactionAuditAndTransactionCommitOrderingRemainsNonAuthoritative(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	schema := "audit_tx_commit_order_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	migrationConn, err := db.Conn(ctx)
+	if err != nil { t.Fatalf("open migration connection: %v", err) }
+	defer migrationConn.Close()
+	if _, err := migrationConn.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil { t.Fatalf("create isolated schema: %v", err) }
+	t.Cleanup(func() { _, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE") })
+	if _, err := migrationConn.ExecContext(ctx, "SET search_path TO "+schema); err != nil { t.Fatalf("set migration search path: %v", err) }
+	applyPostgresMigration(t, migrationConn)
+
+	state := postgresPendingState()
+	state.Request.ReferenceID = "audit-tx-commit-order-ref"
+	state.Request.Amount = 20000
+	state.Execution.Result.ReferenceID = state.Request.ReferenceID
+	state.Execution.Result.Price = state.Request.Amount
+	state.Version = 1
+
+	seedConn, err := db.Conn(ctx)
+	if err != nil { t.Fatalf("open seed connection: %v", err) }
+	defer seedConn.Close()
+	if _, err := seedConn.ExecContext(ctx, "SET search_path TO "+schema); err != nil { t.Fatalf("set seed search path: %v", err) }
+	seedStore, err := NewPostgresTransactionStore(seedConn)
+	if err != nil { t.Fatal(err) }
+	if err := seedStore.PutContext(ctx, state); err != nil { t.Fatalf("persist pending transaction: %v", err) }
+
+	transitionConn, err := db.Conn(ctx)
+	if err != nil { t.Fatalf("open transaction writer connection: %v", err) }
+	defer transitionConn.Close()
+	if _, err := transitionConn.ExecContext(ctx, "SET search_path TO "+schema); err != nil { t.Fatalf("set transaction writer search path: %v", err) }
+	transitionTx, err := transitionConn.BeginTx(ctx, nil)
+	if err != nil { t.Fatalf("begin transaction writer: %v", err) }
+	defer transitionTx.Rollback()
+	transactionUpdateSQL := "UPDATE provider_transactions SET status='success', provider_code='00', message='success', serial_number='SN-COMMIT-ORDER', price=20000, version=version+1 WHERE reference_id=$1 AND status='pending' AND version=1"
+	if _, err := transitionTx.ExecContext(ctx, transactionUpdateSQL, state.Request.ReferenceID); err != nil { t.Fatalf("stage durable transaction success: %v", err) }
+
+	auditConn, err := db.Conn(ctx)
+	if err != nil { t.Fatalf("open audit writer connection: %v", err) }
+	defer auditConn.Close()
+	if _, err := auditConn.ExecContext(ctx, "SET search_path TO "+schema); err != nil { t.Fatalf("set audit writer search path: %v", err) }
+	auditTx, err := auditConn.BeginTx(ctx, nil)
+	if err != nil { t.Fatalf("begin audit writer: %v", err) }
+	defer auditTx.Rollback()
+
+	auditEvent := TransactionAuditEvent{ReferenceID: state.Request.ReferenceID, Action: "PURCHASE_RESULT", Previous: string(provider.StatusPending), Next: string(provider.StatusSuccess), ProviderName: "mock", Message: "commit-order-evidence", CreatedAt: time.Now().UTC().Truncate(time.Microsecond)}
+	if _, err := auditTx.ExecContext(ctx, postgresAuditAppendSQL, auditEvent.ReferenceID, auditEvent.Action, auditEvent.Previous, auditEvent.Next, auditEvent.ProviderName, auditEvent.Message, auditEvent.CreatedAt.UTC()); err != nil { t.Fatalf("stage audit evidence: %v", err) }
+
+	beforeConn, err := db.Conn(ctx)
+	if err != nil { t.Fatalf("open pre-commit reader connection: %v", err) }
+	defer beforeConn.Close()
+	if _, err := beforeConn.ExecContext(ctx, "SET search_path TO "+schema); err != nil { t.Fatalf("set pre-commit reader search path: %v", err) }
+	beforeTxStore, err := NewPostgresTransactionStore(beforeConn)
+	if err != nil { t.Fatal(err) }
+	beforeAuditStore, err := NewPostgresTransactionAuditStore(beforeConn)
+	if err != nil { t.Fatal(err) }
+	beforeState, ok, err := beforeTxStore.GetContextE(ctx, state.Request.ReferenceID)
+	if err != nil || !ok || beforeState.Version != 1 || beforeState.Execution.Result.Status != provider.StatusPending { t.Fatalf("before commit must expose only durable pending transaction: state=%#v ok=%v err=%v", beforeState, ok, err) }
+	beforeEvents, err := beforeAuditStore.AllContextE(ctx, state.Request.ReferenceID)
+	if err != nil { t.Fatalf("read audit before commits: %v", err) }
+	if len(beforeEvents) != 0 { t.Fatalf("uncommitted audit evidence must remain invisible before commit, got %#v", beforeEvents) }
+
+	if err := transitionTx.Commit(); err != nil { t.Fatalf("commit durable transaction first: %v", err) }
+
+	afterTxFirstConn, err := db.Conn(ctx)
+	if err != nil { t.Fatalf("open transaction-first reader: %v", err) }
+	defer afterTxFirstConn.Close()
+	if _, err := afterTxFirstConn.ExecContext(ctx, "SET search_path TO "+schema); err != nil { t.Fatalf("set transaction-first reader search path: %v", err) }
+	afterTxFirstStore, err := NewPostgresTransactionStore(afterTxFirstConn)
+	if err != nil { t.Fatal(err) }
+	afterTxFirstAudit, err := NewPostgresTransactionAuditStore(afterTxFirstConn)
+	if err != nil { t.Fatal(err) }
+	transactionFirst, ok, err := afterTxFirstStore.GetContextE(ctx, state.Request.ReferenceID)
+	if err != nil || !ok || transactionFirst.Version != 2 || transactionFirst.Execution.Result.Status != provider.StatusSuccess { t.Fatalf("transaction-first commit must expose terminal transaction state: state=%#v ok=%v err=%v", transactionFirst, ok, err) }
+	auditFirst, err := afterTxFirstAudit.AllContextE(ctx, state.Request.ReferenceID)
+	if err != nil { t.Fatalf("read audit after transaction-first commit: %v", err) }
+	if len(auditFirst) != 0 { t.Fatalf("audit must remain invisible while its transaction is uncommitted, got %#v", auditFirst) }
+
+	if err := auditTx.Commit(); err != nil { t.Fatalf("commit audit after transaction: %v", err) }
+
+	afterAuditConn, err := db.Conn(ctx)
+	if err != nil { t.Fatalf("open post-audit reader: %v", err) }
+	defer afterAuditConn.Close()
+	if _, err := afterAuditConn.ExecContext(ctx, "SET search_path TO "+schema); err != nil { t.Fatalf("set post-audit reader search path: %v", err) }
+	afterAuditTxStore, err := NewPostgresTransactionStore(afterAuditConn)
+	if err != nil { t.Fatal(err) }
+	afterAuditStore, err := NewPostgresTransactionAuditStore(afterAuditConn)
+	if err != nil { t.Fatal(err) }
+	finalState, ok, err := afterAuditTxStore.GetContextE(ctx, state.Request.ReferenceID)
+	if err != nil || !ok || finalState.Version != 2 || finalState.Execution.Result.Status != provider.StatusSuccess { t.Fatalf("audit commit must not alter terminal transaction state: state=%#v ok=%v err=%v", finalState, ok, err) }
+	finalAudit, err := afterAuditStore.AllContextE(ctx, state.Request.ReferenceID)
+	if err != nil { t.Fatalf("read final audit history: %v", err) }
+	if len(finalAudit) != 1 || finalAudit[0] != auditEvent { t.Fatalf("expected one committed audit event after second commit, got %#v", finalAudit) }
+}
 
 func TestPostgresTransactionAuditStoreAppendFailureThenRecovery(t *testing.T) {
 	db := postgresIntegrationDB(t)
