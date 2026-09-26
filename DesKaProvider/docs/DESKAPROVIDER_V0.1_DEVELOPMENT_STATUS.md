@@ -6115,3 +6115,39 @@ Completed:
 ### Next Milestone
 
 **#141 — PostgreSQL Audit Concurrent Read/Append Visibility:** verify readers never observe partially inserted audit rows while concurrent append operations are in flight, while preserving the observational-only audit boundary.
+
+
+### 141. Milestone Update — PostgreSQL Audit Concurrent Read/Append Visibility
+
+**Date:** 2026-09-26
+
+Completed:
+
+- added real-PostgreSQL integration coverage for a reader observing audit history while another connection holds a new audit row uncommitted;
+- verified the reader sees only previously committed audit evidence and does not observe the uncommitted row or any partially written payload;
+- committed the staged audit append and verified the same reader then observes the complete committed audit history in deterministic `created_at, audit_id` order;
+- confirmed PostgreSQL transaction isolation provides the visibility boundary while the audit adapter remains append-only and observational;
+- no production audit-store implementation change was required;
+- no transaction authority, provider submission authority, retry/failover behavior, ledger mutation, treasury movement, or provider funding behavior was broadened.
+
+### Safety Boundary
+
+- uncommitted audit rows are not exposed to concurrent readers;
+- audit read visibility is a persistence/isolation property, not a transaction authorization signal;
+- audit visibility cannot authorize provider retry, failover, resubmission, ledger mutation, treasury movement, or provider funding;
+- transaction persistence remains the authoritative transaction-state and idempotency boundary.
+
+### Verification
+
+- test implementation commit: `fb7576b3710101c9aaadbd8953c5eac97e79db1e`;
+- exact branch HEAD after this status documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before this milestone is considered closed.
+
+### Known Limitations
+
+- the scenario validates visibility against one uncommitted PostgreSQL transaction and does not model every isolation level, replica lag, or failover topology;
+- the test proves no uncommitted row is exposed but does not generalize this result to arbitrary application-level caching layers outside the audit adapter;
+- audit remains operational evidence and is not a financial source of truth.
+
+### Next Milestone
+
+**#142 — PostgreSQL Audit Read Visibility After Concurrent Commit:** verify readers converge to the same committed audit history after concurrent writers commit, including same-timestamp events, without introducing ordering or state ambiguity.
