@@ -1800,25 +1800,34 @@ func TestPostgresConcurrentReadTransitionObservesCompleteState(t *testing.T) {
 	t.Cleanup(func() {
 		_, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
 	})
-	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatalf("pin migration connection: %v", err)
+	}
+	defer conn.Close()
+	if _, err := conn.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
 		t.Fatalf("set isolated search path: %v", err)
 	}
 	applyPostgresMigration(t, db)
 
-	openStoreDB := func(role string) (*sql.DB, *PostgresTransactionStore) {
-		db, err := sql.Open("pgx", os.Getenv("DESKAPROVIDER_POSTGRES_DSN"))
-		if err != nil { t.Fatalf("open %s db: %v", role, err) }
-		t.Cleanup(func() { _ = db.Close() })
-		if err := db.PingContext(ctx); err != nil { t.Fatalf("ping %s db: %v", role, err) }
-		if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil { t.Fatalf("set %s search path: %v", role, err) }
-		store, err := NewPostgresTransactionStore(db)
-		if err != nil { t.Fatalf("new %s store: %v", role, err) }
-		return db, store
+	openStore := func(role string) (*sql.Conn, *PostgresTransactionStore) {
+		conn, err := db.Conn(ctx)
+		if err != nil {
+			t.Fatalf("pin %s connection: %v", role, err)
+		}
+		t.Cleanup(func() { _ = conn.Close() })
+		if _, err := conn.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+			t.Fatalf("set %s search path: %v", role, err)
+		}
+		store, err := NewPostgresTransactionStore(conn)
+		if err != nil {
+			t.Fatalf("new %s store: %v", role, err)
+		}
+		return conn, store
 	}
-	readerDB, reader := openStoreDB("reader")
-	writerDB, writer := openStoreDB("writer")
-	defer readerDB.Close()
-	defer writerDB.Close()
+	_, reader := openStore("reader")
+	_, writer := openStore("writer")
 
 	pending := postgresPendingState()
 	pending.Request.ReferenceID = postgresIntegrationReference()
