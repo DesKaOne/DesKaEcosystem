@@ -1880,7 +1880,54 @@ func TestPostgresTransactionAuditStoreConflictWithConcurrentTransactionUpdateRem
 		t.Fatalf("persist pending transaction: %v", err)
 	}
 
-	createdAt := time.Now().UTC().Truncate(time.Microsecond)
+	next := state
+	next.Execution.Result.Status = provider.StatusSuccess
+	next.Execution.Result.ProviderCode = "00"
+	next.Execution.Result.Message = "success"
+	next.Execution.Result.SerialNumber = "SN-CONCURRENT"
+
+	transitionConn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatalf("open concurrent transaction connection: %v", err)
+	}
+	defer transitionConn.Close()
+	if _, err := transitionConn.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set transition search path: %v", err)
+	}
+	transitionTx, err := transitionConn.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatalf("begin durable transaction update: %v", err)
+	}
+	defer transitionTx.Rollback()
+
+	if _, err := transitionTx.ExecContext(ctx, `UPDATE provider_transactions
+SET status=$1, provider_code=$2, message=$3, serial_number=$4, price=$5, version=version+1
+WHERE reference_id=$6 AND status='pending' AND version=$7`,
+		string(next.Execution.Result.Status),
+		next.Execution.Result.ProviderCode,
+		next.Execution.Result.Message,
+		next.Execution.Result.SerialNumber,
+		next.Execution.Result.Price,
+		next.Request.ReferenceID,
+		state.Version,
+	); err != nil {
+		t.Fatalf("stage durable transaction update: %v", err)
+	}
+
+	auditConn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatalf("open concurrent audit connection: %v", err)
+	}
+	defer auditConn.Close()
+	if _, err := auditConn.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set audit search path: %v", err)
+	}
+	auditTx, err := auditConn.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatalf("begin contradictory audit transaction: %v", err)
+	}
+	defer auditTx.Rollback()
+
 	conflict := TransactionAuditEvent{
 		ReferenceID:  state.Request.ReferenceID,
 		Action:       "CONTRADICTORY_AUDIT",
@@ -1888,37 +1935,9 @@ func TestPostgresTransactionAuditStoreConflictWithConcurrentTransactionUpdateRem
 		Next:         string(provider.StatusFailed),
 		ProviderName: "mock",
 		Message:      "audit says failed while transaction moves to success",
-		CreatedAt:    createdAt,
+		CreatedAt:    time.Now().UTC().Truncate(time.Microsecond),
 	}
-
-	conn, err := db.Conn(ctx)
-	if err != nil {
-		t.Fatalf("open concurrent transaction connection: %v", err)
-	}
-	defer conn.Close()
-	if _, err := conn.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
-		t.Fatalf("set transaction search path: %v", err)
-	}
-
-	tx, err := conn.BeginTx(ctx, nil)
-	if err != nil {
-		t.Fatalf("begin concurrent transaction update: %v", err)
-	}
-	defer tx.Rollback()
-
-	next := state
-	next.Execution.Result.Status = provider.StatusSuccess
-	next.Execution.Result.ProviderCode = "00"
-	next.Execution.Result.Message = "success"
-	next.Execution.Result.SerialNumber = "SN-CONCURRENT"
-	if err := transactionStore.PutIfCurrentContext(ctx, state.Request.ReferenceID, state, next); err != nil {
-		// PutIfCurrentContext on the shared pool can commit independently, which
-		// would defeat the concurrent-window model. Use the dedicated SQL
-		// transaction directly for the durability boundary below instead.
-		t.Fatalf("unexpected atomic transition setup failure: %v", err)
-	}
-
-	if _, err := tx.ExecContext(ctx, postgresAuditAppendSQL,
+	if _, err := auditTx.ExecContext(ctx, postgresAuditAppendSQL,
 		conflict.ReferenceID,
 		conflict.Action,
 		conflict.Previous,
@@ -1929,15 +1948,36 @@ func TestPostgresTransactionAuditStoreConflictWithConcurrentTransactionUpdateRem
 	); err != nil {
 		t.Fatalf("stage contradictory audit event: %v", err)
 	}
-	if err := tx.Commit(); err != nil {
+
+	beforeCommit, err := transactionStore.GetContextE(ctx, state.Request.ReferenceID)
+	if err != nil || !beforeCommit.Version == false {
+		// Keep this read purely observational; the exact state must remain
+		// pending until the dedicated transaction commits.
+	}
+	if beforeCommit.Execution.Result.Status != provider.StatusPending {
+		t.Fatalf("durable transaction must remain pending before concurrent commit, got %#v", beforeCommit.Execution.Result)
+	}
+	beforeAudit, err := auditStore.AllContextE(ctx, state.Request.ReferenceID)
+	if err != nil {
+		t.Fatalf("read audit before concurrent commits: %v", err)
+	}
+	if len(beforeAudit) != 0 {
+		t.Fatalf("uncommitted contradictory audit event must remain invisible, got %#v", beforeAudit)
+	}
+
+	if err := auditTx.Commit(); err != nil {
 		t.Fatalf("commit contradictory audit event: %v", err)
+	}
+	if err := transitionTx.Commit(); err != nil {
+		t.Fatalf("commit durable transaction update: %v", err)
 	}
 
 	persisted, ok, readErr := transactionStore.GetContextE(ctx, state.Request.ReferenceID)
 	if readErr != nil || !ok {
-		t.Fatalf("read concurrent transaction update: ok=%v err=%v", ok, readErr)
+		t.Fatalf("read committed transaction update: ok=%v err=%v", ok, readErr)
 	}
 	if persisted.Execution.Result.Status != provider.StatusSuccess ||
+		persisted.Execution.Result.ProviderCode != "00" ||
 		persisted.Execution.Result.Message != "success" ||
 		persisted.Execution.Result.SerialNumber != "SN-CONCURRENT" {
 		t.Fatalf("durable transaction state must remain authoritative, got %#v", persisted.Execution.Result)
@@ -1945,12 +1985,13 @@ func TestPostgresTransactionAuditStoreConflictWithConcurrentTransactionUpdateRem
 
 	events, err := auditStore.AllContextE(ctx, state.Request.ReferenceID)
 	if err != nil {
-		t.Fatalf("read contradictory audit evidence: %v", err)
+		t.Fatalf("read committed contradictory audit evidence: %v", err)
 	}
 	if len(events) != 1 || events[0] != conflict {
 		t.Fatalf("expected contradictory audit evidence to remain observable, got %#v", events)
 	}
 }
+
 
 func TestPostgresTransactionAuditStoreAppendFailureThenRecovery(t *testing.T) {
 	db := postgresIntegrationDB(t)
