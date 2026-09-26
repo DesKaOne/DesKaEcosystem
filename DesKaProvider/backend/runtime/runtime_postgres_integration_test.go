@@ -1426,7 +1426,7 @@ func TestServiceRunCancellationPreservesWorkerRollbackAndDedicatedPostgresCleanu
 	}()
 
 	deadline := time.Now().Add(5 * time.Second)
-	for !balanceLifecycle.Running() || !service.catalogLifecycle.running {
+	for !balanceLifecycle.Running() || !service.catalogLifecycle.Running() {
 		if time.Now().After(deadline) {
 			cancel()
 			t.Fatal("timed out waiting for balance and catalog workers to start")
@@ -1462,7 +1462,7 @@ func TestServiceRunCancellationPreservesWorkerRollbackAndDedicatedPostgresCleanu
 	if balanceLifecycle.Running() {
 		t.Fatal("expected balance worker to stop during cancellation rollback")
 	}
-	if service.catalogLifecycle.running {
+	if service.catalogLifecycle.Running() {
 		t.Fatal("expected catalog lifecycle to stop during cancellation rollback")
 	}
 	if wrappedTransactionDB.closeCount != 1 || wrappedAuditDB.closeCount != 1 {
