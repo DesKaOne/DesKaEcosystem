@@ -30,6 +30,17 @@ func NewTimeoutMessage(
 	state RoundState,
 	validatorID []byte,
 	nextRound uint64,
+	signer crypto.Signer,
+) (Message, error) {
+	return NewTimeoutMessageWithLock(state, validatorID, nextRound, nil, signer)
+}
+
+// NewTimeoutMessageWithLock creates a signed timeout message carrying the
+// sender's locked proposal, if any. The lock is part of the signed evidence.
+func NewTimeoutMessageWithLock(
+	state RoundState,
+	validatorID []byte,
+	nextRound uint64,
 	lockedProposal []byte,
 	signer crypto.Signer,
 ) (Message, error) {
