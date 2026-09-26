@@ -4848,6 +4848,28 @@ Completed:
 - concurrent reconciliation still converges on the durable transaction result without resubmitting the provider purchase;
 - no retry, failover, resubmission, ledger mutation, treasury movement, or provider funding authorization is introduced.
 
+### 50. Milestone Update — PostgreSQL Concurrent Read/Transition Observation Atomicity
+
+**Date:** 2026-09-26
+
+Completed:
+
+- reviewed PostgreSQL durable read behavior during an atomic pending -> terminal transition;
+- verified the store reads a complete transaction row and commits state changes through a single conditional SQL update;
+- added deterministic regression coverage performing repeated durable reads while an atomic transition runs concurrently;
+- verified every observed state is either the complete pre-transition pending payload or the complete terminal payload, never a field-level mixture;
+- preserved transaction persistence as the authoritative transaction state while operational/audit evidence remains non-authoritative.
+
+### Verification
+
+- implementation HEAD: `204b45eb241a0461a9d0a6d372f2e5bf1d44ac4a`;
+- the new HEAD must complete CI jobs `test` and `race` successfully before this milestone is considered closed.
+
+### Safety Boundary
+
+- read/transition atomicity is a persistence-integrity property only;
+- no read observation can authorize provider retry, failover, resubmission, customer-ledger mutation, treasury movement, or provider funding.
+
 ### Next Milestone
 
-**#127 — PostgreSQL Concurrent Read/Transition Observation Atomicity:** verify concurrent durable reads observe only complete transaction states while an atomic transition commits, without exposing mixed fields or authorizing side effects.
+**#128 — PostgreSQL Restart Read Consistency Boundary:** verify durable reads remain complete and authoritative after reconnect/restart while preserving transaction identity and version metadata.
