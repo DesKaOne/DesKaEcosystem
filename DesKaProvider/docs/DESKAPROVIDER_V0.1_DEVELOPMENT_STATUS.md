@@ -6225,3 +6225,40 @@ Completed:
 ### Next Milestone
 
 **#143 — PostgreSQL Audit Read After Repeated Concurrent Commits:** verify readers converge monotonically as multiple committed audit writers finish, preserving every durable event exactly once in deterministic order without affecting transaction authority.
+
+
+### 142. Milestone Update — PostgreSQL Audit Read Visibility After Concurrent Commit
+
+**Date:** 2026-09-26
+
+Completed:
+
+- added real-PostgreSQL integration coverage for audit history read before and after a concurrent writer commits;
+- verified the reader sees only the previously committed audit event while the second event remains uncommitted;
+- committed the second event and verified the reader then converges to the complete committed audit history without partial payload exposure;
+- verified same-timestamp committed events retain deterministic `created_at, audit_id` ordering after the concurrent commit;
+- confirmed read visibility/convergence is a PostgreSQL persistence and isolation property only and does not feed transaction execution authority;
+- no production audit-store implementation change was required;
+- no transaction authority, provider submission authority, retry/failover behavior, ledger mutation, treasury movement, or provider funding behavior was broadened.
+
+### Safety Boundary
+
+- audit readers observe only committed rows;
+- commit visibility does not turn audit history into a transaction-state source;
+- audit ordering remains observational and deterministic, not an execution or idempotency key;
+- transaction persistence remains the authoritative transaction-state and idempotency boundary.
+
+### Verification
+
+- test implementation commit: `c55d4a1d`;
+- exact branch HEAD after this status documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before this milestone is considered closed.
+
+### Known Limitations
+
+- the scenario validates one concurrent commit boundary on the repository's PostgreSQL integration harness and does not cover every isolation level, replica lag, or distributed PostgreSQL topology;
+- deterministic ordering remains tied to the persisted `audit_id` identity for equal timestamps;
+- audit remains operational evidence and is not a financial source of truth.
+
+### Next Milestone
+
+**#143 — PostgreSQL Audit Read Consistency Across Repeated Concurrent Snapshots:** verify repeated audit reads converge on a stable committed sequence while concurrent appends occur, without making read sequence part of transaction authority.
