@@ -1788,6 +1788,96 @@ func TestPostgresSequentialPendingTransitionVersionIntegrity(t *testing.T) {
 		t.Fatalf("stale version changed durable state: before=%#v after=%#v", afterSecond, final)
 	}
 }
+func TestPostgresConcurrentReadTransitionObservesCompleteState(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	schema := "read_transition_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatalf("create isolated schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
+	})
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set isolated search path: %v", err)
+	}
+	applyPostgresMigration(t, db)
+
+	connA, err := db.Conn(ctx)
+	if err != nil { t.Fatalf("pin reader connection: %v", err) }
+	t.Cleanup(func() { _ = connA.Close() })
+	if _, err := connA.ExecContext(ctx, "SET search_path TO "+schema); err != nil { t.Fatalf("set reader search path: %v", err) }
+
+	connB, err := db.Conn(ctx)
+	if err != nil { t.Fatalf("pin writer connection: %v", err) }
+	t.Cleanup(func() { _ = connB.Close() })
+	if _, err := connB.ExecContext(ctx, "SET search_path TO "+schema); err != nil { t.Fatalf("set writer search path: %v", err) }
+
+	reader, err := NewPostgresTransactionStore(connA)
+	if err != nil { t.Fatal(err) }
+	writer, err := NewPostgresTransactionStore(connB)
+	if err != nil { t.Fatal(err) }
+
+	pending := postgresPendingState()
+	pending.Request.ReferenceID = postgresIntegrationReference()
+	pending.Execution.ProviderName = "mock"
+	pending.Execution.Result.ReferenceID = pending.Request.ReferenceID
+	pending.Execution.Result.ProviderCode = "00"
+	pending.Execution.Result.Message = "pending"
+	pending.Execution.Result.SerialNumber = "SN-PENDING"
+	pending.Execution.Result.Price = 20000
+	pending.Version = 1
+	if err := writer.PutContext(ctx, pending); err != nil { t.Fatalf("insert pending: %v", err) }
+
+	success := pending
+	success.Execution.Result.Status = provider.StatusSuccess
+	success.Execution.Result.Message = "success"
+	success.Execution.Result.SerialNumber = "SN-SUCCESS"
+
+	var wg sync.WaitGroup
+	reads := make(chan TransactionState, 12)
+	errs := make(chan error, 1)
+	const readers = 12
+	for i := 0; i < readers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			state, ok := reader.GetContext(ctx, pending.Request.ReferenceID)
+			if ok { reads <- state }
+		}()
+	}
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		err := writer.PutIfCurrentContext(ctx, pending.Request.ReferenceID, pending, success)
+		if err != nil { errs <- err }
+	}()
+	wg.Wait()
+	close(reads)
+	close(errs)
+
+	for err := range errs { t.Fatalf("atomic transition failed: %v", err) }
+	for state := range reads {
+		if state.Request != pending.Request || state.Execution.ProviderName != pending.Execution.ProviderName {
+			t.Fatalf("read observed mixed identity fields: %#v", state)
+		}
+		result := state.Execution.Result
+		validPending := result.Status == provider.StatusPending && result.Message == "pending" && result.SerialNumber == "SN-PENDING" && state.Version == 1
+		validSuccess := result.Status == provider.StatusSuccess && result.Message == "success" && result.SerialNumber == "SN-SUCCESS" && state.Version == 1
+		if !validPending && !validSuccess {
+			t.Fatalf("read observed partial transition state: %#v", state)
+		}
+	}
+	final, ok := reader.GetContext(ctx, pending.Request.ReferenceID)
+	if !ok { t.Fatal("final transaction disappeared") }
+	if final.Version != 2 || final.Execution.Result.Status != provider.StatusSuccess || final.Execution.Result.Message != "success" || final.Execution.Result.SerialNumber != "SN-SUCCESS" {
+		t.Fatalf("unexpected final transaction state: %#v", final)
+	}
+}
+
 func TestPostgresMigrationVerification(t *testing.T) {
 	sqlText := postgresMigrationSQL(t)
 	required := []string{
