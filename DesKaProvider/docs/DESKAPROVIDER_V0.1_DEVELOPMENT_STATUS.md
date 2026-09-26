@@ -7646,3 +7646,39 @@ The implementation/test HEAD was therefore green before this documentation updat
 ### Next Milestone
 
 **#170 — PostgreSQL Runtime Reopen/Initialization Error Matrix:** cover real PostgreSQL open, ping, constructor, shared-resource, dedicated-resource, and post-initialization failure combinations as a deterministic matrix, including error precedence and cleanup order without introducing fallback authority.
+
+
+### Milestone #170 — PostgreSQL Runtime Reopen/Initialization Error Matrix
+
+**Date:** 2026-09-26
+
+Completed:
+
+- hardened PostgreSQL DSN validation so transaction-store and audit-store requirements are classified independently;
+- added deterministic configuration-matrix coverage for transaction-only PostgreSQL configuration without DSN and audit-only PostgreSQL configuration without DSN;
+- retained explicit canceled-context coverage for transaction-store and audit-store open paths;
+- retained real PostgreSQL coverage for shared versus dedicated transaction/audit resources, reopen behavior, durable state recovery, and ownership cleanup;
+- preserved the existing error boundary: initialization errors remain discoverable, cleanup errors remain observable through joined errors, shared database handles are closed only once, dedicated transaction and audit handles remain independently owned, and no transaction state is reconstructed from audit evidence or audit state synthesized from transaction state.
+
+### Verification
+
+- Initial CI attempt on `5c4ba2814d06d3034e4346033e8ae1b98ecd2ba7` failed because the automated edit introduced literal `\\n` characters into `runtime.go`; this was corrected immediately.
+- Final implementation/test commit: `da03cba929dfb6e143700bf1ffac40547dadb484`
+- Push CI #1584: **GREEN** (`go test ./...`, `go vet ./...`, `go test -race ./...`, PostgreSQL service-backed integration tests).
+- PR CI #1585: **GREEN** (`test`, `race`).
+- No provider retry, failover, resubmission, ledger, treasury, funding, or cross-domain recovery behavior was introduced by this milestone.
+
+### Safety Boundary
+
+PostgreSQL runtime initialization/reopen remains infrastructure-only. Database-open and initialization failures must stop initialization rather than fabricate state, fall back to another authority, or trigger provider-side financial activity. Transaction persistence remains the authoritative transaction-state/idempotency boundary; audit persistence remains observational evidence.
+
+### Known Limitations
+
+- Live external-provider credential validation remains environment-dependent and is not part of this runtime milestone.
+- Constructor/open failure combinations that require a synthetic database implementation are covered at the helper/error-boundary level; real PostgreSQL coverage exercises the actual driver, ping, persistence, shared-resource, dedicated-resource, and reopen paths.
+
+### Next Milestone
+
+**#171 — PostgreSQL Runtime Initialization Failure Cleanup Precedence**
+
+Next work should extend deterministic coverage for post-open constructor failures, cleanup-error precedence, and initialization rollback ordering across shared and dedicated resources, without changing transaction/audit authority boundaries.
