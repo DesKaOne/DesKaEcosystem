@@ -2149,6 +2149,89 @@ func TestPostgresSequentialWriterConflictPreservesCurrentVersion(t *testing.T) {
 	}
 }
 
+func TestPostgresPutContextTerminalIdempotencyPreservesVersion(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	schema := "terminal_idempotency_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil { t.Fatalf("create isolated schema: %v", err) }
+	t.Cleanup(func() { _, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE") })
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil { t.Fatalf("set search path: %v", err) }
+	applyPostgresMigration(t, db)
+	store, err := NewPostgresTransactionStore(db)
+	if err != nil { t.Fatal(err) }
+	ref := postgresIntegrationReference()
+	pending := postgresPendingState()
+	pending.Request.ReferenceID = ref
+	pending.Execution.Result.ReferenceID = ref
+	if err := store.PutContext(ctx, pending); err != nil { t.Fatalf("insert pending: %v", err) }
+
+	success := pending
+	success.Execution.Result.Status = provider.StatusSuccess
+	success.Execution.Result.ProviderCode = "00"
+	success.Execution.Result.Message = "success"
+	success.Execution.Result.SerialNumber = "SN-IDEMPOTENT"
+	success.Execution.Result.Price = pending.Request.Amount
+	if err := store.PutContext(ctx, success); err != nil { t.Fatalf("transition to success: %v", err) }
+
+	first, ok := store.GetContext(ctx, ref)
+	if !ok || first.Version != 2 || first.Execution.Result.Status != provider.StatusSuccess { t.Fatalf("expected version 2 success, got %#v", first) }
+	if err := store.PutContext(ctx, first); err != nil { t.Fatalf("identical terminal write: %v", err) }
+	second, ok := store.GetContext(ctx, ref)
+	if !ok || second.Version != 2 || !samePurchaseResult(second.Execution.Result, first.Execution.Result) { t.Fatalf("identical terminal write changed durable state: %#v", second) }
+
+	staleIdentical := first
+	staleIdentical.Version = 1
+	if err := store.PutContext(ctx, staleIdentical); err != nil { t.Fatalf("stale identical terminal replay: %v", err) }
+	third, ok := store.GetContext(ctx, ref)
+	if !ok || third.Version != 2 || !samePurchaseResult(third.Execution.Result, first.Execution.Result) { t.Fatalf("stale identical terminal replay changed durable state: %#v", third) }
+}
+
+func TestPostgresPutContextRejectsConflictingTerminalRewrite(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	schema := "terminal_conflict_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil { t.Fatalf("create isolated schema: %v", err) }
+	t.Cleanup(func() { _, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE") })
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil { t.Fatalf("set search path: %v", err) }
+	applyPostgresMigration(t, db)
+	store, err := NewPostgresTransactionStore(db)
+	if err != nil { t.Fatal(err) }
+	ref := postgresIntegrationReference()
+	base := postgresPendingState()
+	base.Request.ReferenceID = ref
+	base.Execution.Result.ReferenceID = ref
+	if err := store.PutContext(ctx, base); err != nil { t.Fatalf("insert pending: %v", err) }
+
+	success := base
+	success.Execution.Result.Status = provider.StatusSuccess
+	success.Execution.Result.ProviderCode = "00"
+	success.Execution.Result.Message = "success"
+	if err := store.PutContext(ctx, success); err != nil { t.Fatalf("transition to success: %v", err) }
+
+	current, ok := store.GetContext(ctx, ref)
+	if !ok || current.Version != 2 { t.Fatalf("expected terminal version 2, got %#v", current) }
+
+	failed := current
+	failed.Execution.Result.Status = provider.StatusFailed
+	failed.Execution.Result.ProviderCode = "02"
+	failed.Execution.Result.Message = "failed"
+	if err := store.PutContext(ctx, failed); err != ErrReferenceConflict { t.Fatalf("expected SUCCESS -> FAILED conflict, got %v", err) }
+
+	staleFailed := current
+	staleFailed.Version = 1
+	staleFailed.Execution.Result.Status = provider.StatusFailed
+	staleFailed.Execution.Result.ProviderCode = "02"
+	staleFailed.Execution.Result.Message = "failed"
+	if err := store.PutContext(ctx, staleFailed); err != ErrReferenceConflict { t.Fatalf("expected stale SUCCESS -> FAILED conflict, got %v", err) }
+
+	after, ok := store.GetContext(ctx, ref)
+	if !ok || after.Version != 2 || after.Execution.Result.Status != provider.StatusSuccess {
+		t.Fatalf("conflicting terminal rewrite mutated durable state: %#v", after)
+	}
+}
+
 func TestPostgresMigrationVerification(t *testing.T) {
 	sqlText := postgresMigrationSQL(t)
 	required := []string{
