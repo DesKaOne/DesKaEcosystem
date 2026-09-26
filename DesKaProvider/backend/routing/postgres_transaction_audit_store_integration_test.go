@@ -3251,19 +3251,27 @@ func TestPostgresTransactionAuditStoreCrossDomainRecoveryConcurrency(t *testing.
 	}
 	applyPostgresMigration(t, db)
 
-	transactionStore, err := NewPostgresTransactionStore(db)
-	if err != nil {
-		t.Fatal(err)
-	}
-	auditStore, err := NewPostgresTransactionAuditStore(db)
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	referenceID := "cross-recovery-concurrency-ref"
 	state := postgresPendingState()
 	state.Request.ReferenceID = referenceID
 	state.Execution.Result.ReferenceID = referenceID
+
+	dbPathConn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatalf("pin baseline connection: %v", err)
+	}
+	defer dbPathConn.Close()
+	if _, err := dbPathConn.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set baseline connection search path: %v", err)
+	}
+	transactionStore, err := NewPostgresTransactionStore(dbPathConn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	auditStore, err := NewPostgresTransactionAuditStore(dbPathConn)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := transactionStore.PutContext(ctx, state); err != nil {
 		t.Fatalf("persist transaction fixture: %v", err)
 	}
@@ -3290,7 +3298,7 @@ func TestPostgresTransactionAuditStoreCrossDomainRecoveryConcurrency(t *testing.
 
 	const rounds = 12
 	const readers = 6
-	errCh := make(chan error, readers*rounds*2)
+	errCh := make(chan error, readers)
 	start := make(chan struct{})
 	var wg sync.WaitGroup
 
@@ -3298,19 +3306,38 @@ func TestPostgresTransactionAuditStoreCrossDomainRecoveryConcurrency(t *testing.
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			readerConn, err := db.Conn(ctx)
+			if err != nil {
+				errCh <- fmt.Errorf("open reader connection: %w", err)
+				return
+			}
+			defer readerConn.Close()
+			if _, err := readerConn.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+				errCh <- fmt.Errorf("set reader search path: %w", err)
+				return
+			}
+			readerTransactionStore, err := NewPostgresTransactionStore(readerConn)
+			if err != nil {
+				errCh <- fmt.Errorf("construct reader transaction store: %w", err)
+				return
+			}
+			readerAuditStore, err := NewPostgresTransactionAuditStore(readerConn)
+			if err != nil {
+				errCh <- fmt.Errorf("construct reader audit store: %w", err)
+				return
+			}
 			<-start
 			for round := 0; round < rounds; round++ {
-				stateSnapshot, ok, readErr := transactionStore.GetContextE(ctx, referenceID)
+				stateSnapshot, ok, readErr := readerTransactionStore.GetContextE(ctx, referenceID)
 				if readErr != nil {
 					errCh <- fmt.Errorf("transaction read round %d: %w", round, readErr)
 					return
 				}
-				if !ok || stateSnapshot.Request != baselineState.Request || stateSnapshot.Execution != baselineState.Execution {
+				if !ok || stateSnapshot != baselineState {
 					errCh <- fmt.Errorf("transaction snapshot diverged at round %d: %#v", round, stateSnapshot)
 					return
 				}
-
-				auditSnapshot, auditErr := auditStore.AllContextE(ctx, referenceID)
+				auditSnapshot, auditErr := readerAuditStore.AllContextE(ctx, referenceID)
 				if auditErr != nil {
 					errCh <- fmt.Errorf("audit read round %d: %w", round, auditErr)
 					return
@@ -3325,10 +3352,6 @@ func TestPostgresTransactionAuditStoreCrossDomainRecoveryConcurrency(t *testing.
 
 	close(start)
 
-	// Repeatedly exercise connection recovery for each persistence domain while
-	// readers continue to observe the already durable baseline from fresh pooled
-	// connections. Closed adapters must fail independently; recovery must return
-	// the same durable state without cross-domain reconstruction.
 	for round := 0; round < rounds; round++ {
 		transactionConn, err := db.Conn(ctx)
 		if err != nil {
