@@ -1931,10 +1931,6 @@ WHERE reference_id=$6 AND status='pending' AND version=$7`,
 	if _, err := auditConn.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
 		t.Fatalf("set audit search path: %v", err)
 	}
-	auditStore, err := NewPostgresTransactionAuditStore(auditConn)
-	if err != nil {
-		t.Fatal(err)
-	}
 	auditTx, err := auditConn.BeginTx(ctx, nil)
 	if err != nil {
 		t.Fatalf("begin contradictory audit transaction: %v", err)
