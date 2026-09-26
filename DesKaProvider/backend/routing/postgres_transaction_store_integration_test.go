@@ -117,7 +117,7 @@ func TestPostgresTransactionStoreIntegration(t *testing.T) {
 		t.Fatalf("truncate provider transactions: %v", err)
 	}
 
-	store, err = NewPostgresTransactionStore(db)
+	store, err := NewPostgresTransactionStore(db)
 	if err != nil {
 		t.Fatal(err)
 	}
