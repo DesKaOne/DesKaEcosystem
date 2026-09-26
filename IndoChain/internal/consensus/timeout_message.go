@@ -89,26 +89,67 @@ func NewTimeoutMessageWithLockRound(
 	return signed, nil
 }
 
+// NewTimeoutMessageWithLockProof creates a signed timeout message carrying
+// a complete, verifiable proof-of-lock. The proof is bound into the signed
+// payload, so tampering with any proof field invalidates the timeout signature.
+func NewTimeoutMessageWithLockProof(
+	state RoundState,
+	validatorID []byte,
+	nextRound uint64,
+	proof LockProof,
+	signer crypto.Signer,
+) (Message, error) {
+	if err := state.Validate(); err != nil { return Message{}, err }
+	if len(validatorID) == 0 { return Message{}, ErrMissingSender }
+	if nextRound <= state.Round { return Message{}, ErrInvalidTimeoutRound }
+	if signer == nil { return Message{}, ErrMissingSignature }
+	if err := validateTimeoutLockProof(proof, state, ValidatorSet{}, VotingPowerSet{}); err != nil {
+		// Structural validation is repeated by certificate construction where
+		// validator membership and voting power are available. Here only bind
+		// proposal/round/context shape; avoid pretending this proves quorum.
+		if !errors.Is(err, ErrValidatorNotFound) && !errors.Is(err, ErrVoteSenderNotInVotingPower) && !errors.Is(err, ErrInvalidVotingPowerSet) {
+			return Message{}, err
+		}
+	}
+	encoded, err := EncodeLockProof(proof)
+	if err != nil { return Message{}, err }
+	if proof.LockedRound > state.Round { return Message{}, ErrInvalidTimeoutRound }
+	msg := Message{
+		ProtocolVersion: state.ProtocolVersion, ChainID: state.ChainID, Epoch: state.Epoch,
+		Height: state.Height, Round: state.Round, Sender: append([]byte(nil), validatorID...),
+		Type: MessageTypeTimeout,
+		Payload: encodeTimeoutEvidenceWithRoundAndProof(nextRound, proof.LockedRound, proof.Proposal, encoded),
+	}
+	return msg.Sign(signer)
+}
+
 // TimeoutTargetRound decodes the target round from the canonical timeout payload.
 func TimeoutTargetRound(msg Message) (uint64, error) {
-	nextRound, _, _, err := decodeTimeoutEvidence(msg)
+	nextRound, _, _, _, err := decodeTimeoutEvidence(msg)
 	return nextRound, err
 }
 
 // TimeoutLockedProposal returns a defensive copy of the lock context carried
 // by a signed timeout message. An empty result means the sender carried no lock.
 func TimeoutLockedProposal(msg Message) ([]byte, error) {
-	_, _, lockedProposal, err := decodeTimeoutEvidence(msg)
-	if err != nil {
-		return nil, err
-	}
-	return append([]byte(nil), lockedProposal...), nil
+	_, _, lockedProposal, _, err := decodeTimeoutEvidence(msg)
+	return append([]byte(nil), lockedProposal...), err
 }
 
 // TimeoutLockedRound returns the round in which the carried lock was formed.
 func TimeoutLockedRound(msg Message) (uint64, error) {
-	_, lockedRound, _, err := decodeTimeoutEvidence(msg)
+	_, lockedRound, _, _, err := decodeTimeoutEvidence(msg)
 	return lockedRound, err
+}
+
+// TimeoutLockProof returns a defensive decoded proof-of-lock, if present.
+func TimeoutLockProof(msg Message) (*LockProof, error) {
+	_, _, _, encoded, err := decodeTimeoutEvidence(msg)
+	if err != nil { return nil, err }
+	if len(encoded) == 0 { return nil, nil }
+	proof, err := DecodeLockProof(encoded)
+	if err != nil { return nil, err }
+	return cloneLockProofPtr(&proof), nil
 }
 
 // ValidateTimeoutMessage validates structure, exact consensus context, sender
@@ -168,72 +209,82 @@ func NewTimeoutCertificateFromMessages(
 	rules ValidationRules,
 	resolver TimeoutAuthorityResolver,
 ) (TimeoutCertificate, error) {
-	if len(messages) == 0 {
-		return TimeoutCertificate{}, ErrInvalidTimeoutMessage
-	}
-
+	if len(messages) == 0 { return TimeoutCertificate{}, ErrInvalidTimeoutMessage }
 	var nextRound uint64
 	var lockedProposal []byte
 	var lockedRound uint64
+	var lockProof *LockProof
 	senders := make([][]byte, 0, len(messages))
 	for i, msg := range messages {
 		target, err := ValidateTimeoutMessage(msg, state, validators, rules, resolver)
-		if err != nil {
-			return TimeoutCertificate{}, fmt.Errorf("timeout message %d: %w", i, err)
-		}
+		if err != nil { return TimeoutCertificate{}, fmt.Errorf("timeout message %d: %w", i, err) }
 		messageLockRound, err := TimeoutLockedRound(msg)
 		if err != nil { return TimeoutCertificate{}, fmt.Errorf("timeout message %d: %w", i, err) }
 		messageLock, err := TimeoutLockedProposal(msg)
-		if err != nil {
-			return TimeoutCertificate{}, fmt.Errorf("timeout message %d: %w", i, err)
-		}
+		if err != nil { return TimeoutCertificate{}, fmt.Errorf("timeout message %d: %w", i, err) }
+		messageProof, err := TimeoutLockProof(msg)
+		if err != nil { return TimeoutCertificate{}, fmt.Errorf("timeout message %d: %w", i, err) }
 		if i == 0 {
 			nextRound = target
 			lockedProposal = append([]byte(nil), messageLock...)
 			lockedRound = messageLockRound
-		} else if target != nextRound {
-			return TimeoutCertificate{}, ErrTimeoutTargetRoundMismatch
-		} else if !bytes.Equal(messageLock, lockedProposal) || messageLockRound != lockedRound {
-			return TimeoutCertificate{}, ErrConflictingTimeoutLock
+			lockProof = messageProof
+		} else {
+			if target != nextRound { return TimeoutCertificate{}, ErrTimeoutTargetRoundMismatch }
+			if !bytes.Equal(messageLock, lockedProposal) || messageLockRound != lockedRound {
+				return TimeoutCertificate{}, ErrConflictingTimeoutLock
+			}
+			if (messageProof == nil) != (lockProof == nil) {
+				return TimeoutCertificate{}, ErrConflictingTimeoutLock
+			}
+			if messageProof != nil {
+				encodedA, _ := EncodeLockProof(*lockProof)
+				encodedB, _ := EncodeLockProof(*messageProof)
+				if !bytes.Equal(encodedA, encodedB) { return TimeoutCertificate{}, ErrConflictingTimeoutLock }
+			}
 		}
 		senders = append(senders, append([]byte(nil), msg.Sender...))
 	}
-
-	return NewTimeoutCertificateWithLockRound(
-		state,
-		validators,
-		votingPower,
-		threshold,
-		nextRound,
-		lockedRound,
-		senders,
-		lockedProposal,
-	)
+	if len(lockedProposal) > 0 {
+		if lockProof == nil { return TimeoutCertificate{}, ErrInvalidLockProof }
+		if err := validateTimeoutLockProof(*lockProof, state, validators, votingPower); err != nil { return TimeoutCertificate{}, err }
+	}
+	return NewTimeoutCertificateWithLockProof(state, validators, votingPower, threshold, nextRound, senders, lockProof)
 }
 
-func encodeTimeoutEvidence(nextRound uint64, lockedProposal []byte) []byte { return encodeTimeoutEvidenceWithRound(nextRound, 0, lockedProposal) }
+func encodeTimeoutEvidence(nextRound uint64, lockedProposal []byte) []byte {
+	return encodeTimeoutEvidenceWithRoundAndProof(nextRound, 0, lockedProposal, nil)
+}
 
 func encodeTimeoutEvidenceWithRound(nextRound uint64, lockedRound uint64, lockedProposal []byte) []byte {
-	if uint64(len(lockedProposal)) > uint64(^uint32(0)) {
-		return nil
-	}
-	payload := make([]byte, timeoutPayloadPrefixSize+len(lockedProposal))
+	return encodeTimeoutEvidenceWithRoundAndProof(nextRound, lockedRound, lockedProposal, nil)
+}
+
+func encodeTimeoutEvidenceWithRoundAndProof(nextRound uint64, lockedRound uint64, lockedProposal []byte, proof []byte) []byte {
+	if uint64(len(lockedProposal)) > uint64(^uint32(0)) || uint64(len(proof)) > uint64(^uint32(0)) { return nil }
+	payload := make([]byte, timeoutPayloadPrefixSize+len(lockedProposal)+4+len(proof))
 	binary.BigEndian.PutUint64(payload[:8], nextRound)
 	binary.BigEndian.PutUint64(payload[8:16], lockedRound)
 	binary.BigEndian.PutUint32(payload[16:20], uint32(len(lockedProposal)))
 	copy(payload[20:], lockedProposal)
+	offset := timeoutPayloadPrefixSize + len(lockedProposal)
+	binary.BigEndian.PutUint32(payload[offset:offset+4], uint32(len(proof)))
+	copy(payload[offset+4:], proof)
 	return payload
 }
 
-func decodeTimeoutEvidence(msg Message) (uint64, uint64, []byte, error) {
-	if msg.Type != MessageTypeTimeout || len(msg.Payload) < timeoutPayloadPrefixSize {
-		return 0, 0, nil, ErrInvalidTimeoutMessage
-	}
+func decodeTimeoutEvidence(msg Message) (uint64, uint64, []byte, []byte, error) {
+	if msg.Type != MessageTypeTimeout || len(msg.Payload) < timeoutPayloadPrefixSize+4 { return 0, 0, nil, nil, ErrInvalidTimeoutMessage }
 	nextRound := binary.BigEndian.Uint64(msg.Payload[:8])
 	lockedRound := binary.BigEndian.Uint64(msg.Payload[8:16])
 	lockLen := binary.BigEndian.Uint32(msg.Payload[16:20])
-	if uint64(timeoutPayloadPrefixSize)+uint64(lockLen) != uint64(len(msg.Payload)) {
-		return 0, 0, nil, ErrInvalidTimeoutMessage
-	}
-	return nextRound, lockedRound, append([]byte(nil), msg.Payload[timeoutPayloadPrefixSize:]...), nil
+	offset := timeoutPayloadPrefixSize
+	if uint64(offset)+uint64(lockLen)+4 > uint64(len(msg.Payload)) { return 0, 0, nil, nil, ErrInvalidTimeoutMessage }
+	lockedProposal := append([]byte(nil), msg.Payload[offset:offset+int(lockLen)]...)
+	offset += int(lockLen)
+	proofLen := binary.BigEndian.Uint32(msg.Payload[offset:offset+4])
+	offset += 4
+	if uint64(offset)+uint64(proofLen) != uint64(len(msg.Payload)) { return 0, 0, nil, nil, ErrInvalidTimeoutMessage }
+	proof := append([]byte(nil), msg.Payload[offset:]...)
+	return nextRound, lockedRound, lockedProposal, proof, nil
 }
