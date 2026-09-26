@@ -755,6 +755,104 @@ func TestTransactionStoreRejectsRequestMutation(t *testing.T) {
 }
 
 
+func TestServiceReconcileCancellationPreservesPendingState(t *testing.T) {
+	base := Mock.New(Mock.Config{
+		Products:       []provider.Product{{Code: "pln20", Name: "PLN 20"}},
+		ProviderCode:   "00",
+		Message:        "pending",
+		PurchaseStatus: provider.StatusPending,
+		Price:          20000,
+	})
+	blocking := &blockingStatusProvider{Provider: base, statusStarted: make(chan struct{})}
+
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", blocking); err != nil {
+		t.Fatal(err)
+	}
+	ops := operational.NewMemoryStore()
+	if err := ops.Put(operational.Snapshot{ProviderName: "mock", Balance: 100000, Health: operational.HealthHealthy}); err != nil {
+		t.Fatal(err)
+	}
+	router, err := New(registry, ops, map[string]int{"mock": 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	store := NewMemoryTransactionStore()
+	service, err := NewServiceWithStore(router, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := PurchaseRequest{
+		ProductCode: "pln20",
+		CustomerNo:  "08123456789",
+		ReferenceID: "ref-reconcile-cancel",
+		Amount:      20000,
+	}
+	if _, err := service.Purchase(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	if got := base.PurchaseCount(req.ReferenceID); got != 1 {
+		t.Fatalf("expected one provider purchase before reconciliation, got %d", got)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	resultCh := make(chan struct {
+		result PurchaseExecution
+		err    error
+	}, 1)
+	go func() {
+		result, err := service.Reconcile(ctx, req.ReferenceID)
+		resultCh <- struct {
+			result PurchaseExecution
+			err    error
+		}{result: result, err: err}
+	}()
+
+	select {
+	case <-blocking.statusStarted:
+	case <-time.After(time.Second):
+		t.Fatal("reconcile did not reach provider status lookup")
+	}
+	cancel()
+
+	select {
+	case outcome := <-resultCh:
+		if !errors.Is(outcome.err, context.Canceled) {
+			t.Fatalf("expected context.Canceled from canceled reconciliation, got result=%#v err=%v", outcome.result, outcome.err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("reconcile did not return after context cancellation")
+	}
+
+	durable, ok := store.Get(req.ReferenceID)
+	if !ok {
+		t.Fatal("transaction disappeared after canceled reconciliation")
+	}
+	if durable.Execution.Result.Status != provider.StatusPending {
+		t.Fatalf("canceled reconciliation must preserve pending state, got %q", durable.Execution.Result.Status)
+	}
+	if got := base.PurchaseCount(req.ReferenceID); got != 1 {
+		t.Fatalf("canceled reconciliation must not resubmit provider purchase, got %d submissions", got)
+	}
+}
+
+type blockingStatusProvider struct {
+	*Mock.Provider
+	statusStarted chan struct{}
+}
+
+func (p *blockingStatusProvider) GetStatus(ctx context.Context, req provider.StatusRequest) (provider.PurchaseResult, error) {
+	select {
+	case <-p.statusStarted:
+	default:
+		close(p.statusStarted)
+	}
+	<-ctx.Done()
+	return provider.PurchaseResult{}, ctx.Err()
+}
+
 func TestServiceRestartReconcilesPendingWithoutResubmission(t *testing.T) {
 	storePath := filepath.Join(t.TempDir(), "transactions", "state.json")
 	registry := provider.NewRegistry()
