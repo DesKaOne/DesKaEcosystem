@@ -1014,3 +1014,41 @@ func TestServiceRunWithBalanceAndCatalogLifecyclesClosesDeterministically(t *tes
 	if err := service.Close(); err != nil { t.Fatalf("repeated service close failed: %v", err) }
 	if closeDB.closeCount != 1 { t.Fatalf("expected repeated service close to remain single-shot, got %d", closeDB.closeCount) }
 }
+
+
+func TestOpenAuditStoreCanceledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	cfg := Config{AuditStoreDriver: "postgres", PostgresDSN: "postgres://invalid"}
+	if _, _, err := openAuditStore(ctx, cfg, nil); err != context.Canceled {
+		t.Fatalf("expected context.Canceled, got %v", err)
+	}
+}
+
+func TestRuntimeInitializationCleanupWithNilPrimaryClosesAcquiredResources(t *testing.T) {
+	transactionDB := &closeErrorDB{}
+	auditDB := &closeErrorDB{}
+	if err := withRuntimeInitializationCleanupError(nil, transactionDB, auditDB); err != nil {
+		t.Fatalf("unexpected cleanup error: %v", err)
+	}
+	if transactionDB.closeCount != 1 || auditDB.closeCount != 1 {
+		t.Fatalf("expected each acquired resource to close once, got tx=%d audit=%d", transactionDB.closeCount, auditDB.closeCount)
+	}
+}
+
+func TestRuntimeInitializationCleanupPreservesWrappedPrimaryAndCleanupIdentity(t *testing.T) {
+	primary := errors.New("postgres audit initialization failed")
+	cleanupErr := errors.New("postgres transaction cleanup failed")
+	transactionDB := &initializationCloseErrorDB{closeErr: cleanupErr}
+	wrappedPrimary := fmt.Errorf("open audit store: %w", primary)
+	got := withRuntimeInitializationCleanupError(wrappedPrimary, transactionDB, nil)
+	if !errors.Is(got, primary) {
+		t.Fatalf("expected wrapped primary error identity to remain discoverable: %v", got)
+	}
+	if !errors.Is(got, cleanupErr) {
+		t.Fatalf("expected cleanup error identity to remain discoverable: %v", got)
+	}
+	if transactionDB.closeCount != 1 {
+		t.Fatalf("expected one cleanup close, got %d", transactionDB.closeCount)
+	}
+}
