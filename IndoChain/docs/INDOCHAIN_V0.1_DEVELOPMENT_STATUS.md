@@ -1249,3 +1249,5 @@ Commits:
 - membership regression test: `bc9555c1efa4bc4f7f3bb49dff3ea3fb5afb5c82`
 
 CI #1109 (run `36263385593`) first failed at compile time due to an incorrect validation return type. CI #1113 (run `36263420613`) then exposed missing membership enforcement during certificate construction. Both root causes are fixed; latest fix is `84995bf3ed1e86e33b883d861f8f5a98d4dcea40`. A fresh CI run must be green before this milestone is considered complete.
+
+CI verification completed: **IndoChain CI #1117** (run `36263453369`) for code commit `84995bf3ed1e86e33b883d861f8f5a98d4dcea40` completed successfully; Tidy, Test, and Vet all passed.
