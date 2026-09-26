@@ -1407,6 +1407,7 @@ func TestServiceRunCancellationPreservesWorkerRollbackAndDedicatedPostgresCleanu
 		catalogSync:       catalogSync,
 		databaseOwnership: ownership,
 		balanceLifecycle:  balanceLifecycle,
+		catalogLifecycle:  newCatalogWorkerLifecycle(),
 		interval:          time.Hour,
 		catalogInterval:   time.Hour,
 		balanceShutdown: func(ctx context.Context) error {
