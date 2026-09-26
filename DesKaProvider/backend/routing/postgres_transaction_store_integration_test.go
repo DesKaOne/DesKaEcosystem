@@ -1529,12 +1529,16 @@ func TestPostgresRestartReadConcurrentObservation(t *testing.T) {
 		t.Fatalf("persist pending transaction: %v", err)
 	}
 
-	terminal := state
+	durablePending, ok := initialStore.GetContext(ctx, state.Request.ReferenceID)
+	if !ok {
+		t.Fatal("pending transaction missing before terminal commit")
+	}
+	terminal := durablePending
 	terminal.Execution.Result.Status = provider.StatusSuccess
 	terminal.Execution.Result.ProviderCode = "00"
 	terminal.Execution.Result.Message = "success"
 	terminal.Execution.Result.Price = 20000
-	if err := initialStore.PutIfCurrentContext(ctx, state.Request.ReferenceID, state, terminal); err != nil {
+	if err := initialStore.PutIfCurrentContext(ctx, state.Request.ReferenceID, durablePending, terminal); err != nil {
 		t.Fatalf("commit terminal transaction: %v", err)
 	}
 
@@ -1597,11 +1601,11 @@ func TestPostgresRestartReadConcurrentObservation(t *testing.T) {
 		t.Fatalf("expected %d concurrent reads, got %d", workers, count)
 	}
 
-	stale := state
+	stale := before
 	stale.Execution.Result.Status = provider.StatusFailed
 	stale.Execution.Result.ProviderCode = "99"
 	stale.Execution.Result.Message = "stale"
-	if err := firstStore.PutIfCurrentContext(ctx, state.Request.ReferenceID, before, stale); !errors.Is(err, ErrTransactionStateConflict) {
+	if err := firstStore.PutIfCurrentContext(ctx, state.Request.ReferenceID, before, stale); !errors.Is(err, ErrReferenceConflict) {
 		t.Fatalf("stale observation must remain non-authoritative after restart, got %v", err)
 	}
 
