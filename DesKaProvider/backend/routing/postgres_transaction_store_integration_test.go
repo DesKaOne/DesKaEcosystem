@@ -1950,6 +1950,63 @@ func TestPostgresPutContextAdvancesVersionAcrossRepeatedTransitions(t *testing.T
 	}
 }
 
+func TestPostgresCanceledContextDoesNotWriteTransaction(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	applyPostgresMigration(t, db)
+	if _, err := db.ExecContext(ctx, "TRUNCATE provider_transactions"); err != nil {
+		t.Fatalf("truncate provider transactions: %v", err)
+	}
+
+	store, err := NewPostgresTransactionStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending := postgresPendingState()
+	pending.Request.ReferenceID = postgresIntegrationReference()
+	pending.Execution.Result.ReferenceID = pending.Request.ReferenceID
+
+	canceled, stop := context.WithCancel(ctx)
+	stop()
+	if err := store.PutContext(canceled, pending); !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected canceled PutContext, got %v", err)
+	}
+	if _, ok, err := store.GetContextE(ctx, pending.Request.ReferenceID); err != nil {
+		t.Fatalf("read transaction after canceled PutContext: %v", err)
+	} else if ok {
+		t.Fatal("canceled PutContext must not create a durable transaction")
+	}
+
+	activeCtx, activeCancel := context.WithCancel(ctx)
+	defer activeCancel()
+	if err := store.PutContext(activeCtx, pending); err != nil {
+		t.Fatalf("insert pending transaction: %v", err)
+	}
+	current, ok, err := store.GetContextE(ctx, pending.Request.ReferenceID)
+	if err != nil || !ok {
+		t.Fatalf("read inserted transaction: ok=%v err=%v", ok, err)
+	}
+	success := current
+	success.Execution.Result.Status = provider.StatusSuccess
+	success.Execution.Result.ProviderCode = "00"
+	success.Execution.Result.Message = "success"
+
+	canceledTransition, stopTransition := context.WithCancel(ctx)
+	stopTransition()
+	if err := store.PutIfCurrentContext(canceledTransition, pending.Request.ReferenceID, current, success); !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected canceled PutIfCurrentContext, got %v", err)
+	}
+	final, ok, err := store.GetContextE(ctx, pending.Request.ReferenceID)
+	if err != nil || !ok {
+		t.Fatalf("read transaction after canceled transition: ok=%v err=%v", ok, err)
+	}
+	if final.Execution.Result.Status != provider.StatusPending || final.Version != current.Version {
+		t.Fatalf("canceled transition changed durable state: %#v", final)
+	}
+}
+
+
 func TestPostgresMigrationVerification(t *testing.T) {
 	sqlText := postgresMigrationSQL(t)
 	required := []string{
