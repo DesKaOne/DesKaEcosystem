@@ -3403,6 +3403,133 @@ func TestPostgresTransactionAuditStoreCrossDomainRecoveryConcurrency(t *testing.
 	}
 }
 
+func TestPostgresTransactionAuditStoreCrossDomainReadAfterConcurrentAuditCommit(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	schema := "audit_cross_commit_visibility_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatalf("create isolated schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
+	})
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set search path: %v", err)
+	}
+	applyPostgresMigration(t, db)
+
+	referenceID := "cross-commit-visibility-ref"
+	state := postgresPendingState()
+	state.Request.ReferenceID = referenceID
+	state.Execution.Result.ReferenceID = referenceID
+
+	baselineConn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatalf("pin baseline connection: %v", err)
+	}
+	defer baselineConn.Close()
+	if _, err := baselineConn.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set baseline search path: %v", err)
+	}
+	transactionStore, err := NewPostgresTransactionStore(baselineConn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	auditStore, err := NewPostgresTransactionAuditStore(baselineConn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := transactionStore.PutContext(ctx, state); err != nil {
+		t.Fatalf("persist baseline transaction state: %v", err)
+	}
+
+	createdAt := time.Now().UTC().Truncate(time.Microsecond)
+	first := TransactionAuditEvent{
+		ReferenceID:  referenceID,
+		Action:       "BASELINE",
+		Next:         string(provider.StatusPending),
+		ProviderName: "mock",
+		Message:      "baseline",
+		CreatedAt:    createdAt,
+	}
+	second := TransactionAuditEvent{
+		ReferenceID:  referenceID,
+		Action:       "CONCURRENT_COMMIT",
+		Previous:     string(provider.StatusPending),
+		Next:         string(provider.StatusSuccess),
+		ProviderName: "mock",
+		Message:      "committed concurrently",
+		CreatedAt:    createdAt,
+	}
+	if err := auditStore.AppendContext(ctx, first); err != nil {
+		t.Fatalf("persist baseline audit event: %v", err)
+	}
+
+	writerConn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatalf("open concurrent writer connection: %v", err)
+	}
+	defer writerConn.Close()
+	if _, err := writerConn.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set writer search path: %v", err)
+	}
+	tx, err := writerConn.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatalf("begin concurrent writer transaction: %v", err)
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, postgresAuditAppendSQL,
+		second.ReferenceID,
+		second.Action,
+		second.Previous,
+		second.Next,
+		second.ProviderName,
+		second.Message,
+		second.CreatedAt.UTC(),
+	); err != nil {
+		t.Fatalf("stage concurrent audit event: %v", err)
+	}
+
+	beforeCommitAudit, err := auditStore.AllContextE(ctx, referenceID)
+	if err != nil {
+		t.Fatalf("read audit before concurrent commit: %v", err)
+	}
+	if len(beforeCommitAudit) != 1 || beforeCommitAudit[0] != first {
+		t.Fatalf("before commit reader must see only baseline audit state, got %#v", beforeCommitAudit)
+	}
+	beforeCommitState, found, err := transactionStore.GetContextE(ctx, referenceID)
+	if err != nil || !found {
+		t.Fatalf("read transaction before concurrent commit: found=%v err=%v", found, err)
+	}
+	if beforeCommitState != state {
+		t.Fatalf("transaction state changed before audit commit: baseline=%#v observed=%#v", state, beforeCommitState)
+	}
+
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("commit concurrent audit event: %v", err)
+	}
+
+	afterCommitAudit, err := auditStore.AllContextE(ctx, referenceID)
+	if err != nil {
+		t.Fatalf("read audit after concurrent commit: %v", err)
+	}
+	if len(afterCommitAudit) != 2 || afterCommitAudit[0] != first || afterCommitAudit[1] != second {
+		t.Fatalf("audit reader must converge to complete committed history: %#v", afterCommitAudit)
+	}
+
+	afterCommitState, found, err := transactionStore.GetContextE(ctx, referenceID)
+	if err != nil || !found {
+		t.Fatalf("read transaction after audit commit: found=%v err=%v", found, err)
+	}
+	if afterCommitState != state {
+		t.Fatalf("audit commit must not synthesize transaction state: baseline=%#v observed=%#v", state, afterCommitState)
+	}
+}
+
+
 func TestPostgresTransactionAuditStoreAppendFailureThenRecovery(t *testing.T) {
 	db := postgresIntegrationDB(t)
 	schema := "audit_append_recovery_" + strconv.FormatInt(time.Now().UnixNano(), 10)
