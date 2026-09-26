@@ -1126,6 +1126,7 @@ func TestServiceRunShutdownCompletionOrderingAndRepeatedClose(t *testing.T) {
 	}
 	service.catalogSync = catalogSync
 	service.catalogLifecycle = newCatalogWorkerLifecycle()
+	service.catalogInterval = time.Hour
 
 	order := make([]string, 0, 3)
 	var mu sync.Mutex
