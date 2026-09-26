@@ -136,7 +136,7 @@ func TestPostgresTransactionStoreIntegration(t *testing.T) {
 		t.Fatalf("pin postgres connection: %v", err)
 	}
 	defer conn.Close()
-	if _, err := conn.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+	if _, err := conn.ExecContext(ctx, "SET search_path TO public"); err != nil {
 		t.Fatalf("set pinned search path: %v", err)
 	}
 	pinnedStore, err := NewPostgresTransactionStore(conn)
