@@ -284,6 +284,15 @@ func (r *ValidatorRuntime) AddVote(msg Message) error {
 	if len(r.proposal) == 0 {
 		return ErrInvalidConsensusRuntime
 	}
+	// Legacy MessageTypeVote remains accepted as a compatibility input and is
+	// normalized into the explicit phase-specific evidence bucket.
+	if msg.Type == MessageTypeVote {
+		if r.state.Phase == PhasePrevote {
+			msg.Type = MessageTypePrevote
+		} else {
+			msg.Type = MessageTypePrecommit
+		}
+	}
 	if r.state.Phase == PhasePrevote && msg.Type != MessageTypePrevote {
 		return ErrInvalidRuntimeVoteType
 	}
