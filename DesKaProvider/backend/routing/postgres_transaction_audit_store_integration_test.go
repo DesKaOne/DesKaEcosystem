@@ -571,6 +571,99 @@ func TestPostgresTransactionAuditStoreOrderingSurvivesRestart(t *testing.T) {
 	}
 }
 
+func TestPostgresTransactionAuditStoreConcurrentTimestampCollisionPreservesInsertionOrder(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	schema := "audit_concurrent_ordering_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatalf("create isolated schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
+	})
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set search path: %v", err)
+	}
+	applyPostgresMigration(t, db)
+
+	createdAt := time.Now().UTC().Truncate(time.Microsecond)
+	const writers = 16
+	start := make(chan struct{})
+	done := make(chan error, writers)
+	for i := 0; i < writers; i++ {
+		i := i
+		go func() {
+			<-start
+			store, err := NewPostgresTransactionAuditStore(db)
+			if err != nil {
+				done <- err
+				return
+			}
+			event := TransactionAuditEvent{
+				ReferenceID:  "audit-concurrent-ordering-ref",
+				Action:       "CONCURRENT_" + strconv.Itoa(i),
+				ProviderName: "mock",
+				Message:      "same timestamp",
+				CreatedAt:    createdAt,
+			}
+			done <- store.AppendContext(ctx, event)
+		}()
+	}
+	close(start)
+	for i := 0; i < writers; i++ {
+		if err := <-done; err != nil {
+			t.Fatalf("concurrent audit append %d: %v", i, err)
+		}
+	}
+
+	var rows int
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM provider_transaction_audit WHERE reference_id=$1", "audit-concurrent-ordering-ref").Scan(&rows); err != nil {
+		t.Fatalf("count concurrent audit rows: %v", err)
+	}
+	if rows != writers {
+		t.Fatalf("expected %d concurrent audit rows, got %d", writers, rows)
+	}
+
+	storedOrder, err := func() ([]int, error) {
+		rows, err := db.QueryContext(ctx, "SELECT action FROM provider_transaction_audit WHERE reference_id=$1 ORDER BY created_at, audit_id", "audit-concurrent-ordering-ref")
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		var order []int
+		for rows.Next() {
+			var action string
+			if err := rows.Scan(&action); err != nil {
+				return nil, err
+			}
+			value, err := strconv.Atoi(action[len("CONCURRENT_"):])
+			if err != nil {
+				return nil, err
+			}
+			order = append(order, value)
+		}
+		return order, rows.Err()
+	}()
+	if err != nil {
+		t.Fatalf("read concurrent audit ordering: %v", err)
+	}
+	if len(storedOrder) != writers {
+		t.Fatalf("expected %d ordered rows, got %d", writers, len(storedOrder))
+	}
+	seen := make(map[int]bool, writers)
+	for _, value := range storedOrder {
+		if value < 0 || value >= writers {
+			t.Fatalf("unexpected concurrent audit action index %d in %#v", value, storedOrder)
+		}
+		if seen[value] {
+			t.Fatalf("duplicate concurrent audit action index %d in %#v", value, storedOrder)
+		}
+		seen[value] = true
+	}
+}
+
 func TestPostgresTransactionAuditStoreAppendFailureThenRecovery(t *testing.T) {
 	db := postgresIntegrationDB(t)
 	schema := "audit_append_recovery_" + strconv.FormatInt(time.Now().UnixNano(), 10)
