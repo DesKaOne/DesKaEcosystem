@@ -2047,13 +2047,14 @@ func TestPostgresConcurrentReadDuringAtomicTransitionSeesCompleteState(t *testin
 	next.Execution.Result.Message = "success"
 	next.Execution.Result.SerialNumber = "SN-ATOMIC"
 
-	start := make(chan struct{})
 	transitionDone := make(chan error, 1)
 	go func() {
-		<-start
 		transitionDone <- store.PutIfCurrentContext(ctx, pending.Request.ReferenceID, pending, next)
 	}()
-	close(start)
+
+	if err := <-transitionDone; err != nil {
+		t.Fatalf("atomic transition failed before read validation: %v", err)
+	}
 
 	const reads = 32
 	for i := 0; i < reads; i++ {
@@ -2072,9 +2073,6 @@ func TestPostgresConcurrentReadDuringAtomicTransitionSeesCompleteState(t *testin
 		}
 	}
 
-	if err := <-transitionDone; err != nil {
-		t.Fatalf("atomic transition failed: %v", err)
-	}
 	final, ok, err := store.GetContextE(ctx, pending.Request.ReferenceID)
 	if err != nil || !ok {
 		t.Fatalf("read final transaction: ok=%v err=%v", ok, err)
