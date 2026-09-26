@@ -567,7 +567,6 @@ func TestPostgresConcurrentPutInitialCreationConverges(t *testing.T) {
 		Execution: PurchaseExecution{
 			ProviderName: "mock",
 			Result: provider.PurchaseResult{
-				ReferenceID: postgresIntegrationReference(),
 				ProductCode: "pln20",
 				CustomerNo: "08123456789",
 				Status: provider.StatusPending,
@@ -590,30 +589,29 @@ func TestPostgresConcurrentPutInitialCreationConverges(t *testing.T) {
 	wg.Wait()
 	close(errs)
 
-	var successes, conflicts int
 	for err := range errs {
-		switch {
-		case err == nil:
-			successes++
-		case errors.Is(err, ErrTransactionStateConflict):
-			conflicts++
-		default:
-			t.Fatalf("unexpected concurrent initial creation error: %v", err)
+		if err != nil {
+			t.Fatalf("concurrent idempotent initial creation failed: %v", err)
 		}
 	}
-	if successes != 1 || conflicts != 1 {
-		t.Fatalf("expected one initial insert and one conflict, got successes=%d conflicts=%d", successes, conflicts)
+
+	var count int
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM provider_transactions WHERE reference_id = $1", state.Request.ReferenceID).Scan(&count); err != nil {
+		t.Fatalf("count persisted initial transaction: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected exactly one durable transaction row, got %d", count)
 	}
 
 	stored, ok := store.Get(state.Request.ReferenceID)
 	if !ok {
 		t.Fatal("initial transaction was not persisted")
 	}
-	if stored.Request != state.Request || stored.Execution.ProviderName != state.Execution.ProviderName {
-		t.Fatalf("persisted initial transaction identity changed: %#v", stored)
+	if stored.Request != state.Request || stored.Execution.ProviderName != state.Execution.ProviderName || stored.Execution.Result.Status != provider.StatusPending {
+		t.Fatalf("persisted initial transaction identity/state changed: %#v", stored)
 	}
 }
- 
+
 func TestPostgresConcurrentServiceReconcileConvergesWithoutResubmission(t *testing.T) {
 	db := postgresIntegrationDB(t)
 	schema := "service_reconcile_" + strconv.FormatInt(time.Now().UnixNano(), 10)
