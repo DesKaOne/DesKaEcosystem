@@ -6524,3 +6524,42 @@ Completed:
 ### Next Milestone
 
 **#150 — PostgreSQL Audit Conflict Recovery Across Restart:** verify that contradictory audit evidence remains non-authoritative after connection restart/service reconstruction and cannot alter durable transaction outcomes.
+
+
+### 150. Milestone Update — PostgreSQL Audit Conflict Recovery Across Restart
+
+**Date:** 2026-09-26
+
+Completed:
+
+- added real-PostgreSQL integration coverage with a terminal-success transaction and deliberately conflicting audit evidence for the same purchase reference;
+- verified the conflicting audit event remains durably observable before restart rather than being rewritten or discarded;
+- closed the original PostgreSQL connection pool, reopened a fresh pool, restored the isolated schema context, and reconstructed the transaction and audit store boundaries;
+- verified the conflicting audit history is unchanged in content, length, and order after restart;
+- verified the authoritative durable transaction state is unchanged after restart and remains terminal success despite the contradictory audit event;
+- verified a repeated purchase after restart returns the committed terminal result and does not submit to the provider a second time;
+- confirmed audit conflict recovery remains diagnostic/observational and cannot override durable transaction authority;
+- no production audit-store or service implementation change was required;
+- no transaction authority, provider submission authority, retry/failover behavior, ledger mutation, treasury movement, or provider funding behavior was broadened.
+
+### Safety Boundary
+
+- durable transaction state remains the sole execution and idempotency authority after restart;
+- contradictory audit evidence is preserved as operational evidence and never promoted into transaction state;
+- audit recovery and comparison cannot authorize provider retry, failover, resubmission, or financial state mutation;
+- audit ordering and persistence remain observational storage concerns only.
+
+### Verification
+
+- test implementation commits: `4c1ad19d89946562d02d2a92ab939b72e03e4754`, `65f0f7e30c2c175465100ee99559bc792b4852d7`;
+- exact branch HEAD after this status documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before this milestone is considered closed.
+
+### Known Limitations
+
+- the scenario validates connection-pool close/reopen against the same durable PostgreSQL instance rather than an actual PostgreSQL server-process crash;
+- the deliberately conflicting audit event models one contradictory evidence record and does not cover every possible corruption or replication divergence pattern;
+- audit remains operational evidence and is not a financial source of truth.
+
+### Next Milestone
+
+**#151 — PostgreSQL Audit Conflict With Concurrent Transaction Update:** verify contradictory audit evidence remains non-authoritative when the durable transaction state changes concurrently, preserving atomic transaction-state authority.
