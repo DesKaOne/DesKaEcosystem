@@ -185,7 +185,7 @@ func TestPostgresRuntimeReopenPreservesSharedTransactionAndAuditOwnership(t *tes
 	reference := "runtime-reopen-shared-" + strconv.FormatInt(time.Now().UnixNano(), 10)
 	state := routing.TransactionState{
 		Request: routing.PurchaseRequest{ProductCode: "xld10", CustomerNo: "087800001232", ReferenceID: reference, Amount: 10000},
-		Version: 1,
+		Version: 2,
 		Execution: routing.PurchaseExecution{
 			ProviderName: "mock",
 			Result: provider.PurchaseResult{
@@ -219,6 +219,7 @@ func TestPostgresRuntimeReopenPreservesSharedTransactionAndAuditOwnership(t *tes
 	}
 	if err := pgStore.PutIfCurrentContext(ctx, reference, routing.TransactionState{
 		Request: state.Request,
+		Version: 1,
 		Execution: routing.PurchaseExecution{
 			ProviderName: state.Execution.ProviderName,
 			Result: provider.PurchaseResult{
