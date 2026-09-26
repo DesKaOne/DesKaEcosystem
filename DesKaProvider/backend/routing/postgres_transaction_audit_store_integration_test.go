@@ -4203,10 +4203,6 @@ func TestPostgresCrossDomainRecoveryFailureIsolationAuditDoesNotReconstructTrans
 	}
 	applyPostgresMigration(t, db)
 
-	transactionStore, err := NewPostgresTransactionStore(db)
-	if err != nil {
-		t.Fatal(err)
-	}
 	auditStore, err := NewPostgresTransactionAuditStore(db)
 	if err != nil {
 		t.Fatal(err)
