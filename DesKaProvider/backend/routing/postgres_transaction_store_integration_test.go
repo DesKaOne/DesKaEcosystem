@@ -238,7 +238,7 @@ func TestPostgresTransactionStoreTerminalRecoveryIsIdempotentAfterRestart(t *tes
 	}
 	applyPostgresMigration(t, db)
 
-	recoveryStore, err := NewPostgresTransactionStore(db)
+	store, err := NewPostgresTransactionStore(db)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -304,7 +304,7 @@ func TestPostgresTransactionStoreTerminalRecoveryIsIdempotentAfterRestart(t *tes
 		t.Fatalf("terminal reconciliation must not resubmit purchase, got %d submissions", got)
 	}
 
-	terminal, ok := recoveryStore.Get(req.ReferenceID)
+	terminal, ok := store.Get(req.ReferenceID)
 	if !ok {
 		t.Fatal("terminal transaction disappeared after restart reconciliation")
 	}
