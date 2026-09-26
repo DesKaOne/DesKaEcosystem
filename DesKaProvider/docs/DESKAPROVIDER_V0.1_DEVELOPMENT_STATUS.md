@@ -5683,3 +5683,38 @@ Completed:
 ### Next Milestone
 
 **#129 — PostgreSQL Audit Mid-Stream Cancellation Safety:** add deterministic coverage for cancellation occurring after audit rows have begun streaming, proving the adapter does not expose the rows accumulated before cancellation.
+
+
+### 129. Milestone Update — PostgreSQL Audit Mid-Stream Cancellation Safety
+
+**Date:** 2026-09-26
+
+Completed:
+
+- extended the repository-local `database/sql/driver` audit fixture with a deterministic cancellation hook after a row has been delivered;
+- added coverage proving `PostgresTransactionAuditStore.AllContext` does not expose the row accumulated before cancellation when cancellation occurs during iteration;
+- verified the adapter returns `context.Canceled` and a `nil` result for the mid-stream cancellation case;
+- preserved the existing production implementation because its iteration error path already discards accumulated results by returning `nil,error`;
+- no production audit-store behavior, database abstraction, retry/failover logic, transaction authority, or financial authorization boundary was broadened.
+
+### Verification
+
+- test implementation commit: `8ca9df67cf67a297d3333a633df246e3d90f5565`;
+- exact branch HEAD after the test change must pass both push and PR CI with `test`, `vet`, and `race` successful before this milestone is considered closed.
+
+### Safety Boundary
+
+- mid-stream audit cancellation is an operational read-control outcome only;
+- rows accumulated before cancellation are not returned as authoritative history;
+- cancellation cannot authorize provider retry, failover, resubmission, ledger mutation, treasury movement, or provider funding;
+- transaction persistence remains the authoritative transaction-state boundary and audit remains observational evidence.
+
+### Known Limitations
+
+- the deterministic hook models cancellation after a row is delivered but does not reproduce all PostgreSQL driver/network timing variants;
+- the fixture remains a repository-local deterministic boundary for cancellation injection;
+- real PostgreSQL integration remains the boundary for driver-specific wire-level behavior.
+
+### Next Milestone
+
+**#130 — PostgreSQL Audit Read Deadline/Error Classification:** verify deadline-driven audit reads preserve `context.DeadlineExceeded` distinctly from ordinary database/iteration failures and do not expose partial history.
