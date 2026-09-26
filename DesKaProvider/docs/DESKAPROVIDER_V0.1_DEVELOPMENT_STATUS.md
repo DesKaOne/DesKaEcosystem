@@ -7341,9 +7341,10 @@ Completed:
 
 - added real-PostgreSQL integration coverage for sequential commits that alternate between the transaction and audit persistence domains;
 - verified the first audit commit is visible only in audit history while the transaction row remains at its previously durable baseline;
-- verified the transaction-domain commit advances only the transaction state and version without rewriting prior audit evidence;
+- verified the transaction-domain transition advances only the transaction state and version using the store's compare-and-transition boundary;
 - verified the subsequent audit commit extends audit history in deterministic order without changing the already-committed transaction state;
 - verified final reads preserve each domain's own durable ordering and state, with no synthetic cross-domain causal sequence inferred from audit ordering;
+- corrected the integration fixture after CI exposed a misuse of `PutContext` for an already-persisted transaction version; the test now uses `PutIfCurrentContext` with the durable baseline state;
 - no production audit-store or transaction-store implementation change was required;
 - no cross-domain locking, distributed commit protocol, transaction authority, provider submission authority, retry/failover behavior, ledger mutation, treasury movement, or provider funding behavior was broadened.
 
@@ -7356,7 +7357,9 @@ Completed:
 
 ### Verification
 
-- test implementation commit: `e84042bd7e9da89ccfc349f4d4b1e03bfab9edd3`;
+- initial test implementation commit: `e84042bd7e9da89ccfc349f4d4b1e03bfab9edd3`;
+- CI-discovered fixture correction commit: `803bc3d2ff5b11493d5de9128cf23efcdb39d9f7`;
+- exact commit `803bc3d2ff5b11493d5de9128cf23efcdb39d9f7` passed both push CI #1534 and PR CI #1535 with `test`, `vet`, and `race` all successful;
 - exact branch HEAD after this status documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before this milestone is considered closed.
 
 ### Known Limitations
