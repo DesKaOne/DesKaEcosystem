@@ -68,7 +68,7 @@ func (s *PostgresTransactionStore) PutContext(ctx context.Context, state Transac
  result, err := s.db.ExecContext(ctx, postgresTransitionSQL,
   state.Request.ReferenceID, next.Execution.Result.Status, next.Execution.Result.ProviderCode,
   next.Execution.Result.Message, next.Execution.Result.SerialNumber, next.Execution.Result.Price,
-  1, current.Request.ProductCode, current.Request.CustomerNo, current.Execution.ProviderName)
+  current.Version, current.Request.ProductCode, current.CustomerNo, current.Execution.ProviderName)
  if err != nil { return fmt.Errorf("update transaction: %w", err) }
  n, err := result.RowsAffected()
  if err != nil { return fmt.Errorf("read transaction update result: %w", err) }
@@ -133,5 +133,5 @@ func scanPostgresState(s postgresScanner) (TransactionState, error) {
  var testing bool
  var createdAt, updatedAt any
  if err := s.Scan(&ref,&productCode,&customerNo,&amount,&testing,&providerName,&status,&providerCode,&message,&serial,&price,&version,&createdAt,&updatedAt); err != nil { return TransactionState{}, err }
- return TransactionState{Request: PurchaseRequest{ReferenceID:ref,ProductCode:productCode,CustomerNo:customerNo,Amount:amount,Testing:testing},Execution:PurchaseExecution{ProviderName:providerName,Result:provider.PurchaseResult{ReferenceID:ref,ProductCode:productCode,CustomerNo:customerNo,Status:provider.TransactionStatus(status),ProviderCode:providerCode,Message:message,SerialNumber:serial,Price:price}}}, nil
+ return TransactionState{Request: PurchaseRequest{ReferenceID:ref,ProductCode:productCode,CustomerNo:customerNo,Amount:amount,Testing:testing},Execution:PurchaseExecution{ProviderName:providerName,Result:provider.PurchaseResult{ReferenceID:ref,ProductCode:productCode,CustomerNo:customerNo,Status:provider.TransactionStatus(status),ProviderCode:providerCode,Message:message,SerialNumber:serial,Price:price}},Version:version}, nil
 }
