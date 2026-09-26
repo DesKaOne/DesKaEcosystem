@@ -149,13 +149,7 @@ func (r *ValidatorRuntime) AdvanceRoundWithTimeoutEvidence(
 	if len(r.lockedProposal) > 0 && !bytes.Equal(r.lockedProposal, certificate.LockedProposal) {
 		return TimeoutCertificate{}, ErrConflictingTimeoutLock
 	}
-	if len(r.lockedProposal) == 0 && len(certificate.LockedProposal) > 0 {
-		r.lockedProposal = append([]byte(nil), certificate.LockedProposal...)
-	}
 	if err := r.AdvanceRound(certificate.NextRound); err != nil {
-		if len(r.lockedProposal) > 0 && len(certificate.LockedProposal) > 0 && bytes.Equal(r.lockedProposal, certificate.LockedProposal) {
-			r.lockedProposal = nil
-		}
 		return TimeoutCertificate{}, err
 	}
 	if len(certificate.LockedProposal) > 0 {
