@@ -5788,3 +5788,40 @@ Completed:
 
 **#132 — PostgreSQL Audit Read API Boundary:** review whether the audit-store interface should expose an explicit error-aware read contract for callers, without making audit history authoritative or widening provider transaction authority.
 
+### 132. Milestone Update — PostgreSQL Audit Read API Boundary
+
+**Date:** 2026-09-26
+
+Completed:
+
+- formalized an optional error-aware audit read capability as ContextReadTransactionAuditStore;
+- added AllContextE(ctx, referenceID) to the capability so callers can distinguish cancellation, deadlines, database failures, and successful reads without removing the legacy All() compatibility method;
+- aligned the in-memory audit store with the new capability and added cancellation coverage returning context.Canceled with a nil result;
+- aligned the PostgreSQL audit store with the formal AllContextE API while retaining All() as a compatibility wrapper that returns nil on read error;
+- migrated PostgreSQL audit-read tests to the formal error-aware API;
+- kept audit observational-only: no audit read can authorize provider retry, failover, resubmission, ledger mutation, treasury movement, or provider funding;
+- no transaction authority or provider-specific behavior was broadened.
+
+### Safety Boundary
+
+- transaction persistence remains the authoritative transaction-state boundary;
+- audit history remains operational evidence only;
+- legacy All() intentionally keeps compatibility semantics and must not be used when the caller needs error classification;
+- error-aware callers should use ContextReadTransactionAuditStore.AllContextE to preserve cancellation, deadline, and database-error visibility.
+
+### Verification
+
+- implementation commits: 124e297886e67ba68445bacac42a26b979123fa7, 39d72f3fb8c73d653da72dc70442e0a5dac5e4b7, fdc7ccb2c379ab1e050ee62f0685c453704b5148, a50fd58737bf5892a9620d069abfd54897ac9e2e, 8e28b83456fdd5032e7554fb790f4f15ea9d4864;
+- status documentation update follows after the final implementation commit;
+- exact branch HEAD after this documentation update must pass both push and PR CI with test, vet, and race successful before this milestone is considered closed.
+
+### Known Limitations
+
+- current service code does not consume audit history, so the new capability is an API boundary for future error-aware callers rather than a new service decision input;
+- All() remains a compatibility convenience that intentionally flattens read errors to nil;
+- real PostgreSQL driver/network behavior remains the integration verification boundary.
+
+### Next Milestone
+
+**#133 — PostgreSQL Audit Read Compatibility & Adoption Review:** identify any remaining internal callers that still use compatibility All() and determine whether they should migrate to AllContextE where error classification materially matters, without making audit authoritative.
+
