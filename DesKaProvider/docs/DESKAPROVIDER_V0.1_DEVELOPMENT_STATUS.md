@@ -4619,9 +4619,36 @@ Completed:
 - concurrent read consistency is a persistence-integrity concern only;
 - an observational read cannot authorize provider retry, failover, resubmission, ledger mutation, treasury movement, or provider funding.
 
+
+### 43. Milestone Update — PostgreSQL Terminal Result Immutability Under Concurrent Observation
+
+**Date:** 2026-09-26
+
+Completed:
+
+- added deterministic PostgreSQL regression coverage proving a committed terminal result cannot be overwritten by a stale pending observation;
+- verified stale terminal transition attempts fail with the transaction-state conflict after the transaction has already advanced to a terminal version;
+- verified the durable terminal request identity, provider identity, result payload, and version remain unchanged after the rejected stale observation;
+- preserved transaction persistence as the sole authoritative transaction state while audit/operational evidence remains non-authoritative.
+
+### Verification
+
+- implementation commit: `3bc157c6bd046b5294f805af660cbeb6beba4517`;
+- CI #1018 / run `36214832262`: **GREEN** for exact HEAD `3bc157c6bd046b5294f805af660cbeb6beba4517`;
+- CI jobs `test`: success;
+- CI jobs `vet`: success;
+- CI jobs `race`: success.
+
+### Safety Boundary
+
+- terminal result immutability is a persistence-integrity property only;
+- stale observations cannot overwrite a committed terminal transaction or trigger provider retry/resubmission;
+- audit and operational evidence remain non-authoritative and cannot authorize ledger mutation, treasury movement, or provider funding.
+
 ### Next Milestone
 
-**#121 — PostgreSQL Terminal Result Immutability Under Concurrent Observation**: verify once a terminal result is durably committed, concurrent reads continue returning that exact terminal identity and stale observations cannot change it.
+**#122 — PostgreSQL Idempotent Terminal Read Across Restart:** verify repeated terminal reads after reconstruction continue to return the exact committed result and version without introducing a new transition or provider side effect.
+ verify once a terminal result is durably committed, concurrent reads continue returning that exact terminal identity and stale observations cannot change it.
 
 ### Next Milestone
 
