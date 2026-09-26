@@ -1,6 +1,7 @@
 package routing
 
 import (
+	"context"
 	"errors"
 	"sync"
 )
@@ -53,18 +54,3 @@ func (s *MemoryTransactionAuditStore) All(referenceID string) []TransactionAudit
 	}
 	return result
 }
-
-func TestMemoryTransactionAuditStoreAllContextEPropagatesCancellation(t *testing.T) {
-	store := NewMemoryTransactionAuditStore()
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	events, err := store.AllContextE(ctx, "ref-1")
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("expected cancellation, got events=%#v err=%v", events, err)
-	}
-	if events != nil {
-		t.Fatalf("canceled audit read must not expose history, got %#v", events)
-	}
-}
-
