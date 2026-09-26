@@ -4242,3 +4242,5 @@ Completed:
 
 1. continue auditing restart/reconciliation concurrency and atomic transition boundaries;
 2. preserve the invariant that audit or operational evidence cannot authorize retry, failover, resubmission, ledger mutation, treasury movement, or provider funding.
+
+<!-- CI refresh marker: 2026-09-26 -->
