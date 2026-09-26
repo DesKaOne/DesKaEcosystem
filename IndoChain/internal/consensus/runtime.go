@@ -36,6 +36,7 @@ type ValidatorRuntime struct {
 	proposal       []byte
 	lockedProposal []byte
 	lockedRound    uint64
+	lockedProof    *LockProof
 	certificate    *FinalityCertificate
 }
 
@@ -183,6 +184,7 @@ func (r *ValidatorRuntime) AdvanceRoundWithTimeoutEvidence(
 	if len(certificate.LockedProposal) > 0 && (len(r.lockedProposal) == 0 || certificate.LockedRound > r.lockedRound) {
 		r.lockedProposal = append([]byte(nil), certificate.LockedProposal...)
 		r.lockedRound = certificate.LockedRound
+		r.lockedProof = cloneLockProofPtr(certificate.LockProof)
 	}
 	return certificate, nil
 }
@@ -323,6 +325,7 @@ func (r *ValidatorRuntime) AddVote(msg Message) error {
 		if reached {
 			r.lockedProposal = append([]byte(nil), r.proposal...)
 			r.lockedRound = r.state.Round
+			r.lockedProof = nil
 			// Preserve v0.1 compatibility for callers that still emit the
 			// legacy generic vote: once that legacy prevote reaches quorum,
 			// mirror its already-validated evidence into the explicit
@@ -341,7 +344,22 @@ func (r *ValidatorRuntime) AddVote(msg Message) error {
 		return nil
 	}
 
-	return r.precommits.AddVote(msg)
+	if err := r.precommits.AddVote(msg); err != nil {
+		return err
+	}
+	reached, err := r.precommits.QuorumForPayload(r.proposal, r.threshold)
+	if err != nil { return err }
+	if reached {
+		certificate, err := NewPrecommitCertificate(
+			r.state, r.validators, r.votingPower, r.threshold,
+			r.proposal, r.precommits.VotesForPayload(r.proposal),
+		)
+		if err != nil { return err }
+		proof, err := NewLockProof(r.state.Round, r.proposal, certificate)
+		if err != nil { return err }
+		r.lockedProof = &proof
+	}
+	return nil
 }
 
 func (r *ValidatorRuntime) FinalizeProposal() (FinalityCertificate, error) {
@@ -374,6 +392,8 @@ func (r *ValidatorRuntime) FinalizeProposal() (FinalityCertificate, error) {
 	); err != nil {
 		return FinalityCertificate{}, err
 	}
+	proof, err := NewLockProof(r.state.Round, r.proposal, precommitCertificate)
+	if err != nil { return FinalityCertificate{}, err }
 
 	certificate, err := NewFinalityCertificate(
 		r.state,
@@ -386,6 +406,7 @@ func (r *ValidatorRuntime) FinalizeProposal() (FinalityCertificate, error) {
 	if err != nil {
 		return FinalityCertificate{}, err
 	}
+	r.lockedProof = &proof
 	r.certificate = &certificate
 	r.state.Phase = PhaseFinalized
 	return certificate, nil
