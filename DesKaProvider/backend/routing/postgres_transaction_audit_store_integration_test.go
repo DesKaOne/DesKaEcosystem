@@ -404,6 +404,76 @@ func TestPostgresTransactionAuditStoreRepeatedIdenticalAppendRemainsAppendOnly(t
 }
 
 
+func TestPostgresTransactionAuditStoreTimestampCollisionUsesAuditIDOrder(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	schema := "audit_ordering_collision_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatalf("create isolated schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
+	})
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set search path: %v", err)
+	}
+	applyPostgresMigration(t, db)
+
+	store, err := NewPostgresTransactionAuditStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	createdAt := time.Now().UTC().Truncate(time.Microsecond)
+	events := []TransactionAuditEvent{
+		{
+			ReferenceID:  "audit-order-collision-ref",
+			Action:       "STEP_ONE",
+			Next:         string(provider.StatusPending),
+			ProviderName: "mock",
+			Message:      "first",
+			CreatedAt:    createdAt,
+		},
+		{
+			ReferenceID:  "audit-order-collision-ref",
+			Action:       "STEP_TWO",
+			Previous:     string(provider.StatusPending),
+			Next:         string(provider.StatusSuccess),
+			ProviderName: "mock",
+			Message:      "second",
+			CreatedAt:    createdAt,
+		},
+		{
+			ReferenceID:  "audit-order-collision-ref",
+			Action:       "STEP_THREE",
+			Previous:     string(provider.StatusSuccess),
+			Next:         string(provider.StatusSuccess),
+			ProviderName: "mock",
+			Message:      "third",
+			CreatedAt:    createdAt,
+		},
+	}
+	for i, event := range events {
+		if err := store.AppendContext(ctx, event); err != nil {
+			t.Fatalf("append event %d: %v", i+1, err)
+		}
+	}
+
+	got, err := store.AllContextE(ctx, events[0].ReferenceID)
+	if err != nil {
+		t.Fatalf("read colliding audit timestamps: %v", err)
+	}
+	if len(got) != len(events) {
+		t.Fatalf("expected %d audit events, got %d", len(events), len(got))
+	}
+	for i, want := range events {
+		if got[i] != want {
+			t.Fatalf("audit ordering changed at position %d: want=%#v got=%#v", i, want, got[i])
+		}
+	}
+}
+
 func TestPostgresTransactionAuditStoreAppendFailureThenRecovery(t *testing.T) {
 	db := postgresIntegrationDB(t)
 	schema := "audit_append_recovery_" + strconv.FormatInt(time.Now().UnixNano(), 10)
