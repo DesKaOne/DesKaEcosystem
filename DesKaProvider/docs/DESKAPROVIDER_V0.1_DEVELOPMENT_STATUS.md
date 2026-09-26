@@ -6668,3 +6668,18 @@ Completed:
 
 - corrective test commit: `88a53e815a1a91bd1c4ee4aa646bca6241b63f4e`;
 - exact branch HEAD after this documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before milestone #151 is considered closed.
+
+
+### 151. Verification Correction — Pinned Audit Reader Session
+
+**Date:** 2026-09-26
+
+- corrected the concurrent audit/transaction conflict integration test to pin the audit reader to the same dedicated PostgreSQL connection used for its visibility assertions;
+- the previous failure came from reading audit state through a store backed by a pooled database handle, which could select a different PostgreSQL session and defeat the intended uncommitted-row visibility assertion;
+- preserved the intended production boundary: PostgreSQL transaction isolation controls visibility, while audit remains observational-only;
+- no production behavior changed.
+
+**Verification**
+
+- corrective test commit: `6c286964f3d70ce1983cb7973be977fa3b6b29a3`;
+- exact branch HEAD after this documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before milestone #151 is considered closed.
