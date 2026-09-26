@@ -1105,7 +1105,10 @@ func TestServiceRunCatalogStartFailurePreservesPrimaryRollbackAndDedicatedPostgr
 	if err != nil {
 		t.Fatal(err)
 	}
-	catalogStore := catalog.NewJSONFileStore(filepath.Join(t.TempDir(), "catalog.json"))
+	catalogStore, err := catalog.NewJSONFileStore(filepath.Join(t.TempDir(), "catalog.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	catalogSync, err := catalog.NewSyncService(registry, catalogStore)
 	if err != nil {
 		t.Fatal(err)
