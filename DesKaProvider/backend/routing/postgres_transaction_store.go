@@ -62,7 +62,10 @@ func (s *PostgresTransactionStore) PutContext(ctx context.Context, state Transac
    return nil
   }
   if errors.Is(err, sql.ErrNoRows) {
-   current, ok = s.GetContext(ctx, state.Request.ReferenceID)
+   current, ok, readErr = s.GetContextE(ctx, state.Request.ReferenceID)
+   if readErr != nil {
+    return fmt.Errorf("get transaction after insert race: %w", readErr)
+   }
    if !ok {
     return ErrTransactionStateConflict
    }
