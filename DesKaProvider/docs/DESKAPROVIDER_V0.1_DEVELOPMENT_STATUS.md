@@ -5067,6 +5067,44 @@ Completed:
 - schema isolation currently relies on the test connection's session search path and remains test-fixture-specific rather than application configuration;
 - provider-specific eventual-consistency and network-partition behavior remain outside the deterministic mock boundary.
 
+
+
+### 41. Milestone Update — Concurrent Reconciliation Verification & CI Head Integrity
+
+**Date:** 2026-09-26
+
+Completed:
+
+- verified the PostgreSQL concurrent service reconciliation regression after repairing integration-test connection/store scope;
+- verified the PR workflow now checks out the actual pull-request head SHA, preventing stale synthetic merge refs from masking branch state;
+- verified concurrent independent service instances converge to the same durable terminal result without resubmitting the provider purchase;
+- retained strict durable-state assertions and the no-financial-authorization boundary.
+
+### Verification
+
+- final implementation HEAD: `13c355f7f00c4b95cfb5ce96becc8cc5a2626c82`;
+- CI #1137 / run `36222719669`: **GREEN** for the exact validated HEAD;
+- CI jobs `test`: success;
+- CI jobs `race`: success.
+
+### Safety Boundary
+
+- reconciliation only coordinates durable transaction state;
+- atomic transition conflicts are coordination outcomes and never authorize retry, failover, resubmission, ledger mutation, treasury movement, or provider funding;
+- operational and audit evidence remain non-authoritative.
+
+### Known Limitations
+
+- process termination between external provider observation and durable transition is outside this deterministic integration boundary;
+- schema/session isolation remains a test-fixture concern rather than application runtime configuration.
+
+### Next milestone
+
+1. audit cancellation and database-error propagation across `PutContext` and `Reconcile` boundaries;
+2. verify canceled contexts cannot produce partial durable transitions or accidental provider resubmission;
+3. preserve no-resubmission and no-financial-authorization invariants.
+
+
 ### 40. Milestone Update — PostgreSQL Transaction Version Progression
 
 **Date:** 2026-09-26
