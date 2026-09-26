@@ -133,6 +133,9 @@ func (r *postgresAuditRowsRows) Next(dest []driver.Value) error {
 		}
 		return io.EOF
 	}
+	if r.scenario.scanErr != nil {
+		return r.scenario.scanErr
+	}
 	copy(dest, r.scenario.rows[r.index])
 	return nil
 }
