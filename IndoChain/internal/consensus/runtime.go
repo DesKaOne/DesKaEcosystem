@@ -86,7 +86,8 @@ func NewValidatorRuntime(config RuntimeConfig) (*ValidatorRuntime, error) {
 		votingPower: cloneVotingPowerSet(config.VotingPower),
 		threshold:   config.Threshold,
 		proposer:    config.Proposer,
-		votes:       &aggregator,
+		prevotes:    &prevotes,
+		precommits:  &precommits,
 	}, nil
 }
 
