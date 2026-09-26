@@ -53,7 +53,7 @@ func (a *VoteAggregator) AddVote(msg Message) error {
 	if a == nil {
 		return ErrInvalidVote
 	}
-	if msg.Type != MessageTypeVote {
+	if msg.Type != MessageTypeVote && msg.Type != MessageTypePrevote && msg.Type != MessageTypePrecommit {
 		return ErrInvalidVote
 	}
 	if err := ValidateConsensusMessage(msg, MessageValidationContext{
