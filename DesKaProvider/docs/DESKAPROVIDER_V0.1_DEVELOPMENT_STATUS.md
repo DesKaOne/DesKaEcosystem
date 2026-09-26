@@ -7596,3 +7596,53 @@ The milestone implementation is therefore verified on the exact accepted code HE
 ### Next Milestone
 
 **#169 — PostgreSQL Runtime Reopen Failure Classification and Initialization Cleanup:** verify failed reopen/open/ping paths preserve underlying error identity, close only resources actually acquired, and never expose partially initialized transaction/audit stores to the runtime service.
+
+
+### 169. Milestone Update — PostgreSQL Runtime Reopen Failure Classification and Initialization Cleanup
+
+**Date:** 2026-09-27
+
+Completed:
+
+- added runtime initialization coverage for canceled PostgreSQL transaction-store and audit-store open paths;
+- verified a canceled initialization context returns `context.Canceled` without attempting to open a PostgreSQL resource;
+- added cleanup coverage for successful and failed initialization boundaries where transaction/audit database resources have already been acquired;
+- verified cleanup closes every acquired resource exactly once and does not double-close a shared transaction/audit handle;
+- verified initialization cleanup preserves both the primary initialization error and any cleanup error through `errors.Is`;
+- verified a nil primary initialization result still closes all acquired resources and reports cleanup failure if cleanup itself fails;
+- verified wrapped initialization errors retain their underlying sentinel identity through the cleanup boundary;
+- preserved the existing runtime handoff rule: database ownership is transferred to the service only after all persistence stores and runtime dependencies have initialized successfully;
+- no production transaction-store, audit-store, provider, retry, failover, resubmission, ledger, treasury, or funding behavior was broadened.
+
+### Safety Boundary
+
+- failed initialization cannot expose a partially initialized runtime service;
+- a persistence resource is closed only after it has actually been acquired;
+- shared transaction/audit PostgreSQL handles are closed once, while dedicated audit handles remain independently owned;
+- primary initialization errors are not replaced by cleanup errors; both remain discoverable when both occur;
+- context cancellation remains an initialization/persistence boundary error and does not authorize provider execution or recovery fallback;
+- no transaction state is synthesized from audit evidence and no audit evidence is synthesized from transaction state.
+
+### Verification
+
+- initial test commit `dde126af57d9f0bbbbc066f90dff22e42644b260` exposed a missing `fmt` import in the new runtime test;
+- correction commit: `d153825bad20e64b6e0ef32ba74c6416e0c084f6`;
+- push CI #1576 — **GREEN**;
+  - `test` — success (`go test ./...`, `go vet ./...`, including PostgreSQL integration);
+  - `race` — success (`go test -race ./...`);
+- PR CI #1577 — **GREEN**;
+  - `test` — success;
+  - `race` — success.
+
+The implementation/test HEAD was therefore green before this documentation update.
+
+### Known Limitations
+
+- failure coverage uses canceled contexts and controlled PostgreSQL initialization boundaries; it does not model every network partition, TLS failure, proxy failure, or process-crash topology;
+- `database/sql` connection-pool cleanup remains delegated to `Close()` and is not context-aware;
+- failed PostgreSQL `PingContext` paths are covered by the existing adapter cleanup behavior, while exact resource-state introspection after an internal `sql.Open`/ping failure is not exposed by the API;
+- provider live API behavior remains outside this milestone.
+
+### Next Milestone
+
+**#170 — PostgreSQL Runtime Reopen/Initialization Error Matrix:** cover real PostgreSQL open, ping, constructor, shared-resource, dedicated-resource, and post-initialization failure combinations as a deterministic matrix, including error precedence and cleanup order without introducing fallback authority.
