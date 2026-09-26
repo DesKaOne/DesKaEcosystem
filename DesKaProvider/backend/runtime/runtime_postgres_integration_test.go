@@ -480,7 +480,8 @@ func TestNewFromEnvironmentContextRollsBackSharedPostgresOwnershipBeforeTransfer
 	if captured == nil { t.Fatal("expected startup hook to capture database ownership") }
 	if captured.transferred() { t.Fatal("database ownership must not transfer after startup failure") }
 	if !captured.closed { t.Fatal("expected acquired shared database ownership to be closed during startup rollback") }
-	if captured.transactionDB != captured.auditDB { t.Fatal("expected shared transaction/audit PostgreSQL database handle") }
+	if databaseCloserIsNil(captured.transactionDB) { t.Fatal("expected shared transaction PostgreSQL database handle") }
+	if !databaseCloserIsNil(captured.auditDB) { t.Fatal("shared audit store must reuse transaction database handle without owning a second database") }
 	if err := captured.closeOwned(); err != nil { t.Fatalf("repeated ownership cleanup failed: %v", err) }
 }
 
@@ -507,6 +508,6 @@ func TestNewFromEnvironmentContextRollsBackDedicatedAuditPostgresOwnershipBefore
 	if captured == nil { t.Fatal("expected startup hook to capture database ownership") }
 	if captured.transferred() { t.Fatal("database ownership must not transfer after startup failure") }
 	if !captured.closed { t.Fatal("expected dedicated audit database ownership to be closed during startup rollback") }
-	if captured.transactionDB != nil || captured.auditDB == nil { t.Fatalf("expected only dedicated audit database ownership, got tx=%T audit=%T", captured.transactionDB, captured.auditDB) }
+	if !databaseCloserIsNil(captured.transactionDB) || databaseCloserIsNil(captured.auditDB) { t.Fatalf("expected only dedicated audit database ownership, got tx=%T audit=%T", captured.transactionDB, captured.auditDB) }
 	if err := captured.closeOwned(); err != nil { t.Fatalf("repeated ownership cleanup failed: %v", err) }
 }
