@@ -6006,3 +6006,39 @@ Completed:
 ### Next Milestone
 
 **#138 — PostgreSQL Audit Ordering & Timestamp Collision Boundary:** verify deterministic ordering when multiple audit events share the same `created_at` timestamp and ensure ordering remains observational without influencing transaction authority.
+
+
+### 138. Milestone Update — PostgreSQL Audit Ordering & Timestamp Collision Boundary
+
+**Date:** 2026-09-26
+
+Completed:
+
+- added real-PostgreSQL integration coverage for multiple audit events sharing the exact same `created_at` timestamp;
+- verified audit reads return those events in deterministic insertion order through the existing `ORDER BY created_at, audit_id` query;
+- verified the timestamp collision tie-breaker is the audit row identity and remains an observational storage concern;
+- confirmed audit ordering does not participate in provider selection, retry authorization, reconciliation authority, transaction-state mutation, or financial state transitions;
+- no production audit-store implementation change was required because the existing SQL already includes the deterministic `audit_id` tie-breaker;
+- no transaction authority, provider submission authority, retry/failover behavior, ledger mutation, treasury movement, or provider funding behavior was broadened.
+
+### Safety Boundary
+
+- audit event ordering is for deterministic observation and diagnostics only;
+- equal timestamps do not require using audit history as transaction authority;
+- the `audit_id` tie-breaker does not become a transaction idempotency or execution key;
+- transaction persistence remains the authoritative transaction-state and idempotency boundary.
+
+### Verification
+
+- test implementation commit: `a18362cd00f88dfb65d9efff003971edf89eea56`;
+- exact branch HEAD after this status documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before this milestone is considered closed.
+
+### Known Limitations
+
+- the test covers exact timestamp equality in the repository's real PostgreSQL environment, not every clock precision or cross-node timestamp-generation scenario;
+- deterministic ordering relies on the existing `audit_id` monotonic identity within the database table;
+- audit remains operational evidence and is not a financial source of truth.
+
+### Next Milestone
+
+**#139 — PostgreSQL Audit Ordering Across Restart:** verify that persisted audit ordering remains unchanged after database connection close/reopen and service reconstruction, without turning audit ordering into execution authority.
