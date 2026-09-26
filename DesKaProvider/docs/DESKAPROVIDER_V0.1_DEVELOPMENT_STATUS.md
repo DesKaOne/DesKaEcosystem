@@ -4793,5 +4793,33 @@ Completed:
 
 ### Next Milestone
 
-**#126 — PostgreSQL Concurrent Read/Transition Observation Atomicity:** verify concurrent durable reads observe only complete transaction states while an atomic transition commits, without exposing mixed fields or authorizing side effects.
+### 48. Milestone Update — Restart/Reconciliation Concurrency Boundary
 
+**Date:** 2026-09-26
+
+Completed:
+
+- verified deterministic PostgreSQL transaction reconciliation across independently constructed service instances;
+- verified concurrent reconciliation converges to the same terminal provider result without resubmitting the provider purchase;
+- repaired the PostgreSQL integration-test scope so isolated schema/session setup stays local to each test;
+- updated the CI workflow so pull-request validation checks the exact PR head commit instead of a stale synthetic merge checkout;
+- preserved transaction persistence as the authoritative transaction state while operational/audit evidence remains non-authoritative.
+
+### Verification
+
+- implementation HEAD: `818b2d3449cab5b83592d4d81ca1499495dfc878`;
+- CI #1051 / run `36217131301`: **GREEN**;
+- CI jobs `test`: success;
+- CI jobs `race`: success;
+- CI job `test` also completed `vet`: success.
+
+### Safety Boundary
+
+- reconciliation concurrency is a transaction-state consistency concern only;
+- concurrent reconciliation cannot authorize a second provider purchase submission for the same reference;
+- atomic transition convergence cannot mutate customer ledger, treasury, or provider funding state;
+- audit or operational evidence cannot authorize retry, failover, resubmission, ledger mutation, treasury movement, or provider funding.
+
+### Next Milestone
+
+**#126 — PostgreSQL Concurrent Read/Transition Observation Atomicity:** verify concurrent durable reads observe only complete transaction states while an atomic transition commits, without exposing mixed fields or authorizing side effects.
