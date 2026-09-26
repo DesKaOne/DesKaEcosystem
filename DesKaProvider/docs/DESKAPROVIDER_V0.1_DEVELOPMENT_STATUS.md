@@ -7541,3 +7541,58 @@ Completed:
 
 **#168 — PostgreSQL Recovery Reopen Boundary and Runtime Ownership Hardening:** verify runtime-level database reopen/ownership transitions preserve independent transaction/audit stores, cleanup ownership, error identity, and do not accidentally reuse or close transferred database resources.
 
+
+
+### 168. Milestone Update — PostgreSQL Recovery Reopen Boundary and Runtime Ownership Hardening
+
+**Date:** 2026-09-27
+
+Completed:
+
+- added real-PostgreSQL integration coverage for a shared transaction/audit runtime configuration across a close/reopen boundary;
+- verified a transferred shared database handle is closed exactly once before reopen and a subsequent runtime store acquisition receives a fresh database handle;
+- verified durable transaction state and append-only audit history remain independently readable after the database handle is closed and a new handle is opened;
+- verified shared audit-store construction reuses the newly opened transaction database handle instead of acquiring or owning a second database resource;
+- added real-PostgreSQL coverage for a dedicated audit-store configuration;
+- verified transaction and audit persistence acquire independent database handles when they are configured as separate resources;
+- verified both transferred resources are closed by runtime ownership exactly once before reopen;
+- verified both independently reopened stores recover their previously durable transaction/audit data;
+- preserved the existing ownership handoff rule: initialization cleanup does not close resources after ownership has transferred to the service;
+- no production transaction-store or audit-store behavior required modification; the existing runtime ownership boundary was sufficient once the reopen scenarios were exercised against real PostgreSQL.
+
+### Safety Boundary
+
+- reopen recovery reacquires access to already durable state only; it does not synthesize transaction state from audit evidence or audit history from transaction state;
+- shared versus dedicated database ownership remains explicit and deterministic;
+- transferred resources are not double-closed and closed handles are never silently reused by a new runtime instance;
+- transaction persistence remains the authoritative transaction-state and idempotency boundary;
+- audit persistence remains append-only operational evidence;
+- reopen/ownership transitions cannot authorize provider retry, failover, resubmission, reconciliation beyond existing durable state, ledger mutation, treasury movement, or provider funding.
+
+### Verification
+
+The implementation went through the following CI corrections before acceptance:
+
+- CI #1566 exposed test compilation/interface mismatches in the initial reopen integration coverage;
+- corrected the fixtures and store-interface usage in follow-up commits;
+- final implementation/test HEAD: e1c22a171c7fbb8a3194166acf116247f32b830b;
+- push CI #1570 — **GREEN**;
+  - test — success (go test ./... and go vet ./...);
+  - race — success (go test -race ./...);
+  - real PostgreSQL integration coverage passed;
+- PR CI #1571 — **GREEN**;
+  - test — success;
+  - race — success.
+
+The milestone implementation is therefore verified on the exact accepted code HEAD before this documentation update.
+
+### Known Limitations
+
+- reopen coverage uses controlled PostgreSQL database-handle close/reopen against one PostgreSQL deployment; it does not model every network partition, proxy failure, replica failover, or process-crash topology;
+- session-local PostgreSQL search_path setup is explicit in the integration harness and remains a deployment/session concern rather than an application-level recovery protocol;
+- databaseCloser.Close() remains non-context-aware;
+- provider live API behavior and process termination during an external provider request remain outside this milestone.
+
+### Next Milestone
+
+**#169 — PostgreSQL Runtime Reopen Failure Classification and Initialization Cleanup:** verify failed reopen/open/ping paths preserve underlying error identity, close only resources actually acquired, and never expose partially initialized transaction/audit stores to the runtime service.
