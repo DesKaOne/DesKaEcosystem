@@ -5933,3 +5933,40 @@ Completed:
 ### Next Milestone
 
 **#136 — PostgreSQL Audit Append Recovery Observability:** verify audit append failures after connection loss remain diagnosable and that a recovered connection does not duplicate or authorize transaction side effects.
+
+
+### 136. Milestone Update — PostgreSQL Audit Append Recovery Observability
+
+**Date:** 2026-09-26
+
+Completed:
+
+- added real-PostgreSQL integration coverage for an audit append after the underlying database connection has been closed;
+- verified the failed append returns an ordinary database error and is not misclassified as `context.Canceled` or `context.DeadlineExceeded`;
+- reopened PostgreSQL, restored the isolated schema context, and verified the same intended audit event can be appended successfully after recovery;
+- verified the recovered append produces exactly one durable audit row for the reference, proving the failed closed-connection attempt did not create a hidden duplicate;
+- preserved the existing append-only audit model: recovery writes only the explicitly retried audit event and does not reconstruct or mutate transaction state;
+- no production audit-store implementation change was required;
+- no transaction authority, provider submission authority, retry/failover behavior, ledger mutation, treasury movement, or provider funding behavior was broadened.
+
+### Safety Boundary
+
+- a closed-database audit append failure is an operational persistence failure only;
+- a successful retry after database recovery must be an explicit append operation, not an inferred replay of transaction authority;
+- audit recovery cannot authorize provider retry, failover, resubmission, ledger mutation, treasury movement, or provider funding;
+- transaction persistence remains the authoritative transaction-state boundary.
+
+### Verification
+
+- test implementation commit: `574c22d237f7806473eb9e80638d2cd1ef40f357`;
+- exact branch HEAD after this status documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before this milestone is considered closed.
+
+### Known Limitations
+
+- the recovery scenario validates database connection close/reopen behavior with the existing real PostgreSQL harness, not every network partition, transaction timeout, or server failover timing variant;
+- the test proves no duplicate row is created by the observed closed-connection failure path, but does not establish global idempotency for arbitrary repeated audit append calls with identical payloads;
+- audit remains operational evidence and is not a financial source of truth.
+
+### Next Milestone
+
+**#137 — PostgreSQL Audit Append Idempotency Boundary:** determine and lock the behavior of repeated identical audit append attempts, especially around recovery/retry, without turning the audit table into a transaction-authority or deduplication mechanism.
