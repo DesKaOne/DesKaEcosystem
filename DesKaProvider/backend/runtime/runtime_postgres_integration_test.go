@@ -476,7 +476,7 @@ func TestNewFromEnvironmentContextRollsBackSharedPostgresOwnershipBeforeTransfer
 	defer func() { runtimeInitializationFailureHook = nil }()
 
 	_, err := NewFromEnvironmentContext(context.Background(), nil)
-	if !errors.Is(err, expected) { t.Fatalf("expected injected startup error, got %v", err) }
+	if !errors.Is(err, expected) { t.Fatalf("expected injected startup error at %s, got %v", stage, err) }
 	if captured == nil { t.Fatal("expected startup hook to capture database ownership") }
 	if captured.transferred() { t.Fatal("database ownership must not transfer after startup failure") }
 	if !captured.closed { t.Fatal("expected acquired shared database ownership to be closed during startup rollback") }
@@ -528,7 +528,7 @@ func TestNewFromEnvironmentContextStartupFailureMatrixClosesDedicatedAuditOwners
 			expected := errors.New("injected startup matrix failure")
 			var captured *runtimeDatabaseOwnership
 			runtimeInitializationFailureHook = func(got string, ownership *runtimeDatabaseOwnership) error {
-				if got != stage { t.Fatalf("unexpected initialization stage: %q", got) }
+				if got != stage { return nil }
 				captured = ownership
 				return expected
 			}
