@@ -6641,3 +6641,16 @@ Completed:
 
 - corrective test commit: `5048d22678869e7a3fd7bc9de9757ab769482675`;
 - exact branch HEAD after this documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before milestone #151 is considered closed.
+
+### 151. Verification Correction — Valid Transaction Fixture
+
+**Date:** 2026-09-26
+
+- corrected the concurrent audit/transaction conflict integration test to seed a valid transaction amount before staging the concurrent update;
+- the prior failure was caused by `postgresPendingState()` being a zero-value test fixture that violated the PostgreSQL positive-amount constraint, so no transaction row existed for the subsequent observation;
+- no production behavior changed.
+
+**Verification**
+
+- corrective test commit: `fca30c002e63b1ca8c93b8373d4aeadc070bcba1`;
+- exact branch HEAD after this documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before milestone #151 is considered closed.
