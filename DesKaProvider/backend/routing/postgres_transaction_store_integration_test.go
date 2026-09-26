@@ -727,7 +727,7 @@ func TestPostgresTransactionStoreSequentialVersionTransitionIsPreserved(t *testi
 	if err := store.PutContext(ctx, pendingRefresh); err != nil {
 		t.Fatalf("sequential pending transition: %v", err)
 	}
-	current, ok := store.GetContext(ctx, ctx, req.ReferenceID)
+	current, ok := store.GetContext(ctx, req.ReferenceID)
 	if !ok {
 		t.Fatal("pending transaction disappeared after sequential transition")
 	}
