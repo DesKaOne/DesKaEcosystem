@@ -336,6 +336,87 @@ func TestPostgresTransactionAndAuditStoresReconstructServiceAfterRestart(t *test
 
 
 
+func TestPostgresTransactionAuditStoreAppendFailureThenRecovery(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	schema := "audit_append_recovery_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatalf("create isolated schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
+	})
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set search path: %v", err)
+	}
+	applyPostgresMigration(t, db)
+
+	store, err := NewPostgresTransactionAuditStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	event := TransactionAuditEvent{
+		ReferenceID:  "audit-append-recovery-ref",
+		Action:       "PURCHASE_RESULT",
+		Previous:     string(provider.StatusPending),
+		Next:         string(provider.StatusSuccess),
+		ProviderName: "mock",
+		Message:      "recovered append",
+		CreatedAt:    time.Now().UTC().Truncate(time.Microsecond),
+	}
+
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	err = store.AppendContext(context.Background(), event)
+	if err == nil {
+		t.Fatal("expected audit append failure after database close")
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("closed-database append failure must not be classified as context termination: %v", err)
+	}
+
+	reopened, err := sql.Open("pgx", os.Getenv("DESKAPROVIDER_POSTGRES_DSN"))
+	if err != nil {
+		t.Fatalf("reopen postgres: %v", err)
+	}
+	defer reopened.Close()
+	if err := reopened.PingContext(ctx); err != nil {
+		t.Fatalf("ping reopened postgres: %v", err)
+	}
+	if _, err := reopened.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("restore search path after recovery: %v", err)
+	}
+
+	recoveredStore, err := NewPostgresTransactionAuditStore(reopened)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := recoveredStore.AppendContext(ctx, event); err != nil {
+		t.Fatalf("append audit event after database recovery: %v", err)
+	}
+
+	events, err := recoveredStore.AllContextE(ctx, event.ReferenceID)
+	if err != nil {
+		t.Fatalf("read audit history after recovered append: %v", err)
+	}
+	if len(events) != 1 || events[0] != event {
+		t.Fatalf("recovered append must produce exactly one durable audit event, got %#v", events)
+	}
+
+	var count int
+	if err := reopened.QueryRowContext(ctx, "SELECT COUNT(*) FROM provider_transaction_audit WHERE reference_id=$1", event.ReferenceID).Scan(&count); err != nil {
+		t.Fatalf("count recovered audit rows: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("recovered append must not duplicate the audit event, got %d rows", count)
+	}
+}
+
+
 func TestPostgresTransactionAuditStoreReadFailureThenRecovery(t *testing.T) {
 	db := postgresIntegrationDB(t)
 	schema := "audit_recovery_" + strconv.FormatInt(time.Now().UnixNano(), 10)
