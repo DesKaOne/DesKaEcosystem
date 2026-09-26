@@ -7175,3 +7175,40 @@ Completed:
 ### Next Milestone
 
 **#160 — PostgreSQL Audit/Transaction Cross-Read Error Recovery:** verify that after one domain recovers from an ordinary persistence error, both domains converge to their previously durable data without accidental cross-domain reconstruction or state mutation.
+
+
+### 160. Milestone Update — PostgreSQL Audit/Transaction Cross-Read Error Recovery
+
+**Date:** 2026-09-27
+
+Completed:
+
+- added real-PostgreSQL integration coverage for recovery of an isolated audit read connection after an ordinary persistence failure;
+- verified durable transaction state remains unchanged and readable while the audit connection is unavailable;
+- reopened a healthy audit connection and verified the previously durable audit history converges exactly to its baseline contents;
+- repeated the inverse recovery sequence for the transaction domain: a closed transaction connection fails without affecting healthy audit reads, then a recovered transaction connection returns the exact baseline durable state;
+- confirmed recovery reconstructs database access only and never reconstructs transaction authority from audit history or audit state from transaction history;
+- no production audit-store or transaction-store implementation change was required;
+- no cross-domain locking, transaction authority, provider submission authority, retry/failover behavior, ledger mutation, treasury movement, or provider funding behavior was broadened.
+
+### Safety Boundary
+
+- persistence-domain recovery restores access to already durable data and does not synthesize new state;
+- audit recovery cannot create, overwrite, or authorize transaction execution state;
+- transaction recovery cannot reconstruct or mutate audit evidence;
+- each domain remains independently observable and recoverable, with transaction persistence authoritative for execution state and idempotency.
+
+### Verification
+
+- implementation/test commit: `1ac5b8319ff23a0d73ac9dfccb1358b9ed7b95a2`;
+- exact branch HEAD after this status documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before this milestone is considered closed.
+
+### Known Limitations
+
+- recovery is validated using isolated PostgreSQL connection close/reopen scenarios on a single deployment and does not cover every proxy, replica-failover, or network-partition topology;
+- the test validates convergence to previously durable records but does not establish a distributed atomic recovery protocol across the two storage domains;
+- audit remains operational evidence and is not a financial source of truth.
+
+### Next Milestone
+
+**#161 — PostgreSQL Audit/Transaction Cross-Read Recovery Concurrency:** verify repeated concurrent cross-domain reads during recovery do not expose inconsistent domain state or introduce cross-domain execution authority.
