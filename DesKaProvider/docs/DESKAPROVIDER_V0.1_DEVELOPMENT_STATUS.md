@@ -5166,25 +5166,31 @@ Completed:
 
 Completed:
 
-- completed the PostgreSQL integration-test scope repair and deterministic concurrent reconciliation coverage;
-- verified the CI workflow now checks out the pull-request head SHA directly, preventing stale synthetic merge-ref validation;
-- verified the current branch HEAD reaches a completed CI run with both `test` and `race` jobs successful;
-- verified concurrent service reconciliation converges on the durable terminal provider result without a second provider purchase submission;
-- preserved transaction persistence as the authoritative state boundary and kept audit/operational evidence non-authoritative.
+- repaired the PostgreSQL integration-test variable scoping that caused CI compilation failures;
+- verified the PR workflow checks out the actual pull-request head SHA rather than a stale synthetic merge ref;
+- verified concurrent service reconciliation converges to one durable terminal result without a second provider purchase submission;
+- verified the exact current implementation HEAD completes both repository CI jobs successfully;
+- preserved transaction persistence as the authoritative state boundary and kept operational/audit evidence non-authoritative.
 
 ### Verification
 
-- implementation HEAD: `0b6626e09664a2c10d5063fdf5ba2050e62b73d9`;
-- CI #1151 / run `36223880522`: **GREEN** for exact HEAD;
-- CI jobs `test`: success;
-- CI jobs `race`: success.
+- final verified implementation HEAD: `016813b65eaaa2bd0a49087cfb60f43fb1535c49`;
+- CI #1157 / run `36224749943`: **GREEN** for exact HEAD;
+- CI job `test`: success;
+- CI job `race`: success;
+- CI job `test` completed `vet`: success.
 
 ### Safety Boundary
 
-- reconciliation may observe provider state and commit one durable terminal transition;
-- a losing concurrent transition cannot authorize a second provider purchase;
-- audit and operational evidence remain observational and cannot authorize retry, failover, resubmission, ledger mutation, treasury movement, or provider funding.
+- reconciliation only coordinates durable transaction state and provider observation;
+- atomic or stale-state conflicts never authorize retry, failover, resubmission, customer-ledger mutation, treasury movement, or provider funding;
+- audit and operational evidence remain non-authoritative.
+
+### Known Limitations
+
+- PostgreSQL schema/session isolation in integration tests remains a fixture concern rather than application runtime configuration;
+- the deterministic concurrency boundary does not simulate process termination between provider observation and durable commit.
 
 ### Next milestone
 
-**#117 — Sequential/Repeated Transaction Transition Review**: audit repeated pending-to-pending and terminal-idempotent persistence paths, especially version handling in the PostgreSQL store, without expanding transaction authority beyond the persisted transaction record.
+**#117 — Sequential/Repeated Transaction Transition Review**: continue auditing repeated pending-to-pending persistence and terminal-idempotent behavior, especially PostgreSQL version progression, without widening transaction authority.
