@@ -1248,4 +1248,4 @@ Commits:
 - timeout validator-membership hardening: `46ae55d052a1381a01d13d100ceb7697d4ff2fd1`
 - membership regression test: `bc9555c1efa4bc4f7f3bb49dff3ea3fb5afb5c82`
 
-CI gate must be verified against the resulting branch state before this milestone is considered complete.
+Previous CI #1109 (run `36263385593`) failed at compile time because the timeout membership hardening returned `(TimeoutCertificate, error)` from an `error`-only validation function. Root cause fixed in `1feee926f1c1a8791cc1ae308c9662b76f317605`; a fresh CI run must be green before this milestone is considered complete.
