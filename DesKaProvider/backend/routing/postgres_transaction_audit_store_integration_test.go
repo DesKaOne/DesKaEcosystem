@@ -1426,6 +1426,147 @@ func TestPostgresTransactionAuditStoreSnapshotRecoveryAfterConnectionRestart(t *
 	}
 }
 
+func TestPostgresTransactionAuditStoreSnapshotRecoveryCrossChecksTransactionState(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	schema := "audit_snapshot_transaction_crosscheck_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatalf("create isolated schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
+	})
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set search path: %v", err)
+	}
+	applyPostgresMigration(t, db)
+
+	transactionStore, err := NewPostgresTransactionStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	auditStore, err := NewPostgresTransactionAuditStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	registry := provider.NewRegistry()
+	mock := Mock.New(Mock.Config{
+		Products:       []provider.Product{{Code: "pln20", Name: "PLN 20"}},
+		ProviderCode:   "00",
+		Message:        "success",
+		PurchaseStatus: provider.StatusSuccess,
+		Price:          20000,
+	})
+	if err := registry.Register("mock", mock); err != nil {
+		t.Fatal(err)
+	}
+	ops := operational.NewMemoryStore()
+	if err := ops.Put(operational.Snapshot{
+		ProviderName: "mock",
+		Balance:      100000,
+		Health:       operational.HealthHealthy,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	router, err := New(registry, ops, map[string]int{"mock": 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := PurchaseRequest{
+		ProductCode: "pln20",
+		CustomerNo:  "08123456789",
+		ReferenceID: postgresIntegrationReference(),
+		Amount:      20000,
+	}
+	service, err := NewServiceWithStoreContextAndAudit(ctx, router, transactionStore, auditStore)
+	if err != nil {
+		t.Fatalf("construct service: %v", err)
+	}
+	execution, err := service.Purchase(ctx, req)
+	if err != nil {
+		t.Fatalf("initial purchase: %v", err)
+	}
+	if execution.Result.Status != provider.StatusSuccess {
+		t.Fatalf("expected terminal success, got %q", execution.Result.Status)
+	}
+	if mock.PurchaseCount(req.ReferenceID) != 1 {
+		t.Fatalf("expected exactly one provider submission, got %d", mock.PurchaseCount(req.ReferenceID))
+	}
+
+	beforeRestart, ok, err := transactionStore.GetContextE(ctx, req.ReferenceID)
+	if err != nil || !ok {
+		t.Fatalf("read durable transaction before restart: ok=%v err=%v", ok, err)
+	}
+	beforeAudit, err := auditStore.AllContextE(ctx, req.ReferenceID)
+	if err != nil {
+		t.Fatalf("read audit snapshot before restart: %v", err)
+	}
+	if len(beforeAudit) != 2 {
+		t.Fatalf("expected two audit lifecycle events before restart, got %d", len(beforeAudit))
+	}
+
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := sql.Open("pgx", os.Getenv("DESKAPROVIDER_POSTGRES_DSN"))
+	if err != nil {
+		t.Fatalf("reopen postgres: %v", err)
+	}
+	defer reopened.Close()
+	if err := reopened.PingContext(ctx); err != nil {
+		t.Fatalf("ping reopened postgres: %v", err)
+	}
+	if _, err := reopened.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("restore search path after restart: %v", err)
+	}
+
+	restartedTransactionStore, err := NewPostgresTransactionStore(reopened)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restartedAuditStore, err := NewPostgresTransactionAuditStore(reopened)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	afterRestart, ok, err := restartedTransactionStore.GetContextE(ctx, req.ReferenceID)
+	if err != nil || !ok {
+		t.Fatalf("read durable transaction after restart: ok=%v err=%v", ok, err)
+	}
+	if afterRestart.Request != beforeRestart.Request || afterRestart.Execution != beforeRestart.Execution || afterRestart.Version != beforeRestart.Version {
+		t.Fatalf("transaction state changed across restart: before=%#v after=%#v", beforeRestart, afterRestart)
+	}
+
+	auditAfterRestart, err := restartedAuditStore.AllContextE(ctx, req.ReferenceID)
+	if err != nil {
+		t.Fatalf("read audit snapshot after restart: %v", err)
+	}
+	if len(auditAfterRestart) != len(beforeAudit) {
+		t.Fatalf("audit snapshot changed length after restart: before=%d after=%d", len(beforeAudit), len(auditAfterRestart))
+	}
+	for i := range beforeAudit {
+		if auditAfterRestart[i] != beforeAudit[i] {
+			t.Fatalf("audit snapshot changed at %d: before=%#v after=%#v", i, beforeAudit[i], auditAfterRestart[i])
+		}
+	}
+
+	secondExecution, err := service.Purchase(ctx, req)
+	if err != nil {
+		t.Fatalf("repeat purchase after recovered persistence: %v", err)
+	}
+	if secondExecution.Result.Status != provider.StatusSuccess {
+		t.Fatalf("repeat purchase changed terminal result, got %q", secondExecution.Result.Status)
+	}
+	if mock.PurchaseCount(req.ReferenceID) != 1 {
+		t.Fatalf("recovered transaction state must prevent a second provider submission, got %d", mock.PurchaseCount(req.ReferenceID))
+	}
+}
+
+
 func TestPostgresTransactionAuditStoreAppendFailureThenRecovery(t *testing.T) {
 	db := postgresIntegrationDB(t)
 	schema := "audit_append_recovery_" + strconv.FormatInt(time.Now().UnixNano(), 10)
