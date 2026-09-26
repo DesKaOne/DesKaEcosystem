@@ -1866,7 +1866,7 @@ func TestPostgresConcurrentReadTransitionObservesCompleteState(t *testing.T) {
 		}
 		result := state.Execution.Result
 		validPending := result.Status == provider.StatusPending && result.Message == "pending" && result.SerialNumber == "SN-PENDING" && state.Version == 1
-		validSuccess := result.Status == provider.StatusSuccess && result.Message == "success" && result.SerialNumber == "SN-SUCCESS" && state.Version == 1
+		validSuccess := result.Status == provider.StatusSuccess && result.Message == "success" && result.SerialNumber == "SN-SUCCESS" && state.Version == 2
 		if !validPending && !validSuccess {
 			t.Fatalf("read observed partial transition state: %#v", state)
 		}
