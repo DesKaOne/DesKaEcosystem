@@ -636,7 +636,8 @@ func TestPostgresConcurrentServiceReconcileConvergesWithoutResubmission(t *testi
 	for i := 0; i < 2; i++ {
 		got := <-results
 		if got.err != nil {
-			t.Fatalf("concurrent service reconciliation failed: %v", got.err)
+			durable, durableOK := firstStore.Get(req.ReferenceID)
+			t.Fatalf("concurrent service reconciliation failed: %v; durable=%#v durableOK=%t", got.err, durable, durableOK)
 		}
 		if i == 0 {
 			firstResult = got.execution
