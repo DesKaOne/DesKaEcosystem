@@ -65,7 +65,7 @@ func TestPostgresTransactionAuditStoreAppendOnlyDurabilityAndRestartRead(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	events, err := restarted.AllContext(ctx, "audit-ref")
+	events, err := restarted.AllContextE(ctx, "audit-ref")
 	if err != nil {
 		t.Fatalf("read audit events after restart: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestPostgresTransactionAuditStoreAppendOnlyDurabilityAndRestartRead(t *test
 		t.Fatalf("durable audit events changed: %#v", events)
 	}
 
-	other, err := restarted.AllContext(ctx, "other-ref")
+	other, err := restarted.AllContextE(ctx, "other-ref")
 	if err != nil {
 		t.Fatalf("read unrelated audit events: %v", err)
 	}
@@ -256,7 +256,7 @@ func TestPostgresTransactionAndAuditStoresReconstructServiceAfterRestart(t *test
 		t.Fatalf("expected exactly one provider submission, got %d", got)
 	}
 
-	beforeRestart, err := auditStore.AllContext(ctx, req.ReferenceID)
+	beforeRestart, err := auditStore.AllContextE(ctx, req.ReferenceID)
 	if err != nil {
 		t.Fatalf("read audit history before restart: %v", err)
 	}
@@ -303,7 +303,7 @@ func TestPostgresTransactionAndAuditStoresReconstructServiceAfterRestart(t *test
 		t.Fatalf("restart reconciliation must not resubmit purchase, got %d", got)
 	}
 
-	afterRestart, err := restartedAuditStore.AllContext(ctx, req.ReferenceID)
+	afterRestart, err := restartedAuditStore.AllContextE(ctx, req.ReferenceID)
 	if err != nil {
 		t.Fatalf("read durable audit history after restart: %v", err)
 	}
