@@ -1352,3 +1352,6 @@ CI correction: IndoChain CI #1184 (run 36265751480) failed at compile time becau
 
 
 CI correction follow-up: IndoChain CI #1186 (run 36265792077) exposed downstream tests still constructing legacy MessageTypeVote evidence. The runtime split remains intact; for v0.1 compatibility, AddVote now normalizes a legacy generic vote into the current phase's explicit Prevote or Precommit bucket before validation. Explicit phase-specific messages remain the canonical path, and FinalizeProposal still requires a separately accumulated PrecommitCertificate. Runtime evidence tests were updated to reference the split prevote aggregator.
+
+
+CI correction follow-up: IndoChain CI #1190 (run 36265853559) showed legacy integration tests reached Precommit but had no explicit precommit message, so FinalizeProposal correctly rejected the empty precommit certificate. To preserve existing v0.1 integration callers without weakening the new certificate boundary, a legacy MessageTypeVote that reaches prevote quorum is now mirrored into the explicit precommit evidence bucket after validation. Explicit MessageTypePrecommit remains the canonical path for new code; FinalizeProposal still derives finality only from the precommit bucket.
