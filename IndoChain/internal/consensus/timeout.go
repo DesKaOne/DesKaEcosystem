@@ -31,6 +31,7 @@ type TimeoutCertificate struct {
 	Validators      [][]byte
 	LockedProposal  []byte
 	LockedRound     uint64
+	LockProof       *LockProof
 }
 
 // NewTimeoutCertificate constructs timeout evidence from unique validator
@@ -152,6 +153,58 @@ func NewTimeoutCertificateWithLockRound(
 	}, nil
 }
 
+// NewTimeoutCertificateWithLockProof constructs timeout evidence with a
+// verifiable proof-of-lock. A carried lock is never accepted without its
+// precommit quorum proof.
+func NewTimeoutCertificateWithLockProof(
+	state RoundState,
+	validators ValidatorSet,
+	votingPower VotingPowerSet,
+	threshold QuorumThreshold,
+	nextRound uint64,
+	senders [][]byte,
+	proof *LockProof,
+) (TimeoutCertificate, error) {
+	if proof == nil {
+		return NewTimeoutCertificateWithLockRound(state, validators, votingPower, threshold, nextRound, state.Round, senders)
+	}
+	if err := validateTimeoutLockProof(*proof, state, validators, votingPower); err != nil {
+		return TimeoutCertificate{}, err
+	}
+	if proof.Certificate.Threshold != threshold {
+		return TimeoutCertificate{}, ErrInvalidLockProof
+	}
+	certificate, err := NewTimeoutCertificateWithLockRound(
+		state, validators, votingPower, threshold, nextRound, proof.LockedRound, senders, proof.Proposal,
+	)
+	if err != nil { return TimeoutCertificate{}, err }
+	certificate.LockProof = cloneLockProofPtr(proof)
+	return certificate, nil
+}
+
+func validateTimeoutLockProof(
+	proof LockProof,
+	state RoundState,
+	validators ValidatorSet,
+	votingPower VotingPowerSet,
+) error {
+	if proof.LockedRound > state.Round {
+		return ErrInvalidTimeoutRound
+	}
+	lockState := state
+	lockState.Round = proof.LockedRound
+	return ValidateLockProof(proof, lockState, validators, votingPower)
+}
+
+func cloneLockProofPtr(proof *LockProof) *LockProof {
+	if proof == nil { return nil }
+	cloned := *proof
+	cloned.Proposal = append([]byte(nil), proof.Proposal...)
+	cloned.Certificate.Payload = append([]byte(nil), proof.Certificate.Payload...)
+	cloned.Certificate.Votes = cloneVotes(proof.Certificate.Votes)
+	return &cloned
+}
+
 // ValidateTimeoutCertificate independently validates timeout evidence without
 // mutating the supplied round state or validator sets.
 func ValidateTimeoutCertificate(
@@ -179,13 +232,21 @@ func ValidateTimeoutCertificate(
 	if len(certificate.Validators) == 0 {
 		return ErrInvalidTimeoutCertificate
 	}
-	if certificate.LockedProposal != nil {
-		if len(certificate.LockedProposal) == 0 {
-			if certificate.LockedRound != 0 { return ErrInvalidTimeoutCertificate }
-		} else if certificate.LockedRound > state.Round {
-			return ErrInvalidTimeoutRound
+	if len(certificate.LockedProposal) > 0 {
+		if certificate.LockedRound > state.Round || certificate.LockProof == nil {
+			return ErrInvalidLockProof
+		}
+		if !bytes.Equal(certificate.LockedProposal, certificate.LockProof.Proposal) ||
+			certificate.LockedRound != certificate.LockProof.LockedRound ||
+			certificate.LockProof.Certificate.Threshold != certificate.Threshold {
+			return ErrInvalidLockProof
+		}
+		if err := validateTimeoutLockProof(*certificate.LockProof, state, validators, votingPower); err != nil {
+			return err
 		}
 		certificate.LockedProposal = append([]byte(nil), certificate.LockedProposal...)
+	} else if certificate.LockProof != nil {
+		return ErrInvalidLockProof
 	}
 
 	seen := make(map[string]struct{}, len(certificate.Validators))
