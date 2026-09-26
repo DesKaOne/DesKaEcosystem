@@ -6299,3 +6299,40 @@ Completed:
 ### Next Milestone
 
 **#144 — PostgreSQL Audit Snapshot Ordering After Connection Recovery:** verify repeated reader snapshots remain complete and deterministically ordered after reader connection close/reopen, without introducing any audit-derived execution authority.
+
+
+### 144. Milestone Update — PostgreSQL Audit Snapshot Ordering After Connection Recovery
+
+**Date:** 2026-09-26
+
+Completed:
+
+- added real-PostgreSQL integration coverage for repeated audit snapshots before and after reader connection close/reopen;
+- verified repeated snapshots before recovery contain the same complete committed sequence for multiple same-timestamp audit events;
+- closed and reopened the PostgreSQL reader connection, restored the isolated schema context, and verified repeated post-recovery snapshots contain the same complete sequence;
+- verified snapshot cardinality and event ordering remain unchanged across reader recovery, using the existing persisted `created_at, audit_id` ordering;
+- confirmed reader recovery does not reconstruct, mutate, or authorize transaction state;
+- no production audit-store implementation change was required;
+- no transaction authority, provider submission authority, retry/failover behavior, ledger mutation, treasury movement, or provider funding behavior was broadened.
+
+### Safety Boundary
+
+- snapshot continuity across reader recovery is a persistence/observability property only;
+- recovered audit readers cannot infer provider retry, failover, resubmission, ledger mutation, treasury movement, or provider funding authority from audit sequence;
+- `audit_id` remains an ordering identity for audit storage, not a transaction execution or idempotency key;
+- transaction persistence remains the authoritative transaction-state and idempotency boundary.
+
+### Verification
+
+- test implementation commit: `976c85174ee574589bd6eefa8ccd9668aaf398a6`;
+- exact branch HEAD after this status documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before this milestone is considered closed.
+
+### Known Limitations
+
+- the recovery scenario validates one PostgreSQL reader close/reopen sequence and repeated reads, not every crash-recovery, replica-lag, or distributed topology;
+- deterministic equal-timestamp ordering still relies on the persisted `audit_id` identity;
+- audit remains operational evidence and is not a financial source of truth.
+
+### Next Milestone
+
+**#145 — PostgreSQL Audit Snapshot Stability Under Writer Recovery:** verify that reader snapshots remain complete and ordered when writers experience connection recovery, without turning audit recovery into transaction authority.
