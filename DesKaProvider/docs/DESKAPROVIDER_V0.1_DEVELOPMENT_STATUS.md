@@ -5570,3 +5570,41 @@ Completed:
 ### Next milestone
 
 **#125 — PostgreSQL Read/Write Boundary Closure Review**: audit the completed mutation-error matrix against startup reconstruction, reconciliation, and atomic transition paths, then identify the next concrete reliability gap without broadening transaction authority.
+
+
+### 126. Milestone Update — PostgreSQL Audit Append Error Observability
+
+**Date:** 2026-09-26
+
+Completed:
+
+- closed the concrete audit-store mutation coverage gap identified during the PostgreSQL read/write boundary review;
+- added deterministic `DBTX` coverage proving `PostgresTransactionAuditStore.AppendContext` preserves a non-cancellation database execution error;
+- verified the wrapped error remains discoverable with `errors.Is`;
+- verified an ordinary database append failure is not collapsed into `context.Canceled`;
+- verified the append path reaches the intended append-only audit SQL boundary;
+- confirmed no production audit-store behavior required changing because the existing adapter already returns the underlying database error correctly;
+- kept the existing real-PostgreSQL durability, restart-read, cancellation, webhook, and reconciliation audit-safety coverage unchanged.
+
+### Safety Boundary
+
+- audit append failures remain operational persistence errors only;
+- audit persistence cannot authorize provider retry, failover, resubmission, ledger mutation, treasury movement, or provider funding;
+- transaction persistence remains the authoritative transaction-state boundary;
+- no provider-specific contract or financial authorization boundary was broadened.
+
+### Verification
+
+- implementation commit: `50993770d4eea6476c9252bd1739151c0f367f96`;
+- status documentation updated after the implementation commit;
+- the resulting branch HEAD must be verified with fresh `test`, `vet`, and `race` CI before this milestone is closed.
+
+### Known Limitations
+
+- arbitrary PostgreSQL `*sql.Row.Scan` failures for the INSERT-returning path remain unsuitable for isolated unit stubbing under the current `DBTX` abstraction;
+- real PostgreSQL integration remains the verification boundary for database/driver-specific scan behavior;
+- audit remains operational evidence and is not a financial source of truth.
+
+### Next Milestone
+
+**#127 — PostgreSQL Audit Read Error Matrix Review**: verify audit `QueryContext`, row-scan, and iteration failures remain observable and cannot be mistaken for an empty audit history, without broadening the audit or transaction authority boundaries.
