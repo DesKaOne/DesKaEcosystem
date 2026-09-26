@@ -1001,6 +1001,15 @@ func TestServiceClosePreservesDedicatedPostgresCleanupErrorsAfterExplicitWorkerS
 		time.Sleep(time.Millisecond)
 	}
 
+	workerShutdownCtx, workerShutdownCancel := context.WithTimeout(ctx, time.Second)
+	defer workerShutdownCancel()
+	if err := balanceLifecycle.Shutdown(workerShutdownCtx); err != nil {
+		t.Fatalf("expected explicit worker shutdown to succeed before service close, got %v", err)
+	}
+	if balanceLifecycle.Running() {
+		t.Fatal("expected worker to stop before explicit service close")
+	}
+
 	shutdownErr := service.Close()
 	if !errors.Is(shutdownErr, transactionCleanupErr) {
 		t.Fatalf("expected explicit shutdown to preserve transaction cleanup error, got %v", shutdownErr)
