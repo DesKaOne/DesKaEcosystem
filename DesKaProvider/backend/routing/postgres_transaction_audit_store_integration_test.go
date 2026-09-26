@@ -785,6 +785,101 @@ func TestPostgresTransactionAuditStoreReadDuringUncommittedAppendSeesOnlyCommitt
 }
 
 
+func TestPostgresTransactionAuditStoreReadVisibilityAfterConcurrentCommit(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	schema := "audit_commit_visibility_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatalf("create isolated schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
+	})
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set search path: %v", err)
+	}
+	applyPostgresMigration(t, db)
+
+	store, err := NewPostgresTransactionAuditStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	createdAt := time.Now().UTC().Truncate(time.Microsecond)
+	first := TransactionAuditEvent{
+		ReferenceID:  "audit-commit-visibility-ref",
+		Action:       "BEFORE_COMMIT",
+		Next:         string(provider.StatusPending),
+		ProviderName: "mock",
+		Message:      "committed before concurrent writer",
+		CreatedAt:    createdAt,
+	}
+	second := TransactionAuditEvent{
+		ReferenceID:  first.ReferenceID,
+		Action:       "AFTER_COMMIT",
+		Previous:     string(provider.StatusPending),
+		Next:         string(provider.StatusSuccess),
+		ProviderName: "mock",
+		Message:      "committed by concurrent writer",
+		CreatedAt:    createdAt,
+	}
+	if err := store.AppendContext(ctx, first); err != nil {
+		t.Fatalf("append initial audit event: %v", err)
+	}
+
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatalf("open concurrent writer connection: %v", err)
+	}
+	defer conn.Close()
+	if _, err := conn.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set concurrent writer search path: %v", err)
+	}
+
+	tx, err := conn.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatalf("begin concurrent writer transaction: %v", err)
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, postgresAuditAppendSQL,
+		second.ReferenceID,
+		second.Action,
+		second.Previous,
+		second.Next,
+		second.ProviderName,
+		second.Message,
+		second.CreatedAt.UTC(),
+	); err != nil {
+		t.Fatalf("stage concurrent audit append: %v", err)
+	}
+
+	beforeCommit, err := store.AllContextE(ctx, first.ReferenceID)
+	if err != nil {
+		t.Fatalf("read audit history before concurrent commit: %v", err)
+	}
+	if len(beforeCommit) != 1 || beforeCommit[0] != first {
+		t.Fatalf("reader must see only committed audit history before commit, got %#v", beforeCommit)
+	}
+
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("commit concurrent audit append: %v", err)
+	}
+
+	afterCommit, err := store.AllContextE(ctx, first.ReferenceID)
+	if err != nil {
+		t.Fatalf("read audit history after concurrent commit: %v", err)
+	}
+	if len(afterCommit) != 2 {
+		t.Fatalf("reader must converge to complete committed audit history, got %d rows", len(afterCommit))
+	}
+	if afterCommit[0] != first || afterCommit[1] != second {
+		t.Fatalf("committed audit ordering changed after concurrent commit: %#v", afterCommit)
+	}
+}
+
+
 func TestPostgresTransactionAuditStoreAppendFailureThenRecovery(t *testing.T) {
 	db := postgresIntegrationDB(t)
 	schema := "audit_append_recovery_" + strconv.FormatInt(time.Now().UnixNano(), 10)
