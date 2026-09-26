@@ -2251,6 +2251,14 @@ func TestPostgresPutContextRejectsConflictingTerminalRewrite(t *testing.T) {
 	if err := store.PutContext(ctx, successRewrite); err != ErrReferenceConflict {
 		t.Fatalf("expected FAILED -> SUCCESS conflict, got %v", err)
 	}
+	staleSuccessRewrite := failedCurrent
+	staleSuccessRewrite.Version = 1
+	staleSuccessRewrite.Execution.Result.Status = provider.StatusSuccess
+	staleSuccessRewrite.Execution.Result.ProviderCode = "00"
+	staleSuccessRewrite.Execution.Result.Message = "success"
+	if err := store.PutContext(ctx, staleSuccessRewrite); err != ErrReferenceConflict {
+		t.Fatalf("expected stale FAILED -> SUCCESS conflict, got %v", err)
+	}
 	failedAfterRewrite, ok := store.GetContext(ctx, failedBase.Request.ReferenceID)
 	if !ok || failedAfterRewrite.Version != 2 || failedAfterRewrite.Execution.Result.Status != provider.StatusFailed {
 		t.Fatalf("FAILED -> SUCCESS rewrite mutated durable state: %#v", failedAfterRewrite)
