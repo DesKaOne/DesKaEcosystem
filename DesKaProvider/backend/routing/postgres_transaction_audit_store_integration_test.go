@@ -888,6 +888,101 @@ func TestPostgresTransactionAuditStoreReadVisibilityAfterConcurrentCommit(t *tes
 }
 
 
+func TestPostgresTransactionAuditStoreRepeatedConcurrentSnapshotsConverge(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	schema := "audit_snapshot_convergence_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatalf("create isolated schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
+	})
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set search path: %v", err)
+	}
+	applyPostgresMigration(t, db)
+
+	readerConn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatalf("open pinned reader connection: %v", err)
+	}
+	defer readerConn.Close()
+	if _, err := readerConn.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set reader search path: %v", err)
+	}
+	reader, err := NewPostgresTransactionAuditStore(readerConn)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	createdAt := time.Now().UTC().Truncate(time.Microsecond)
+	const writers = 8
+	committed := make([]TransactionAuditEvent, 0, writers)
+
+	for i := 0; i < writers; i++ {
+		conn, err := db.Conn(ctx)
+		if err != nil {
+			t.Fatalf("open writer connection %d: %v", i, err)
+		}
+		if _, err := conn.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+			conn.Close()
+			t.Fatalf("set writer search path %d: %v", i, err)
+		}
+		store, err := NewPostgresTransactionAuditStore(conn)
+		if err != nil {
+			conn.Close()
+			t.Fatal(err)
+		}
+		event := TransactionAuditEvent{
+			ReferenceID:  "audit-snapshot-convergence-ref",
+			Action:       "COMMITTED_" + strconv.Itoa(i),
+			ProviderName: "mock",
+			Message:      "monotonic snapshot",
+			CreatedAt:    createdAt,
+		}
+		if err := store.AppendContext(ctx, event); err != nil {
+			conn.Close()
+			t.Fatalf("append committed event %d: %v", i, err)
+		}
+		if err := conn.Close(); err != nil {
+			t.Fatalf("close writer connection %d: %v", i, err)
+		}
+		committed = append(committed, event)
+
+		snapshot, err := reader.AllContextE(ctx, event.ReferenceID)
+		if err != nil {
+			t.Fatalf("read snapshot after commit %d: %v", i, err)
+		}
+		if len(snapshot) != i+1 {
+			t.Fatalf("expected monotonic snapshot size %d after commit %d, got %d", i+1, i, len(snapshot))
+		}
+		for j, want := range committed {
+			if snapshot[j] != want {
+				t.Fatalf("snapshot after commit %d changed at position %d: want=%#v got=%#v", i, j, want, snapshot[j])
+			}
+		}
+	}
+
+	for i := 0; i < 4; i++ {
+		snapshot, err := reader.AllContextE(ctx, "audit-snapshot-convergence-ref")
+		if err != nil {
+			t.Fatalf("repeated final snapshot %d: %v", i, err)
+		}
+		if len(snapshot) != writers {
+			t.Fatalf("final snapshot %d must contain all %d committed events, got %d", i, writers, len(snapshot))
+		}
+		for j, want := range committed {
+			if snapshot[j] != want {
+				t.Fatalf("repeated final snapshot %d changed at position %d: want=%#v got=%#v", i, j, want, snapshot[j])
+			}
+		}
+	}
+}
+
+
 func TestPostgresTransactionAuditStoreAppendFailureThenRecovery(t *testing.T) {
 	db := postgresIntegrationDB(t)
 	schema := "audit_append_recovery_" + strconv.FormatInt(time.Now().UnixNano(), 10)
