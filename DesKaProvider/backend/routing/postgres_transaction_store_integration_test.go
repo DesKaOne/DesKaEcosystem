@@ -238,12 +238,25 @@ func TestPostgresTransactionStoreTerminalRecoveryIsIdempotentAfterRestart(t *tes
 	}
 	applyPostgresMigration(t, db)
 
-	store, err := NewPostgresTransactionStore(db)
+	// search_path is session-local. Pin a dedicated database session for the
+	// concurrent atomic transition so both workers address the same schema.
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatalf("pin postgres connection: %v", err)
+	}
+	defer conn.Close()
+	if _, err := conn.ExecContext(ctx, "SET search_path TO public"); err != nil {
+		t.Fatalf("set pinned search path: %v", err)
+	}
+	pinnedStore, err := NewPostgresTransactionStore(conn)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	registry := provider.NewRegistry()
+	current, ok := pinnedStore.Get(pending.Request.ReferenceID)
+	if !ok {
+		t.Fatal("pending transaction was not persisted")
+	}
 	mock := Mock.New(Mock.Config{
 		Products:       []provider.Product{{Code: "pln20", Name: "PLN 20"}},
 		ProviderCode:   "00",
