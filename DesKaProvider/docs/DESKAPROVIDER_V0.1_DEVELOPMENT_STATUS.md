@@ -5349,34 +5349,40 @@ Completed:
 Completed:
 
 - corrected PostgreSQL `PutContext` to reject non-idempotent writes whose caller version does not equal the current durable version;
-- added deterministic PostgreSQL tests for repeated identical terminal writes with no version churn;
+- changed PostgreSQL `PutContext` to use `GetContextE`, preserving database read errors instead of collapsing them into not-found/empty state;
+- added deterministic PostgreSQL coverage for repeated identical terminal writes with no version churn;
 - verified identical terminal replay remains idempotent even when the replay carries a stale version, because identical terminal observations do not mutate state;
-- added deterministic coverage rejecting `SUCCESS → FAILED` terminal rewrites while preserving the durable terminal result;
+- added deterministic coverage rejecting `SUCCESS → FAILED` terminal rewrites and both current/stale `FAILED → SUCCESS` rewrites;
+- verified conflicting terminal rewrites preserve the committed durable terminal state and version;
 - retained restart/reconciliation terminal recovery coverage and exactly-one provider submission assertions already present in the suite;
 - kept PostgreSQL transaction persistence authoritative and audit/operational evidence non-authoritative.
 
 ### Verification
 
-- corrected implementation commit: `4d16122bb72cb9593fb0372bde89f378a013b185`;
-- terminal idempotency test commit: `63e6eb3e153b59c158368beaa7d7b546bd1508d7`;
-- CI #1207 / run `36227723874`: **GREEN** for exact HEAD `9b790f521f3d39efa0849eca09f5f9e1d112a807`;
-- CI #1206 / run `36227767602`: **GREEN** for exact HEAD `9b790f521f3d39efa0849eca09f5f9e1d112a807`;
+- sequential writer correction implementation: `4d16122bb72cb9593fb0372bde89f378a013b185`;
+- terminal idempotency test baseline: `63e6eb3e153b59c158368beaa7d7b546bd1508d7`;
+- stale `FAILED → SUCCESS` regression: `a80134990c425929a86b5f4936756075df83c8de`;
+- PostgreSQL error-aware `PutContext` correction: `bf60f275b1b2fbe0d693bed26069247685708727`;
+- invalid error-propagation fixture removed: `f371cf85f1fada8f9a4330dd48d616ba507310d0`;
+- CI #1218 / run `36229227605`: **GREEN** for exact HEAD `f371cf85f1fada8f9a4330dd48d616ba507310d0`;
+- CI #1219 / run `36229229590`: **GREEN** for exact HEAD `f371cf85f1fada8f9a4330dd48d616ba507310d0`;
 - CI jobs `test` and `race` both completed successfully on the exact HEAD;
-- local Go test/vet/race execution remains unavailable because this runtime cannot reach external Git/network resources.
+- the repository CI also covers `go vet` in the `test` job.
 
 ### Safety Boundary
 
 - stale writer conflicts remain persistence-integrity outcomes and never authorize retry, failover, resubmission, ledger mutation, treasury movement, or provider funding;
 - identical terminal replay performs no durable mutation and no provider action;
 - conflicting terminal rewrites remain rejected;
+- database read failures remain observable and cannot be interpreted as absence of durable transaction state;
 - no transaction model, ledger, routing policy, or financial authorization boundary was broadened.
 
 ### Known Limitations
 
-- `FAILED → SUCCESS` still needs a dedicated PostgreSQL regression case in the final #119 pass;
-- full local verification depends on a repository checkout and PostgreSQL runtime unavailable in this execution environment.
+- the local runtime still cannot execute the repository's full Go/PostgreSQL verification because it has no external Git/network access;
+- live external-provider credential validation remains environment-gated.
 
 ### Next milestone
 
-**#119 — PostgreSQL Terminal Idempotency Version Review**: finish the terminal rewrite matrix, add explicit `FAILED → SUCCESS` PostgreSQL coverage, verify repeated webhook/reconciliation observations across terminal states, verify restart preserves exactly one provider submission, and close only when the latest exact HEAD CI is GREEN in `test` and `race`.
+**#120 — PostgreSQL Database-Error Propagation Boundary Review**: extend the error-aware persistence matrix across startup reconstruction, reconciliation reads, and atomic transition writes so non-cancellation database failures remain distinguishable from not-found/conflict outcomes without authorizing retry, failover, resubmission, or financial mutation.
 
