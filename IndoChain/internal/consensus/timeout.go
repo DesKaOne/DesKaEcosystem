@@ -41,8 +41,15 @@ func NewTimeoutCertificate(
 	threshold QuorumThreshold,
 	nextRound uint64,
 	senders [][]byte,
-	lockedProposal []byte,
+	lockEvidence ...[]byte,
 ) (TimeoutCertificate, error) {
+	var lockedProposal []byte
+	if len(lockEvidence) > 1 {
+		return TimeoutCertificate{}, ErrInvalidTimeoutCertificate
+	}
+	if len(lockEvidence) == 1 {
+		lockedProposal = lockEvidence[0]
+	}
 	if err := state.Validate(); err != nil {
 		return TimeoutCertificate{}, err
 	}
