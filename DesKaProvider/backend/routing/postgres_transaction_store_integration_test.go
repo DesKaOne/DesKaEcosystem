@@ -1239,6 +1239,8 @@ func TestPostgresConcurrentReadDuringAtomicTransitionObservesCompleteState(t *te
 		t.Fatalf("open reader postgres: %v", err)
 	}
 	t.Cleanup(func() { _ = readerDB.Close() })
+	readerDB.SetMaxOpenConns(1)
+	readerDB.SetMaxIdleConns(1)
 	if err := readerDB.PingContext(ctx); err != nil {
 		t.Fatalf("ping reader postgres: %v", err)
 	}
@@ -1250,11 +1252,14 @@ func TestPostgresConcurrentReadDuringAtomicTransitionObservesCompleteState(t *te
 		t.Fatal(err)
 	}
 
-	start := make(chan struct{})
+	const reads = 100
+	readerReady := make(chan struct{})
+	startReads := make(chan struct{})
 	readDone := make(chan error, 1)
 	go func() {
-		<-start
-		for i := 0; i < 100; i++ {
+		close(readerReady)
+		<-startReads
+		for i := 0; i < reads; i++ {
 			got, ok, err := readerStore.GetContextE(ctx, request.ReferenceID)
 			if err != nil {
 				readDone <- fmt.Errorf("read iteration %d: %w", i, err)
@@ -1288,8 +1293,9 @@ func TestPostgresConcurrentReadDuringAtomicTransitionObservesCompleteState(t *te
 		readDone <- nil
 	}()
 
-	close(start)
-	time.Sleep(5 * time.Millisecond)
+	<-readerReady
+	close(startReads)
+
 	next := pending
 	next.Version = 2
 	next.Execution.Result.Status = provider.StatusSuccess
