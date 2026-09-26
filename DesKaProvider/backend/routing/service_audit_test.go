@@ -97,6 +97,91 @@ func TestServiceAuditRecordsPurchaseLifecycleAndTerminalConflict(t *testing.T) {
 	}
 }
 
+func TestServiceRestartedAuditFailureDoesNotAuthorizeResubmission(t *testing.T) {
+	storePath := filepath.Join(t.TempDir(), "transactions", "state.json")
+	registry := provider.NewRegistry()
+	mock := Mock.New(Mock.Config{
+		Products:       []provider.Product{{Code: "pln20", Name: "PLN 20"}},
+		ProviderCode:   "00",
+		Message:        "pending",
+		PurchaseStatus: provider.StatusPending,
+		Price:          20000,
+	})
+	if err := registry.Register("mock", mock); err != nil {
+		t.Fatal(err)
+	}
+	ops := operational.NewMemoryStore()
+	if err := ops.Put(operational.Snapshot{
+		ProviderName: "mock",
+		Balance:      100000,
+		Health:       operational.HealthHealthy,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	router, err := New(registry, ops, map[string]int{"mock": 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	store, err := NewJSONFileTransactionStore(storePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstService, err := NewServiceWithStoreAndAudit(router, store, NewMemoryTransactionAuditStore())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := PurchaseRequest{ProductCode: "pln20", CustomerNo: "08123456789", ReferenceID: "ref-restart-audit-failure", Amount: 20000}
+	first, err := firstService.Purchase(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Result.Status != provider.StatusPending {
+		t.Fatalf("expected pending transaction before restart, got %q", first.Result.Status)
+	}
+	if got := mock.PurchaseCount(req.ReferenceID); got != 1 {
+		t.Fatalf("expected one provider submission before restart, got %d", got)
+	}
+
+	mock.SetTransactionStatus(req.ReferenceID, provider.StatusSuccess, "success after restart reconciliation")
+
+	restartedStore, err := NewJSONFileTransactionStore(storePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	auditErr := errors.New("audit unavailable after restart")
+	restartedService, err := NewServiceWithStoreAndAudit(router, restartedStore, failTransactionAuditStore{err: auditErr})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	reconciled, err := restartedService.Reconcile(context.Background(), req.ReferenceID)
+	if !errors.Is(err, auditErr) {
+		t.Fatalf("expected audit failure after durable reconciliation, got %v", err)
+	}
+	if reconciled.Result.Status != provider.StatusSuccess {
+		t.Fatalf("expected durable terminal success to remain authoritative, got %q", reconciled.Result.Status)
+	}
+
+	persisted, ok := restartedStore.Get(req.ReferenceID)
+	if !ok || persisted.Execution.Result.Status != provider.StatusSuccess {
+		t.Fatalf("expected terminal transaction state to remain durable, got %#v", persisted)
+	}
+
+	retry, retryErr := restartedService.Purchase(context.Background(), req)
+	if !errors.Is(retryErr, auditErr) {
+		t.Fatalf("expected idempotent duplicate to preserve prior audit error, got %v", retryErr)
+	}
+	if retry.Result.Status != provider.StatusSuccess {
+		t.Fatalf("expected duplicate purchase to return committed terminal result, got %q", retry.Result.Status)
+	}
+	if got := mock.PurchaseCount(req.ReferenceID); got != 1 {
+		t.Fatalf("audit failure after restart must not authorize provider resubmission, got %d submissions", got)
+	}
+}
+
+
 func TestServiceAuditFailureDoesNotResubmitOrRevertTerminalState(t *testing.T) {
 	mock := Mock.New(Mock.Config{
 		Products:       []provider.Product{{Code: "pln20", Name: "PLN 20"}},
