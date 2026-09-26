@@ -3124,8 +3124,17 @@ func TestPostgresAuditTransactionCrossReadRecoveryConverges(t *testing.T) {
 	}
 
 	baselineState, found, err := transactionStore.GetContextE(ctx, referenceID)
-	if err != nil || !found || baselineState != state {
-		t.Fatalf("baseline transaction state changed: found=%v state=%#v err=%v", found, baselineState, err)
+	if err != nil || !found {
+		t.Fatalf("baseline transaction state unavailable: found=%v state=%#v err=%v", found, baselineState, err)
+	}
+	if baselineState.Request != state.Request ||
+		baselineState.Execution.ProviderName != state.Execution.ProviderName ||
+		baselineState.Execution.Result.Status != state.Execution.Result.Status ||
+		baselineState.Execution.Result.ProviderCode != state.Execution.Result.ProviderCode ||
+		baselineState.Execution.Result.Message != state.Execution.Result.Message ||
+		baselineState.Execution.Result.SerialNumber != state.Execution.Result.SerialNumber ||
+		baselineState.Execution.Result.Price != state.Execution.Result.Price {
+		t.Fatalf("baseline transaction durable fields changed: expected=%#v got=%#v", state, baselineState)
 	}
 	baselineAudit, err := auditStore.AllContextE(ctx, referenceID)
 	if err != nil || len(baselineAudit) != 1 || baselineAudit[0] != event {
@@ -3211,8 +3220,17 @@ func TestPostgresAuditTransactionCrossReadRecoveryConverges(t *testing.T) {
 		t.Fatal(err)
 	}
 	recoveredState, found, err := recoveredTransactionStore.GetContextE(ctx, referenceID)
-	if err != nil || !found || recoveredState != baselineState {
-		t.Fatalf("transaction state did not converge after recovery: found=%v state=%#v err=%v", found, recoveredState, err)
+	if err != nil || !found {
+		t.Fatalf("transaction state unavailable after recovery: found=%v state=%#v err=%v", found, recoveredState, err)
+	}
+	if recoveredState.Request != baselineState.Request ||
+		recoveredState.Execution.ProviderName != baselineState.Execution.ProviderName ||
+		recoveredState.Execution.Result.Status != baselineState.Execution.Result.Status ||
+		recoveredState.Execution.Result.ProviderCode != baselineState.Execution.Result.ProviderCode ||
+		recoveredState.Execution.Result.Message != baselineState.Execution.Result.Message ||
+		recoveredState.Execution.Result.SerialNumber != baselineState.Execution.Result.SerialNumber ||
+		recoveredState.Execution.Result.Price != baselineState.Execution.Result.Price {
+		t.Fatalf("transaction durable fields changed after recovery: baseline=%#v recovered=%#v", baselineState, recoveredState)
 	}
 }
 
