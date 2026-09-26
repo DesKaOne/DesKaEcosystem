@@ -807,6 +807,68 @@ func TestPostgresTransactionStoreContextWriteHonorsCancellation(t *testing.T) {
 	}
 }
 
+
+func TestPostgresTransactionStorePutContextAdvancesPendingVersion(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	schema := "pending_version_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatalf("create isolated schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
+	})
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set isolated search path: %v", err)
+	}
+	applyPostgresMigration(t, db)
+
+	store, err := NewPostgresTransactionStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pending := postgresPendingState()
+	pending.Request.ReferenceID = postgresIntegrationReference()
+	pending.Execution.Result.ReferenceID = pending.Request.ReferenceID
+	if err := store.PutContext(ctx, pending); err != nil {
+		t.Fatalf("insert initial pending transaction: %v", err)
+	}
+
+	first := pending
+	first.Execution.Result.Message = "pending refresh 1"
+	if err := store.PutContext(ctx, first); err != nil {
+		t.Fatalf("advance pending state once: %v", err)
+	}
+
+	current, ok := store.GetContext(ctx, pending.Request.ReferenceID)
+	if !ok {
+		t.Fatal("pending transaction missing after first transition")
+	}
+	if current.Version != 2 {
+		t.Fatalf("expected version 2 after first pending transition, got %d", current.Version)
+	}
+
+	second := current
+	second.Execution.Result.Message = "pending refresh 2"
+	if err := store.PutContext(ctx, second); err != nil {
+		t.Fatalf("advance pending state twice: %v", err)
+	}
+
+	recovered, ok := store.GetContext(ctx, pending.Request.ReferenceID)
+	if !ok {
+		t.Fatal("pending transaction missing after second transition")
+	}
+	if recovered.Version != 3 {
+		t.Fatalf("expected version 3 after second pending transition, got %d", recovered.Version)
+	}
+	if recovered.Execution.Result.Message != "pending refresh 2" {
+		t.Fatalf("expected latest pending message to persist, got %q", recovered.Execution.Result.Message)
+	}
+}
+
 func TestPostgresTransactionStoreContextAtomicWriteHonorsCancellation(t *testing.T) {
 	db := postgresIntegrationDB(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
