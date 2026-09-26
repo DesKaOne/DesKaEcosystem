@@ -4392,12 +4392,16 @@ Completed:
 - added deterministic PostgreSQL coverage proving canceled `PutContext` returns `context.Canceled` and leaves no transaction persisted;
 - added deterministic PostgreSQL coverage proving canceled `PutIfCurrentContext` returns `context.Canceled` and leaves the durable pending transaction unchanged;
 - preserved database-backed conditional transitions as the concurrency authority without converting cancellation into success or conflict semantics;
+- corrected the cancellation regression check to use a fresh read context after the write context is canceled, avoiding false “transaction disappeared” results;
 - kept transaction persistence authoritative and operational/audit evidence non-authoritative.
 
 ### Verification
 
-- implementation/test commit: `54a29ed3f994a7fbed4ebc8a82b807712cb030d8`;
-- CI for the new HEAD must complete `test` and `race` successfully before milestone #50 is considered closed.
+- milestone test commits: `54a29ed3f994a7fbed4ebc8a82b807712cb030d8`, follow-up corrections through `4dd0a3a557c8fd464b12036893e4c306dca7b201`;
+- CI #977 / run `36212349601`: **GREEN** for exact HEAD `4dd0a3a557c8fd464b12036893e4c306dca7b201`;
+- CI jobs `test`: success;
+- CI job `test` `vet`: success;
+- CI jobs `race`: success.
 
 ### Safety Boundary
 
@@ -4406,4 +4410,33 @@ Completed:
 
 ### Next Milestone
 
-**#51 — PostgreSQL Write Error Classification Boundary**: verify non-context database write errors remain distinguishable from concurrency conflicts so the service cannot misclassify persistence failures as successful state transitions.
+**#51 — PostgreSQL Write Error Classification Boundary**: verify non-context database write errors remain distinguishable from optimistic concurrency conflicts so the service cannot misclassify persistence failures as successful state transitions.
+
+### 51. Milestone Update — PostgreSQL Write Error Classification Boundary
+
+**Date:** 2026-09-26
+
+Completed:
+
+- added deterministic DBTX stub coverage proving a non-context database write error is preserved through `PutIfCurrentContext` wrapping;
+- verified ordinary database failures are not classified as `ErrTransactionStateConflict`;
+- preserved optimistic concurrency conflicts as the separate result of a successful SQL execution that affects zero rows;
+- kept transaction persistence authoritative and operational/audit evidence non-authoritative.
+
+### Verification
+
+- regression test commit: `f2505b5b411380cd8239c9844897c3306a8818a4`;
+- CI #979 / run `36212449794`: **GREEN** for exact HEAD `f2505b5b411380cd8239c9844897c3306a8818a4`;
+- CI jobs `test`: success;
+- CI job `test` `vet`: success;
+- CI jobs `race`: success.
+
+### Safety Boundary
+
+- database write errors remain operational persistence failures and are never treated as concurrency authorization;
+- `ErrTransactionStateConflict` is reserved for a conditional transition that did not affect exactly one pending row;
+- neither ordinary database failure nor concurrency conflict can authorize provider retry, failover, resubmission, ledger mutation, treasury movement, or provider funding.
+
+### Next Milestone
+
+**#52 — PostgreSQL `PutContext` Error Classification & Version Integrity**: verify sequential transactional writes preserve exact database errors, maintain monotonic versions, and never downgrade a terminal state into a retryable persistence condition.
