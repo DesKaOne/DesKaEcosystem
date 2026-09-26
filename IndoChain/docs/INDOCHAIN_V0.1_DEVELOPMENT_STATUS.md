@@ -1251,3 +1251,33 @@ Commits:
 CI #1109 (run `36263385593`) first failed at compile time due to an incorrect validation return type. CI #1113 (run `36263420613`) then exposed missing membership enforcement during certificate construction. Both root causes are fixed; latest fix is `84995bf3ed1e86e33b883d861f8f5a98d4dcea40`. A fresh CI run must be green before this milestone is considered complete.
 
 CI verification completed: **IndoChain CI #1117** (run `36263453369`) for code commit `84995bf3ed1e86e33b883d861f8f5a98d4dcea40` completed successfully; Tidy, Test, and Vet all passed.
+
+
+### 4.27 Consensus Timeout Lock-Carry Evidence Boundary
+
+Signed timeout evidence now carries the sender's current lock context instead of only the target round.
+
+TimeoutCertificate includes an optional LockedProposal payload. NewTimeoutCertificateFromMessages requires all timeout messages in one certificate to target the same next round and carry the same lock context; conflicting lock evidence is rejected with ErrConflictingTimeoutLock. The certificate and message APIs defensively copy lock material.
+
+NewTimeoutMessageWithLock encodes the target round and lock context into the signed timeout payload. The existing NewTimeoutMessage API remains the no-lock convenience path, preserving the previous development call shape. TimeoutLockedProposal decodes a defensive copy of the signed lock context.
+
+ValidatorRuntime.AdvanceRoundWithTimeoutEvidence now checks timeout lock evidence against the runtime's existing lock before round advancement. A runtime without a lock may adopt a validated certificate lock only after AdvanceRound succeeds; an existing conflicting lock rejects the evidence without mutating round state or the local lock.
+
+Regression coverage now includes:
+- signed timeout lock-context round trip;
+- certificate propagation of lock context;
+- conflicting lock evidence rejection;
+- runtime lock adoption after successful timeout quorum;
+- runtime lock-conflict rejection without mutation.
+
+Commits:
+- timeout certificate lock context: 83918e50524fa4d74afea71513e7844e822cd907
+- signed timeout lock-aware constructor/encoding: 1549a37bbf843a8b1132de595bf314a024df53e5
+- runtime timeout lock application and atomic correction: a3770b2e0f40914c766d318a97115b02ef18fd8b
+- timeout lock regression tests: fbc301543012105cb6455b5961436897f0f79e12, 3fa7be11533baa40c66b2aaed98129b89e98e0dc
+
+CI verification:
+- CI #1129 (run 36264042829) exposed an intermediate compile failure from the transient lock-aware constructor shape; this was corrected before the final gate.
+- IndoChain CI #1139 (run 36264090827) for final code/test state completed successfully. Tidy, Test, and Vet all passed.
+
+This remains a development-only lock-carry evidence boundary. It does not yet implement a production BFT highest-lock/locked-round rule, separate prevote/precommit wire semantics, persistent timeout evidence, validator-set transitions, or real network round synchronization.
