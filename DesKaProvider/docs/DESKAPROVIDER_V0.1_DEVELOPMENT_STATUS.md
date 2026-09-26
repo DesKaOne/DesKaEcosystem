@@ -4197,3 +4197,25 @@ Completed:
 1. continue reviewing restart/shutdown boundaries around persisted operational snapshots and provider routing state;
 2. keep transaction persistence authoritative for transaction state while operational/audit persistence remains non-authoritative evidence;
 3. preserve the existing no-resubmission/no-financial-authorization expansion invariants.
+
+### 37. Milestone Update — Persisted Operational Snapshot Freshness Boundary
+
+**Date:** 2026-09-26
+
+Completed:
+
+- reviewed restart recovery semantics for persisted operational balance/health snapshots and routing state;
+- added deterministic routing regression coverage proving an expired persisted operational snapshot remains available as recovery data but cannot be used for a new route decision;
+- verified a freshly refreshed healthy snapshot restores route eligibility without changing provider lifecycle state semantics;
+- preserved the distinction between persisted operational evidence and live runtime worker state.
+
+### Verification
+
+- milestone implementation commit: `1af606dc5ff0b47c6bd4756910fef7fdfb9340d2`;
+- prior HEAD CI #866/#867 for milestone #114: **success**;
+- CI for this new HEAD must finish with both `test` and `race` jobs **success** before milestone #115 is considered closed.
+
+### Next milestone
+
+1. continue the restart boundary review across routing, transaction persistence, and audit evidence;
+2. ensure persisted operational snapshots never authorize transaction resubmission, failover, or financial mutation by themselves.
