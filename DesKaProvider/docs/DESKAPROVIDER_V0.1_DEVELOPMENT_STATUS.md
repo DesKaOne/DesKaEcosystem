@@ -6563,3 +6563,40 @@ Completed:
 ### Next Milestone
 
 **#151 — PostgreSQL Audit Conflict With Concurrent Transaction Update:** verify contradictory audit evidence remains non-authoritative when the durable transaction state changes concurrently, preserving atomic transaction-state authority.
+
+### 151. Milestone Update — PostgreSQL Audit Conflict With Concurrent Transaction Update
+
+**Date:** 2026-09-26
+
+Completed:
+
+- added real-PostgreSQL integration coverage with a durable pending transaction and a contradictory audit event prepared concurrently on separate database transactions;
+- verified the uncommitted transaction-state update remains invisible to a reader until its transaction commits;
+- verified the uncommitted contradictory audit event also remains invisible until its audit transaction commits;
+- committed the contradictory audit evidence and the durable transaction update independently, then verified each persisted representation is readable in its own boundary;
+- verified the durable transaction row contains the committed terminal success state while the audit history independently retains the contradictory failed observation;
+- confirmed the contradictory audit evidence does not overwrite, downgrade, or otherwise alter the authoritative transaction state;
+- no production audit-store or service implementation change was required;
+- no transaction authority, provider submission authority, retry/failover behavior, ledger mutation, treasury movement, or provider funding behavior was broadened.
+
+### Safety Boundary
+
+- transaction persistence remains the authoritative execution and idempotency boundary;
+- audit evidence may contradict transaction state and must remain observational rather than being promoted into execution state;
+- concurrent commit ordering is a persistence concern and cannot authorize provider retry, failover, resubmission, or financial mutation;
+- audit and transaction tables remain separate authority boundaries.
+
+### Verification
+
+- test implementation commits: `567e01e86c98704a4a84454a330e19b7f9068311`, `a492e234bb93e4e54c34a3c5399e06347d9ea347`, `b2d96b595db6d187b962ec675536cc0df1cce45d`;
+- exact branch HEAD after this status documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before this milestone is considered closed.
+
+### Known Limitations
+
+- the scenario validates independent PostgreSQL transaction commits on a single database instance and does not cover distributed replication or multi-region conflict resolution;
+- the deliberately contradictory audit record is a test fixture and does not introduce a production reconciliation mechanism;
+- audit remains operational evidence and is not a financial source of truth.
+
+### Next Milestone
+
+**#152 — PostgreSQL Audit/Transaction Commit Ordering:** verify behavior when audit and transaction commits occur in different orders, ensuring neither ordering can promote audit evidence into transaction authority.
