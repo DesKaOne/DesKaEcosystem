@@ -333,3 +333,78 @@ func TestPostgresTransactionAndAuditStoresReconstructServiceAfterRestart(t *test
 		t.Fatalf("terminal webhook after restart must not resubmit purchase, got %d", got)
 	}
 }
+
+
+
+func TestPostgresTransactionAuditStoreReadFailureThenRecovery(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	schema := "audit_recovery_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatalf("create isolated schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
+	})
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set search path: %v", err)
+	}
+	applyPostgresMigration(t, db)
+
+	store, err := NewPostgresTransactionAuditStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	event := TransactionAuditEvent{
+		ReferenceID:  "audit-recovery-ref",
+		Action:       "PURCHASE_RESULT",
+		Next:         string(provider.StatusSuccess),
+		ProviderName: "mock",
+		Message:      "recovered",
+		CreatedAt:    time.Now().UTC().Truncate(time.Microsecond),
+	}
+	if err := store.AppendContext(ctx, event); err != nil {
+		t.Fatalf("append recovery fixture: %v", err)
+	}
+
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	failed, err := store.AllContextE(context.Background(), event.ReferenceID)
+	if err == nil {
+		t.Fatal("expected audit read failure after database close")
+	}
+	if failed != nil {
+		t.Fatalf("failed audit read must not expose partial history, got %#v", failed)
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("closed-database failure must not be classified as context termination: %v", err)
+	}
+
+	reopened, err := sql.Open("pgx", os.Getenv("DESKAPROVIDER_POSTGRES_DSN"))
+	if err != nil {
+		t.Fatalf("reopen postgres: %v", err)
+	}
+	defer reopened.Close()
+	if err := reopened.PingContext(ctx); err != nil {
+		t.Fatalf("ping reopened postgres: %v", err)
+	}
+	if _, err := reopened.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("restore search path after recovery: %v", err)
+	}
+
+	recoveredStore, err := NewPostgresTransactionAuditStore(reopened)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recovered, err := recoveredStore.AllContextE(ctx, event.ReferenceID)
+	if err != nil {
+		t.Fatalf("audit read after database recovery: %v", err)
+	}
+	if len(recovered) != 1 || recovered[0] != event {
+		t.Fatalf("recovered audit history changed: %#v", recovered)
+	}
+}
