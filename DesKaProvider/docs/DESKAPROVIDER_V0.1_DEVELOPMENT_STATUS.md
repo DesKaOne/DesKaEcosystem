@@ -7682,3 +7682,39 @@ PostgreSQL runtime initialization/reopen remains infrastructure-only. Database-o
 **#171 — PostgreSQL Runtime Initialization Failure Cleanup Precedence**
 
 Next work should extend deterministic coverage for post-open constructor failures, cleanup-error precedence, and initialization rollback ordering across shared and dedicated resources, without changing transaction/audit authority boundaries.
+
+
+### Milestone #171 — PostgreSQL Runtime Initialization Failure Cleanup Precedence
+
+**Date:** 2026-09-26
+
+Completed:
+
+- extended runtime cleanup verification for post-open initialization failures;
+- verified that cleanup attempts continue after an earlier database close returns an error;
+- verified deterministic cleanup order: transaction database first, audit database second;
+- verified both cleanup resources are closed exactly once;
+- preserved joined error identity so the primary initialization error and cleanup error remain independently discoverable with errors.Is;
+- preserved shared-handle protection so transaction/audit cleanup does not double-close the same database resource.
+
+### Verification
+
+- Final implementation/test commit: `5d00280966c09c001569487f57e513b40e4e0762`
+- Push CI #1588: **GREEN** — `go test ./...`, `go vet ./...`, `go test -race ./...`, PostgreSQL service-backed integration tests.
+- PR CI #1589: **GREEN** — `test`, `race`.
+- No provider retry, failover, resubmission, ledger, treasury, funding, or cross-domain recovery behavior was introduced.
+
+### Safety Boundary
+
+Initialization cleanup is infrastructure-only. A partial runtime initialization failure must release already-acquired resources without fabricating transaction/audit state, selecting another authority, or initiating provider-side financial activity. Transaction persistence remains the authoritative transaction-state/idempotency boundary; audit persistence remains observational evidence.
+
+### Known Limitations
+
+- The cleanup-order test uses deterministic closer fixtures because the production database/sql close operation itself does not expose a configurable close-order hook.
+- Real PostgreSQL integration remains responsible for validating actual open/ping/persistence/reopen behavior; synthetic closers validate failure precedence and cleanup semantics.
+
+### Next Milestone
+
+**#172 — PostgreSQL Runtime Startup Failure Rollback Integration**
+
+Next work should exercise runtime startup failure rollback closer to NewFromEnvironmentContext, including failures after transaction/audit acquisition and before ownership transfer, while preserving exact error identity and single-close guarantees.
