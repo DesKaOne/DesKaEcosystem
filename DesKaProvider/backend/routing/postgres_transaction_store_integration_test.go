@@ -186,7 +186,7 @@ func TestPostgresTransactionStoreIntegration(t *testing.T) {
 		t.Fatalf("expected one success and one conflict, got success=%d conflict=%d", successCount, conflictCount)
 	}
 
-	terminal, ok := restarted.Get(pending.Request.ReferenceID)
+	terminal, ok := pinnedStore.Get(pending.Request.ReferenceID)
 	if !ok {
 		t.Fatal("terminal transaction disappeared after concurrent transition")
 	}
