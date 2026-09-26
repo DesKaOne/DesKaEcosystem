@@ -70,3 +70,14 @@ func TestPostgresTransactionStorePutIfCurrentRejectsIdentityMismatch(t *testing.
 	err=store.PutIfCurrent("ref-77",prev,next)
 	if !errors.Is(err,ErrReferenceConflict) { t.Fatalf("expected reference conflict, got %v",err) }
 }
+
+func TestPostgresTransactionStorePutContextPropagatesDatabaseError(t *testing.T) {
+	stub := &contextReadDBStub{err: errors.New("database unavailable")}
+	store, err := NewPostgresTransactionStore(stub)
+	if err != nil { t.Fatal(err) }
+	state := postgresPendingState()
+
+	if err := store.PutContext(context.Background(), state); err == nil || !errors.Is(err, stub.err) {
+		t.Fatalf("expected underlying database error to propagate, got %v", err)
+	}
+}
