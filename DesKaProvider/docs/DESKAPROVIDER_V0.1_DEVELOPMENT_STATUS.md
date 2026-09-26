@@ -5753,3 +5753,38 @@ Completed:
 ### Next Milestone
 
 **#131 — PostgreSQL Audit Read Service Boundary Review:** trace audit-read error handling through service-layer callers to ensure database cancellation/deadline/error outcomes are not flattened into empty history or used to trigger provider actions.
+
+### 131. Milestone Update — PostgreSQL Audit Read Service Boundary Review
+
+**Date:** 2026-09-26
+
+Completed:
+
+- traced the current service-layer audit usage and confirmed Service records audit events but does not consume AuditStore history for startup reconstruction, purchase authorization, provider selection, or reconciliation;
+- confirmed startup recovery and reconciliation use the transaction store as the authoritative state boundary rather than audit history;
+- added deterministic service-layer guardrail coverage proving an audit read that returns context.DeadlineExceeded remains observable and cannot authorize a provider resubmission;
+- verified the pending durable transaction remains the result returned for an idempotent repeat and the mock provider submission count remains exactly one;
+- no production service behavior required changing because audit history is already observational-only at the service boundary.
+
+### Safety Boundary
+
+- audit read errors and deadline/cancellation outcomes are operational evidence failures only;
+- audit history cannot authorize provider retry, failover, resubmission, ledger mutation, treasury movement, or provider funding;
+- transaction persistence remains the authoritative transaction-state boundary;
+- provider submission authorization remains gated by durable transaction state, not audit history.
+
+### Verification
+
+- implementation commit: 7dc05027c5661add8f6eeeaa818e622c63a73a58;
+- exact branch HEAD after this documentation update must pass both push and PR CI with test, vet, and race successful before this milestone is considered closed.
+
+### Known Limitations
+
+- the service-layer guardrail verifies the current architecture where audit reads are not consumed by service actions; it does not introduce an audit history consumer solely for testing;
+- the deterministic audit-read fixture returns a controlled error rather than emulating every PostgreSQL/network failure timing variant;
+- real PostgreSQL integration remains the boundary for driver-specific audit-read behavior.
+
+### Next Milestone
+
+**#132 — PostgreSQL Audit Read API Boundary:** review whether the audit-store interface should expose an explicit error-aware read contract for callers, without making audit history authoritative or widening provider transaction authority.
+
