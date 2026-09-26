@@ -1483,6 +1483,140 @@ func TestPostgresTerminalResultRemainsImmutableAgainstStaleObservation(t *testin
 	}
 }
 
+func TestPostgresRestartReadConcurrentObservation(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	schema := "restart_read_concurrent_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatalf("create isolated schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
+	})
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set isolated search path: %v", err)
+	}
+	applyPostgresMigration(t, db)
+
+	openStore := func() *PostgresTransactionStore {
+		conn, err := sql.Open("pgx", os.Getenv("DESKAPROVIDER_POSTGRES_DSN"))
+		if err != nil {
+			t.Fatalf("open restart-read postgres: %v", err)
+		}
+		t.Cleanup(func() { _ = conn.Close() })
+		conn.SetMaxOpenConns(1)
+		conn.SetMaxIdleConns(1)
+		if err := conn.PingContext(ctx); err != nil {
+			t.Fatalf("ping restart-read postgres: %v", err)
+		}
+		if _, err := conn.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+			t.Fatalf("set restart-read search path: %v", err)
+		}
+		store, err := NewPostgresTransactionStore(conn)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return store
+	}
+
+	initialStore := openStore()
+	state := postgresPendingState()
+	state.Request.ReferenceID = postgresIntegrationReference()
+	state.Execution.Result.ReferenceID = state.Request.ReferenceID
+	if err := initialStore.PutContext(ctx, state); err != nil {
+		t.Fatalf("persist pending transaction: %v", err)
+	}
+
+	terminal := state
+	terminal.Execution.Result.Status = provider.StatusSuccess
+	terminal.Execution.Result.ProviderCode = "00"
+	terminal.Execution.Result.Message = "success"
+	terminal.Execution.Result.Price = 20000
+	if err := initialStore.PutIfCurrentContext(ctx, state.Request.ReferenceID, state, terminal); err != nil {
+		t.Fatalf("commit terminal transaction: %v", err)
+	}
+
+	_ = db.Close()
+	db, err := sql.Open("pgx", os.Getenv("DESKAPROVIDER_POSTGRES_DSN"))
+	if err != nil {
+		t.Fatalf("reopen postgres: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := db.PingContext(ctx); err != nil {
+		t.Fatalf("ping reopened postgres: %v", err)
+	}
+
+	firstStore := openStore()
+	secondStore := openStore()
+
+	before, ok := firstStore.GetContext(ctx, state.Request.ReferenceID)
+	if !ok {
+		t.Fatal("terminal transaction missing after restart")
+	}
+
+	const workers = 2
+	results := make(chan TransactionState, workers)
+	errs := make(chan error, workers)
+	var wg sync.WaitGroup
+	for _, store := range []*PostgresTransactionStore{firstStore, secondStore} {
+		wg.Add(1)
+		go func(store *PostgresTransactionStore) {
+			defer wg.Done()
+			got, ok := store.GetContext(ctx, state.Request.ReferenceID)
+			if !ok {
+				errs <- fmt.Errorf("transaction missing after concurrent restart read")
+				return
+			}
+			results <- got
+			errs <- nil
+		}(store)
+	}
+	wg.Wait()
+	close(results)
+	close(errs)
+
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("concurrent restart read failed: %v", err)
+		}
+	}
+
+	count := 0
+	for got := range results {
+		if got.Request != before.Request ||
+			got.Execution.ProviderName != before.Execution.ProviderName ||
+			!samePurchaseResult(got.Execution.Result, before.Execution.Result) ||
+			got.Version != before.Version {
+			t.Fatalf("concurrent restart read diverged from committed terminal state: before=%#v got=%#v", before, got)
+		}
+		count++
+	}
+	if count != workers {
+		t.Fatalf("expected %d concurrent reads, got %d", workers, count)
+	}
+
+	stale := state
+	stale.Execution.Result.Status = provider.StatusFailed
+	stale.Execution.Result.ProviderCode = "99"
+	stale.Execution.Result.Message = "stale"
+	if err := firstStore.PutIfCurrentContext(ctx, state.Request.ReferenceID, before, stale); !errors.Is(err, ErrTransactionStateConflict) {
+		t.Fatalf("stale observation must remain non-authoritative after restart, got %v", err)
+	}
+
+	after, ok := secondStore.GetContext(ctx, state.Request.ReferenceID)
+	if !ok {
+		t.Fatal("terminal transaction disappeared after stale observation")
+	}
+	if after.Request != before.Request ||
+		after.Execution.ProviderName != before.Execution.ProviderName ||
+		!samePurchaseResult(after.Execution.Result, before.Execution.Result) ||
+		after.Version != before.Version {
+		t.Fatalf("committed terminal state changed after stale observation: before=%#v after=%#v", before, after)
+	}
+}
+
 func TestPostgresMigrationVerification(t *testing.T) {
 	sqlText := postgresMigrationSQL(t)
 	required := []string{
