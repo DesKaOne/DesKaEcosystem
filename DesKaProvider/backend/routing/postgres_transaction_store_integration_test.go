@@ -1287,6 +1287,83 @@ func TestPostgresConcurrentReadDuringAtomicTransitionObservesCompleteState(t *te
 	}
 }
 
+func TestPostgresTerminalResultRemainsImmutableAgainstStaleObservation(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	schema := "terminal_immutable_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatalf("create isolated schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
+	})
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set isolated search path: %v", err)
+	}
+	applyPostgresMigration(t, db)
+
+	store, err := NewPostgresTransactionStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := PurchaseRequest{
+		ProductCode: "pln20",
+		CustomerNo:  "08123456789",
+		ReferenceID: postgresIntegrationReference(),
+		Amount:      20000,
+	}
+	pending := TransactionState{
+		Request: request,
+		Execution: PurchaseExecution{
+			ProviderName: "mock",
+			Result: provider.PurchaseResult{
+				ReferenceID: request.ReferenceID,
+				ProductCode: request.ProductCode,
+				CustomerNo: request.CustomerNo,
+				Status: provider.StatusPending,
+				ProviderCode: "00",
+				Message: "pending",
+				Price: 20000,
+			},
+		},
+		Version: 1,
+	}
+	if err := store.PutContext(ctx, pending); err != nil {
+		t.Fatalf("seed pending transaction: %v", err)
+	}
+
+	committed := pending
+	committed.Version = 2
+	committed.Execution.Result.Status = provider.StatusSuccess
+	committed.Execution.Result.Message = "success"
+	committed.Execution.Result.SerialNumber = "SN-IMMUTABLE-1"
+	if err := store.PutIfCurrentContext(ctx, request.ReferenceID, pending, committed); err != nil {
+		t.Fatalf("commit terminal result: %v", err)
+	}
+
+	stale := pending
+	stale.Version = 2
+	stale.Execution.Result.Status = provider.StatusFailed
+	stale.Execution.Result.Message = "stale"
+	stale.Execution.Result.SerialNumber = "SN-STALE"
+	if err := store.PutIfCurrentContext(ctx, request.ReferenceID, pending, stale); err != ErrTransactionStateConflict {
+		t.Fatalf("expected stale terminal transition to conflict, got %v", err)
+	}
+
+	got, ok, err := store.GetContextE(ctx, request.ReferenceID)
+	if err != nil {
+		t.Fatalf("read committed terminal transaction: %v", err)
+	}
+	if !ok {
+		t.Fatal("committed terminal transaction disappeared")
+	}
+	if !samePurchaseResult(got.Execution.Result, committed.Execution.Result) || got.Version != committed.Version {
+		t.Fatalf("terminal result/version mutated after stale observation: got=%#v want=%#v", got, committed)
+	}
+}
+
 func TestPostgresMigrationVerification(t *testing.T) {
 	sqlText := postgresMigrationSQL(t)
 	required := []string{
