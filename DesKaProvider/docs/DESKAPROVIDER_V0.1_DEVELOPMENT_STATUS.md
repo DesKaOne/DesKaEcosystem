@@ -7310,3 +7310,24 @@ Completed:
 ### Next Milestone
 
 **#163 — PostgreSQL Cross-Domain Recovery Ordering After Sequential Commits:** verify that sequential commits across audit and transaction domains preserve each domain's own durable ordering and never create a false cross-domain causal sequence.
+
+### 162A. Milestone Update — Cross-Domain Commit Visibility Fixture Normalization
+
+**Date:** 2026-09-27
+
+Completed:
+
+- corrected the #162 integration assertion after CI exposed a fixture-default mismatch: `postgresPendingState()` starts with in-memory `Version=0`, while PostgreSQL persistence assigns the durable initial row version `1`;
+- normalized the test to compare transaction request/execution semantics plus the persisted database version, rather than treating the in-memory pre-persistence version as authoritative;
+- confirmed the failure was test-fixture-specific and did not indicate a production transaction-store, audit-store, or cross-domain consistency defect;
+- no production persistence behavior was changed;
+- no transaction authority, provider submission authority, retry/failover behavior, ledger mutation, treasury movement, or provider funding behavior was broadened.
+
+### Verification
+
+- test fix commit: `ea5189e9af2baf93a965a78a59874a96b8ff1c61`;
+- exact branch HEAD after this documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before #162 is considered closed.
+
+### Next Milestone
+
+**#163 — PostgreSQL Cross-Domain Recovery Ordering After Sequential Commits:** verify that sequential commits across audit and transaction domains preserve each domain's own durable ordering and never create a false cross-domain causal sequence.
