@@ -35,6 +35,13 @@ func (s *MemoryTransactionAuditStore) Append(event TransactionAuditEvent) error 
 	return nil
 }
 
+func (s *MemoryTransactionAuditStore) AllContextE(ctx context.Context, referenceID string) ([]TransactionAuditEvent, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return s.All(referenceID), nil
+}
+
 func (s *MemoryTransactionAuditStore) All(referenceID string) []TransactionAuditEvent {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
