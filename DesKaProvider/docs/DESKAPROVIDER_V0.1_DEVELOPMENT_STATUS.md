@@ -4131,3 +4131,43 @@ Milestone #99: runtime ownership transfer and initialization/shutdown lifecycle 
 ### Next Milestone
 
 **#113 — Runtime Construction/Ownership Freshness Review**: verify that a newly constructed runtime instance acquires fresh database ownership and lifecycle state after a prior instance has completed shutdown, without reusing closed handles or stale worker state.
+
+
+### Milestone #113 — Runtime Construction/Ownership Freshness Review
+
+**Date:** 2026-09-26
+
+### Completed
+
+- reviewed runtime construction after prior service shutdown to ensure each new `Service` instance receives fresh lifecycle and ownership objects;
+- verified that `NewFromEnvironmentContext()` constructs a new database ownership boundary for each successfully initialized runtime instance;
+- verified that each runtime instance receives fresh balance and catalog lifecycle objects rather than reusing stale worker state;
+- added deterministic regression coverage comparing two independently constructed runtime instances and asserting distinct database ownership and lifecycle identities;
+- preserved the existing rule that closed database ownership is not silently reopened by `Run()` re-entry on an existing service instance;
+- retained provider-state persistence across runtime reconstruction while keeping worker and ownership state instance-local;
+- no provider retry, failover, resubmission, transaction-state, audit-authority, customer-ledger, treasury, or automatic provider-funding behavior was changed.
+
+### Verification
+
+- implementation HEAD: `0ae6ed2fb7aef97b8681d1f2de50a98cccedd148`;
+- CI #861 / run `36203388454`: **GREEN** for exact HEAD `0ae6ed2fb7aef97b8681d1f2de50a98cccedd148`;
+- CI jobs `test`: success;
+- CI jobs `race`: success.
+
+### Safety Boundary
+
+- fresh runtime construction is an infrastructure ownership concern only;
+- a new `Service` instance acquires new lifecycle/ownership state and does not inherit closed worker ownership from a previous instance;
+- persisted provider operational state may survive reconstruction, but transaction authority and runtime resource ownership remain distinct;
+- transaction persistence remains the authoritative transaction state and audit persistence remains operational evidence;
+- construction freshness cannot authorize provider retry, failover, resubmission, ledger mutation, treasury movement, or provider funding.
+
+### Known Limitations
+
+- deterministic coverage validates object-level freshness; PostgreSQL integration still depends on the workflow's available service configuration and does not simulate process-kill recovery;
+- the constructor may reuse persisted operational/provider state files by design, while database handles and lifecycle objects remain instance-local;
+- `databaseCloser.Close()` remains non-context-aware.
+
+### Next Milestone
+
+**#114 — Runtime State Persistence & Lifecycle Boundary Review**: inspect the separation between persisted provider operational state and ephemeral runtime lifecycle state, ensuring restart persistence does not accidentally restore active worker/ownership state.
