@@ -2265,6 +2265,57 @@ func TestPostgresPutContextRejectsConflictingTerminalRewrite(t *testing.T) {
 	}
 }
 
+func TestPostgresTransactionStorePutContextInsertConstraintErrorPropagates(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	schema := "insert_constraint_error_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatalf("create isolated schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
+	})
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set search path: %v", err)
+	}
+	applyPostgresMigration(t, db)
+
+	store, err := NewPostgresTransactionStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	state := postgresPendingState()
+	state.Request.ReferenceID = postgresIntegrationReference()
+	state.Execution.Result.ReferenceID = state.Request.ReferenceID
+
+	// Force the INSERT CHECK constraint to fail at the database boundary.
+	state.Request.Amount = 0
+	state.Execution.Result.Price = 0
+
+	err = store.PutContext(ctx, state)
+	if err == nil {
+		t.Fatal("expected PostgreSQL INSERT constraint error")
+	}
+	if errors.Is(err, ErrTransactionStateConflict) {
+		t.Fatalf("INSERT constraint failure must not be collapsed into transaction conflict: %v", err)
+	}
+	if !strings.Contains(err.Error(), "insert transaction:") {
+		t.Fatalf("expected insert error classification, got %v", err)
+	}
+
+	_, ok, readErr := store.GetContextE(ctx, state.Request.ReferenceID)
+	if readErr != nil {
+		t.Fatalf("read transaction after failed insert: %v", readErr)
+	}
+	if ok {
+		t.Fatal("failed INSERT must not create a durable transaction row")
+	}
+}
+
+
 func TestPostgresMigrationVerification(t *testing.T) {
 	sqlText := postgresMigrationSQL(t)
 	required := []string{
