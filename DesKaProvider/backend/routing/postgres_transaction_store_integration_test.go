@@ -113,6 +113,11 @@ func TestPostgresTransactionStoreIntegration(t *testing.T) {
 		t.Fatalf("insert pending transaction: %v", err)
 	}
 
+db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	defer db.SetMaxOpenConns(0)
+	defer db.SetMaxIdleConns(2)
+
 	current, ok := store.Get(pending.Request.ReferenceID)
 	if !ok {
 		t.Fatal("pending transaction was not persisted")
