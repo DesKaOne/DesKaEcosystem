@@ -6871,3 +6871,39 @@ Completed:
 ### Next Milestone
 
 **#155 — PostgreSQL Audit/Transaction Cross-Read After Restart:** verify that the converged audit and transaction views remain consistent after connection close/reopen and service reconstruction, while preserving separate authority boundaries.
+
+
+### 155. Milestone Update — PostgreSQL Audit/Transaction Cross-Read After Restart
+
+**Date:** 2026-09-26
+
+Completed:
+
+- added real-PostgreSQL integration coverage that persists audit evidence and transaction state, closes the original database connection, then reconstructs fresh audit and transaction adapters on fresh PostgreSQL connections;
+- restored the isolated schema context on both fresh reader connections and verified the complete ordered audit history is preserved after restart;
+- verified the independently persisted transaction state remains explicitly `pending` after restart even though audit history contains terminal-looking evidence;
+- verified cross-domain restart reads remain converged and complete without exposing partial state or allowing audit evidence to upgrade transaction authority;
+- no production audit-store or transaction-store implementation change was required;
+- no transaction authority, provider submission authority, retry/failover behavior, ledger mutation, treasury movement, or provider funding behavior was broadened.
+
+### Safety Boundary
+
+- audit and transaction reads remain separate persistence domains after restart;
+- restart reconstruction does not infer transaction state from audit ordering or terminal-looking audit events;
+- audit history remains observational evidence only;
+- transaction persistence remains the authoritative transaction-state and idempotency boundary.
+
+### Verification
+
+- test implementation commit: `7ded4567b72f7a85cbc27906d3b2f365e830f640`;
+- exact branch HEAD after this status documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before this milestone is considered closed.
+
+### Known Limitations
+
+- the scenario validates restart using fresh PostgreSQL connections against one database instance and does not cover every crash-recovery, replica-lag, or distributed transaction topology;
+- cross-domain reads are verified after both persistence operations committed, but no cross-domain transaction mechanism is introduced;
+- audit remains operational evidence and is not a financial source of truth.
+
+### Next Milestone
+
+**#156 — PostgreSQL Audit/Transaction Cross-Read Restart Idempotency:** verify repeated reads after restart remain stable and do not append new audit evidence or mutate transaction state, including terminal-looking audit history.
