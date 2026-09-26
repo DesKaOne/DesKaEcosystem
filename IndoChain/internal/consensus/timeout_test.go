@@ -81,3 +81,18 @@ func TestValidateTimeoutCertificateRejectsNonCanonicalValidatorOrder(t *testing.
 		t.Fatalf("expected canonical ordering error, got %v", err)
 	}
 }
+
+func TestTimeoutCertificateRejectsValidatorOutsideMembership(t *testing.T) {
+	_, state, validators, power := runtimeFixture(t)
+	_, err := NewTimeoutCertificate(
+		state,
+		validators,
+		power,
+		QuorumThreshold{Numerator: 1, Denominator: 3},
+		state.Round+1,
+		[][]byte{[]byte("validator-z")},
+	)
+	if !errors.Is(err, ErrValidatorNotFound) {
+		t.Fatalf("expected validator membership error, got %v", err)
+	}
+}
