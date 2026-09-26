@@ -12,6 +12,7 @@ import (
 type TransactionState struct {
 	Request   PurchaseRequest
 	Execution PurchaseExecution
+	Version   int64
 }
 
 type TransactionStore interface {
