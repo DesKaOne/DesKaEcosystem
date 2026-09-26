@@ -4659,3 +4659,27 @@ Completed:
 **#119 — PostgreSQL Transaction Read Consistency & Durable Result Identity Review**: verify restart/read paths preserve request/provider/result identity exactly and never expose mixed transaction fields during concurrent observation.
 
 **#118 — Transaction Store Context Cancellation & Side-Effect Boundary Review:** verify canceled PostgreSQL reads/writes stop cleanly and do not leave partial durable transaction state or authorize retries/resubmission.
+### 44. Milestone Update — PostgreSQL Idempotent Terminal Read Across Restart
+
+**Date:** 2026-09-26
+
+Completed:
+
+- added deterministic PostgreSQL integration coverage for repeated terminal reads before and after database reconnection;
+- verified the committed request identity, provider identity, terminal result payload, and version remain exactly stable across repeated reads after restart;
+- verified read operations do not create a new transition or provider side effect;
+- preserved transaction persistence as the authoritative transaction state while audit/operational evidence remains non-authoritative.
+
+### Verification
+
+- implementation commit: `66d0836b28cdef57638c840cb8dfcab67725cfdf`;
+- CI for this commit must finish with both `test` and `race` jobs **success** before this milestone is considered closed.
+
+### Safety Boundary
+
+- terminal read idempotency is a persistence/read-integrity property only;
+- repeated reads after restart cannot authorize retry, failover, resubmission, ledger mutation, treasury movement, or provider funding.
+
+### Next Milestone
+
+**#123 — PostgreSQL Restart Read + Concurrent Observation Review:** combine restart reconstruction with concurrent terminal reads to ensure reconstructed services continue observing one immutable terminal result without introducing a transition or provider side effect.
