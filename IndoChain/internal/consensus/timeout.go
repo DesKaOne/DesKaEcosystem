@@ -11,6 +11,7 @@ import (
 
 var (
 	ErrInvalidTimeoutCertificate = errors.New("invalid consensus timeout certificate")
+	ErrConflictingTimeoutLock     = errors.New("conflicting timeout lock evidence")
 	ErrTimeoutQuorumNotReached   = errors.New("timeout quorum not reached")
 	ErrInvalidTimeoutRound       = errors.New("invalid timeout target round")
 )
@@ -28,6 +29,7 @@ type TimeoutCertificate struct {
 	NextRound       uint64
 	Threshold       QuorumThreshold
 	Validators      [][]byte
+	LockedProposal  []byte
 }
 
 // NewTimeoutCertificate constructs timeout evidence from unique validator
@@ -39,6 +41,7 @@ func NewTimeoutCertificate(
 	threshold QuorumThreshold,
 	nextRound uint64,
 	senders [][]byte,
+	lockedProposal []byte,
 ) (TimeoutCertificate, error) {
 	if err := state.Validate(); err != nil {
 		return TimeoutCertificate{}, err
@@ -51,6 +54,9 @@ func NewTimeoutCertificate(
 	}
 	if len(senders) == 0 {
 		return TimeoutCertificate{}, ErrInvalidTimeoutCertificate
+	}
+	if len(lockedProposal) > 0 {
+		lockedProposal = append([]byte(nil), lockedProposal...)
 	}
 
 	aggregator, err := NewVoteAggregator(
@@ -116,6 +122,7 @@ func NewTimeoutCertificate(
 		NextRound:       nextRound,
 		Threshold:       threshold,
 		Validators:      cloneByteSlices(cloned),
+		LockedProposal:  append([]byte(nil), lockedProposal...),
 	}, nil
 }
 
@@ -145,6 +152,9 @@ func ValidateTimeoutCertificate(
 	}
 	if len(certificate.Validators) == 0 {
 		return ErrInvalidTimeoutCertificate
+	}
+	if certificate.LockedProposal != nil {
+		certificate.LockedProposal = append([]byte(nil), certificate.LockedProposal...)
 	}
 
 	seen := make(map[string]struct{}, len(certificate.Validators))
