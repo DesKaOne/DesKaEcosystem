@@ -6654,3 +6654,17 @@ Completed:
 
 - corrective test commit: `fca30c002e63b1ca8c93b8373d4aeadc070bcba1`;
 - exact branch HEAD after this documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before milestone #151 is considered closed.
+
+
+### 151. Verification Correction — Transaction Version Assertion
+
+**Date:** 2026-09-26
+
+- corrected the concurrent audit/transaction conflict integration test assertion to validate the durable inserted transaction at version `1`;
+- the previous assertion compared the reader's durable version against the zero-value pre-insert fixture version, producing a false failure even though the persisted transaction remained correctly pending;
+- no production behavior changed.
+
+**Verification**
+
+- corrective test commit: `88a53e815a1a91bd1c4ee4aa646bca6241b63f4e`;
+- exact branch HEAD after this documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before milestone #151 is considered closed.
