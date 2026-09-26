@@ -179,11 +179,15 @@ defer func(){
 if e:=runRuntimeInitializationFailureHook("after-database-acquisition", ownership); e!=nil { return nil,e }
 statePersistence,e:=operational.NewJSONFileProviderStateStore(cfg.ProviderStateStorePath);if e!=nil{return nil,e}
 stateStore,e:=operational.NewPersistentProviderStateStore(statePersistence);if e!=nil{return nil,e}
+if e:=runRuntimeInitializationFailureHook("after-provider-state-store", ownership); e!=nil { return nil,e }
 for _, name:=range registry.Names(){state,ok:=stateStore.Get(name);if !ok{state,e=operational.NewProviderState(name);if e!=nil{return nil,e}};state.Capabilities=[]operational.Capability{operational.CapabilityPPOB,operational.CapabilityBalance,operational.CapabilityWebhook};if e=stateStore.Put(state);e!=nil{return nil,e}} // persist provider lifecycle/capability state before router construction
 router,e:=routing.NewWithCatalogAndStateAndOperationalMaxAge(registry,store,nil,catalogStore,stateStore,cfg.OperationalSnapshotMaxAge);if e!=nil{return nil,e}
+if e:=runRuntimeInitializationFailureHook("after-router", ownership); e!=nil { return nil,e }
 purchaseService,e:=routing.NewServiceWithStoreContextAndAudit(ctx,router,transactionStore,auditStore);if e!=nil{return nil,e}
+if e:=runRuntimeInitializationFailureHook("after-purchase-service", ownership); e!=nil { return nil,e }
  balanceLifecycle,e:=operational.NewSyncWorkerLifecycle(syncService,cfg.SyncInterval);if e!=nil{return nil,e}
 service=&Service{syncService:syncService,purchaseService:purchaseService,catalogSync:catalogSync,providerState:stateStore,databaseOwnership:ownership,balanceLifecycle:balanceLifecycle,catalogLifecycle:newCatalogWorkerLifecycle(),interval:cfg.SyncInterval,catalogInterval:cfg.CatalogSyncInterval}
+if e:=runRuntimeInitializationFailureHook("before-ownership-transfer", ownership); e!=nil { return nil,e }
 if err := checkRuntimeInitializationContext(ctx); err != nil { return nil, err }
 ownership.transferToService()
 return service,nil
