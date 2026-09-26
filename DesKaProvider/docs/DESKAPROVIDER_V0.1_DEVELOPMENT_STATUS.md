@@ -4171,3 +4171,29 @@ Milestone #99: runtime ownership transfer and initialization/shutdown lifecycle 
 ### Next Milestone
 
 **#114 — Runtime State Persistence & Lifecycle Boundary Review**: inspect the separation between persisted provider operational state and ephemeral runtime lifecycle state, ensuring restart persistence does not accidentally restore active worker/ownership state.
+
+
+### 36. Milestone Update — Runtime State Persistence & Lifecycle Boundary Review
+
+**Date:** 2026-09-26
+
+Completed:
+
+- reviewed the persisted provider state model and runtime lifecycle ownership boundary;
+- confirmed persisted provider state contains provider lifecycle/capability state only, not active worker ownership or database ownership handles;
+- added deterministic runtime regression coverage proving an enabled provider remains enabled across restart while the new balance worker starts stopped;
+- verified each restarted runtime receives fresh database ownership and fresh worker lifecycle objects;
+- verified closing the first runtime instance does not close the second runtime instance's database ownership.
+
+### Verification
+
+- latest HEAD before this milestone: `b6e7208ff941f7c4b5e25fcd1bb6b4f70202a99e`;
+- previous CI run #863 (`36203499574`): **success**;
+- milestone test commit: `4988f7885309996abc36ac03872d11108dc33aa4`;
+- the new commit must complete the repository CI `test` and `race` jobs successfully before this milestone is considered closed.
+
+### Next milestone
+
+1. continue reviewing restart/shutdown boundaries around persisted operational snapshots and provider routing state;
+2. keep transaction persistence authoritative for transaction state while operational/audit persistence remains non-authoritative evidence;
+3. preserve the existing no-resubmission/no-financial-authorization expansion invariants.
