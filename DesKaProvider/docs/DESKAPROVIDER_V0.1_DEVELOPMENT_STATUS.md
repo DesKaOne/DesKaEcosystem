@@ -4272,6 +4272,37 @@ Completed:
 1. continue auditing restart/reconciliation concurrency and atomic transition boundaries;
 2. preserve the invariant that audit or operational evidence cannot authorize retry, failover, resubmission, ledger mutation, treasury movement, or provider funding.
 
+
+### 39. Milestone Update — Atomic Reconciliation Concurrency Boundary
+
+**Date:** 2026-09-26
+
+Completed:
+
+- repaired the PostgreSQL integration-test scope so each recovery/concurrency test owns its transaction store deterministically;
+- added deterministic concurrent service reconciliation coverage proving two independent services converge on the same terminal provider result without resubmitting the provider purchase;
+- preserved atomic transaction-state conflict handling as the database authority when concurrent reconciliation observes the same pending transaction;
+- corrected the PR CI checkout path so pull-request validation runs against the actual PR head SHA rather than a stale synthetic merge ref;
+- verified the repository CI executes the current branch state without changing provider retry, failover, resubmission, ledger, treasury, funding, or audit-authority semantics.
+
+### Verification
+
+- latest implementation HEAD: `f5e346a04ddc028553229215fc84fd7d145fedd9`;
+- CI #1040 / run `36216022823`: **GREEN**;
+- CI jobs `test`: success;
+- CI jobs `race`: success.
+
+### Safety Boundary
+
+- transaction persistence remains the authoritative source for terminal transaction state;
+- concurrent reconciliation may converge on an already-committed provider result but cannot authorize a second provider submission;
+- audit and operational evidence remain non-authoritative and cannot authorize retry, failover, resubmission, ledger mutation, treasury movement, or provider funding.
+
+### Next Milestone
+
+**#117 — Persistent Transaction Version Consistency Review**: audit sequential and concurrent PostgreSQL transaction updates so the persisted version used by non-conditional writes remains aligned with the database version after pending-state updates and restart recovery.
+
+
 ### 39. Milestone Update — Atomic PostgreSQL Transition & Concurrent Reconciliation Validation
 Date 2026-09-26
 Completed:
