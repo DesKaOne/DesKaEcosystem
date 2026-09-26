@@ -5897,3 +5897,39 @@ Completed:
 ### Next Milestone
 
 **#135 — PostgreSQL Audit Integration Recovery Observability:** verify audit append/read failures remain diagnosable across real PostgreSQL integration/restart scenarios without turning audit state into transaction authority.
+
+### 135. Milestone Update — PostgreSQL Audit Integration Recovery Observability
+
+**Date:** 2026-09-26
+
+Completed:
+
+- added real-PostgreSQL integration coverage for an audit read after the underlying database connection has been closed;
+- verified the failed read returns an error and does not expose partial audit history;
+- verified a closed-database failure is not misclassified as `context.Canceled` or `context.DeadlineExceeded`;
+- reopened PostgreSQL, restored the isolated schema context, and verified the same durable audit event becomes readable again after recovery;
+- confirmed recovery observability is limited to audit diagnostics and does not mutate transaction state or authorize a provider resubmission;
+- no production audit-store or service behavior required changing for this recovery scenario;
+- no transaction authority, provider submission authority, retry/failover behavior, ledger mutation, treasury movement, or provider funding behavior was broadened.
+
+### Safety Boundary
+
+- audit connection/read failures remain operational persistence failures only;
+- recovery of the audit read path does not reconstruct or overwrite transaction state;
+- audit history remains observational evidence and cannot authorize provider retry, failover, resubmission, or financial state mutation;
+- transaction persistence remains the authoritative transaction-state boundary.
+
+### Verification
+
+- test implementation commit: `d38e712c1b116dd951dc0e12e21163bcb7eff38a`;
+- exact branch HEAD after this status documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before this milestone is considered closed.
+
+### Known Limitations
+
+- the recovery scenario uses the repository's existing real PostgreSQL integration harness and validates connection-close/reopen behavior, not every network partition or server failover timing variant;
+- the deterministic driver fixture remains the unit boundary for injected query/scan/iteration failures;
+- audit remains operational evidence and is not a financial source of truth.
+
+### Next Milestone
+
+**#136 — PostgreSQL Audit Append Recovery Observability:** verify audit append failures after connection loss remain diagnosable and that a recovered connection does not duplicate or authorize transaction side effects.
