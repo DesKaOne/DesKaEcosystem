@@ -75,6 +75,14 @@ type TransactionAuditStore interface {
 	All(referenceID string) []TransactionAuditEvent
 }
 
+// ContextReadTransactionAuditStore is an optional error-aware read boundary.
+// It preserves TransactionAuditStore compatibility while allowing callers to
+// distinguish cancellation, deadlines, database failures, and successful reads.
+type ContextReadTransactionAuditStore interface {
+	TransactionAuditStore
+	AllContextE(ctx context.Context, referenceID string) ([]TransactionAuditEvent, error)
+}
+
 var ErrTransactionStateConflict = errors.New("transaction state changed concurrently")
 
 func validateTransactionTransition(previous, next TransactionState) error {
