@@ -7952,3 +7952,57 @@ Milestone #177 changes test coverage only. Production shutdown composition remai
 ### Next Milestone
 
 **#178 — Runtime Shutdown Failure Matrix Across Shared and Dedicated Ownership:** consolidate shutdown coverage for primary lifecycle failure, worker shutdown failure, shared cleanup failure, dedicated transaction cleanup failure, dedicated audit cleanup failure, and repeated shutdown semantics without changing production behavior.
+
+
+## 178. Milestone Update — Runtime Shutdown Failure Matrix Across Shared & Dedicated Ownership
+
+**Date:** 2026-09-27
+
+Completed:
+
+- extended real PostgreSQL runtime shutdown coverage with an explicit Service.Close() path after the owned balance worker has been shut down;
+- verified dedicated transaction and audit PostgreSQL handles remain independently owned and are closed exactly once;
+- verified explicit service shutdown preserves both injected transaction-cleanup and audit-cleanup error identities;
+- verified cleanup error context remains attributable to the correct database boundary:
+  - close transaction database
+  - close audit database
+- verified deterministic transaction-before-audit cleanup ordering;
+- verified repeated Service.Close() remains single-shot and preserves the stored cleanup errors without closing either database again;
+- retained the existing #176/#177 coverage for primary lifecycle cancellation plus shared/dedicated cleanup failures;
+- retained the operational worker lifecycle coverage for shutdown-context cancellation/timeout semantics and ownership preservation;
+- no production provider, transaction, audit, routing, ledger, treasury, funding, retry, or failover behavior was changed.
+
+### CI failure and correction
+
+Initial milestone test commit 3f9e46eb54eced855622e8a6ea6d563d21ac155d failed CI #1637 because the new test invoked Service.Close() while the balance worker was still running. The runtime contract explicitly rejects that state with service close requires worker shutdown.
+
+The test was corrected to shut down the owned SyncWorkerLifecycle first, then exercise Service.Close(). No production code change was required.
+
+Corrected implementation/test commit:
+
+c663af280ef2917d3a00c06f8be4039c7d5dbfaf
+
+### Verification
+
+- CI run #1637: RED — test contract misuse in the new test only.
+- CI run #1639 on corrected commit: GREEN.
+  - go test ./... — PASS
+  - go vet ./... — PASS
+  - PostgreSQL service-backed integration tests — PASS
+  - go test -race ./... — PASS
+
+### Safety boundary
+
+Shutdown coverage remains observational and lifecycle-only. Cleanup errors are surfaced and preserved; no cleanup failure triggers transaction resubmission, provider retry/failover, ledger mutation, treasury movement, customer-balance mutation, or synthetic transaction/audit reconstruction.
+
+### Known limitations
+
+- The worker failure path remains constrained by the current SyncService.Run contract, which returns context cancellation on normal worker shutdown and does not expose an injectable worker failure source.
+- The runtime integration tests therefore cover worker shutdown cancellation/timeout semantics and database cleanup error propagation, while worker-internal non-context failure injection remains outside the current production contract.
+- PostgreSQL integration coverage requires DESKAPROVIDER_POSTGRES_DSN; tests skip when the runtime DSN is unavailable.
+
+### Next milestone
+
+**#179 — Runtime Shutdown Failure Propagation During Auxiliary Lifecycle Rollback**
+
+Focus next on constructor/runtime rollback paths where the catalog lifecycle or other auxiliary lifecycle fails after the balance worker has started, verifying primary auxiliary-lifecycle errors, worker rollback errors, and database cleanup errors remain independently discoverable and deterministically ordered.
