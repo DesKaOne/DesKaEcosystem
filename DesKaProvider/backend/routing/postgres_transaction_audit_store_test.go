@@ -178,7 +178,7 @@ func TestPostgresTransactionAuditStoreAllContextPropagatesCancellation(t *testin
 		t.Fatal(err)
 	}
 
-	result, err := store.AllContext(ctx, "ref")
+	result, err := store.AllContextE(ctx, "ref")
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected cancellation, got %v", err)
 	}
@@ -205,7 +205,7 @@ func TestPostgresTransactionAuditStoreAllContextRejectsMidStreamCancellation(t *
 		t.Fatal(err)
 	}
 
-	result, err := store.AllContext(ctx, "ref")
+	result, err := store.AllContextE(ctx, "ref")
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected mid-stream cancellation, got %v", err)
 	}
@@ -230,7 +230,7 @@ func TestPostgresTransactionAuditStoreAllContextPropagatesDeadline(t *testing.T)
 		t.Fatal(err)
 	}
 
-	result, err := store.AllContext(ctx, "ref")
+	result, err := store.AllContextE(ctx, "ref")
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("expected deadline exceeded, got %v", err)
 	}
@@ -246,7 +246,7 @@ func TestPostgresTransactionAuditStoreAllContextPropagatesQueryError(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = store.AllContext(context.Background(), "ref")
+	_, err = store.AllContextE(context.Background(), "ref")
 	if err == nil || !errors.Is(err, wantErr) {
 		t.Fatalf("expected query error to propagate, got %v", err)
 	}
@@ -265,7 +265,7 @@ func TestPostgresTransactionAuditStoreAllContextPropagatesScanError(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = store.AllContext(context.Background(), "ref")
+	_, err = store.AllContextE(context.Background(), "ref")
 	if err == nil || !errors.Is(err, wantErr) {
 		t.Fatalf("expected scan error to propagate, got %v", err)
 	}
@@ -279,7 +279,7 @@ func TestPostgresTransactionAuditStoreAllContextPropagatesRowsError(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = store.AllContext(context.Background(), "ref")
+	_, err = store.AllContextE(context.Background(), "ref")
 	if err == nil || !errors.Is(err, wantErr) {
 		t.Fatalf("expected rows iteration error to propagate, got %v", err)
 	}
