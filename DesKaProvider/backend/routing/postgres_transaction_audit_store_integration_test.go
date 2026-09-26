@@ -1324,6 +1324,108 @@ func TestPostgresTransactionAuditStoreSnapshotStabilityUnderWriterRecovery(t *te
 }
 
 
+func TestPostgresTransactionAuditStoreSnapshotRecoveryAfterConnectionRestart(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	schema := "audit_snapshot_restart_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatalf("create isolated schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
+	})
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set search path: %v", err)
+	}
+	applyPostgresMigration(t, db)
+
+	store, err := NewPostgresTransactionAuditStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	createdAt := time.Now().UTC().Truncate(time.Microsecond)
+	expected := []TransactionAuditEvent{
+		{
+			ReferenceID:  "audit-snapshot-restart-ref",
+			Action:       "SNAPSHOT_PENDING",
+			Next:         string(provider.StatusPending),
+			ProviderName: "mock",
+			Message:      "pending",
+			CreatedAt:    createdAt,
+		},
+		{
+			ReferenceID:  "audit-snapshot-restart-ref",
+			Action:       "SNAPSHOT_RESULT",
+			Previous:     string(provider.StatusPending),
+			Next:         string(provider.StatusSuccess),
+			ProviderName: "mock",
+			Message:      "success",
+			CreatedAt:    createdAt,
+		},
+		{
+			ReferenceID:  "audit-snapshot-restart-ref",
+			Action:       "SNAPSHOT_RECONCILED",
+			Previous:     string(provider.StatusSuccess),
+			Next:         string(provider.StatusSuccess),
+			ProviderName: "mock",
+			Message:      "reconciled",
+			CreatedAt:    createdAt.Add(time.Microsecond),
+		},
+	}
+	for i, event := range expected {
+		if err := store.AppendContext(ctx, event); err != nil {
+			t.Fatalf("append snapshot event %d: %v", i+1, err)
+		}
+	}
+
+	beforeRestart, err := store.AllContextE(ctx, expected[0].ReferenceID)
+	if err != nil {
+		t.Fatalf("read audit snapshot before connection restart: %v", err)
+	}
+	if len(beforeRestart) != len(expected) {
+		t.Fatalf("expected %d events before connection restart, got %d", len(expected), len(beforeRestart))
+	}
+	for i, want := range expected {
+		if beforeRestart[i] != want {
+			t.Fatalf("pre-restart audit snapshot changed at %d: want=%#v got=%#v", i, want, beforeRestart[i])
+		}
+	}
+
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := sql.Open("pgx", os.Getenv("DESKAPROVIDER_POSTGRES_DSN"))
+	if err != nil {
+		t.Fatalf("reopen postgres: %v", err)
+	}
+	defer reopened.Close()
+	if err := reopened.PingContext(ctx); err != nil {
+		t.Fatalf("ping reopened postgres: %v", err)
+	}
+	if _, err := reopened.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("restore search path after connection restart: %v", err)
+	}
+
+	recoveredStore, err := NewPostgresTransactionAuditStore(reopened)
+	if err != nil {
+		t.Fatal(err)
+	}
+	afterRestart, err := recoveredStore.AllContextE(ctx, expected[0].ReferenceID)
+	if err != nil {
+		t.Fatalf("read audit snapshot after connection restart: %v", err)
+	}
+	if len(afterRestart) != len(expected) {
+		t.Fatalf("expected %d events after connection restart, got %d", len(expected), len(afterRestart))
+	}
+	for i, want := range expected {
+		if afterRestart[i] != want {
+			t.Fatalf("post-restart audit snapshot changed at %d: want=%#v got=%#v", i, want, afterRestart[i])
+		}
+	}
+}
+
 func TestPostgresTransactionAuditStoreAppendFailureThenRecovery(t *testing.T) {
 	db := postgresIntegrationDB(t)
 	schema := "audit_append_recovery_" + strconv.FormatInt(time.Now().UnixNano(), 10)
