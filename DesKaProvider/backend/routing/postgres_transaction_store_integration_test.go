@@ -767,6 +767,27 @@ func TestPostgresTransactionStoreSequentialVersionTransitionIsPreserved(t *testi
 	}
 }
 
+func TestPostgresTransactionStoreContextReadHonorsCancellation(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	store, err := NewPostgresTransactionStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := store.GetContextE(ctx, "cancelled-read"); err == nil {
+		t.Fatal("expected canceled GetContextE to return an error")
+	} else if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled from GetContextE, got %v", err)
+	}
+	if _, err := store.AllContextE(ctx); err == nil {
+		t.Fatal("expected canceled AllContextE to return an error")
+	} else if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled from AllContextE, got %v", err)
+	}
+}
+
 func TestPostgresMigrationVerification(t *testing.T) {
 	sqlText := postgresMigrationSQL(t)
 	required := []string{
