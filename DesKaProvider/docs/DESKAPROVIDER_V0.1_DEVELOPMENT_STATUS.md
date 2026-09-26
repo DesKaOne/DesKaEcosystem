@@ -5359,7 +5359,9 @@ Completed:
 
 - corrected implementation commit: `4d16122bb72cb9593fb0372bde89f378a013b185`;
 - terminal idempotency test commit: `63e6eb3e153b59c158368beaa7d7b546bd1508d7`;
-- CI verification pending for exact final test HEAD;
+- CI #1207 / run `36227723874`: **GREEN** for exact HEAD `9b790f521f3d39efa0849eca09f5f9e1d112a807`;
+- CI #1206 / run `36227767602`: **GREEN** for exact HEAD `9b790f521f3d39efa0849eca09f5f9e1d112a807`;
+- CI jobs `test` and `race` both completed successfully on the exact HEAD;
 - local Go test/vet/race execution remains unavailable because this runtime cannot reach external Git/network resources.
 
 ### Safety Boundary
