@@ -113,10 +113,9 @@ func TestPostgresTransactionStoreIntegration(t *testing.T) {
 		t.Fatalf("insert pending transaction: %v", err)
 	}
 
-db.SetMaxOpenConns(1)
+	// search_path is session-local; keep this pool on one connection for the atomic transition race.
+	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
-	defer db.SetMaxOpenConns(0)
-	defer db.SetMaxIdleConns(2)
 
 	current, ok := store.Get(pending.Request.ReferenceID)
 	if !ok {
