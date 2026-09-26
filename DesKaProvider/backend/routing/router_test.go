@@ -326,6 +326,70 @@ func TestRouterSelectsEnabledHealthyFreshProviderWithState(t *testing.T) {
 }
 
 
+func TestRouterRestartRecoveryDoesNotTreatExpiredOperationalSnapshotAsRouteable(t *testing.T) {
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", mock.New(mock.Config{Products: []provider.Product{{Code: "xld10", Name: "Test"}}})); err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
+	store := operational.NewMemoryStore()
+	if err := store.Put(operational.Snapshot{
+		ProviderName:  "mock",
+		Balance:       100000,
+		Health:        operational.HealthHealthy,
+		LastCheckedAt: now.Add(-10 * time.Minute),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	states := operational.NewProviderStateStore()
+	if err := states.Put(operational.ProviderState{
+		ProviderName: "mock",
+		Lifecycle:    operational.LifecycleEnabled,
+		Capabilities: []operational.Capability{operational.CapabilityPPOB},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	catalogs := catalog.NewMemoryStore()
+	if err := catalogs.Put( catalog.Snapshot{
+		ProviderName: "mock",
+		Products:     []provider.Product{{Code: "xld10", Name: "Test"}},
+		SyncedAt:     now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	router, err := NewWithCatalogAndStateAndOperationalMaxAge(registry, store, nil, catalogs, states, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	router.Now = func() time.Time { return now }
+
+	if _, ok := store.Get("mock"); !ok {
+		t.Fatal("expected expired operational snapshot to remain available as persisted recovery data")
+	}
+	if _, err := router.Select(context.Background(), Request{ProductCode: "xld10", Amount: 50000}); !errors.Is(err, ErrNoProviderAvailable) {
+		t.Fatalf("expired recovery snapshot must not be routeable, got %v", err)
+	}
+
+	if err := store.Put(operational.Snapshot{
+		ProviderName:  "mock",
+		Balance:       125000,
+		Health:        operational.HealthHealthy,
+		LastCheckedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := router.Select(context.Background(), Request{ProductCode: "xld10", Amount: 50000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "mock" {
+		t.Fatalf("expected refreshed operational snapshot to become routeable, got %q", got)
+	}
+}
+
 func TestRouterRejectsStaleOperationalSnapshot(t *testing.T) {
 	registry := provider.NewRegistry()
 	if err := registry.Register("mock", mock.New(mock.Config{Products: []provider.Product{{Code: "xld10", Name: "Test"}}})); err != nil { t.Fatal(err) }
