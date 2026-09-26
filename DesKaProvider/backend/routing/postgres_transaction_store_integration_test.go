@@ -149,7 +149,7 @@ func TestPostgresTransactionStoreIntegration(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			results <- pinnedStore.PutIfCurrent(pending.Request.ReferenceID, pending, success)
+			results <- pinnedStore.PutIfCurrent(current.Request.ReferenceID, current, success)
 		}()
 	}
 	wg.Wait()
