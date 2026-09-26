@@ -8006,3 +8006,59 @@ Shutdown coverage remains observational and lifecycle-only. Cleanup errors are s
 **#179 — Runtime Shutdown Failure Propagation During Auxiliary Lifecycle Rollback**
 
 Focus next on constructor/runtime rollback paths where the catalog lifecycle or other auxiliary lifecycle fails after the balance worker has started, verifying primary auxiliary-lifecycle errors, worker rollback errors, and database cleanup errors remain independently discoverable and deterministically ordered.
+
+
+## 179. Milestone Update — Runtime Shutdown Failure Propagation During Auxiliary Lifecycle Rollback
+
+**Date:** 2026-09-27
+
+Completed:
+
+- added real PostgreSQL service-lifecycle coverage for failure of the auxiliary catalog lifecycle after the balance worker has already started;
+- exercised the production Service.Run rollback branch where catalog startup fails and the previously started balance worker is rolled back before database ownership cleanup;
+- verified the primary catalog lifecycle-start error remains discoverable through errors.Is;
+- verified independent dedicated transaction and audit PostgreSQL cleanup errors remain discoverable through errors.Is alongside the primary catalog error;
+- verified cleanup error context remains attributable to the correct database boundary:
+  - close transaction database
+  - close audit database
+- verified balance worker rollback completes and the worker is no longer running before shutdown returns;
+- verified deterministic transaction-before-audit database cleanup ordering;
+- verified each dedicated PostgreSQL handle closes exactly once;
+- verified ownership remains transferred during runtime rollback;
+- verified repeated Service.Close() remains single-shot and preserves both stored cleanup error identities;
+- no production provider, transaction, audit, routing, ledger, treasury, funding, retry, or failover behavior was changed.
+
+### CI failure and correction
+
+Initial milestone test commit d1f9e6ed917e08aaed42dc0fd792277698e7b0c6 failed CI #1643 because the catalog test fixture used catalog.NewJSONFileStore as if it returned one value. The actual constructor returns the store together with an error.
+
+The fixture was corrected to handle both return values. No production code change was required.
+
+Corrected implementation/test commit:
+
+88d9d1f99f935f25d97c46095ced060a82dc892f
+
+### Verification
+
+- CI run #1643: RED — test fixture compile error only.
+- CI run #1645 on corrected commit: GREEN.
+  - go test ./... — PASS
+  - go vet ./... — PASS
+  - PostgreSQL service-backed integration tests — PASS
+  - go test -race ./... — PASS
+
+### Safety boundary
+
+This milestone validates lifecycle rollback and error propagation only. A catalog lifecycle failure does not trigger provider retry/failover, transaction resubmission, ledger mutation, treasury movement, customer-balance mutation, or synthetic transaction/audit reconstruction. The balance worker is stopped before transferred database ownership is closed.
+
+### Known limitations
+
+- The catalog lifecycle currently has a start/stop cancellation abstraction but does not expose an injectable internal catalog synchronization failure through the runtime contract. This milestone therefore targets the explicit catalog lifecycle-start failure boundary.
+- Worker rollback error injection remains constrained by the existing SyncWorkerLifecycle contract; the integration test verifies the real rollback path and successful worker shutdown rather than fabricating an internal worker error.
+- PostgreSQL integration coverage requires DESKAPROVIDER_POSTGRES_DSN; tests skip when the runtime DSN is unavailable.
+
+### Next milestone
+
+**#180 — Runtime Shutdown Error Composition Across Auxiliary Rollback and Cleanup**
+
+Focus next on the error-composition matrix when auxiliary lifecycle startup fails, balance-worker rollback returns an error, and database cleanup also returns errors, ensuring all independent error identities remain discoverable without changing production shutdown semantics.
