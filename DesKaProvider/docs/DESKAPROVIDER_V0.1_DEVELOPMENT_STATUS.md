@@ -4526,4 +4526,25 @@ Completed:
 
 ### Next Milestone
 
-**#117 — Sequential Version Progression Review:** verify repeated pending transitions and durable version increments remain correct after the first atomic PostgreSQL transition, without weakening terminal immutability or enabling duplicate provider submission.
+### 40. Milestone Update — Sequential PostgreSQL Version Progression
+
+**Date:** 2026-09-26
+
+Completed:
+
+- audited PostgreSQL transaction persistence after the first atomic transition and verified `PutContext` uses the persisted `current.Version` for subsequent optimistic transitions;
+- retained deterministic integration coverage for pending → pending → terminal progression and stale-version conflict handling;
+- verified terminal results remain immutable and stale transitions cannot overwrite a committed result;
+- preserved the no-resubmission boundary across restart/reconciliation paths.
+
+### Verification
+
+- verification HEAD: `75c6830a3307a7dfd1f19ad2166c596a2e87f7a5`;
+- CI #993 / run `36213485348`: **GREEN** for exact HEAD `75c6830a3307a7dfd1f19ad2166c596a2e87f7a5`;
+- CI jobs `test`: success;
+- CI job `vet`: success;
+- CI job `race`: success.
+
+### Next Milestone
+
+**#118 — Transaction Store Context Cancellation & Side-Effect Boundary Review:** verify canceled PostgreSQL reads/writes stop cleanly and do not leave partial durable transaction state or authorize retries/resubmission.
