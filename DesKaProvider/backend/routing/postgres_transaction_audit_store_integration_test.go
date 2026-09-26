@@ -1873,6 +1873,7 @@ func TestPostgresTransactionAuditStoreConflictWithConcurrentTransactionUpdateRem
 	state.Execution.Result.SerialNumber = ""
 	state.Request.Amount = 20000
 	state.Execution.Result.Price = state.Request.Amount
+	state.Version = 1
 
 	seedConn, err := db.Conn(ctx)
 	if err != nil {
