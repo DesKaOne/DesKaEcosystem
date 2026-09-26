@@ -30,6 +30,7 @@ type TimeoutCertificate struct {
 	Threshold       QuorumThreshold
 	Validators      [][]byte
 	LockedProposal  []byte
+	LockedRound     uint64
 }
 
 // NewTimeoutCertificate constructs timeout evidence from unique validator
@@ -40,6 +41,20 @@ func NewTimeoutCertificate(
 	votingPower VotingPowerSet,
 	threshold QuorumThreshold,
 	nextRound uint64,
+	senders [][]byte,
+	lockEvidence ...[]byte,
+) (TimeoutCertificate, error) {
+	return NewTimeoutCertificateWithLockRound(state, validators, votingPower, threshold, nextRound, state.Round, senders, lockEvidence...)
+}
+
+// NewTimeoutCertificateWithLockRound constructs timeout evidence with an explicit lock round.
+func NewTimeoutCertificateWithLockRound(
+	state RoundState,
+	validators ValidatorSet,
+	votingPower VotingPowerSet,
+	threshold QuorumThreshold,
+	nextRound uint64,
+	lockedRound uint64,
 	senders [][]byte,
 	lockEvidence ...[]byte,
 ) (TimeoutCertificate, error) {
@@ -63,6 +78,9 @@ func NewTimeoutCertificate(
 		return TimeoutCertificate{}, ErrInvalidTimeoutCertificate
 	}
 	if len(lockedProposal) > 0 {
+		if lockedRound > state.Round {
+			return TimeoutCertificate{}, ErrInvalidTimeoutRound
+		}
 		lockedProposal = append([]byte(nil), lockedProposal...)
 	}
 
@@ -130,6 +148,7 @@ func NewTimeoutCertificate(
 		Threshold:       threshold,
 		Validators:      cloneByteSlices(cloned),
 		LockedProposal:  append([]byte(nil), lockedProposal...),
+		LockedRound:     lockedRound,
 	}, nil
 }
 
@@ -161,6 +180,11 @@ func ValidateTimeoutCertificate(
 		return ErrInvalidTimeoutCertificate
 	}
 	if certificate.LockedProposal != nil {
+		if len(certificate.LockedProposal) == 0 {
+			if certificate.LockedRound != 0 { return ErrInvalidTimeoutCertificate }
+		} else if certificate.LockedRound > state.Round {
+			return ErrInvalidTimeoutRound
+		}
 		certificate.LockedProposal = append([]byte(nil), certificate.LockedProposal...)
 	}
 
