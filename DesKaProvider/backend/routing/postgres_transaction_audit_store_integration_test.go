@@ -2126,6 +2126,123 @@ func TestPostgresTransactionAuditAndTransactionCommitOrderingRemainsNonAuthorita
 	if len(finalAudit) != 1 || finalAudit[0] != auditEvent { t.Fatalf("expected one committed audit event after second commit, got %#v", finalAudit) }
 }
 
+func TestPostgresAuditFirstCommitDoesNotAuthorizeTransactionTransition(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	schema := "audit_first_commit_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatalf("create isolated schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
+	})
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set search path: %v", err)
+	}
+	applyPostgresMigration(t, db)
+
+	auditStore, err := NewPostgresTransactionAuditStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transactionStore, err := NewPostgresTransactionStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	request := PurchaseRequest{
+		ProductCode: "pln20",
+		CustomerNo:  "08123456789",
+		ReferenceID: "audit-first-commit-ref",
+		Amount:      20000,
+	}
+	event := TransactionAuditEvent{
+		ReferenceID:  request.ReferenceID,
+		Action:       "PURCHASE_RESULT",
+		Previous:     string(provider.StatusPending),
+		Next:         string(provider.StatusSuccess),
+		ProviderName: "mock",
+		Message:      "audit committed before transaction",
+		CreatedAt:    time.Now().UTC().Truncate(time.Microsecond),
+	}
+
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatalf("open audit-first connection: %v", err)
+	}
+	defer conn.Close()
+	if _, err := conn.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set audit-first search path: %v", err)
+	}
+	auditTx, err := conn.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatalf("begin audit transaction: %v", err)
+	}
+	if _, err := auditTx.ExecContext(ctx, postgresAuditAppendSQL,
+		event.ReferenceID,
+		event.Action,
+		event.Previous,
+		event.Next,
+		event.ProviderName,
+		event.Message,
+		event.CreatedAt.UTC(),
+	); err != nil {
+		t.Fatalf("stage audit event: %v", err)
+	}
+	if err := auditTx.Commit(); err != nil {
+		t.Fatalf("commit audit event first: %v", err)
+	}
+
+	visibleAudit, err := auditStore.AllContextE(ctx, request.ReferenceID)
+	if err != nil {
+		t.Fatalf("read audit history after audit-first commit: %v", err)
+	}
+	if len(visibleAudit) != 1 || visibleAudit[0] != event {
+		t.Fatalf("expected committed audit evidence to be visible first, got %#v", visibleAudit)
+	}
+
+	if _, ok, err := transactionStore.GetContextE(ctx, request.ReferenceID); err != nil {
+		t.Fatalf("read transaction state before transaction commit: %v", err)
+	} else if ok {
+		t.Fatal("audit-first commit must not create transaction authority state")
+	}
+
+	pending := TransactionState{
+		Request: request,
+		Execution: PurchaseExecution{
+			ProviderName: event.ProviderName,
+			Result: provider.PurchaseResult{
+				ReferenceID: request.ReferenceID,
+				CustomerNo:  request.CustomerNo,
+				ProductCode: request.ProductCode,
+				Status:      provider.StatusPending,
+			},
+		},
+		Version: 1,
+	}
+	if err := transactionStore.PutContext(ctx, pending); err != nil {
+		t.Fatalf("commit pending transaction state after audit: %v", err)
+	}
+
+	committed, ok, err := transactionStore.GetContextE(ctx, request.ReferenceID)
+	if err != nil || !ok {
+		t.Fatalf("read committed transaction state: ok=%v err=%v", ok, err)
+	}
+	if committed.Execution.Result.Status != provider.StatusPending {
+		t.Fatalf("expected transaction to remain pending until explicit transition, got %q", committed.Execution.Result.Status)
+	}
+
+	visibleAuditAgain, err := auditStore.AllContextE(ctx, request.ReferenceID)
+	if err != nil {
+		t.Fatalf("read audit history after transaction commit: %v", err)
+	}
+	if len(visibleAuditAgain) != 1 || visibleAuditAgain[0] != event {
+		t.Fatalf("audit visibility changed after transaction commit: %#v", visibleAuditAgain)
+	}
+}
+
 func TestPostgresTransactionAuditStoreAppendFailureThenRecovery(t *testing.T) {
 	db := postgresIntegrationDB(t)
 	schema := "audit_append_recovery_" + strconv.FormatInt(time.Now().UnixNano(), 10)
