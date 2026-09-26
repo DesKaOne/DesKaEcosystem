@@ -3234,6 +3234,152 @@ func TestPostgresAuditTransactionCrossReadRecoveryConverges(t *testing.T) {
 	}
 }
 
+func TestPostgresTransactionAuditStoreCrossDomainRecoveryConcurrency(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	schema := "audit_cross_recovery_concurrency_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatalf("create isolated schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
+	})
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set search path: %v", err)
+	}
+	applyPostgresMigration(t, db)
+
+	transactionStore, err := NewPostgresTransactionStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	auditStore, err := NewPostgresTransactionAuditStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	referenceID := "cross-recovery-concurrency-ref"
+	state := postgresPendingState()
+	state.Request.ReferenceID = referenceID
+	state.Execution.Result.ReferenceID = referenceID
+	if err := transactionStore.PutContext(ctx, state); err != nil {
+		t.Fatalf("persist transaction fixture: %v", err)
+	}
+	event := TransactionAuditEvent{
+		ReferenceID:  referenceID,
+		Action:       "PURCHASE_PENDING",
+		Next:         string(provider.StatusPending),
+		ProviderName: "mock",
+		Message:      "pending",
+		CreatedAt:    time.Now().UTC().Truncate(time.Microsecond),
+	}
+	if err := auditStore.AppendContext(ctx, event); err != nil {
+		t.Fatalf("persist audit fixture: %v", err)
+	}
+
+	baselineState, found, err := transactionStore.GetContextE(ctx, referenceID)
+	if err != nil || !found {
+		t.Fatalf("read baseline transaction state: found=%v err=%v", found, err)
+	}
+	baselineAudit, err := auditStore.AllContextE(ctx, referenceID)
+	if err != nil || len(baselineAudit) != 1 || baselineAudit[0] != event {
+		t.Fatalf("read baseline audit state: events=%#v err=%v", baselineAudit, err)
+	}
+
+	const rounds = 12
+	const readers = 6
+	errCh := make(chan error, readers*rounds*2)
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+
+	for i := 0; i < readers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			for round := 0; round < rounds; round++ {
+				stateSnapshot, ok, readErr := transactionStore.GetContextE(ctx, referenceID)
+				if readErr != nil {
+					errCh <- fmt.Errorf("transaction read round %d: %w", round, readErr)
+					return
+				}
+				if !ok || stateSnapshot.Request != baselineState.Request || stateSnapshot.Execution != baselineState.Execution {
+					errCh <- fmt.Errorf("transaction snapshot diverged at round %d: %#v", round, stateSnapshot)
+					return
+				}
+
+				auditSnapshot, auditErr := auditStore.AllContextE(ctx, referenceID)
+				if auditErr != nil {
+					errCh <- fmt.Errorf("audit read round %d: %w", round, auditErr)
+					return
+				}
+				if len(auditSnapshot) != 1 || auditSnapshot[0] != event {
+					errCh <- fmt.Errorf("audit snapshot diverged at round %d: %#v", round, auditSnapshot)
+					return
+				}
+			}
+		}()
+	}
+
+	close(start)
+
+	// Repeatedly exercise connection recovery for each persistence domain while
+	// readers continue to observe the already durable baseline from fresh pooled
+	// connections. Closed adapters must fail independently; recovery must return
+	// the same durable state without cross-domain reconstruction.
+	for round := 0; round < rounds; round++ {
+		transactionConn, err := db.Conn(ctx)
+		if err != nil {
+			t.Fatalf("open transaction recovery connection round %d: %v", round, err)
+		}
+		if _, err := transactionConn.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+			transactionConn.Close()
+			t.Fatalf("set transaction recovery search path round %d: %v", round, err)
+		}
+		transactionAdapter, err := NewPostgresTransactionStore(transactionConn)
+		if err != nil {
+			transactionConn.Close()
+			t.Fatal(err)
+		}
+		if err := transactionConn.Close(); err != nil {
+			t.Fatalf("close transaction recovery connection round %d: %v", round, err)
+		}
+		if _, _, err := transactionAdapter.GetContextE(context.Background(), referenceID); err == nil {
+			t.Fatalf("expected transaction recovery failure round %d", round)
+		}
+
+		auditConn, err := db.Conn(ctx)
+		if err != nil {
+			t.Fatalf("open audit recovery connection round %d: %v", round, err)
+		}
+		if _, err := auditConn.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+			auditConn.Close()
+			t.Fatalf("set audit recovery search path round %d: %v", round, err)
+		}
+		auditAdapter, err := NewPostgresTransactionAuditStore(auditConn)
+		if err != nil {
+			auditConn.Close()
+			t.Fatal(err)
+		}
+		if err := auditConn.Close(); err != nil {
+			t.Fatalf("close audit recovery connection round %d: %v", round, err)
+		}
+		if _, err := auditAdapter.AllContextE(context.Background(), referenceID); err == nil {
+			t.Fatalf("expected audit recovery failure round %d", round)
+		}
+	}
+
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func TestPostgresTransactionAuditStoreAppendFailureThenRecovery(t *testing.T) {
 	db := postgresIntegrationDB(t)
 	schema := "audit_append_recovery_" + strconv.FormatInt(time.Now().UnixNano(), 10)
