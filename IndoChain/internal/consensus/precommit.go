@@ -2,6 +2,7 @@ package consensus
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"sort"
@@ -204,6 +205,96 @@ func NewLockProof(
 			Votes:           cloneVotes(certificate.Votes),
 		},
 	}, nil
+}
+
+// EncodeLockProof returns a canonical binary representation suitable for
+// embedding in signed timeout evidence. It includes the complete precommit
+// quorum evidence so a receiver can independently validate the proof.
+func EncodeLockProof(proof LockProof) ([]byte, error) {
+	if err := proof.Certificate.Threshold.Validate(); err != nil {
+		return nil, err
+	}
+	if len(proof.Proposal) == 0 || proof.LockedRound != proof.Certificate.Round ||
+		!bytes.Equal(proof.Proposal, proof.Certificate.Payload) {
+		return nil, ErrInvalidLockProof
+	}
+	var out bytes.Buffer
+	putU64(&out, proof.LockedRound)
+	putU16(&out, uint16(proof.Certificate.ProtocolVersion))
+	putU64(&out, uint64(proof.Certificate.ChainID))
+	putU64(&out, proof.Certificate.Epoch)
+	putU64(&out, uint64(proof.Certificate.Height))
+	putU64(&out, proof.Certificate.Round)
+	putU64(&out, proof.Certificate.Threshold.Numerator)
+	putU64(&out, proof.Certificate.Threshold.Denominator)
+	putBytes(&out, proof.Proposal)
+	putBytes(&out, proof.Certificate.Payload)
+	if uint64(len(proof.Certificate.Votes)) > uint64(^uint32(0)) {
+		return nil, ErrInvalidLockProof
+	}
+	var count [4]byte
+	binary.BigEndian.PutUint32(count[:], uint32(len(proof.Certificate.Votes)))
+	out.Write(count[:])
+	for _, vote := range proof.Certificate.Votes {
+		if vote.Type != MessageTypePrecommit || len(vote.Sender) == 0 {
+			return nil, ErrInvalidLockProof
+		}
+		putBytes(&out, vote.Sender)
+		out.WriteByte(byte(vote.Type))
+		putBytes(&out, vote.Payload)
+		putBytes(&out, vote.Signature)
+	}
+	return out.Bytes(), nil
+}
+
+// DecodeLockProof decodes and structurally validates canonical lock-proof
+// evidence. Consensus validity is checked separately by ValidateLockProof.
+func DecodeLockProof(encoded []byte) (LockProof, error) {
+	read := func(n int) ([]byte, error) {
+		if n < 0 || n > len(encoded) { return nil, ErrInvalidLockProof }
+		v := encoded[:n]
+		encoded = encoded[n:]
+		return v, nil
+	}
+	readU16 := func() (uint16, error) { b, err := read(2); if err != nil { return 0, err }; return binary.BigEndian.Uint16(b), nil }
+	readU32 := func() (uint32, error) { b, err := read(4); if err != nil { return 0, err }; return binary.BigEndian.Uint32(b), nil }
+	readU64 := func() (uint64, error) { b, err := read(8); if err != nil { return 0, err }; return binary.BigEndian.Uint64(b), nil }
+	readBytes := func() ([]byte, error) {
+		n, err := readU32(); if err != nil { return nil, err }
+		if uint64(n) > uint64(len(encoded)) { return nil, ErrInvalidLockProof }
+		return read(int(n))
+	}
+	lockedRound, err := readU64(); if err != nil { return LockProof{}, err }
+	version, err := readU16(); if err != nil { return LockProof{}, err }
+	chainID, err := readU64(); if err != nil { return LockProof{}, err }
+	epoch, err := readU64(); if err != nil { return LockProof{}, err }
+	height, err := readU64(); if err != nil { return LockProof{}, err }
+	round, err := readU64(); if err != nil { return LockProof{}, err }
+	numerator, err := readU64(); if err != nil { return LockProof{}, err }
+	denominator, err := readU64(); if err != nil { return LockProof{}, err }
+	proposal, err := readBytes(); if err != nil { return LockProof{}, err }
+	payload, err := readBytes(); if err != nil { return LockProof{}, err }
+	count, err := readU32(); if err != nil { return LockProof{}, err }
+	votes := make([]Message, 0, int(count))
+	for i := uint32(0); i < count; i++ {
+		sender, err := readBytes(); if err != nil { return LockProof{}, err }
+		typeBytes, err := read(1); if err != nil { return LockProof{}, err }
+		votePayload, err := readBytes(); if err != nil { return LockProof{}, err }
+		signature, err := readBytes(); if err != nil { return LockProof{}, err }
+		votes = append(votes, Message{
+			ProtocolVersion: types.ProtocolVersion(version), ChainID: types.ChainID(chainID),
+			Epoch: epoch, Height: types.Height(height), Round: round,
+			Sender: append([]byte(nil), sender...), Type: MessageType(typeBytes[0]),
+			Payload: append([]byte(nil), votePayload...), Signature: append([]byte(nil), signature...),
+		})
+	}
+	if len(encoded) != 0 { return LockProof{}, ErrInvalidLockProof }
+	certificate := PrecommitCertificate{
+		ProtocolVersion: types.ProtocolVersion(version), ChainID: types.ChainID(chainID), Epoch: epoch,
+		Height: types.Height(height), Round: round, Payload: append([]byte(nil), payload...),
+		Threshold: QuorumThreshold{Numerator: numerator, Denominator: denominator}, Votes: votes,
+	}
+	return LockProof{LockedRound: lockedRound, Proposal: append([]byte(nil), proposal...), Certificate: certificate}, nil
 }
 
 func ValidateLockProof(
