@@ -6712,3 +6712,17 @@ Completed:
 
 - corrective test commit: `9424f060ef83122537450606aeccf903a205ac48`;
 - exact branch HEAD after this documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before milestone #151 is considered closed.
+
+
+### 151. Verification Correction — Seed CAS Version
+
+**Date:** 2026-09-26
+
+- corrected the concurrent audit/transaction conflict integration fixture to seed the expected durable transaction version as `1` before staging the concurrent success transition;
+- the previous failure occurred because the test issued the conditional transaction update with the zero-value fixture version `0`, so PostgreSQL matched no row and left the durable transaction state pending without returning a SQL execution error;
+- no production behavior changed.
+
+**Verification**
+
+- corrective test commit: `b72ec35ab26e5f36f45eaecf3d6d94e719e90385`;
+- exact branch HEAD after this documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before milestone #151 is considered closed.
