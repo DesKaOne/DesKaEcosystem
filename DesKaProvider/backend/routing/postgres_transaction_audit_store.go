@@ -57,14 +57,14 @@ func (s *PostgresTransactionAuditStore) AppendContext(ctx context.Context, event
 }
 
 func (s *PostgresTransactionAuditStore) All(referenceID string) []TransactionAuditEvent {
-	result, err := s.AllContext(context.Background(), referenceID)
+	result, err := s.AllContextE(context.Background(), referenceID)
 	if err != nil {
 		return nil
 	}
 	return result
 }
 
-func (s *PostgresTransactionAuditStore) AllContext(ctx context.Context, referenceID string) ([]TransactionAuditEvent, error) {
+func (s *PostgresTransactionAuditStore) AllContextE(ctx context.Context, referenceID string) ([]TransactionAuditEvent, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
