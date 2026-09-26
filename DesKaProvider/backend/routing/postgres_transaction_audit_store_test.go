@@ -295,6 +295,24 @@ func TestPostgresTransactionAuditStoreAllContextPropagatesScanError(t *testing.T
 	}
 }
 
+func TestPostgresTransactionAuditStoreErrorDoesNotBecomeEmptySuccess(t *testing.T) {
+	wantErr := errors.New("audit database unavailable")
+	scenario := &postgresAuditRowsScenario{queryErr: wantErr}
+	db := openPostgresAuditRowsDB(t, scenario)
+	store, err := NewPostgresTransactionAuditStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := store.AllContextE(context.Background(), "ref")
+	if err == nil || !errors.Is(err, wantErr) {
+		t.Fatalf("expected audit database error to remain observable, got result=%#v err=%v", result, err)
+	}
+	if result != nil {
+		t.Fatalf("audit database error must not flatten to an empty success result, got %#v", result)
+	}
+}
+
 func TestPostgresTransactionAuditStoreAllContextPropagatesRowsError(t *testing.T) {
 	wantErr := errors.New("audit rows iteration failed")
 	scenario := &postgresAuditRowsScenario{rowsErr: wantErr}
