@@ -111,6 +111,21 @@ func TestValidatorRuntimeRejectsTamperedTimeoutEvidenceWithoutMutation(t *testin
 }
 
 
+func timeoutLockProofAtRound(t *testing.T, state RoundState, validators ValidatorSet, power VotingPowerSet, lockedRound uint64, proposal string) LockProof {
+	t.Helper()
+	lockState := state
+	lockState.Round = lockedRound
+	votes := []Message{
+		runtimeMessage(lockState, "validator-a", MessageTypePrecommit, proposal),
+		runtimeMessage(lockState, "validator-b", MessageTypePrecommit, proposal),
+	}
+	certificate, err := NewPrecommitCertificate(lockState, validators, power, QuorumThreshold{Numerator: 2, Denominator: 3}, []byte(proposal), votes)
+	if err != nil { t.Fatal(err) }
+	proof, err := NewLockProof(lockedRound, []byte(proposal), certificate)
+	if err != nil { t.Fatal(err) }
+	return proof
+}
+
 func TestValidatorRuntimeAdoptsTimeoutLockEvidenceAtomically(t *testing.T) {
 	runtime, state, _, _ := runtimeFixture(t)
 	signerA, publicA := newTimeoutTestSigner(t)
@@ -119,10 +134,11 @@ func TestValidatorRuntimeAdoptsTimeoutLockEvidenceAtomically(t *testing.T) {
 		"validator-a": publicA,
 		"validator-b": publicB,
 	}}
+	proof := timeoutLockProof(t, state, runtime.validators, runtime.votingPower, state.Round, "locked-proposal")
 	locked := []byte("locked-proposal")
-	msgA, err := NewTimeoutMessageWithLock(state, []byte("validator-a"), state.Round+1, locked, signerA)
+	msgA, err := NewTimeoutMessageWithLockProof(state, []byte("validator-a"), state.Round+1, proof, signerA)
 	if err != nil { t.Fatal(err) }
-	msgB, err := NewTimeoutMessageWithLock(state, []byte("validator-b"), state.Round+1, locked, signerB)
+	msgB, err := NewTimeoutMessageWithLockProof(state, []byte("validator-b"), state.Round+1, proof, signerB)
 	if err != nil { t.Fatal(err) }
 
 	certificate, err := runtime.AdvanceRoundWithTimeoutEvidence([]Message{msgA, msgB}, resolver)
@@ -140,9 +156,10 @@ func TestValidatorRuntimeRejectsTimeoutLockConflictWithoutMutation(t *testing.T)
 		"validator-a": publicA,
 		"validator-b": publicB,
 	}}
-	msgA, err := NewTimeoutMessageWithLock(state, []byte("validator-a"), state.Round+1, []byte("remote-lock"), signerA)
+	proof := timeoutLockProof(t, state, runtime.validators, runtime.votingPower, state.Round, "remote-lock")
+	msgA, err := NewTimeoutMessageWithLockProof(state, []byte("validator-a"), state.Round+1, proof, signerA)
 	if err != nil { t.Fatal(err) }
-	msgB, err := NewTimeoutMessageWithLock(state, []byte("validator-b"), state.Round+1, []byte("remote-lock"), signerB)
+	msgB, err := NewTimeoutMessageWithLockProof(state, []byte("validator-b"), state.Round+1, proof, signerB)
 	if err != nil { t.Fatal(err) }
 
 	beforeState := runtime.state
@@ -167,9 +184,10 @@ func TestValidatorRuntimeAdoptsHigherTimeoutLockRound(t *testing.T) {
 		"validator-b": publicB,
 	}}
 	lockedRound := state.Round - 1
-	msgA, err := NewTimeoutMessageWithLockRound(state, []byte("validator-a"), state.Round+2, lockedRound, []byte("locked-proposal"), signerA)
+	proof := timeoutLockProofAtRound(t, state, runtime.validators, runtime.votingPower, lockedRound, "locked-proposal")
+	msgA, err := NewTimeoutMessageWithLockProof(state, []byte("validator-a"), state.Round+2, proof, signerA)
 	if err != nil { t.Fatal(err) }
-	msgB, err := NewTimeoutMessageWithLockRound(state, []byte("validator-b"), state.Round+2, lockedRound, []byte("locked-proposal"), signerB)
+	msgB, err := NewTimeoutMessageWithLockProof(state, []byte("validator-b"), state.Round+2, proof, signerB)
 	if err != nil { t.Fatal(err) }
 
 	_, err = runtime.AdvanceRoundWithTimeoutEvidence([]Message{msgA, msgB}, resolver)
@@ -191,9 +209,10 @@ func TestValidatorRuntimeRejectsLowerTimeoutLockRoundWithoutDowngrade(t *testing
 		"validator-a": publicA,
 		"validator-b": publicB,
 	}}
-	msgA, err := NewTimeoutMessageWithLockRound(state, []byte("validator-a"), state.Round+2, state.Round - 2, []byte("locked-proposal"), signerA)
+	proof := timeoutLockProofAtRound(t, state, runtime.validators, runtime.votingPower, state.Round-2, "locked-proposal")
+	msgA, err := NewTimeoutMessageWithLockProof(state, []byte("validator-a"), state.Round+2, proof, signerA)
 	if err != nil { t.Fatal(err) }
-	msgB, err := NewTimeoutMessageWithLockRound(state, []byte("validator-b"), state.Round+2, state.Round-2, []byte("locked-proposal"), signerB)
+	msgB, err := NewTimeoutMessageWithLockProof(state, []byte("validator-b"), state.Round+2, proof, signerB)
 	if err != nil { t.Fatal(err) }
 
 	_, err = runtime.AdvanceRoundWithTimeoutEvidence([]Message{msgA, msgB}, resolver)
