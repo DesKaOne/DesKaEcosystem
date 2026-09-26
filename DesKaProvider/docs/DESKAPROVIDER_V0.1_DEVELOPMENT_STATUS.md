@@ -4547,4 +4547,34 @@ Completed:
 
 ### Next Milestone
 
+### 53. Milestone Update — Transaction Store Context Cancellation & Side-Effect Boundary Review
+
+**Date:** 2026-09-26
+
+Completed:
+
+- verified canceled PostgreSQL PutIfCurrentContext returns context.Canceled before any durable state transition is committed;
+- added deterministic coverage proving canceled PutContext leaves the persisted status, payload, and version unchanged;
+- verified canceled context-aware reads return context.Canceled through the error-aware PostgreSQL read boundary;
+- preserved database-error classification so infrastructure failures are not misclassified as transaction-state conflicts;
+- kept transaction persistence authoritative while cancellation remains a request-lifecycle boundary only.
+
+### Verification
+
+- implementation HEAD: ca5cdc1087f11f65846308b54c79871cb668416d;
+- CI #998 / run 36213809675: GREEN;
+- CI jobs test: success;
+- CI job test vet: success;
+- CI job race: success.
+
+### Safety Boundary
+
+- cancellation prevents or interrupts persistence work but cannot authorize retry, failover, resubmission, ledger mutation, treasury movement, or provider funding;
+- a canceled write leaves the prior durable transaction state intact;
+- audit and operational evidence remain non-authoritative.
+
+### Next Milestone
+
+**#119 — PostgreSQL Transaction Read Consistency & Durable Result Identity Review**: verify restart/read paths preserve request/provider/result identity exactly and never expose mixed transaction fields during concurrent observation.
+
 **#118 — Transaction Store Context Cancellation & Side-Effect Boundary Review:** verify canceled PostgreSQL reads/writes stop cleanly and do not leave partial durable transaction state or authorize retries/resubmission.
