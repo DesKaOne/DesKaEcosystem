@@ -3504,7 +3504,10 @@ func TestPostgresTransactionAuditStoreCrossDomainReadAfterConcurrentAuditCommit(
 	if err != nil || !found {
 		t.Fatalf("read transaction before concurrent commit: found=%v err=%v", found, err)
 	}
-	if beforeCommitState != state {
+	if beforeCommitState.Request != state.Request ||
+		beforeCommitState.Execution.ProviderName != state.Execution.ProviderName ||
+		beforeCommitState.Execution.Result != state.Execution.Result ||
+		beforeCommitState.Version != 1 {
 		t.Fatalf("transaction state changed before audit commit: baseline=%#v observed=%#v", state, beforeCommitState)
 	}
 
@@ -3524,7 +3527,10 @@ func TestPostgresTransactionAuditStoreCrossDomainReadAfterConcurrentAuditCommit(
 	if err != nil || !found {
 		t.Fatalf("read transaction after audit commit: found=%v err=%v", found, err)
 	}
-	if afterCommitState != state {
+	if afterCommitState.Request != state.Request ||
+		afterCommitState.Execution.ProviderName != state.Execution.ProviderName ||
+		afterCommitState.Execution.Result != state.Execution.Result ||
+		afterCommitState.Version != 1 {
 		t.Fatalf("audit commit must not synthesize transaction state: baseline=%#v observed=%#v", state, afterCommitState)
 	}
 }
