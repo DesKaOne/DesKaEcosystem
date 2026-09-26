@@ -71,7 +71,7 @@ func TestOpenAuditStorePostgresIntegration(t *testing.T) {
 	if !ok { t.Fatalf("expected PostgreSQL audit store, got %T", auditStore) }
 	event := routing.TransactionAuditEvent{ReferenceID:"runtime-audit-1",Action:"PURCHASE_RESULT",Previous:"pending",Next:"success",ProviderName:"mock",Message:"success",CreatedAt:time.Now().UTC()}
 	if err := pgStore.AppendContext(ctx, event); err != nil { t.Fatal(err) }
-	reloaded, err := pgStore.AllContext(ctx, event.ReferenceID)
+	reloaded, err := pgStore.AllContextE(ctx, event.ReferenceID)
 	if err != nil { t.Fatal(err) }
 	if len(reloaded) != 1 || reloaded[0].ReferenceID != event.ReferenceID || reloaded[0].Action != event.Action || reloaded[0].Next != event.Next { t.Fatalf("unexpected durable audit events: %#v", reloaded) }
 }
