@@ -156,6 +156,8 @@ func TestValidatorRuntimeRejectsTimeoutLockConflictWithoutMutation(t *testing.T)
 
 func TestValidatorRuntimeAdoptsHigherTimeoutLockRound(t *testing.T) {
 	runtime, state, _, _ := runtimeFixture(t)
+	state.Round = 2
+	runtime.state.Round = 2
 	runtime.lockedProposal = []byte("locked-proposal")
 	runtime.lockedRound = state.Round - 2
 	signerA, publicA := newTimeoutTestSigner(t)
@@ -179,6 +181,8 @@ func TestValidatorRuntimeAdoptsHigherTimeoutLockRound(t *testing.T) {
 
 func TestValidatorRuntimeRejectsLowerTimeoutLockRoundWithoutDowngrade(t *testing.T) {
 	runtime, state, _, _ := runtimeFixture(t)
+	state.Round = 2
+	runtime.state.Round = 2
 	runtime.lockedProposal = []byte("locked-proposal")
 	runtime.lockedRound = state.Round - 1
 	signerA, publicA := newTimeoutTestSigner(t)
@@ -189,7 +193,7 @@ func TestValidatorRuntimeRejectsLowerTimeoutLockRoundWithoutDowngrade(t *testing
 	}}
 	msgA, err := NewTimeoutMessageWithLockRound(state, []byte("validator-a"), state.Round+2, state.Round - 2, []byte("locked-proposal"), signerA)
 	if err != nil { t.Fatal(err) }
-	msgB, err := NewTimeoutMessageWithLockRound(state, []byte("validator-b"), state.Round+2, state.Round, []byte("locked-proposal"), signerB)
+	msgB, err := NewTimeoutMessageWithLockRound(state, []byte("validator-b"), state.Round+2, state.Round-2, []byte("locked-proposal"), signerB)
 	if err != nil { t.Fatal(err) }
 
 	_, err = runtime.AdvanceRoundWithTimeoutEvidence([]Message{msgA, msgB}, resolver)
