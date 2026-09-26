@@ -7273,3 +7273,40 @@ Completed:
 ### Next Milestone
 
 **#162 — PostgreSQL Audit/Transaction Cross-Read Recovery After Concurrent Commit:** verify that after a concurrent writer commits in one domain during recovery activity, readers converge to the complete new state only in that domain and never synthesize the change into the other domain.
+
+
+### 162. Milestone Update — PostgreSQL Audit/Transaction Cross-Read Recovery After Concurrent Commit
+
+**Date:** 2026-09-27
+
+Completed:
+
+- added real-PostgreSQL integration coverage where a concurrent writer commits a new audit event while the transaction domain remains unchanged;
+- verified the audit reader sees only the previously committed audit history before the concurrent commit;
+- verified after the writer commits, the audit reader converges to the complete committed audit history in deterministic order;
+- verified the transaction reader remains exactly at its previously durable baseline state before and after the audit-domain commit;
+- confirmed a committed audit-domain change is not synthesized into transaction state and does not become provider execution authority;
+- no production audit-store or transaction-store implementation change was required;
+- no cross-domain locking, transaction authority, provider submission authority, retry/failover behavior, ledger mutation, treasury movement, or provider funding behavior was broadened.
+
+### Safety Boundary
+
+- concurrent commit visibility is scoped to the persistence domain that actually committed the change;
+- audit readers may converge to new committed audit evidence without altering transaction-state interpretation;
+- transaction readers cannot infer a state transition from audit history alone;
+- transaction persistence remains the authoritative transaction-state and idempotency boundary, while audit remains observational evidence.
+
+### Verification
+
+- test implementation commit: `42deaaedcadace45f00c95ce0a5d3168b682620c`;
+- exact branch HEAD after this status documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before this milestone is considered closed.
+
+### Known Limitations
+
+- the scenario commits in the audit domain only and validates one PostgreSQL deployment; it does not model distributed commit coordination or replica-lag topologies;
+- the test verifies cross-domain non-synthesis for the exercised transaction row, not every future cache or projection layer;
+- audit remains operational evidence and is not a financial source of truth.
+
+### Next Milestone
+
+**#163 — PostgreSQL Cross-Domain Recovery Ordering After Sequential Commits:** verify that sequential commits across audit and transaction domains preserve each domain's own durable ordering and never create a false cross-domain causal sequence.
