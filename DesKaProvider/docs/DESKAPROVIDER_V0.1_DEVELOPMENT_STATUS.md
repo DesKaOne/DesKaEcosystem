@@ -4940,3 +4940,33 @@ Completed:
 ### Next Milestone
 
 **#129 — PostgreSQL Atomic Transition Version Discipline:** review every durable write path for monotonic version handling and ensure sequential pending updates and concurrent compare-and-transition operations use the persisted row version consistently.
+
+### 53. Milestone Update — PostgreSQL Atomic Transition Version Discipline
+
+**Date:** 2026-09-26
+
+Completed:
+
+- reviewed every PostgreSQL durable write path for persisted transaction-version handling;
+- retained and verified deterministic regression coverage that sequential pending `PutContext` calls advance the persisted version monotonically;
+- verified compare-and-transition paths continue to use the persisted `current.Version` for conditional updates;
+- verified cancellation during atomic writes leaves durable transaction state and version unchanged;
+- preserved transaction persistence as the authoritative transaction state while operational/audit evidence remains non-authoritative.
+
+### Verification
+
+- implementation HEAD: `0ba10fb158c1e21d6ae837b91aacab416c8c7d70`;
+- CI #1104 / run `36220935799`: **GREEN** for exact HEAD `0ba10fb158c1e21d6ae837b91aacab416c8c7d70`;
+- CI jobs `test`: success;
+- CI jobs `race`: success;
+- CI job `test` completed `vet`: success.
+
+### Safety Boundary
+
+- version discipline is a persistence-integrity property only;
+- version increments cannot authorize provider retry, failover, resubmission, customer-ledger mutation, treasury movement, or provider funding;
+- operational and audit evidence remain non-authoritative for transaction state.
+
+### Next Milestone
+
+**#130 — PostgreSQL Reconciliation Conflict Recovery:** verify stale service instances recover cleanly from `ErrTransactionStateConflict` by reloading the durable transaction and returning the committed terminal result when observations are identical.
