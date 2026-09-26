@@ -8208,3 +8208,59 @@ This milestone validates only the existing balance-worker startup failure rollba
 **#183 — Runtime Shutdown Error Composition Across Auxiliary Lifecycle Shutdown Completion**
 
 Focus next on the remaining lifecycle completion boundary after auxiliary startup/shutdown paths, preserving existing worker ordering, database ownership, and error-composition semantics.
+
+## 183. Milestone Update — Runtime Shutdown Error Composition Across Auxiliary Lifecycle Shutdown Completion
+
+**Date:** 2026-09-27
+
+Completed:
+
+- added a narrow internal catalogShutdown test seam for the existing auxiliary catalog lifecycle shutdown boundary;
+- preserved the production behavior by using catalogWorkerLifecycle.Shutdown directly whenever the seam is unset;
+- composed catalog shutdown-completion errors with the existing primary runtime error, balance-worker rollback error, and database cleanup errors;
+- added real PostgreSQL service-lifecycle coverage for cancellation-driven shutdown with:
+  - primary context.Canceled;
+  - balance-worker rollback error;
+  - catalog shutdown-completion error;
+  - independent transaction cleanup error;
+  - independent audit cleanup error;
+- verified all independent error identities remain discoverable through errors.Is;
+- verified the catalog lifecycle is stopped before database ownership cleanup completes;
+- verified dedicated PostgreSQL cleanup remains deterministic in transaction-before-audit order;
+- verified each dedicated PostgreSQL handle closes exactly once;
+- verified repeated Service.Close() preserves database cleanup errors without replaying the catalog shutdown-completion error or double-closing databases;
+- no provider retry/failover, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, or synthetic transaction/audit reconstruction was introduced.
+
+### CI Failure and Correction
+
+Initial milestone test commit ce485e3ff033a64775423c9253516ec9757e9393 failed CI #1675 because the new test fixture referenced service inside its own composite literal while assigning catalogShutdown.
+
+The fixture was corrected by constructing Service first and assigning the test-only catalogShutdown seam afterward. No production behavior change was required.
+
+### Verification
+
+- Runtime implementation commit: 3aed9ef055c7e19105b783b2df9fb05412655b44.
+- Corrected integration test commit: b0fd363a69d2858c51b086c8da282b90ad1c41f5.
+- CI #1675: RED — test fixture compile error only.
+- CI #1677 on exact corrected implementation/test HEAD: **GREEN**.
+  - go test ./... — PASS
+  - go vet ./... — PASS
+  - PostgreSQL service-backed integration tests — PASS
+  - go test -race ./... — PASS
+
+### Safety Boundary
+
+This milestone validates only auxiliary catalog shutdown completion and runtime error composition. The catalogShutdown seam is internal test instrumentation and does not alter production behavior when unset. Catalog shutdown remains lifecycle-only and database cleanup remains under the existing runtime ownership boundary. No provider execution, retry/failover, transaction resubmission, ledger mutation, treasury movement, customer-balance mutation, or cross-domain recovery authority is introduced.
+
+### Known Limitations
+
+- The production catalogWorkerLifecycle.Shutdown contract remains void-returning; the new catalogShutdown error channel exists only as an internal test seam for deterministic error-composition coverage.
+- PostgreSQL integration coverage requires DESKAPROVIDER_POSTGRES_DSN; tests skip when the runtime DSN is unavailable.
+- The milestone does not introduce a new production auxiliary catalog error source.
+- This milestone does not introduce new provider retry/failover or transaction recovery behavior.
+
+### Next Milestone
+
+**#184 — Runtime Shutdown Error Composition Across Repeated Lifecycle Completion**
+
+Focus next on repeated/duplicate lifecycle completion calls, preserving idempotent catalog and balance shutdown behavior, single-shot database ownership cleanup, and stable error identity without introducing new provider or transaction recovery behavior.
