@@ -679,6 +679,112 @@ func TestPostgresTransactionAuditStoreConcurrentTimestampCollisionPreservesInser
 	}
 }
 
+func TestPostgresTransactionAuditStoreReadDuringUncommittedAppendSeesOnlyCommittedRows(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	schema := "audit_visibility_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	migrationConn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatalf("pin migration connection: %v", err)
+	}
+	defer migrationConn.Close()
+	if _, err := migrationConn.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatalf("create isolated schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
+	})
+	if _, err := migrationConn.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set search path: %v", err)
+	}
+	applyPostgresMigration(t, migrationConn)
+
+	baseStore, err := NewPostgresTransactionAuditStore(migrationConn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	committed := TransactionAuditEvent{
+		ReferenceID:  "audit-visibility-ref",
+		Action:       "COMMITTED",
+		Next:         string(provider.StatusPending),
+		ProviderName: "mock",
+		Message:      "already committed",
+		CreatedAt:    time.Now().UTC().Truncate(time.Microsecond),
+	}
+	if err := baseStore.AppendContext(ctx, committed); err != nil {
+		t.Fatalf("append committed fixture: %v", err)
+	}
+
+	writerConn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatalf("open writer connection: %v", err)
+	}
+	defer writerConn.Close()
+	if _, err := writerConn.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set writer search path: %v", err)
+	}
+	tx, err := writerConn.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatalf("begin append transaction: %v", err)
+	}
+	defer tx.Rollback()
+
+	pending := TransactionAuditEvent{
+		ReferenceID:  "audit-visibility-ref",
+		Action:       "UNCOMMITTED",
+		Previous:     string(provider.StatusPending),
+		Next:         string(provider.StatusSuccess),
+		ProviderName: "mock",
+		Message:      "visible only after commit",
+		CreatedAt:    committed.CreatedAt,
+	}
+	if _, err := tx.ExecContext(ctx, postgresAuditAppendSQL,
+		pending.ReferenceID,
+		pending.Action,
+		pending.Previous,
+		pending.Next,
+		pending.ProviderName,
+		pending.Message,
+		pending.CreatedAt.UTC(),
+	); err != nil {
+		t.Fatalf("stage uncommitted audit append: %v", err)
+	}
+
+	readerConn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatalf("open reader connection: %v", err)
+	}
+	defer readerConn.Close()
+	if _, err := readerConn.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set reader search path: %v", err)
+	}
+	reader, err := NewPostgresTransactionAuditStore(readerConn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	visible, err := reader.AllContextE(ctx, committed.ReferenceID)
+	if err != nil {
+		t.Fatalf("read during uncommitted append: %v", err)
+	}
+	if len(visible) != 1 || visible[0] != committed {
+		t.Fatalf("reader observed uncommitted or partial audit state: %#v", visible)
+	}
+
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("commit staged audit append: %v", err)
+	}
+	afterCommit, err := reader.AllContextE(ctx, committed.ReferenceID)
+	if err != nil {
+		t.Fatalf("read after audit commit: %v", err)
+	}
+	if len(afterCommit) != 2 || afterCommit[0] != committed || afterCommit[1] != pending {
+		t.Fatalf("reader did not observe complete committed audit history: %#v", afterCommit)
+	}
+}
+
+
 func TestPostgresTransactionAuditStoreAppendFailureThenRecovery(t *testing.T) {
 	db := postgresIntegrationDB(t)
 	schema := "audit_append_recovery_" + strconv.FormatInt(time.Now().UnixNano(), 10)
