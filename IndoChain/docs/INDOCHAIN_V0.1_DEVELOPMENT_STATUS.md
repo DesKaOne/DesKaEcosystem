@@ -1281,3 +1281,22 @@ CI verification:
 - IndoChain CI #1139 (run 36264090827) for final code/test state completed successfully. Tidy, Test, and Vet all passed.
 
 This remains a development-only lock-carry evidence boundary. It does not yet implement a production BFT highest-lock/locked-round rule, separate prevote/precommit wire semantics, persistent timeout evidence, validator-set transitions, or real network round synchronization.
+
+
+### 4.28 Consensus Highest-Lock / Locked-Round Semantics
+
+The timeout lock evidence boundary now carries both the locked proposal and the round in which that lock was formed. This makes lock precedence explicit instead of comparing proposal bytes alone.
+
+`ValidatorRuntime` tracks `lockedProposal` together with `lockedRound`. When a timeout certificate carries the same locked proposal at a higher lock round, the runtime adopts the higher lock after successful round advancement. A lower lock round never downgrades the local lock. A different locked proposal remains a hard conflict and is rejected without advancing the round.
+
+The signed timeout payload now canonically binds target round, locked round, and locked proposal bytes. `NewTimeoutMessage` and `NewTimeoutMessageWithLock` remain compatibility convenience paths; `NewTimeoutMessageWithLockRound` provides explicit lock-round evidence. `NewTimeoutCertificateWithLockRound` provides the corresponding certificate constructor while the existing constructor remains compatible.
+
+Regression tests cover higher-lock adoption, lower-lock non-downgrade, signed lock-round propagation, and the existing non-mutating conflict paths.
+
+CI history during hardening:
+- CI #1156 (run 36264639507) exposed the first highest-lock test using an invalid future lock round.
+- CI #1158 (run 36264676986) exposed the same fixture-round underflow in both highest-lock tests.
+- Both failures were corrected in test setup; no production invariant was weakened.
+- **IndoChain CI #1160** (run 36264730885) for final code/test state completed successfully; Tidy, Test, and Vet all passed.
+
+This remains a development-only highest-lock boundary. It does not yet define a full production locked-round BFT rule, proof-of-lock/precommit certificates, canonical block proposal encoding, validator-set transitions, or network-wide round synchronization.
