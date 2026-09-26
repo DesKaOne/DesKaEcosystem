@@ -1094,6 +1094,122 @@ func TestPostgresTransactionStoreReadConsistencyPreservesDurableIdentity(t *test
 	}
 }
 
+func TestPostgresConcurrentReadDuringAtomicTransitionObservesCompleteState(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	schema := "read_transition_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatalf("create isolated schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
+	})
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set isolated search path: %v", err)
+	}
+	applyPostgresMigration(t, db)
+
+	seedStore, err := NewPostgresTransactionStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := PurchaseRequest{
+		ProductCode: "pln20",
+		CustomerNo:  "08123456789",
+		ReferenceID: postgresIntegrationReference(),
+		Amount:      20000,
+	}
+	pending := TransactionState{
+		Request: request,
+		Execution: PurchaseExecution{
+			ProviderName: "mock",
+			Result: provider.PurchaseResult{
+				ReferenceID: request.ReferenceID,
+				ProductCode: request.ProductCode,
+				CustomerNo: request.CustomerNo,
+				Status: provider.StatusPending,
+				ProviderCode: "00",
+				Message: "pending",
+				Price: 20000,
+			},
+		},
+		Version: 1,
+	}
+	if err := seedStore.PutContext(ctx, pending); err != nil {
+		t.Fatalf("seed pending transaction: %v", err)
+	}
+
+	readerDB, err := sql.Open("pgx", os.Getenv("DESKAPROVIDER_POSTGRES_DSN"))
+	if err != nil {
+		t.Fatalf("open reader postgres: %v", err)
+	}
+	t.Cleanup(func() { _ = readerDB.Close() })
+	if err := readerDB.PingContext(ctx); err != nil {
+		t.Fatalf("ping reader postgres: %v", err)
+	}
+	if _, err := readerDB.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set reader search path: %v", err)
+	}
+	readerStore, err := NewPostgresTransactionStore(readerDB)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	start := make(chan struct{})
+	readDone := make(chan error, 1)
+	go func() {
+		<-start
+		for i := 0; i < 100; i++ {
+			got, ok, err := readerStore.GetContextE(ctx, request.ReferenceID)
+			if err != nil {
+				readDone <- fmt.Errorf("read iteration %d: %w", i, err)
+				return
+			}
+			if !ok {
+				readDone <- fmt.Errorf("read iteration %d: transaction missing", i)
+				return
+			}
+			if got.Request != pending.Request || got.Execution.ProviderName != pending.Execution.ProviderName {
+				readDone <- fmt.Errorf("read iteration %d observed mixed identity fields: %#v", i, got)
+				return
+			}
+			status := got.Execution.Result.Status
+			if status != provider.StatusPending && status != provider.StatusSuccess {
+				readDone <- fmt.Errorf("read iteration %d observed invalid intermediate status %q", i, status)
+				return
+			}
+			if status == provider.StatusPending {
+				if got.Version != 1 || got.Execution.Result.Message != "pending" || got.Execution.Result.ProviderCode != "00" || got.Execution.Result.Price != 20000 {
+					readDone <- fmt.Errorf("read iteration %d observed inconsistent pending state: %#v", i, got)
+					return
+				}
+			} else {
+				if got.Version != 2 || got.Execution.Result.Message != "success" || got.Execution.Result.ProviderCode != "00" || got.Execution.Result.SerialNumber != "SN-ATOMIC-1" || got.Execution.Result.Price != 20000 {
+					readDone <- fmt.Errorf("read iteration %d observed inconsistent terminal state: %#v", i, got)
+					return
+				}
+			}
+		}
+		readDone <- nil
+	}()
+
+	close(start)
+	time.Sleep(5 * time.Millisecond)
+	next := pending
+	next.Version = 2
+	next.Execution.Result.Status = provider.StatusSuccess
+	next.Execution.Result.Message = "success"
+	next.Execution.Result.SerialNumber = "SN-ATOMIC-1"
+	if err := seedStore.PutIfCurrentContext(ctx, request.ReferenceID, pending, next); err != nil {
+		t.Fatalf("atomic terminal transition: %v", err)
+	}
+	if err := <-readDone; err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestPostgresMigrationVerification(t *testing.T) {
 	sqlText := postgresMigrationSQL(t)
 	required := []string{
