@@ -4257,3 +4257,35 @@ Verification:
 Next milestone:
 1. continue auditing sequential PostgreSQL transaction version transitions and restart recovery boundaries;
 2. preserve the invariant that audit or operational evidence cannot authorize retry, failover, resubmission, ledger mutation, treasury movement, or provider funding.
+
+### 47. Milestone Update — Sequential PostgreSQL Transaction Version Transition Boundary
+
+**Date:** 2026-09-26
+
+Completed:
+
+- reviewed the PostgreSQL transaction store version transition path for sequential pending-state updates and terminalization;
+- added deterministic integration coverage proving version progression from initial version 1 to version 2 on a pending transition and version 3 on terminal success;
+- verified a stale pre-terminal snapshot cannot be reused after terminalization because the optimistic version boundary rejects the stale write;
+- confirmed production `PutContext` already uses the persisted `current.Version` for conditional updates, so no production behavior change was required;
+- preserved transaction persistence as the authoritative transaction state and kept operational/audit evidence non-authoritative.
+
+### Verification
+
+- test hardening commit: `b67780b03418d0df58f6e2512ff58cc3cf3ffd46`;
+- follow-up compile-fix commit: `088b9433fed28b03c9a9a492fe8dfb7c2a161452`;
+- CI #932 / run `36209808482`: **GREEN** for exact HEAD `088b9433fed28b03c9a9a492fe8dfb7c2a161452`;
+- CI jobs `test`: success;
+- CI jobs `race`: success;
+- CI `test` job `vet`: success.
+
+### Safety Boundary
+
+- sequential version advancement protects transaction persistence consistency only;
+- optimistic version conflicts cannot authorize provider retry, failover, resubmission, ledger mutation, treasury movement, or provider funding;
+- terminal transaction state remains authoritative across restart and stale-writer attempts.
+
+### Next Milestone
+
+1. continue auditing restart recovery with independently constructed service instances and durable version boundaries;
+2. preserve the invariant that audit or operational evidence cannot authorize retry, failover, resubmission, ledger mutation, treasury movement, or provider funding.
