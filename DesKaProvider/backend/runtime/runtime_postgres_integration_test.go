@@ -1690,10 +1690,10 @@ func TestServiceRunCancellationPreservesCatalogShutdownCompletionAndDedicatedPos
 			}
 			return errors.Join(shutdownErr, workerRollbackErr)
 		},
-		catalogShutdown: func() error {
-			service.catalogLifecycle.Shutdown()
-			return catalogShutdownErr
-		},
+	}
+	service.catalogShutdown = func() error {
+		service.catalogLifecycle.Shutdown()
+		return catalogShutdownErr
 	}
 
 	runCtx, cancel := context.WithCancel(ctx)
