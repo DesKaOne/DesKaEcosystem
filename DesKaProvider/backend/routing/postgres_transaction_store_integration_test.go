@@ -113,11 +113,22 @@ func TestPostgresTransactionStoreIntegration(t *testing.T) {
 		t.Fatalf("insert pending transaction: %v", err)
 	}
 
-	// search_path is session-local; keep this pool on one connection for the atomic transition race.
-	db.SetMaxOpenConns(1)
-	db.SetMaxIdleConns(1)
+	// search_path is session-local. Pin a dedicated database session for the
+	// concurrent atomic transition so both workers address the same schema.
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatalf("pin postgres connection: %v", err)
+	}
+	defer conn.Close()
+	if _, err := conn.ExecContext(ctx, "SET search_path TO public"); err != nil {
+		t.Fatalf("set pinned search path: %v", err)
+	}
+	pinnedStore, err := NewPostgresTransactionStore(conn)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	current, ok := store.Get(pending.Request.ReferenceID)
+	current, ok := pinnedStore.Get(pending.Request.ReferenceID)
 	if !ok {
 		t.Fatal("pending transaction was not persisted")
 	}
@@ -138,7 +149,7 @@ func TestPostgresTransactionStoreIntegration(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			results <- store.PutIfCurrent(pending.Request.ReferenceID, pending, success)
+			results <- pinnedStore.PutIfCurrent(pending.Request.ReferenceID, pending, success)
 		}()
 	}
 	wg.Wait()
@@ -159,7 +170,7 @@ func TestPostgresTransactionStoreIntegration(t *testing.T) {
 		t.Fatalf("expected one success and one conflict, got success=%d conflict=%d", successCount, conflictCount)
 	}
 
-	terminal, ok := store.Get(pending.Request.ReferenceID)
+	terminal, ok := pinnedStore.Get(pending.Request.ReferenceID)
 	if !ok {
 		t.Fatal("terminal transaction disappeared after concurrent transition")
 	}
