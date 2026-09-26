@@ -66,7 +66,7 @@ func TestValidatorRuntimeAdvancesRoundWithSignedTimeoutEvidence(t *testing.T) {
 }
 
 func TestValidatorRuntimeRejectsInsufficientTimeoutEvidenceWithoutMutation(t *testing.T) {
-	runtime, state, validators, power := runtimeFixture(t)
+	runtime, state, _, _ := runtimeFixture(t)
 	signer, publicKey := newTimeoutTestSigner(t)
 	resolver := timeoutRuntimeAuthorityResolver{keys: map[string]ed25519.PublicKey{
 		"validator-a": publicKey,
@@ -172,7 +172,7 @@ func TestValidatorRuntimeRejectsTimeoutLockConflictWithoutMutation(t *testing.T)
 
 
 func TestValidatorRuntimeAdoptsHigherTimeoutLockRound(t *testing.T) {
-	runtime, state, _, _ := runtimeFixture(t)
+	runtime, state, validators, power := runtimeFixture(t)
 	state.Round = 2
 	runtime.state.Round = 2
 	runtime.lockedProposal = []byte("locked-proposal")
