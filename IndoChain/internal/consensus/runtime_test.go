@@ -184,7 +184,7 @@ func TestValidatorRuntimeRejectsConflictingProposalAfterRoundChange(t *testing.T
 	if got := runtime.State(); got.Round != 1 || got.Phase != PhaseProposal {
 		t.Fatalf("runtime changed after conflicting proposal: round=%d phase=%v", got.Round, got.Phase)
 	}
-	if runtime.proposal != nil || len(runtime.votes.Votes) != 0 {
+	if runtime.proposal != nil || len(runtime.prevotes.Votes) != 0 {
 		t.Fatal("conflicting proposal mutated round-local state")
 	}
 }
