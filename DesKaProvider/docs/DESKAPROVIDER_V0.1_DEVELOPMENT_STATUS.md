@@ -6087,6 +6087,7 @@ Completed:
 Completed:
 
 - added real-PostgreSQL integration coverage for concurrent audit appends sharing the exact same `created_at` timestamp;
+- corrected the integration harness after CI exposed a PostgreSQL session-scoping race: each concurrent worker now pins its own connection and sets the isolated `search_path` before appending, while verification queries use the schema-qualified table;
 - verified all concurrent append operations persist successfully without collapsing distinct audit evidence;
 - verified persisted rows are read using the existing `created_at, audit_id` ordering and every concurrently written event remains uniquely represented;
 - confirmed concurrent audit ordering is deterministic at the persisted-row level without making audit order an input to transaction execution authority;
@@ -6102,7 +6103,7 @@ Completed:
 
 ### Verification
 
-- test implementation commit: `d4e03a00443654b66f71b954276d07031199f0d5`;
+- test implementation commits: `d4e03a00443654b66f71b954276d07031199f0d5`, `9a2da42182b5dc8ae51b55a8dd915f9386670fce`;
 - exact branch HEAD after this status documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before this milestone is considered closed.
 
 ### Known Limitations
