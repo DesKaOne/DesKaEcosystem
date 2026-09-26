@@ -767,6 +767,27 @@ func TestPostgresTransactionStoreSequentialVersionTransitionIsPreserved(t *testi
 	}
 }
 
+func TestPostgresTransactionStoreContextReadHonorsDeadline(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 0)
+	defer cancel()
+
+	store, err := NewPostgresTransactionStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := store.GetContextE(ctx, "deadline-read"); err == nil {
+		t.Fatal("expected deadline GetContextE to return an error")
+	} else if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected context.DeadlineExceeded from GetContextE, got %v", err)
+	}
+	if _, err := store.AllContextE(ctx); err == nil {
+		t.Fatal("expected deadline AllContextE to return an error")
+	} else if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected context.DeadlineExceeded from AllContextE, got %v", err)
+	}
+}
+
 func TestPostgresTransactionStoreContextReadHonorsCancellation(t *testing.T) {
 	db := postgresIntegrationDB(t)
 	ctx, cancel := context.WithCancel(context.Background())
