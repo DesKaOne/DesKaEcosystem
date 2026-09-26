@@ -1978,8 +1978,8 @@ WHERE reference_id=$6 AND status='pending' AND version=$7`,
 	if err != nil || !ok {
 		t.Fatalf("read transaction before concurrent commits: ok=%v err=%v", ok, err)
 	}
-	if beforeCommit.Version != state.Version || beforeCommit.Execution.Result.Status != provider.StatusPending {
-		t.Fatalf("transaction state must remain pending before writer commit, got %#v", beforeCommit.Execution.Result)
+	if beforeCommit.Version != 1 || beforeCommit.Execution.Result.Status != provider.StatusPending {
+		t.Fatalf("transaction state must remain pending before writer commit, got %#v", beforeCommit)
 	}
 	beforeAudit, err := auditStore.AllContextE(ctx, state.Request.ReferenceID)
 	if err != nil {
