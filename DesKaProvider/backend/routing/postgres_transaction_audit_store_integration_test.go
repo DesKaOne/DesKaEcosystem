@@ -983,6 +983,112 @@ func TestPostgresTransactionAuditStoreRepeatedConcurrentSnapshotsConverge(t *tes
 }
 
 
+func TestPostgresTransactionAuditStoreSnapshotOrderingAfterReaderRecovery(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	schema := "audit_snapshot_recovery_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatalf("create isolated schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
+	})
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set search path: %v", err)
+	}
+	applyPostgresMigration(t, db)
+
+	store, err := NewPostgresTransactionAuditStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	createdAt := time.Now().UTC().Truncate(time.Microsecond)
+	events := []TransactionAuditEvent{
+		{
+			ReferenceID:  "audit-snapshot-recovery-ref",
+			Action:       "SNAPSHOT_ONE",
+			Next:         string(provider.StatusPending),
+			ProviderName: "mock",
+			Message:      "first snapshot event",
+			CreatedAt:    createdAt,
+		},
+		{
+			ReferenceID:  "audit-snapshot-recovery-ref",
+			Action:       "SNAPSHOT_TWO",
+			Previous:     string(provider.StatusPending),
+			Next:         string(provider.StatusSuccess),
+			ProviderName: "mock",
+			Message:      "second snapshot event",
+			CreatedAt:    createdAt,
+		},
+	}
+	for i, event := range events {
+		if err := store.AppendContext(ctx, event); err != nil {
+			t.Fatalf("append event %d: %v", i+1, err)
+		}
+	}
+
+	beforeOne, err := store.AllContextE(ctx, events[0].ReferenceID)
+	if err != nil {
+		t.Fatalf("read first snapshot before recovery: %v", err)
+	}
+	beforeTwo, err := store.AllContextE(ctx, events[0].ReferenceID)
+	if err != nil {
+		t.Fatalf("read second snapshot before recovery: %v", err)
+	}
+	if len(beforeOne) != 2 || len(beforeTwo) != 2 {
+		t.Fatalf("expected two events in pre-recovery snapshots, got first=%d second=%d", len(beforeOne), len(beforeTwo))
+	}
+	for i := range events {
+		if beforeOne[i] != events[i] || beforeTwo[i] != events[i] {
+			t.Fatalf("pre-recovery snapshot ordering changed: first=%#v second=%#v", beforeOne, beforeTwo)
+		}
+	}
+
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, err := sql.Open("pgx", os.Getenv("DESKAPROVIDER_POSTGRES_DSN"))
+	if err != nil {
+		t.Fatalf("reopen postgres: %v", err)
+	}
+	defer reopened.Close()
+	if err := reopened.PingContext(ctx); err != nil {
+		t.Fatalf("ping reopened postgres: %v", err)
+	}
+	if _, err := reopened.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("restore search path after reader recovery: %v", err)
+	}
+	recoveredStore, err := NewPostgresTransactionAuditStore(reopened)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	afterOne, err := recoveredStore.AllContextE(ctx, events[0].ReferenceID)
+	if err != nil {
+		t.Fatalf("read first snapshot after recovery: %v", err)
+	}
+	afterTwo, err := recoveredStore.AllContextE(ctx, events[0].ReferenceID)
+	if err != nil {
+		t.Fatalf("read second snapshot after recovery: %v", err)
+	}
+	if len(afterOne) != 2 || len(afterTwo) != 2 {
+		t.Fatalf("expected two events in recovered snapshots, got first=%d second=%d", len(afterOne), len(afterTwo))
+	}
+	for i := range events {
+		if afterOne[i] != events[i] || afterTwo[i] != events[i] {
+			t.Fatalf("post-recovery snapshot ordering changed: first=%#v second=%#v", afterOne, afterTwo)
+		}
+	}
+	if len(afterOne) != len(beforeOne) || len(afterTwo) != len(beforeTwo) {
+		t.Fatalf("snapshot cardinality changed across reader recovery: before=%d/%d after=%d/%d", len(beforeOne), len(beforeTwo), len(afterOne), len(afterTwo))
+	}
+}
+
+
 func TestPostgresTransactionAuditStoreAppendFailureThenRecovery(t *testing.T) {
 	db := postgresIntegrationDB(t)
 	schema := "audit_append_recovery_" + strconv.FormatInt(time.Now().UnixNano(), 10)
