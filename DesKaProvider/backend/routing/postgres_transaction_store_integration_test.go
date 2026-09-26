@@ -59,7 +59,7 @@ func postgresMigrationSQL(t *testing.T) string {
 	return string(content)
 }
 
-func applyPostgresMigration(t *testing.T, db *sql.DB) {
+func applyPostgresMigration(t *testing.T, db DBTX) {
 	t.Helper()
 
 	sqlText := postgresMigrationSQL(t)
@@ -1809,7 +1809,7 @@ func TestPostgresConcurrentReadTransitionObservesCompleteState(t *testing.T) {
 	if _, err := conn.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
 		t.Fatalf("set isolated search path: %v", err)
 	}
-	applyPostgresMigration(t, db)
+	applyPostgresMigration(t, conn)
 
 	openStore := func(role string) (*sql.Conn, *PostgresTransactionStore) {
 		conn, err := db.Conn(ctx)
