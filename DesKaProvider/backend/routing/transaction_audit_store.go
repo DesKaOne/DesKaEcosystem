@@ -17,6 +17,7 @@ func NewMemoryTransactionAuditStore() *MemoryTransactionAuditStore {
 }
 
 var _ TransactionAuditStore = (*MemoryTransactionAuditStore)(nil)
+var _ ContextReadTransactionAuditStore = (*MemoryTransactionAuditStore)(nil)
 
 func (s *MemoryTransactionAuditStore) Append(event TransactionAuditEvent) error {
 	if event.ReferenceID == "" {
