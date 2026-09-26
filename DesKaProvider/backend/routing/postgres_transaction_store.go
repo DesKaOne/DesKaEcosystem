@@ -54,7 +54,16 @@ func (s *PostgresTransactionStore) PutContext(ctx context.Context, state Transac
  current, ok := s.GetContext(ctx, state.Request.ReferenceID)
  if !ok {
   _, err := s.db.ExecContext(ctx, postgresInsertSQL, state.Request.ReferenceID, state.Request.ProductCode, state.Request.CustomerNo, state.Request.Amount, state.Request.Testing, state.Execution.ProviderName, state.Execution.Result.Status, state.Execution.Result.ProviderCode, state.Execution.Result.Message, state.Execution.Result.SerialNumber, state.Execution.Result.Price, 1)
-  if err != nil { return fmt.Errorf("insert transaction: %w", err) }
+  if err != nil {
+   current, ok = s.GetContext(ctx, state.Request.ReferenceID)
+   if !ok {
+    return fmt.Errorf("insert transaction: %w", err)
+   }
+   if validateTransactionTransition(current, state) == nil && samePurchaseResult(current.Execution.Result, state.Execution.Result) {
+    return nil
+   }
+   return ErrTransactionStateConflict
+  }
   return nil
  }
  if err := validateTransactionTransition(current, state); err != nil { return err }
