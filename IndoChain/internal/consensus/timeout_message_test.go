@@ -40,7 +40,7 @@ func timeoutMessageRules(state RoundState) ValidationRules {
 	return ValidationRules{
 		ProtocolVersion: state.ProtocolVersion,
 		ChainID:         state.ChainID,
-		MaxPayloadSize:  64,
+		MaxPayloadSize:  4096,
 	}
 }
 
