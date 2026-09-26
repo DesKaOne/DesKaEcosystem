@@ -134,7 +134,7 @@ func TestValidatorRuntimeAdoptsTimeoutLockEvidenceAtomically(t *testing.T) {
 		"validator-a": publicA,
 		"validator-b": publicB,
 	}}
-	proof := timeoutLockProof(t, state, validators, power, "locked-proposal")
+	proof := timeoutLockProofAtRound(t, state, validators, power, state.Round, "locked-proposal")
 	locked := []byte("locked-proposal")
 	msgA, err := NewTimeoutMessageWithLockProof(state, []byte("validator-a"), state.Round+1, proof, signerA)
 	if err != nil { t.Fatal(err) }
