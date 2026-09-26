@@ -358,8 +358,8 @@ func TestServiceAuditReadFailureCannotAuthorizeProviderAction(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 0)
 	defer cancel()
 	events, readErr := service.AuditStore.(interface {
-		AllContext(context.Context, string) ([]TransactionAuditEvent, error)
-	}).AllContext(ctx, req.ReferenceID)
+		AllContextE(context.Context, string) ([]TransactionAuditEvent, error)
+	}).AllContextE(ctx, req.ReferenceID)
 	if !errors.Is(readErr, auditErr) {
 		t.Fatalf("expected audit read deadline error to remain observable, got %v", readErr)
 	}
@@ -385,7 +385,7 @@ type auditReadFailureStore struct {
 
 func (s *auditReadFailureStore) Append(TransactionAuditEvent) error { return s.err }
 func (s *auditReadFailureStore) All(string) []TransactionAuditEvent { return nil }
-func (s *auditReadFailureStore) AllContext(context.Context, string) ([]TransactionAuditEvent, error) {
+func (s *auditReadFailureStore) AllContextE(context.Context, string) ([]TransactionAuditEvent, error) {
 	return nil, s.err
 }
 
