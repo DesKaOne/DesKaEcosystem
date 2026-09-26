@@ -122,7 +122,7 @@ func TestValidatorRuntimeRejectsVoteConflictingWithLockedProposal(t *testing.T) 
 		t.Fatalf("expected precommit after locking proposal, got %v", runtime.State().Phase)
 	}
 
-	err := runtime.AddVote(runtimeMessage(state, "validator-c", MessageTypePrevote, "conflicting-block"))
+	err := runtime.AddVote(runtimeMessage(state, "validator-c", MessageTypePrecommit, "conflicting-block"))
 	if !errors.Is(err, ErrConflictingLockedProposal) {
 		t.Fatalf("expected locked-proposal conflict, got %v", err)
 	}
@@ -200,6 +200,8 @@ func TestValidatorRuntimeRejectsRoundChangeAfterFinalization(t *testing.T) {
 	if err := runtime.AddVote(runtimeMessage(state, "validator-b", MessageTypePrevote, "block-8")); err != nil {
 		t.Fatal(err)
 	}
+	if err := runtime.AddVote(runtimeMessage(runtime.State(), "validator-a", MessageTypePrecommit, "block-8")); err != nil { t.Fatal(err) }
+	if err := runtime.AddVote(runtimeMessage(runtime.State(), "validator-b", MessageTypePrecommit, "block-8")); err != nil { t.Fatal(err) }
 	if _, err := runtime.FinalizeProposal(); err != nil {
 		t.Fatal(err)
 	}
@@ -282,6 +284,8 @@ func TestValidatorRuntimeExposesClonedFinalityCertificate(t *testing.T) {
 	if err := runtime.AcceptProposal(runtimeMessage(state, "validator-a", MessageTypeProposal, "block-8")); err != nil { t.Fatal(err) }
 	if err := runtime.AddVote(runtimeMessage(state, "validator-a", MessageTypePrevote, "block-8")); err != nil { t.Fatal(err) }
 	if err := runtime.AddVote(runtimeMessage(state, "validator-b", MessageTypePrevote, "block-8")); err != nil { t.Fatal(err) }
+	if err := runtime.AddVote(runtimeMessage(runtime.State(), "validator-a", MessageTypePrecommit, "block-8")); err != nil { t.Fatal(err) }
+	if err := runtime.AddVote(runtimeMessage(runtime.State(), "validator-b", MessageTypePrecommit, "block-8")); err != nil { t.Fatal(err) }
 	if _, err := runtime.FinalizeProposal(); err != nil { t.Fatal(err) }
 	certificate, err := runtime.FinalizedCertificate(); if err != nil { t.Fatal(err) }
 	certificate.Payload[0] = 'X'
