@@ -2517,3 +2517,93 @@ func TestPostgresConcurrentReadDuringAtomicTransitionSeesCompleteState(t *testin
 		t.Fatalf("expected committed complete success state, got %#v", final.Execution.Result)
 	}
 }
+
+
+func TestPostgresPersistenceErrorPropagationThroughReconcileBoundary(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	schema := "persistence_error_reconcile_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatalf("create isolated schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
+	})
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set search path: %v", err)
+	}
+	applyPostgresMigration(t, db)
+
+	store, err := NewPostgresTransactionStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewServiceWithStoreContext(ctx, newTestRouter(t), NewMemoryTransactionStore())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := PurchaseRequest{
+		ProductCode: "pln20",
+		CustomerNo:  "08123456789",
+		ReferenceID: "postgres-reconcile-persistence-error",
+		Amount:      20000,
+	}
+	if _, err := service.Purchase(ctx, req); err != nil {
+		t.Fatalf("seed purchase: %v", err)
+	}
+
+	if err := db.Close(); err != nil {
+		t.Fatalf("close postgres to simulate recovery failure: %v", err)
+	}
+	service.Store = store
+
+	result, err := service.Reconcile(context.Background(), req.ReferenceID)
+	if err == nil {
+		t.Fatal("expected persistence error from reconciliation")
+	}
+	if result != (PurchaseExecution{}) {
+		t.Fatalf("persistence failure must not fabricate reconciliation result: %#v", result)
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("closed PostgreSQL must remain a persistence error after service wrapping: %v", err)
+	}
+	if !strings.Contains(err.Error(), "reload transaction for reconciliation") {
+		t.Fatalf("expected reconciliation persistence boundary in error, got %v", err)
+	}
+
+	providerValue, err := service.Router.Registry.Get("mock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mock, ok := providerValue.(*Mock.Provider)
+	if !ok {
+		t.Fatalf("expected mock provider, got %T", providerValue)
+	}
+	if got := mock.PurchaseCount(req.ReferenceID); got != 1 {
+		t.Fatalf("reconciliation persistence failure must not resubmit provider purchase, got %d submissions", got)
+	}
+}
+
+func TestPostgresTransactionStoreWrappedContextErrorPreservesSentinel(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	store, err := NewPostgresTransactionStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = store.GetContextE(ctx, "wrapped-context-error")
+	if err == nil {
+		t.Fatal("expected canceled PostgreSQL read")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("wrapped PostgreSQL read must preserve context.Canceled identity: %v", err)
+	}
+	if !strings.Contains(err.Error(), "get transaction") {
+		t.Fatalf("expected adapter context in wrapped error, got %v", err)
+	}
+}
