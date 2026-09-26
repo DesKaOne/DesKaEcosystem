@@ -15,7 +15,7 @@ var (
 	ErrTimeoutTargetRoundMismatch = errors.New("timeout target round mismatch")
 )
 
-const timeoutPayloadPrefixSize = 12
+const timeoutPayloadPrefixSize = 20
 
 // TimeoutAuthorityResolver resolves the public key used to authenticate a
 // validator's timeout message. The resolver is intentionally external to the
@@ -32,7 +32,7 @@ func NewTimeoutMessage(
 	nextRound uint64,
 	signer crypto.Signer,
 ) (Message, error) {
-	return NewTimeoutMessageWithLock(state, validatorID, nextRound, nil, signer)
+	return NewTimeoutMessageWithLockRound(state, validatorID, nextRound, state.Round, nil, signer)
 }
 
 // NewTimeoutMessageWithLock creates a signed timeout message carrying the
@@ -44,6 +44,18 @@ func NewTimeoutMessageWithLock(
 	lockedProposal []byte,
 	signer crypto.Signer,
 ) (Message, error) {
+	return NewTimeoutMessageWithLockRound(state, validatorID, nextRound, state.Round, lockedProposal, signer)
+}
+
+// NewTimeoutMessageWithLockRound creates signed timeout evidence with an explicit lock round.
+func NewTimeoutMessageWithLockRound(
+	state RoundState,
+	validatorID []byte,
+	nextRound uint64,
+	lockedRound uint64,
+	lockedProposal []byte,
+	signer crypto.Signer,
+) (Message, error) {
 	if err := state.Validate(); err != nil {
 		return Message{}, err
 	}
@@ -51,6 +63,9 @@ func NewTimeoutMessageWithLock(
 		return Message{}, ErrMissingSender
 	}
 	if nextRound <= state.Round {
+		return Message{}, ErrInvalidTimeoutRound
+	}
+	if len(lockedProposal) > 0 && lockedRound > state.Round {
 		return Message{}, ErrInvalidTimeoutRound
 	}
 	if signer == nil {
@@ -65,7 +80,7 @@ func NewTimeoutMessageWithLock(
 		Round:           state.Round,
 		Sender:          append([]byte(nil), validatorID...),
 		Type:            MessageTypeTimeout,
-		Payload:         encodeTimeoutEvidence(nextRound, lockedProposal),
+		Payload:         encodeTimeoutEvidenceWithRound(nextRound, lockedRound, lockedProposal),
 	}
 	signed, err := msg.Sign(signer)
 	if err != nil {
@@ -76,18 +91,24 @@ func NewTimeoutMessageWithLock(
 
 // TimeoutTargetRound decodes the target round from the canonical timeout payload.
 func TimeoutTargetRound(msg Message) (uint64, error) {
-	nextRound, _, err := decodeTimeoutEvidence(msg)
+	nextRound, _, _, err := decodeTimeoutEvidence(msg)
 	return nextRound, err
 }
 
 // TimeoutLockedProposal returns a defensive copy of the lock context carried
 // by a signed timeout message. An empty result means the sender carried no lock.
 func TimeoutLockedProposal(msg Message) ([]byte, error) {
-	_, lockedProposal, err := decodeTimeoutEvidence(msg)
+	_, _, lockedProposal, err := decodeTimeoutEvidence(msg)
 	if err != nil {
 		return nil, err
 	}
 	return append([]byte(nil), lockedProposal...), nil
+}
+
+// TimeoutLockedRound returns the round in which the carried lock was formed.
+func TimeoutLockedRound(msg Message) (uint64, error) {
+	_, lockedRound, _, err := decodeTimeoutEvidence(msg)
+	return lockedRound, err
 }
 
 // ValidateTimeoutMessage validates structure, exact consensus context, sender
@@ -153,12 +174,15 @@ func NewTimeoutCertificateFromMessages(
 
 	var nextRound uint64
 	var lockedProposal []byte
+	var lockedRound uint64
 	senders := make([][]byte, 0, len(messages))
 	for i, msg := range messages {
 		target, err := ValidateTimeoutMessage(msg, state, validators, rules, resolver)
 		if err != nil {
 			return TimeoutCertificate{}, fmt.Errorf("timeout message %d: %w", i, err)
 		}
+		messageLockRound, err := TimeoutLockedRound(msg)
+		if err != nil { return TimeoutCertificate{}, fmt.Errorf("timeout message %d: %w", i, err) }
 		messageLock, err := TimeoutLockedProposal(msg)
 		if err != nil {
 			return TimeoutCertificate{}, fmt.Errorf("timeout message %d: %w", i, err)
@@ -166,9 +190,10 @@ func NewTimeoutCertificateFromMessages(
 		if i == 0 {
 			nextRound = target
 			lockedProposal = append([]byte(nil), messageLock...)
+			lockedRound = messageLockRound
 		} else if target != nextRound {
 			return TimeoutCertificate{}, ErrTimeoutTargetRoundMismatch
-		} else if !bytes.Equal(messageLock, lockedProposal) {
+		} else if !bytes.Equal(messageLock, lockedProposal) || messageLockRound != lockedRound {
 			return TimeoutCertificate{}, ErrConflictingTimeoutLock
 		}
 		senders = append(senders, append([]byte(nil), msg.Sender...))
@@ -180,30 +205,35 @@ func NewTimeoutCertificateFromMessages(
 		votingPower,
 		threshold,
 		nextRound,
+		lockedRound,
 		senders,
 		lockedProposal,
 	)
 }
 
-func encodeTimeoutEvidence(nextRound uint64, lockedProposal []byte) []byte {
+func encodeTimeoutEvidence(nextRound uint64, lockedProposal []byte) []byte { return encodeTimeoutEvidenceWithRound(nextRound, 0, lockedProposal) }
+
+func encodeTimeoutEvidenceWithRound(nextRound uint64, lockedRound uint64, lockedProposal []byte) []byte {
 	if uint64(len(lockedProposal)) > uint64(^uint32(0)) {
 		return nil
 	}
 	payload := make([]byte, timeoutPayloadPrefixSize+len(lockedProposal))
 	binary.BigEndian.PutUint64(payload[:8], nextRound)
-	binary.BigEndian.PutUint32(payload[8:12], uint32(len(lockedProposal)))
-	copy(payload[12:], lockedProposal)
+	binary.BigEndian.PutUint64(payload[8:16], lockedRound)
+	binary.BigEndian.PutUint32(payload[16:20], uint32(len(lockedProposal)))
+	copy(payload[20:], lockedProposal)
 	return payload
 }
 
-func decodeTimeoutEvidence(msg Message) (uint64, []byte, error) {
+func decodeTimeoutEvidence(msg Message) (uint64, uint64, []byte, error) {
 	if msg.Type != MessageTypeTimeout || len(msg.Payload) < timeoutPayloadPrefixSize {
-		return 0, nil, ErrInvalidTimeoutMessage
+		return 0, 0, nil, ErrInvalidTimeoutMessage
 	}
 	nextRound := binary.BigEndian.Uint64(msg.Payload[:8])
-	lockLen := binary.BigEndian.Uint32(msg.Payload[8:12])
+	lockedRound := binary.BigEndian.Uint64(msg.Payload[8:16])
+	lockLen := binary.BigEndian.Uint32(msg.Payload[16:20])
 	if uint64(timeoutPayloadPrefixSize)+uint64(lockLen) != uint64(len(msg.Payload)) {
-		return 0, nil, ErrInvalidTimeoutMessage
+		return 0, 0, nil, ErrInvalidTimeoutMessage
 	}
-	return nextRound, append([]byte(nil), msg.Payload[timeoutPayloadPrefixSize:]...), nil
+	return nextRound, lockedRound, append([]byte(nil), msg.Payload[timeoutPayloadPrefixSize:]...), nil
 }
