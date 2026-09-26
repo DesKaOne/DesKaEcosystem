@@ -139,12 +139,12 @@ func TestPostgresTransactionStoreIntegration(t *testing.T) {
 	if _, err := conn.ExecContext(ctx, "SET search_path TO public"); err != nil {
 		t.Fatalf("set pinned search path: %v", err)
 	}
-	pinnedStore, err := NewPostgresTransactionStore(conn)
+	store, err := NewPostgresTransactionStore(conn)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	current, ok := pinnedStore.Get(pending.Request.ReferenceID)
+	current, ok := store.Get(pending.Request.ReferenceID)
 	if !ok {
 		t.Fatal("pending transaction was not persisted")
 	}
@@ -165,7 +165,7 @@ func TestPostgresTransactionStoreIntegration(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			results <- pinnedStore.PutIfCurrent(current.Request.ReferenceID, current, success)
+			results <- store.PutIfCurrent(current.Request.ReferenceID, current, success)
 		}()
 	}
 	wg.Wait()
