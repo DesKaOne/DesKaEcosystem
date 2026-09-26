@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
 	Mock "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/Mock"
@@ -850,7 +851,7 @@ func (p *blockingStatusProvider) GetStatus(ctx context.Context, req provider.Sta
 		close(p.statusStarted)
 	}
 	<-ctx.Done()
-	return provider.PurchaseResult{}, ctx.Err()
+	return provider.PurchaseResult{ReferenceID: req.ReferenceID, CustomerNo: req.CustomerNo, ProductCode: req.ProductCode, Status: provider.StatusPending}, ctx.Err()
 }
 
 func TestServiceRestartReconcilesPendingWithoutResubmission(t *testing.T) {
