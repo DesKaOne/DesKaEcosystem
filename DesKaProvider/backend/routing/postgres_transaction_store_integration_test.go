@@ -709,7 +709,7 @@ func TestPostgresTransactionStoreSequentialVersionTransitionIsPreserved(t *testi
 		Request: req,
 		Execution: PurchaseExecution{
 			ProviderName: "mock",
-			Result: PurchaseResult{
+			Result: provider.PurchaseResult{
 				Status:       provider.StatusPending,
 				ProviderCode: "00",
 				Message:      "pending",
