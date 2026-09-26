@@ -2528,6 +2528,177 @@ func TestPostgresTransactionAuditStoreCrossDomainReadSurvivesRestart(t *testing.
 }
 
 
+func TestPostgresTransactionAuditStoreCrossDomainReadAfterRestartIsIdempotent(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	schema := "audit_tx_restart_idempotency_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatalf("create isolated schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
+	})
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set search path: %v", err)
+	}
+	applyPostgresMigration(t, db)
+
+	writerConn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatalf("open writer connection: %v", err)
+	}
+	defer writerConn.Close()
+	if _, err := writerConn.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set writer search path: %v", err)
+	}
+
+	auditStore, err := NewPostgresTransactionAuditStore(writerConn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transactionStore, err := NewPostgresTransactionStore(writerConn)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	request := PurchaseRequest{
+		ProductCode: "pln20",
+		CustomerNo:  "08123456789",
+		ReferenceID: "cross-domain-restart-idempotency-ref",
+		Amount:      20000,
+	}
+	createdAt := time.Now().UTC().Truncate(time.Microsecond)
+	first := TransactionAuditEvent{
+		ReferenceID:  request.ReferenceID,
+		Action:       "PURCHASE_PENDING",
+		Next:         string(provider.StatusPending),
+		ProviderName: "mock",
+		Message:      "pending",
+		CreatedAt:    createdAt,
+	}
+	second := TransactionAuditEvent{
+		ReferenceID:  request.ReferenceID,
+		Action:       "PURCHASE_RESULT",
+		Previous:     string(provider.StatusPending),
+		Next:         string(provider.StatusSuccess),
+		ProviderName: "mock",
+		Message:      "terminal-looking evidence only",
+		CreatedAt:    createdAt,
+	}
+	for _, event := range []TransactionAuditEvent{first, second} {
+		if err := auditStore.AppendContext(ctx, event); err != nil {
+			t.Fatalf("append audit event %s: %v", event.Action, err)
+		}
+	}
+
+	state := TransactionState{
+		Request: request,
+		Execution: PurchaseExecution{
+			ProviderName: "mock",
+			Result: provider.PurchaseResult{
+				ReferenceID: request.ReferenceID,
+				CustomerNo:  request.CustomerNo,
+				ProductCode: request.ProductCode,
+				Status:      provider.StatusPending,
+			},
+		},
+		Version: 1,
+	}
+	if err := transactionStore.PutContext(ctx, state); err != nil {
+		t.Fatalf("persist pending transaction state: %v", err)
+	}
+
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, err := sql.Open("pgx", os.Getenv("DESKAPROVIDER_POSTGRES_DSN"))
+	if err != nil {
+		t.Fatalf("reopen postgres: %v", err)
+	}
+	defer reopened.Close()
+	if err := reopened.PingContext(ctx); err != nil {
+		t.Fatalf("ping reopened postgres: %v", err)
+	}
+
+	readOnce := func() ([]TransactionAuditEvent, TransactionState, error) {
+		auditConn, err := reopened.Conn(ctx)
+		if err != nil {
+			return nil, TransactionState{}, err
+		}
+		defer auditConn.Close()
+		if _, err := auditConn.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+			return nil, TransactionState{}, err
+		}
+		auditReader, err := NewPostgresTransactionAuditStore(auditConn)
+		if err != nil {
+			return nil, TransactionState{}, err
+		}
+
+		transactionConn, err := reopened.Conn(ctx)
+		if err != nil {
+			return nil, TransactionState{}, err
+		}
+		defer transactionConn.Close()
+		if _, err := transactionConn.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+			return nil, TransactionState{}, err
+		}
+		transactionReader, err := NewPostgresTransactionStore(transactionConn)
+		if err != nil {
+			return nil, TransactionState{}, err
+		}
+
+		auditEvents, err := auditReader.AllContextE(ctx, request.ReferenceID)
+		if err != nil {
+			return nil, TransactionState{}, err
+		}
+		transactionState, ok, err := transactionReader.GetContextE(ctx, request.ReferenceID)
+		if err != nil {
+			return nil, TransactionState{}, err
+		}
+		if !ok {
+			return nil, TransactionState{}, errors.New("transaction state missing after restart")
+		}
+		return auditEvents, transactionState, nil
+	}
+
+	beforeAudit, beforeTransaction, err := readOnce()
+	if err != nil {
+		t.Fatalf("first restart read: %v", err)
+	}
+	afterAudit, afterTransaction, err := readOnce()
+	if err != nil {
+		t.Fatalf("second restart read: %v", err)
+	}
+
+	if len(beforeAudit) != 2 || beforeAudit[0] != first || beforeAudit[1] != second {
+		t.Fatalf("unexpected first restart audit read: %#v", beforeAudit)
+	}
+	if len(afterAudit) != len(beforeAudit) || afterAudit[0] != beforeAudit[0] || afterAudit[1] != beforeAudit[1] {
+		t.Fatalf("repeated restart audit read changed history: before=%#v after=%#v", beforeAudit, afterAudit)
+	}
+	if beforeTransaction != afterTransaction {
+		t.Fatalf("repeated restart transaction read changed durable state: before=%#v after=%#v", beforeTransaction, afterTransaction)
+	}
+	if beforeTransaction.Execution.Result.Status != provider.StatusPending {
+		t.Fatalf("terminal-looking audit history must not upgrade transaction state, got %q", beforeTransaction.Execution.Result.Status)
+	}
+
+	var auditCount, transactionCount int
+	if err := reopened.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+schema+".provider_transaction_audit WHERE reference_id=$1", request.ReferenceID).Scan(&auditCount); err != nil {
+		t.Fatalf("count audit rows after repeated reads: %v", err)
+	}
+	if err := reopened.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+schema+".provider_transactions WHERE reference_id=$1", request.ReferenceID).Scan(&transactionCount); err != nil {
+		t.Fatalf("count transaction rows after repeated reads: %v", err)
+	}
+	if auditCount != 2 || transactionCount != 1 {
+		t.Fatalf("repeated restart reads must not mutate persistence: audit=%d transaction=%d", auditCount, transactionCount)
+	}
+}
+
+
 func TestPostgresTransactionAuditStoreAppendFailureThenRecovery(t *testing.T) {
 	db := postgresIntegrationDB(t)
 	schema := "audit_append_recovery_" + strconv.FormatInt(time.Now().UnixNano(), 10)
