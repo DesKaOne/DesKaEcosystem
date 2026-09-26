@@ -5497,3 +5497,40 @@ Completed:
 ### Next milestone
 
 **#123 — PostgreSQL Mutation Failure Coverage Extension**: evaluate the remaining PutContext mutation boundaries using a repository-compatible deterministic strategy, without weakening the database abstraction or introducing production behavior changes.
+
+
+### 46. Milestone Update — PostgreSQL Mutation Failure Coverage Extension
+
+**Date:** 2026-09-26
+
+Completed:
+
+- added an error-aware ContextReadTransactionStore test fixture with an injectable PutContext persistence error;
+- verified service purchase propagates the underlying persistence error when pending-state persistence fails;
+- verified the persistence failure blocks the external provider submission;
+- retained the existing durable-pending safety gate and single-submission behavior;
+- no production routing, provider failover, retry, resubmission, ledger mutation, treasury movement, or provider-funding authorization was introduced.
+
+### Verification
+
+- test implementation commit: 35efe39e48f8a575b3b89dccef5864403c2ff7e0;
+- CI #1242 / run 36236813319: GREEN for exact HEAD;
+- CI #1243 / run 36236816686: GREEN for exact HEAD;
+- CI jobs test and race: success;
+- test job Vet: success.
+
+### Safety Boundary
+
+- persistence mutation failures remain observable persistence errors;
+- pending-state write failure prevents provider submission;
+- no persistence error path authorizes a second provider submission or financial mutation;
+- transaction persistence remains authoritative, while audit and operational evidence remain non-authoritative.
+
+### Known Limitations
+
+- local full Go/PostgreSQL verification remains unavailable in this runtime because external Git/network access is unavailable;
+- live external-provider credential validation remains environment-gated.
+
+### Next milestone
+
+**#124 — PostgreSQL Mutation Error Coverage Completion**: cover remaining concrete PutContext PostgreSQL mutation branches only where the repository's DB abstraction permits deterministic verification, preserving the same safety boundaries.
