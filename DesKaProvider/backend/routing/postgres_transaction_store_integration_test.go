@@ -212,6 +212,24 @@ func TestPostgresTransactionStoreTerminalRecoveryIsIdempotentAfterRestart(t *tes
 		t.Fatal(err)
 	}
 
+	// Keep the test's database connection pinned to the isolated schema so
+	// concurrent services cannot drift across pooled PostgreSQL connections.
+	pinnedDB, err := sql.Open("pgx", os.Getenv("DESKAPROVIDER_POSTGRES_DSN"))
+	if err != nil {
+		t.Fatalf("open pinned postgres connection: %v", err)
+	}
+	t.Cleanup(func() { _ = pinnedDB.Close() })
+	if err := pinnedDB.PingContext(ctx); err != nil {
+		t.Fatalf("ping pinned postgres: %v", err)
+	}
+	if _, err := pinnedDB.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set pinned search path: %v", err)
+	}
+	pinnedStore, err := NewPostgresTransactionStore(pinnedDB)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	registry := provider.NewRegistry()
 	mock := Mock.New(Mock.Config{
 		Products:       []provider.Product{{Code: "pln20", Name: "PLN 20"}},
@@ -399,7 +417,7 @@ func TestPostgresTransactionStoreFailedRecoveryIsIdempotentAfterRestart(t *testi
 		t.Fatalf("terminal webhook must not resubmit purchase, got %d submissions", got)
 	}
 
-	durable, ok := store.Get(req.ReferenceID)
+	durable, ok := pinnedStore.Get(req.ReferenceID)
 	if !ok {
 		t.Fatal("failed terminal transaction disappeared after restart")
 	}
@@ -573,7 +591,7 @@ func TestPostgresConcurrentServiceReconcileConvergesWithoutResubmission(t *testi
 		ReferenceID: postgresIntegrationReference(),
 		Amount:      20000,
 	}
-	initial, err := NewServiceWithStoreContext(ctx, router, store)
+	initial, err := NewServiceWithStoreContext(ctx, router, pinnedStore)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -586,11 +604,11 @@ func TestPostgresConcurrentServiceReconcileConvergesWithoutResubmission(t *testi
 
 	mock.SetTransactionStatus(req.ReferenceID, provider.StatusSuccess, "success")
 
-	first, err := NewServiceWithStoreContext(ctx, router, store)
+	first, err := NewServiceWithStoreContext(ctx, router, pinnedStore)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := NewServiceWithStoreContext(ctx, router, store)
+	second, err := NewServiceWithStoreContext(ctx, router, pinnedStore)
 	if err != nil {
 		t.Fatal(err)
 	}
