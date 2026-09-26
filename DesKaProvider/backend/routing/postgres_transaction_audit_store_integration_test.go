@@ -4126,6 +4126,7 @@ func TestPostgresCrossDomainRecoveryFailureIsolationTransactionAuthority(t *test
 	if err := transactionStore.PutContext(ctx, pending); err != nil {
 		t.Fatalf("persist durable transaction state: %v", err)
 	}
+	pending.Version = 1
 	event := TransactionAuditEvent{
 		ReferenceID:  req.ReferenceID,
 		Action:       "PURCHASE_PENDING",
