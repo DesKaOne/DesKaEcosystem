@@ -115,6 +115,44 @@ func (r *ValidatorRuntime) AdvanceRound(next uint64) error {
 	return nil
 }
 
+// AdvanceRoundWithTimeoutEvidence authenticates signed timeout messages, builds
+// deterministic timeout evidence, and only then advances the runtime to the
+// certificate's target round. Failed evidence validation leaves the runtime
+// unchanged.
+func (r *ValidatorRuntime) AdvanceRoundWithTimeoutEvidence(
+	messages []Message,
+	resolver TimeoutAuthorityResolver,
+) (TimeoutCertificate, error) {
+	if r == nil {
+		return TimeoutCertificate{}, ErrInvalidConsensusRuntime
+	}
+	certificate, err := NewTimeoutCertificateFromMessages(
+		r.state,
+		r.validators,
+		r.votingPower,
+		r.threshold,
+		messages,
+		r.rules,
+		resolver,
+	)
+	if err != nil {
+		return TimeoutCertificate{}, err
+	}
+	if err := ValidateTimeoutCertificate(
+		certificate,
+		r.state,
+		r.validators,
+		r.votingPower,
+	); err != nil {
+		return TimeoutCertificate{}, err
+	}
+	if err := r.AdvanceRound(certificate.NextRound); err != nil {
+		return TimeoutCertificate{}, err
+	}
+	return certificate, nil
+}
+
+
 func (r *ValidatorRuntime) ExpectedProposer() ([]byte, error) {
 	if r == nil || r.proposer == nil {
 		return nil, ErrInvalidConsensusRuntime
