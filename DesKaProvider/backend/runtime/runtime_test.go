@@ -1118,7 +1118,12 @@ func TestServiceRunShutdownCompletionOrderingAndRepeatedClose(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service.catalogSync = &catalog.SyncService{}
+	catalogStore := catalog.NewMemoryStore()
+	catalogSync, err := catalog.NewSyncService(registry, catalogStore)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.catalogSync = catalogSync
 	service.catalogLifecycle = newCatalogWorkerLifecycle()
 
 	order := make([]string, 0, 3)
