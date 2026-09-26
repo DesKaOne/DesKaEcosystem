@@ -4821,3 +4821,33 @@ Completed:
 ### Next Milestone
 
 **#126 — PostgreSQL Concurrent Read/Transition Observation Atomicity:** verify concurrent durable reads observe only complete transaction states while an atomic transition commits, without exposing mixed fields or authorizing side effects.
+
+### 49. Milestone Update — PostgreSQL Reconciliation Test Isolation & PR-Head CI Validation
+
+**Date:** 2026-09-26
+
+Completed:
+
+- repaired PostgreSQL integration-test session/schema scoping so unrelated tests no longer inherit the dedicated concurrent-transition connection;
+- preserved isolated schema usage only where the concurrency test requires deterministic session-local routing;
+- changed pull-request CI checkout to validate the exact PR head SHA rather than a stale synthetic merge ref;
+- verified the exact branch HEAD now executes the repository's standard and race suites successfully;
+- preserved transaction persistence as the authoritative transaction state while operational/audit evidence remains non-authoritative.
+
+### Verification
+
+- implementation HEAD: `2f71c4548c03a97d47b51bd6fb69e6908a169f8f`;
+- CI #1059 / run `36217437808`: **GREEN**;
+- CI jobs `test`: success;
+- CI jobs `race`: success;
+- CI job `test` completed `vet`: success.
+
+### Safety Boundary
+
+- test-session isolation and CI checkout correctness are validation/infrastructure concerns only;
+- concurrent reconciliation still converges on the durable transaction result without resubmitting the provider purchase;
+- no retry, failover, resubmission, ledger mutation, treasury movement, or provider funding authorization is introduced.
+
+### Next Milestone
+
+**#127 — PostgreSQL Concurrent Read/Transition Observation Atomicity:** verify concurrent durable reads observe only complete transaction states while an atomic transition commits, without exposing mixed fields or authorizing side effects.
