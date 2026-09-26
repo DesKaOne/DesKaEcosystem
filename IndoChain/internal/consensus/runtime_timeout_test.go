@@ -66,7 +66,7 @@ func TestValidatorRuntimeAdvancesRoundWithSignedTimeoutEvidence(t *testing.T) {
 }
 
 func TestValidatorRuntimeRejectsInsufficientTimeoutEvidenceWithoutMutation(t *testing.T) {
-	runtime, state, _, _ := runtimeFixture(t)
+	runtime, state, validators, power := runtimeFixture(t)
 	signer, publicKey := newTimeoutTestSigner(t)
 	resolver := timeoutRuntimeAuthorityResolver{keys: map[string]ed25519.PublicKey{
 		"validator-a": publicKey,
@@ -88,7 +88,7 @@ func TestValidatorRuntimeRejectsInsufficientTimeoutEvidenceWithoutMutation(t *te
 }
 
 func TestValidatorRuntimeRejectsTamperedTimeoutEvidenceWithoutMutation(t *testing.T) {
-	runtime, state, _, _ := runtimeFixture(t)
+	runtime, state, validators, power := runtimeFixture(t)
 	signer, publicKey := newTimeoutTestSigner(t)
 	resolver := timeoutRuntimeAuthorityResolver{keys: map[string]ed25519.PublicKey{
 		"validator-a": publicKey,
@@ -127,14 +127,14 @@ func timeoutLockProofAtRound(t *testing.T, state RoundState, validators Validato
 }
 
 func TestValidatorRuntimeAdoptsTimeoutLockEvidenceAtomically(t *testing.T) {
-	runtime, state, _, _ := runtimeFixture(t)
+	runtime, state, validators, power := runtimeFixture(t)
 	signerA, publicA := newTimeoutTestSigner(t)
 	signerB, publicB := newTimeoutTestSigner(t)
 	resolver := timeoutRuntimeAuthorityResolver{keys: map[string]ed25519.PublicKey{
 		"validator-a": publicA,
 		"validator-b": publicB,
 	}}
-	proof := timeoutLockProof(t, state, runtime.validators, runtime.votingPower, "locked-proposal")
+	proof := timeoutLockProof(t, state, validators, power, "locked-proposal")
 	locked := []byte("locked-proposal")
 	msgA, err := NewTimeoutMessageWithLockProof(state, []byte("validator-a"), state.Round+1, proof, signerA)
 	if err != nil { t.Fatal(err) }
@@ -148,7 +148,7 @@ func TestValidatorRuntimeAdoptsTimeoutLockEvidenceAtomically(t *testing.T) {
 }
 
 func TestValidatorRuntimeRejectsTimeoutLockConflictWithoutMutation(t *testing.T) {
-	runtime, state, _, _ := runtimeFixture(t)
+	runtime, state, validators, power := runtimeFixture(t)
 	runtime.lockedProposal = []byte("local-lock")
 	signerA, publicA := newTimeoutTestSigner(t)
 	signerB, publicB := newTimeoutTestSigner(t)
@@ -156,7 +156,7 @@ func TestValidatorRuntimeRejectsTimeoutLockConflictWithoutMutation(t *testing.T)
 		"validator-a": publicA,
 		"validator-b": publicB,
 	}}
-	proof := timeoutLockProof(t, state, runtime.validators, runtime.votingPower, "remote-lock")
+	proof := timeoutLockProof(t, state, validators, power, "remote-lock")
 	msgA, err := NewTimeoutMessageWithLockProof(state, []byte("validator-a"), state.Round+1, proof, signerA)
 	if err != nil { t.Fatal(err) }
 	msgB, err := NewTimeoutMessageWithLockProof(state, []byte("validator-b"), state.Round+1, proof, signerB)
@@ -184,7 +184,7 @@ func TestValidatorRuntimeAdoptsHigherTimeoutLockRound(t *testing.T) {
 		"validator-b": publicB,
 	}}
 	lockedRound := state.Round - 1
-	proof := timeoutLockProofAtRound(t, state, runtime.validators, runtime.votingPower, lockedRound, "locked-proposal")
+	proof := timeoutLockProofAtRound(t, state, validators, power, lockedRound, "locked-proposal")
 	msgA, err := NewTimeoutMessageWithLockProof(state, []byte("validator-a"), state.Round+2, proof, signerA)
 	if err != nil { t.Fatal(err) }
 	msgB, err := NewTimeoutMessageWithLockProof(state, []byte("validator-b"), state.Round+2, proof, signerB)
@@ -209,7 +209,7 @@ func TestValidatorRuntimeRejectsLowerTimeoutLockRoundWithoutDowngrade(t *testing
 		"validator-a": publicA,
 		"validator-b": publicB,
 	}}
-	proof := timeoutLockProofAtRound(t, state, runtime.validators, runtime.votingPower, state.Round-2, "locked-proposal")
+	proof := timeoutLockProofAtRound(t, state, validators, power, state.Round-2, "locked-proposal")
 	msgA, err := NewTimeoutMessageWithLockProof(state, []byte("validator-a"), state.Round+2, proof, signerA)
 	if err != nil { t.Fatal(err) }
 	msgB, err := NewTimeoutMessageWithLockProof(state, []byte("validator-b"), state.Round+2, proof, signerB)
