@@ -1,10 +1,12 @@
 package routing
 
 import (
+	"fmt"
 	"context"
 	"database/sql"
 	"errors"
 	"os"
+	"sync"
 	"strconv"
 	"testing"
 	"time"
