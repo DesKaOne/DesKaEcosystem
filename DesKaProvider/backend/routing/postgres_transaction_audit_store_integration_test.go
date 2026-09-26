@@ -2961,6 +2961,120 @@ func TestPostgresAuditTransactionCrossReadCancellation(t *testing.T) {
 	}
 }
 
+func TestPostgresAuditTransactionCrossReadErrorIsolation(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	schema := "audit_transaction_error_isolation_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatalf("create isolated schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
+	})
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set search path: %v", err)
+	}
+	applyPostgresMigration(t, db)
+
+	transactionStore, err := NewPostgresTransactionStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	auditStore, err := NewPostgresTransactionAuditStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	referenceID := "cross-read-error-isolation-ref"
+	state := postgresPendingState()
+	state.Request.ReferenceID = referenceID
+	state.Execution.Result.ReferenceID = referenceID
+	if err := transactionStore.PutContext(ctx, state); err != nil {
+		t.Fatalf("persist transaction fixture: %v", err)
+	}
+	event := TransactionAuditEvent{
+		ReferenceID:  referenceID,
+		Action:       "PURCHASE_PENDING",
+		Next:         string(provider.StatusPending),
+		ProviderName: "mock",
+		Message:      "pending",
+		CreatedAt:    time.Now().UTC().Truncate(time.Microsecond),
+	}
+	if err := auditStore.AppendContext(ctx, event); err != nil {
+		t.Fatalf("persist audit fixture: %v", err)
+	}
+
+	auditConn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatalf("open isolated audit connection: %v", err)
+	}
+	defer auditConn.Close()
+	if _, err := auditConn.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set audit connection search path: %v", err)
+	}
+	if err := auditConn.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	failedAuditStore, err := NewPostgresTransactionAuditStore(auditConn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, auditErr := failedAuditStore.AllContextE(context.Background(), referenceID)
+	if auditErr == nil {
+		t.Fatal("expected closed audit connection read failure")
+	}
+	if errors.Is(auditErr, context.Canceled) || errors.Is(auditErr, context.DeadlineExceeded) {
+		t.Fatalf("closed audit connection failure must remain an ordinary persistence error: %v", auditErr)
+	}
+
+	stateRead, found, txErr := transactionStore.GetContextE(ctx, referenceID)
+	if txErr != nil {
+		t.Fatalf("transaction read must remain independent of audit read failure: %v", txErr)
+	}
+	if !found || stateRead.Execution.Result.Status != provider.StatusPending {
+		t.Fatalf("transaction read lost durable state after audit failure: found=%v state=%#v", found, stateRead)
+	}
+
+	auditEvents, auditReadErr := auditStore.AllContextE(ctx, referenceID)
+	if auditReadErr != nil {
+		t.Fatalf("healthy audit connection should still read durable history: %v", auditReadErr)
+	}
+	if len(auditEvents) != 1 || auditEvents[0] != event {
+		t.Fatalf("healthy audit read changed after isolated failure: %#v", auditEvents)
+	}
+
+	txConn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatalf("open isolated transaction connection: %v", err)
+	}
+	if _, err := txConn.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		txConn.Close()
+		t.Fatalf("set transaction connection search path: %v", err)
+	}
+	if err := txConn.Close(); err != nil {
+		t.Fatal(err)
+	}
+	failedTransactionStore, err := NewPostgresTransactionStore(txConn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, txReadErr := failedTransactionStore.GetContextE(context.Background(), referenceID)
+	if txReadErr == nil {
+		t.Fatal("expected closed transaction connection read failure")
+	}
+	if errors.Is(txReadErr, context.Canceled) || errors.Is(txReadErr, context.DeadlineExceeded) {
+		t.Fatalf("closed transaction connection failure must remain an ordinary persistence error: %v", txReadErr)
+	}
+
+	auditEvents, auditReadErr = auditStore.AllContextE(ctx, referenceID)
+	if auditReadErr != nil || len(auditEvents) != 1 || auditEvents[0] != event {
+		t.Fatalf("audit read must remain independent of transaction read failure: events=%#v err=%v", auditEvents, auditReadErr)
+	}
+}
+
 func TestPostgresTransactionAuditStoreAppendFailureThenRecovery(t *testing.T) {
 	db := postgresIntegrationDB(t)
 	schema := "audit_append_recovery_" + strconv.FormatInt(time.Now().UnixNano(), 10)
