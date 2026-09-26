@@ -6187,3 +6187,41 @@ Completed:
 ### Next Milestone
 
 **#143 — PostgreSQL Audit Read After Repeated Concurrent Commits:** verify readers converge monotonically as multiple committed audit writers finish, preserving every durable event exactly once in deterministic order without affecting transaction authority.
+
+
+### 142. Milestone Update — PostgreSQL Audit Read Visibility After Concurrent Commit
+
+**Date:** 2026-09-26
+
+Completed:
+
+- added real-PostgreSQL integration coverage for an audit reader before and after a concurrent writer commits a staged audit row;
+- verified the reader sees only the previously committed audit event before the concurrent transaction commits;
+- verified the same reader converges to the complete committed audit history after commit, with both same-timestamp events preserved in deterministic `created_at, audit_id` order;
+- corrected the integration test to pin the reader connection and its isolated `search_path`, avoiding `database/sql` connection-pool session scoping from making the test depend on an arbitrary connection;
+- confirmed PostgreSQL transaction visibility prevents partial/uncommitted audit evidence from appearing while allowing committed evidence to become visible without rebuilding or mutating transaction state;
+- no production audit-store implementation change was required;
+- no transaction authority, provider submission authority, retry/failover behavior, ledger mutation, treasury movement, or provider funding behavior was broadened.
+
+### Safety Boundary
+
+- audit visibility before and after concurrent commit remains a persistence/isolation property only;
+- a newly committed audit event does not grant or alter transaction execution authority;
+- audit ordering and visibility cannot authorize provider retry, failover, resubmission, ledger mutation, treasury movement, or provider funding;
+- transaction persistence remains the authoritative transaction-state and idempotency boundary.
+
+### Verification
+
+- initial test implementation commit: `63cff012a21ac8bd70b6e1a310dac8a70eecbae7`;
+- CI exposed a test-harness session-scoping defect; the correction commit is `1406fca46d439447c36e12f6326780922277b2f2`;
+- exact branch HEAD after this status documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before this milestone is considered closed.
+
+### Known Limitations
+
+- the scenario validates one concurrent writer commit against a real PostgreSQL deployment and does not cover every isolation level, replica lag, or distributed database topology;
+- same-timestamp ordering relies on the existing durable `audit_id` tie-breaker;
+- audit remains operational evidence and is not a financial source of truth.
+
+### Next Milestone
+
+**#143 — PostgreSQL Audit Read After Repeated Concurrent Commits:** verify readers converge monotonically as multiple committed audit writers finish, preserving every durable event exactly once in deterministic order without affecting transaction authority.
