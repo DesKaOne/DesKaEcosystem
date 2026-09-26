@@ -1897,6 +1897,59 @@ func TestPostgresConcurrentReadTransitionObservesCompleteState(t *testing.T) {
 	}
 }
 
+
+func TestPostgresPutContextAdvancesVersionAcrossRepeatedTransitions(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	applyPostgresMigration(t, db)
+	if _, err := db.ExecContext(ctx, "TRUNCATE provider_transactions"); err != nil {
+		t.Fatalf("truncate provider transactions: %v", err)
+	}
+
+	store, err := NewPostgresTransactionStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending := postgresPendingState()
+	pending.Request.ReferenceID = postgresIntegrationReference()
+	pending.Execution.Result.ReferenceID = pending.Request.ReferenceID
+	pending.Version = 1
+	if err := store.PutContext(ctx, pending); err != nil {
+		t.Fatalf("insert pending transaction: %v", err)
+	}
+
+	pendingRefresh := pending
+	pendingRefresh.Execution.Result.Message = "still pending"
+	if err := store.PutContext(ctx, pendingRefresh); err != nil {
+		t.Fatalf("refresh pending transaction: %v", err)
+	}
+	current, ok, err := store.GetContextE(ctx, pending.Request.ReferenceID)
+	if err != nil || !ok {
+		t.Fatalf("read refreshed transaction: ok=%v err=%v", ok, err)
+	}
+	if current.Version != 2 || current.Execution.Result.Message != "still pending" {
+		t.Fatalf("expected version 2 pending refresh, got %#v", current)
+	}
+
+	success := current
+	success.Execution.Result.Status = provider.StatusSuccess
+	success.Execution.Result.ProviderCode = "00"
+	success.Execution.Result.Message = "success"
+	success.Execution.Result.SerialNumber = "SN-V3"
+	if err := store.PutContext(ctx, success); err != nil {
+		t.Fatalf("advance transaction from version 2 to terminal state: %v", err)
+	}
+
+	final, ok, err := store.GetContextE(ctx, pending.Request.ReferenceID)
+	if err != nil || !ok {
+		t.Fatalf("read final transaction: ok=%v err=%v", ok, err)
+	}
+	if final.Version != 3 || final.Execution.Result.Status != provider.StatusSuccess || final.Execution.Result.SerialNumber != "SN-V3" {
+		t.Fatalf("expected version 3 success state, got %#v", final)
+	}
+}
+
 func TestPostgresMigrationVerification(t *testing.T) {
 	sqlText := postgresMigrationSQL(t)
 	required := []string{
