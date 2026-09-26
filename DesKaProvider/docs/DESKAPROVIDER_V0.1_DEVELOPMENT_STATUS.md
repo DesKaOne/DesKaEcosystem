@@ -5174,8 +5174,8 @@ Completed:
 
 ### Verification
 
-- final verified implementation HEAD: `016813b65eaaa2bd0a49087cfb60f43fb1535c49`;
-- CI #1157 / run `36224749943`: **GREEN** for exact HEAD;
+- final verified implementation HEAD: `bc2d5c7ae2a80b3e8367e15915be218da5b47d6b`;
+- CI #1159 / run `36224845284`: **GREEN** for exact HEAD;
 - CI job `test`: success;
 - CI job `race`: success;
 - CI job `test` completed `vet`: success.
