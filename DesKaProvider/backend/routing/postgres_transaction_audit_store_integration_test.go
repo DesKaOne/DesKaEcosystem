@@ -112,10 +112,6 @@ func TestPostgresTransactionAuditStoreFailureDoesNotChangeTransactionState(t *te
 	}
 	applyPostgresMigration(t, db)
 
-	transactionStore, err := NewPostgresTransactionStore(db)
-	if err != nil {
-		t.Fatal(err)
-	}
 	auditStore, err := NewPostgresTransactionAuditStore(db)
 	if err != nil {
 		t.Fatal(err)
@@ -4278,7 +4274,7 @@ func TestPostgresCrossDomainRecoveryFailureIsolationAuditDoesNotReconstructTrans
 		t.Fatalf("audit must remain independently observable: events=%#v err=%v", observedAudit, err)
 	}
 
-	service, err := NewServiceWithStoreContextAndAudit(ctx, router, failedTransactionStore, auditStore)
+	_, err = NewServiceWithStoreContextAndAudit(ctx, router, failedTransactionStore, auditStore)
 	if err == nil {
 		t.Fatal("service must not initialize from audit evidence when transaction persistence is unavailable")
 	}
@@ -4378,7 +4374,7 @@ func TestPostgresCrossDomainRecoveryFailureIsolationNeitherDomainSynthesizesStat
 		t.Fatalf("audit failure must remain persistence error: %v", auditErr)
 	}
 
-	service, err := NewServiceWithStoreContextAndAudit(ctx, router, transactionStore, auditStore)
+	_, err = NewServiceWithStoreContextAndAudit(ctx, router, transactionStore, auditStore)
 	if err == nil {
 		t.Fatal("service must not fabricate state when both persistence domains are unavailable")
 	}
