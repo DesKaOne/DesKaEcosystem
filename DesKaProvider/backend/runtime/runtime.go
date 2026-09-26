@@ -261,7 +261,7 @@ func (s *Service) Run(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			workerErr := s.balanceLifecycle.Shutdown(workerShutdownCtx)
+			workerErr := s.shutdownBalanceWorker(workerShutdownCtx)
 			return shutdown(ctx.Err(), workerErr)
 		case <-ticker.C:
 			_ = s.catalogSync.SyncAll(catalogCtx)
