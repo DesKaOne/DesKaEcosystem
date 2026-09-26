@@ -89,7 +89,7 @@ func (s *PostgresTransactionStore) PutIfCurrentContext(ctx context.Context, refe
   return ErrReferenceConflict
  }
  if next.Execution.Result.Status != provider.StatusPending && next.Execution.Result.Status != provider.StatusSuccess && next.Execution.Result.Status != provider.StatusFailed { return ErrReferenceConflict }
- result, err := s.db.ExecContext(ctx, postgresTransitionSQL, referenceID, next.Execution.Result.Status, next.Execution.Result.ProviderCode, next.Execution.Result.Message, next.Execution.Result.SerialNumber, next.Execution.Result.Price, 1, previous.Request.ProductCode, previous.Request.CustomerNo, previous.Execution.ProviderName)
+ result, err := s.db.ExecContext(ctx, postgresTransitionSQL, referenceID, next.Execution.Result.Status, next.Execution.Result.ProviderCode, next.Execution.Result.Message, next.Execution.Result.SerialNumber, next.Execution.Result.Price, previous.Version, previous.Request.ProductCode, previous.Request.CustomerNo, previous.Execution.ProviderName)
  if err != nil { return fmt.Errorf("atomic transaction transition: %w", err) }
  n, err := result.RowsAffected()
  if err != nil { return fmt.Errorf("read atomic transition result: %w", err) }
