@@ -1567,6 +1567,120 @@ func TestPostgresTransactionAuditStoreSnapshotRecoveryCrossChecksTransactionStat
 }
 
 
+func TestPostgresTransactionAuditStoreConflictingAuditDoesNotOverrideTransactionState(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	schema := "audit_conflict_authority_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatalf("create isolated schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
+	})
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set search path: %v", err)
+	}
+	applyPostgresMigration(t, db)
+
+	transactionStore, err := NewPostgresTransactionStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	auditStore, err := NewPostgresTransactionAuditStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	registry := provider.NewRegistry()
+	mock := Mock.New(Mock.Config{
+		Products:       []provider.Product{{Code: "pln20", Name: "PLN 20"}},
+		ProviderCode:   "00",
+		Message:        "success",
+		PurchaseStatus: provider.StatusSuccess,
+		Price:          20000,
+	})
+	if err := registry.Register("mock", mock); err != nil {
+		t.Fatal(err)
+	}
+	ops := operational.NewMemoryStore()
+	if err := ops.Put(operational.Snapshot{
+		ProviderName: "mock",
+		Balance:      100000,
+		Health:       operational.HealthHealthy,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	router, err := New(registry, ops, map[string]int{"mock": 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := PurchaseRequest{
+		ProductCode: "pln20",
+		CustomerNo:  "08123456789",
+		ReferenceID: "audit-conflict-authority-ref",
+		Amount:      20000,
+	}
+	service, err := NewServiceWithStoreContextAndAudit(ctx, router, transactionStore, auditStore)
+	if err != nil {
+		t.Fatal(err)
+	}
+	execution, err := service.Purchase(ctx, req)
+	if err != nil {
+		t.Fatalf("initial purchase: %v", err)
+	}
+	if execution.Result.Status != provider.StatusSuccess {
+		t.Fatalf("expected durable terminal success, got %q", execution.Result.Status)
+	}
+	if got := mock.PurchaseCount(req.ReferenceID); got != 1 {
+		t.Fatalf("expected one provider submission, got %d", got)
+	}
+
+	// Inject audit evidence that conflicts with the authoritative terminal transaction.
+	conflictingAudit := TransactionAuditEvent{
+		ReferenceID:  req.ReferenceID,
+		Action:       "CONFLICTING_OBSERVATION",
+		Previous:     string(provider.StatusSuccess),
+		Next:         string(provider.StatusPending),
+		ProviderName: "mock",
+		Message:      "conflicting audit evidence must remain observational",
+		CreatedAt:    time.Now().UTC().Add(time.Second).Truncate(time.Microsecond),
+	}
+	if err := auditStore.AppendContext(ctx, conflictingAudit); err != nil {
+		t.Fatalf("append conflicting audit evidence: %v", err)
+	}
+
+	events, err := auditStore.AllContextE(ctx, req.ReferenceID)
+	if err != nil {
+		t.Fatalf("read conflicting audit history: %v", err)
+	}
+	if len(events) != 3 || events[2] != conflictingAudit {
+		t.Fatalf("expected conflicting audit evidence to remain durably observable, got %#v", events)
+	}
+
+	persisted, ok, readErr := transactionStore.GetContextE(ctx, req.ReferenceID)
+	if readErr != nil || !ok {
+		t.Fatalf("read authoritative transaction state: ok=%v err=%v", ok, readErr)
+	}
+	if persisted.Execution.Result.Status != provider.StatusSuccess {
+		t.Fatalf("conflicting audit evidence must not override terminal transaction state, got %q", persisted.Execution.Result.Status)
+	}
+
+	retry, retryErr := service.Purchase(ctx, req)
+	if retryErr != nil {
+		t.Fatalf("repeated purchase must follow durable transaction state, got %v", retryErr)
+	}
+	if retry.Result.Status != provider.StatusSuccess {
+		t.Fatalf("repeated purchase must return durable terminal result, got %q", retry.Result.Status)
+	}
+	if got := mock.PurchaseCount(req.ReferenceID); got != 1 {
+		t.Fatalf("conflicting audit evidence must not authorize provider resubmission, got %d", got)
+	}
+}
+
+
 func TestPostgresTransactionAuditStoreAppendFailureThenRecovery(t *testing.T) {
 	db := postgresIntegrationDB(t)
 	schema := "audit_append_recovery_" + strconv.FormatInt(time.Now().UnixNano(), 10)
