@@ -1358,3 +1358,6 @@ CI correction follow-up: IndoChain CI #1190 (run 36265853559) showed legacy inte
 
 
 CI correction: IndoChain CI #1196 (run 36265903053) failed on an implementation compile error: the legacyVote compatibility flag was referenced at prevote-quorum handling but was not declared in the current AddVote scope. Commit bbcfcae3a9b102b7ff026b75f77655816097fbf2 adds the flag at the start of AddVote. No protocol behavior beyond the intended compatibility path changed.
+
+
+CI correction: IndoChain CI #1200 (run 36265940536) passed all downstream packages but exposed three consensus test assumptions: a conflicting vote was still typed as Prevote after entering Precommit, and two finalization tests lacked explicit precommit quorum. Commit a00db02f016ac64f8680fbc6387e7f8a24bbec1d updates those regression tests to match the split lifecycle. Production/runtime code was unchanged by this correction.
