@@ -89,7 +89,10 @@ func TestValidateLockProofWithAuthorityRejectsUnsignedPrecommitEvidence(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolver := evidenceAuthorityResolver{keys: map[string][]byte{}}
+	resolver := evidenceAuthorityResolver{keys: map[string][]byte{
+		"validator-a": make([]byte, ed25519.PublicKeySize),
+		"validator-b": make([]byte, ed25519.PublicKeySize),
+	}}
 	if err := ValidateLockProofWithAuthority(proof, state, validators, power, resolver); !errors.Is(err, ErrInvalidSignature) {
 		t.Fatalf("expected unsigned proof to fail authentication, got %v", err)
 	}
