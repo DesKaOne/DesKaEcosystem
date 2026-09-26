@@ -134,7 +134,7 @@ func TestValidatorRuntimeAdoptsTimeoutLockEvidenceAtomically(t *testing.T) {
 		"validator-a": publicA,
 		"validator-b": publicB,
 	}}
-	proof := timeoutLockProof(t, state, runtime.validators, runtime.votingPower, state.Round, "locked-proposal")
+	proof := timeoutLockProof(t, state, runtime.validators, runtime.votingPower, "locked-proposal")
 	locked := []byte("locked-proposal")
 	msgA, err := NewTimeoutMessageWithLockProof(state, []byte("validator-a"), state.Round+1, proof, signerA)
 	if err != nil { t.Fatal(err) }
@@ -156,7 +156,7 @@ func TestValidatorRuntimeRejectsTimeoutLockConflictWithoutMutation(t *testing.T)
 		"validator-a": publicA,
 		"validator-b": publicB,
 	}}
-	proof := timeoutLockProof(t, state, runtime.validators, runtime.votingPower, state.Round, "remote-lock")
+	proof := timeoutLockProof(t, state, runtime.validators, runtime.votingPower, "remote-lock")
 	msgA, err := NewTimeoutMessageWithLockProof(state, []byte("validator-a"), state.Round+1, proof, signerA)
 	if err != nil { t.Fatal(err) }
 	msgB, err := NewTimeoutMessageWithLockProof(state, []byte("validator-b"), state.Round+1, proof, signerB)
