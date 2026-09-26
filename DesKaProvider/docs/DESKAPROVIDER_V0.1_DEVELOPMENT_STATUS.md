@@ -7371,3 +7371,40 @@ Completed:
 ### Next Milestone
 
 **#164 — PostgreSQL Cross-Domain Recovery Ordering Across Restart:** verify sequentially committed transaction and audit changes preserve their independent order and state after database connection close/reopen and service reconstruction.
+
+
+### 164. Milestone Update — PostgreSQL Cross-Domain Recovery Ordering Across Restart
+
+**Date:** 2026-09-27
+
+Completed:
+
+- added real-PostgreSQL integration coverage for sequentially committed transaction and audit changes followed by database connection close/reopen;
+- verified audit history before restart contains the expected ordered sequence and remains unchanged after reconstructing the PostgreSQL audit adapter;
+- verified the transaction state and durable version before restart remain exactly the same after reconstructing the PostgreSQL transaction adapter;
+- verified restart recovery preserves each persistence domain's own committed state and ordering without synthesizing a causal sequence across audit and transaction domains;
+- confirmed persisted `audit_id` ordering and transaction versioning remain independent recovery properties;
+- no production audit-store or transaction-store implementation change was required;
+- no cross-domain locking, distributed commit protocol, transaction authority, provider submission authority, retry/failover behavior, ledger mutation, treasury movement, or provider funding behavior was broadened.
+
+### Safety Boundary
+
+- restart recovery restores durable evidence within each persistence domain only;
+- audit ordering remains observational and cannot authorize transaction execution, retry, reconciliation, failover, or financial state mutation;
+- transaction persistence remains the authoritative transaction-state and idempotency boundary;
+- connection recovery does not infer or synthesize missing cross-domain state.
+
+### Verification
+
+- test implementation commit: `29a3547fda0bc615ff5a343bb14127c17f29b056`;
+- exact branch HEAD after this status documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before this milestone is considered closed.
+
+### Known Limitations
+
+- the scenario covers connection close/reopen against one PostgreSQL deployment, not every crash-recovery, replica-failover, or distributed replication topology;
+- the test verifies the exercised transaction and audit state independently, not arbitrary future projection/cache/event-consumer behavior;
+- audit remains operational evidence and is not a financial source of truth.
+
+### Next Milestone
+
+**#165 — PostgreSQL Cross-Domain Recovery Failure Classification:** verify connection recovery failures in transaction and audit domains retain distinct error classification and cannot trigger cross-domain fallback or transaction mutation.
