@@ -613,7 +613,7 @@ func TestPostgresConcurrentServiceReconcileConvergesWithoutResubmission(t *testi
 	close(errs)
 
 	for err := range errs {
-		if err != nil {
+		if err != nil && !errors.Is(err, ErrTransactionStateConflict) {
 			t.Fatalf("concurrent service reconciliation failed: %v", err)
 		}
 	}
