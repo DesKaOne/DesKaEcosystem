@@ -4596,6 +4596,33 @@ Completed:
 - read consistency is a persistence-integrity concern only;
 - durable identity reads cannot authorize provider retry, failover, resubmission, ledger mutation, treasury movement, or provider funding.
 
+
+
+### 42. Milestone Update — PostgreSQL Concurrent Read/Transition Observation
+
+**Date:** 2026-09-26
+
+Completed:
+
+- added deterministic PostgreSQL integration coverage with separate reader and writer connections during an atomic pending-to-success transition;
+- verified concurrent reads observe either the complete pending state or the complete terminal state, never a mixed request/provider/result/version combination;
+- preserved the atomic conditional transition boundary while keeping reads observational and non-authoritative;
+- kept transaction persistence authoritative while audit and operational evidence remain non-authoritative.
+
+### Verification
+
+- regression test commit: `3a7c04c1b43c23ad3fed2e97a2703cfa77923a6a`;
+- CI for this commit must finish with both `test` and `race` jobs **success** before this milestone is considered closed.
+
+### Safety Boundary
+
+- concurrent read consistency is a persistence-integrity concern only;
+- an observational read cannot authorize provider retry, failover, resubmission, ledger mutation, treasury movement, or provider funding.
+
+### Next Milestone
+
+**#121 — PostgreSQL Terminal Result Immutability Under Concurrent Observation**: verify once a terminal result is durably committed, concurrent reads continue returning that exact terminal identity and stale observations cannot change it.
+
 ### Next Milestone
 
 **#120 — PostgreSQL Concurrent Read/Transition Observation Review**: verify concurrent durable reads observe either the prior complete state or the committed terminal state and never a partial field combination during a conditional transition.
