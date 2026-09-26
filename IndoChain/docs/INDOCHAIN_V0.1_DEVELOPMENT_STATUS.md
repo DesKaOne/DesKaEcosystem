@@ -1331,3 +1331,18 @@ CI correction follow-up: IndoChain CI #1170 (run 36265180575) failed in Test bec
 
 
 CI verification completed: IndoChain CI #1173 (run 36265218628) for precommit aggregation fix ff9f13bd81625adfefb197f051854326a1d3a1e3 completed successfully. Tidy, Test, and Vet all passed. The explicit precommit/lock-proof milestone is now code/test-green; the status-document commit below is still subject to its own CI gate.
+
+
+### 4.30 Consensus Runtime Split: Explicit Prevote → Precommit Evidence
+
+ValidatorRuntime now maintains separate `prevotes` and `precommits` aggregators. AddVote requires MessageTypePrevote during the Prevote phase and MessageTypePrecommit during the Precommit phase; a legacy generic MessageTypeVote can no longer advance the runtime lifecycle.
+
+Prevote quorum creates the runtime lock (`lockedProposal` + `lockedRound`) and advances the phase to Precommit. Precommit votes are collected independently and do not reuse the prevote evidence set. FinalizeProposal now constructs and validates a PrecommitCertificate first, then derives the existing FinalityCertificate from that explicit precommit evidence. Failed precommit evidence leaves the runtime unfinalized.
+
+Round changes create fresh prevote and precommit aggregators, so round-local evidence cannot leak across rounds. Timeout/round-change tests were updated to inspect the prevote evidence set explicitly.
+
+Regression coverage now exercises explicit prevote/precommit lifecycle, rejection of generic vote type at runtime phase boundaries, independent precommit quorum, and finality derived from validated precommit evidence.
+
+Implementation commits: runtime split 52e73298f5a03c46fdf245de7f5d31e3f0adcd22; runtime lifecycle tests 53eeed970f450e19b71009b7973094429ffce40e; timeout test alignment 3d2bf2c2dea8c884a70cf4e65b9b9dfc754c17a0.
+
+CI gate: pending verification for the split-runtime changes.
