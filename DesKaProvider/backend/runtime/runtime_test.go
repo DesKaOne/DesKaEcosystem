@@ -1102,6 +1102,72 @@ func TestRuntimeInitializationCleanupPreservesWrappedPrimaryAndCleanupIdentity(t
 }
 
 
+
+func TestServiceRunShutdownCompletionOrderingAndRepeatedClose(t *testing.T) {
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", &balanceMock{Provider: mock.New(mock.Config{}), balance: 100000}); err != nil {
+		t.Fatal(err)
+	}
+	syncService, err := operational.NewSyncService(registry, operational.NewMemoryStore(), "IDR", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := New(syncService, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.catalogSync = &catalog.SyncService{}
+	service.catalogLifecycle = newCatalogWorkerLifecycle()
+
+	order := make([]string, 0, 3)
+	var mu sync.Mutex
+	appendOrder := func(name string) {
+		mu.Lock()
+		defer mu.Unlock()
+		order = append(order, name)
+	}
+	service.balanceShutdown = func(ctx context.Context) error {
+		if err := service.balanceLifecycle.Shutdown(ctx); err != nil {
+			return err
+		}
+		appendOrder("balance")
+		return nil
+	}
+	service.catalogShutdown = func() error {
+		service.catalogLifecycle.Shutdown()
+		appendOrder("catalog")
+		return nil
+	}
+	tx := &orderedCloseDB{name: "transaction", order: &order}
+	audit := &orderedCloseDB{name: "audit", order: &order}
+	service.databaseOwnership = newRuntimeDatabaseOwnership(tx, audit)
+	service.databaseOwnership.transferToService()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := service.Run(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context cancellation, got %v", err)
+	}
+
+	if service.balanceLifecycle.Running() {
+		t.Fatal("expected balance lifecycle to be stopped")
+	}
+	if service.catalogLifecycle.Running() {
+		t.Fatal("expected catalog lifecycle to be stopped")
+	}
+	if err := service.Close(); err != nil {
+		t.Fatalf("repeated service close failed: %v", err)
+	}
+
+	want := []string{"balance", "catalog", "transaction", "audit"}
+	if !reflect.DeepEqual(order, want) {
+		t.Fatalf("unexpected shutdown completion order: got %v want %v", order, want)
+	}
+	if tx.closeCount != 1 || audit.closeCount != 1 {
+		t.Fatalf("expected one database close each, got tx=%d audit=%d", tx.closeCount, audit.closeCount)
+	}
+}
+
 func TestServiceRollbackUsesSingleCatalogShutdownCompletionBoundary(t *testing.T) {
 	registry := provider.NewRegistry()
 	if err := registry.Register("mock", &balanceMock{Provider: mock.New(mock.Config{}), balance: 100000}); err != nil {
