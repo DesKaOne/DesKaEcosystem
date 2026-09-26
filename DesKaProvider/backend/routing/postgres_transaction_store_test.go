@@ -36,6 +36,23 @@ func postgresPendingState() TransactionState {
 	}
 }
 
+func TestPostgresTransactionStoreReadErrorDoesNotBecomeNotFound(t *testing.T) {
+	wantErr := errors.New("transaction database unavailable")
+	stub := &postgresStoreDBStub{err: wantErr}
+	store, err := NewPostgresTransactionStore(stub)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	state, found, err := store.GetContextE(context.Background(), "ref-77")
+	if err == nil || !errors.Is(err, wantErr) {
+		t.Fatalf("expected transaction database error to remain observable, got state=%#v found=%v err=%v", state, found, err)
+	}
+	if found {
+		t.Fatalf("transaction database error must not flatten to not-found success, got state=%#v", state)
+	}
+}
+
 func TestPostgresTransactionStorePutIfCurrentSuccess(t *testing.T) {
 	stub:=&postgresStoreDBStub{result:postgresStoreExecResult{rows:1}}
 	store,err:=NewPostgresTransactionStore(stub)
