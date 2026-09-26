@@ -305,7 +305,6 @@ func (s *Service) rollbackStartedLifecycles(ctx context.Context) error {
 	if s.balanceLifecycle != nil {
 		err = s.shutdownBalanceWorker(ctx)
 	}
-	s.catalogLifecycle.Shutdown()
 	return combineRuntimeShutdownError(err, s.shutdownCatalogLifecycle())
 }
 
