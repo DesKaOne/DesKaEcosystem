@@ -8160,3 +8160,51 @@ This milestone validates cancellation-time runtime error composition only. The w
 **#182 — Runtime Shutdown Error Composition Across Auxiliary Lifecycle Failure Boundaries**
 
 Focus next on the remaining auxiliary lifecycle failure boundary without changing provider, transaction, audit, or shutdown ownership semantics.
+
+## 182. Milestone Update — Runtime Shutdown Error Composition Across Auxiliary Lifecycle Failure Boundaries
+
+**Date:** 2026-09-27
+
+Completed:
+
+- added a narrow internal balanceStart test seam to exercise the existing Service.Run() balance-worker startup failure boundary deterministically;
+- preserved the production behavior by using the real balanceLifecycle.Start whenever the seam is unset;
+- added real PostgreSQL service-lifecycle coverage for a balance-worker startup failure after dedicated transaction and audit database ownership has transferred;
+- verified the primary balance-worker startup error remains discoverable through errors.Is;
+- verified independent transaction and audit PostgreSQL cleanup errors remain discoverable alongside the primary lifecycle error;
+- verified cleanup error context remains attributable to:
+  - close transaction database
+  - close audit database
+- verified the balance worker remains stopped when startup fails;
+- verified dedicated PostgreSQL cleanup remains deterministic in transaction-before-audit order;
+- verified each dedicated PostgreSQL handle closes exactly once;
+- verified ownership remains transferred during runtime shutdown cleanup;
+- verified repeated Service.Close() preserves stored cleanup error identities without double-closing;
+- no provider retry/failover, transaction resubmission, ledger mutation, customer-balance mutation, or synthetic transaction/audit reconstruction was introduced.
+
+### Verification
+
+- Implementation commit: b0584b5a4101dbaff4ba79237fd0bfe805081748.
+- Integration test commit: 3947a87fb709b03c4293fec06dd483186b97155e.
+- CI run #1669 on exact implementation/test HEAD: **GREEN**.
+  - go test ./... — PASS
+  - go vet ./... — PASS
+  - PostgreSQL service-backed integration tests — PASS
+  - go test -race ./... — PASS
+
+### Safety Boundary
+
+This milestone validates only the existing balance-worker startup failure rollback boundary. The balanceStart seam is internal test instrumentation and does not alter production behavior when unset. A startup failure closes only already-transferred runtime-owned database resources through the existing Service.Close() path. No provider execution, retry/failover, transaction resubmission, ledger mutation, treasury movement, customer-balance mutation, or cross-domain recovery authority is introduced.
+
+### Known Limitations
+
+- The balance-worker startup error injection is test-only; the production SyncWorkerLifecycle.Start contract remains unchanged.
+- PostgreSQL integration coverage requires DESKAPROVIDER_POSTGRES_DSN; tests skip when the runtime DSN is unavailable.
+- The catalog lifecycle shutdown API remains void-returning; auxiliary catalog shutdown state is covered by the preceding cancellation and rollback milestones.
+- This milestone does not introduce new provider retry/failover or transaction recovery behavior.
+
+### Next Milestone
+
+**#183 — Runtime Shutdown Error Composition Across Auxiliary Lifecycle Shutdown Completion**
+
+Focus next on the remaining lifecycle completion boundary after auxiliary startup/shutdown paths, preserving existing worker ordering, database ownership, and error-composition semantics.
