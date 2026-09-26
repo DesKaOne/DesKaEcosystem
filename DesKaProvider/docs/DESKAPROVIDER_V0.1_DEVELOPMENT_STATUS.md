@@ -8313,3 +8313,66 @@ This milestone is limited to runtime lifecycle completion ownership and error co
 **#185 — Runtime Shutdown Completion Ordering & Error Precedence Review**
 
 Focus next on the final ordering and precedence contract across balance-worker completion, catalog completion, and runtime database ownership closure, including repeated Service.Close() after a completed shutdown, without introducing new provider or transaction recovery behavior.
+
+
+## 185. Milestone Update — Runtime Shutdown Completion Ordering & Error Precedence Review
+
+**Date:** 2026-09-27
+
+Completed:
+
+- added deterministic runtime coverage for the final shutdown completion ordering after cancellation;
+- verified balance-worker shutdown completion occurs before catalog shutdown completion;
+- verified catalog shutdown completion occurs before transferred transaction/audit database ownership is closed;
+- verified transaction database cleanup remains before audit database cleanup;
+- verified repeated `Service.Close()` after completed runtime shutdown remains idempotent and does not double-close owned databases;
+- verified balance and catalog lifecycle state is stopped before shutdown returns;
+- preserved the existing `errors.Join`-based independent error identity composition without introducing a new precedence policy that suppresses independent cleanup errors;
+- no provider retry/failover, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, provider funding, or synthetic transaction/audit reconstruction was introduced.
+
+### CI Failure and Correction
+
+CI #1689 on test commit `ffc4c2b264e9df9e2a3d509e23c0f1c9dcb0f614` was **RED** because the new ordering test was missing `sync` and `reflect` imports.
+
+CI #1691 on import correction commit `cf1d6fdb926c654e720ad8f233ce9cda90d46bd8` was **RED** because the test fixture constructed `catalog.SyncService` without a registry and then hit a nil-pointer during the initial catalog sync.
+
+CI #1693 on the registry correction commit `a66f6cf5dbba4a0908878861d3adf7207b5196d9` was **RED** because the ordering test still had a zero catalog ticker interval.
+
+CI #1695 on `bb445fbad92d38dc894e06287c7e2af66a1077a8` was **RED** because the interval was applied to the earlier fixture rather than the new ordering test fixture.
+
+The final fixture correction was committed as `ef84d5eaf0f48095f3f449833d5216cb43aab9f5`.
+
+### Verification
+
+- Test/ordering coverage commits:
+  - `ffc4c2b264e9df9e2a3d509e23c0f1c9dcb0f614`
+  - `cf1d6fdb926c654e720ad8f233ce9cda90d46bd8`
+  - `a66f6cf5dbba4a0908878861d3adf7207b5196d9`
+  - `bb445fbad92d38dc894e06287c7e2af66a1077a8`
+  - `ef84d5eaf0f48095f3f449833d5216cb43aab9f5`
+- CI #1689: RED — missing test imports.
+- CI #1691: RED — invalid catalog test fixture.
+- CI #1693: RED — zero catalog ticker interval.
+- CI #1695: RED — interval correction applied to the wrong fixture.
+- CI #1697 on exact final milestone HEAD: **GREEN**.
+  - `go test ./...` — PASS
+  - `go vet ./...` — PASS
+  - PostgreSQL service-backed integration tests — PASS
+  - `go test -race ./...` — PASS
+
+### Safety Boundary
+
+This milestone is limited to runtime shutdown ordering, lifecycle completion, repeated-close idempotence, and existing error composition. It does not change provider execution behavior, transaction recovery authority, audit authority, ledger state, treasury/funding behavior, or retry/failover behavior.
+
+### Known Limitations
+
+- the production catalog lifecycle completion API remains void-returning; catalog completion error composition continues to exist only through the internal test seam;
+- PostgreSQL integration coverage requires `DESKAPROVIDER_POSTGRES_DSN` and is skipped when unavailable;
+- database close remains non-context-aware;
+- this milestone validates ordering and idempotence; it does not introduce a new shutdown orchestration subsystem.
+
+### Next Milestone
+
+**#186 — Runtime Shutdown Error Identity Across Mixed Primary and Cleanup Failures**
+
+Focus next on preserving independent error identity and deterministic context when primary cancellation/startup errors, worker completion errors, catalog completion errors, and transaction/audit cleanup errors coexist, without introducing new provider or transaction recovery behavior.
