@@ -4498,3 +4498,32 @@ Completed:
 
 **#118 — PostgreSQL Sequential Terminal Idempotency & Conflict Review**: verify repeated identical terminal writes remain idempotent across service/store boundaries while divergent terminal writes remain rejected after version progression.
 
+### 39. Milestone Update — Concurrent Reconciliation / Atomic Transition Boundary
+
+**Date:** 2026-09-26
+
+Completed:
+
+- verified concurrent service reconciliation against a shared PostgreSQL transaction store converges on one durable terminal result without resubmitting the provider purchase;
+- repaired integration-test connection/store scoping so isolated PostgreSQL schemas are not mixed across unrelated tests;
+- strengthened PR CI checkout to validate the pull-request head commit directly rather than a stale synthetic merge ref;
+- verified the reconciliation path accepts an identical durable terminal observation after an atomic state race, while conflicting terminal observations remain rejected;
+- preserved transaction persistence as the authoritative transaction state and kept audit/operational evidence non-authoritative.
+
+### Verification
+
+- implementation HEAD: `7dc332d0e412beaf4fcbd580aee777f3195dab34`;
+- CI #991 / run `36213251428`: **GREEN** for exact HEAD `7dc332d0e412beaf4fcbd580aee777f3195dab34`;
+- CI jobs `test`: success;
+- CI job `vet`: success;
+- CI job `race`: success.
+
+### Safety Boundary
+
+- atomic reconciliation convergence may finalize the same transaction from concurrent observers but cannot authorize a second provider purchase;
+- a stale or conflicting terminal observation remains an error and cannot overwrite the committed transaction result;
+- audit persistence and operational snapshots remain evidence only and cannot authorize retry, failover, resubmission, ledger mutation, treasury movement, or provider funding.
+
+### Next Milestone
+
+**#117 — Sequential Version Progression Review:** verify repeated pending transitions and durable version increments remain correct after the first atomic PostgreSQL transition, without weakening terminal immutability or enabling duplicate provider submission.
