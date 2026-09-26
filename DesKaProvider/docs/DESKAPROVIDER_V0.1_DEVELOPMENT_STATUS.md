@@ -5254,3 +5254,36 @@ Completed:
 ### Next milestone
 
 **#117 — Atomic Transition Version Semantics Review**: audit sequential and concurrent PostgreSQL transaction version transitions so every durable state mutation uses the current version and preserves idempotent terminal behavior across repeated writes and restart recovery.\n
+
+### 39. Milestone Update — Atomic Reconciliation Convergence Verification
+
+**Date:** 2026-09-26
+
+Completed:
+
+- repaired the PostgreSQL integration-test scope so restart/reconciliation coverage uses correctly scoped transaction stores;
+- made the PR workflow explicitly checkout `github.event.pull_request.head.sha` for pull-request validation, preventing stale synthetic merge refs from masking branch state;
+- preserved the concurrent reconciliation assertion that both independently constructed services converge on the same terminal provider result without resubmitting the provider purchase;
+- verified the corrected integration suite and race detector after the scope/workflow fixes;
+- kept transaction persistence authoritative while audit and operational evidence remain non-authoritative.
+
+### Verification
+
+- implementation HEAD: `eaca268230fab82f6e5800400ce24a9bb66d2406`;
+- CI #1179 / run `36226960719`: **GREEN** for exact HEAD `eaca268230fab82f6e5800400ce24a9bb66d2406`;
+- CI jobs `test`: success;
+- CI step `vet`: success;
+- CI job `race`: success.
+
+### Safety Boundary
+
+- reconciliation convergence only resolves already-authorized provider transaction state;
+- reconciliation cannot create a second provider purchase attempt;
+- an audit/operational failure does not become transaction authority;
+- PostgreSQL atomic transition conflicts remain part of the durable convergence boundary;
+- no ledger mutation, treasury movement, automatic provider funding, failover authorization, or retry authorization is introduced.
+
+### Next milestone
+
+**#117 — PostgreSQL Transaction Versioning Review**: audit sequential `PutContext` updates against the durable version column so legitimate pending-state transitions remain correct after prior updates while stale writers still conflict atomically.
+
