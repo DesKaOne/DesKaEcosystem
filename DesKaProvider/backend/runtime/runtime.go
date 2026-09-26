@@ -42,6 +42,15 @@ const (
 type Config struct{StorePath,TransactionStorePath,ProviderStateStorePath,TransactionStoreDriver,AuditStoreDriver,PostgresDSN string;SyncInterval time.Duration;FailureThreshold int;Currency,CatalogStorePath string;CatalogSyncInterval,CatalogMaxAge,OperationalSnapshotMaxAge time.Duration}
 type databaseCloser interface { Close() error }
 
+var runtimeInitializationFailureHook func(string, *runtimeDatabaseOwnership) error
+
+func runRuntimeInitializationFailureHook(stage string, ownership *runtimeDatabaseOwnership) error {
+	if runtimeInitializationFailureHook == nil {
+		return nil
+	}
+	return runtimeInitializationFailureHook(stage, ownership)
+}
+
 type runtimeDatabaseOwnership struct {
 	mu sync.Mutex
 	transactionDB databaseCloser
@@ -160,6 +169,7 @@ func NewFromEnvironmentContext(ctx context.Context,httpClient *http.Client)(serv
  transactionStore,transactionDB,e:=openTransactionStore(ctx,cfg);if e!=nil{return nil,e}
 auditStore,auditDB,e:=openAuditStore(ctx,cfg,transactionDB);if e!=nil{return nil,withRuntimeInitializationCleanupError(e,transactionDB,auditDB)}
 ownership:=newRuntimeDatabaseOwnership(transactionDB,auditDB)
+if e:=runRuntimeInitializationFailureHook("after-database-acquisition", ownership); e!=nil { return nil,e }
 defer func(){
 	if ownership == nil || ownership.transferred() { return }
 	if cleanupErr:=ownership.cleanupBeforeTransfer();cleanupErr!=nil {
