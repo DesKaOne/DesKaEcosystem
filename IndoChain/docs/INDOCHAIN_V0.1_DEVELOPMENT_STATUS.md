@@ -1361,3 +1361,18 @@ CI correction: IndoChain CI #1196 (run 36265903053) failed on an implementation 
 
 
 CI correction: IndoChain CI #1200 (run 36265940536) passed all downstream packages but exposed three consensus test assumptions: a conflicting vote was still typed as Prevote after entering Precommit, and two finalization tests lacked explicit precommit quorum. Commit a00db02f016ac64f8680fbc6387e7f8a24bbec1d updates those regression tests to match the split lifecycle. Production/runtime code was unchanged by this correction.
+
+### 4.31 LockProof ↔ Timeout / Round-Change Integration
+
+Milestone ini menghubungkan bukti lock dari explicit precommit dengan timeout evidence.
+
+- LockProof sekarang memiliki encoding biner canonical yang membawa context certificate, proposal, threshold, dan seluruh precommit evidence sehingga dapat didecode dan divalidasi ulang.
+- TimeoutMessage dapat membawa LockProof lengkap di dalam payload yang ikut ditandatangani; perubahan pada proof otomatis merusak signature timeout.
+- TimeoutCertificate sekarang membawa optional LockProof. Jika ada LockedProposal, certificate wajib memiliki proof yang konsisten dengan proposal, locked round, threshold, validator membership, voting power, dan precommit quorum.
+- NewTimeoutCertificateFromMessages mewajibkan seluruh timeout message dalam quorum membawa proof yang identik secara canonical bila lock evidence dibawa; conflicting proof ditolak.
+- ValidatorRuntime menyimpan proof-of-lock ketika explicit precommit mencapai quorum dan hanya mengadopsi higher-lock dari timeout certificate setelah proof tervalidasi.
+- Failure/conflict path tetap atomic: validasi dilakukan sebelum round advance atau perubahan lock runtime.
+
+Regression coverage mencakup signed proof round-trip, conflicting proof, unproven lock rejection, runtime proof adoption, higher/lower lock-round behavior, serta defensive-copy boundaries.
+
+Status CI untuk commit implementasi terakhir masih menunggu completion; release gate belum dinyatakan hijau sampai workflow selesai.
