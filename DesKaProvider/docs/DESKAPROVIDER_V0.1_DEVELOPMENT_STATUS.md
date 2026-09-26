@@ -4440,3 +4440,34 @@ Completed:
 ### Next Milestone
 
 **#52 — PostgreSQL `PutContext` Error Classification & Version Integrity**: verify sequential transactional writes preserve exact database errors, maintain monotonic versions, and never downgrade a terminal state into a retryable persistence condition.
+
+### 39. Milestone Update — PostgreSQL Reconciliation/CI Integrity Boundary
+
+**Date:** 2026-09-26
+
+Completed:
+
+- repaired the PostgreSQL integration-test variable scope so recovery and concurrent-reconciliation tests use their intended store instances;
+- updated the DesKaProvider CI checkout step to validate the pull-request head commit directly instead of relying on a stale synthetic merge ref;
+- verified deterministic integration coverage for concurrent service reconciliation converging on one durable terminal result without provider resubmission;
+- preserved the invariant that audit or operational evidence cannot authorize retry, failover, resubmission, ledger mutation, treasury movement, or provider funding.
+
+### Verification
+
+- implementation HEAD: `14908ecdf82be215ec611d509f83a5e8a49bce5a`;
+- CI #985 / run `36212751435`: **GREEN** for exact HEAD `14908ecdf82be215ec611d509f83a5e8a49bce5a`;
+- CI job `test`: success;
+- CI job `race`: success;
+- checkout validation used the exact PR head SHA rather than the stale merge ref.
+
+### Safety Boundary
+
+- transaction persistence remains authoritative for durable transaction state;
+- reconciliation concurrency is resolved through conditional persistence rather than provider resubmission;
+- CI validation must execute the exact PR head so a stale merge ref cannot mask or reintroduce build/test regressions;
+- no audit, operational, or routing evidence path is granted authority over retry, failover, resubmission, ledger, treasury, or funding decisions.
+
+### Next Milestone
+
+**#117 — PostgreSQL Transaction Version Progression Review**: inspect sequential pending-state updates and version handling in the PostgreSQL transaction store so multi-step pending transitions cannot regress or conflict solely because the persistence path uses a stale version expectation.
+
