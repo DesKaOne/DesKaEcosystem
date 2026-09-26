@@ -1229,3 +1229,23 @@ Commits:
 - signed timeout regression tests: `eb3e4b9a3df23aff8ec68878a01712394c9b356e`
 
 CI gate verified green: IndoChain CI #1099 (run `36067928984`) completed successfully for documentation commit `93f195bc4b52760440f92a60a0ab5f4a94917f78`.
+
+### 4.26 Signed Timeout Evidence → Runtime Round Advance
+
+The timeout boundary is now integrated with ValidatorRuntime through AdvanceRoundWithTimeoutEvidence.
+
+The runtime first authenticates the supplied signed timeout messages, requires a common strictly newer target round, validates validator membership/voting power/quorum, independently validates the resulting timeout certificate, and only then invokes the existing atomic AdvanceRound(next) transition.
+
+Rejected or insufficient timeout evidence leaves runtime state unchanged. Successful timeout advancement resets the phase to Proposal and clears round-local proposal/certificate state while retaining the existing lock semantics handled by AdvanceRound.
+
+The timeout certificate validator boundary was also tightened so certificate validators must belong to the supplied ValidatorSet, not merely appear in the voting-power set.
+
+Regression tests cover successful signed-evidence round advancement, insufficient quorum without mutation, tampered signature evidence without mutation, and validator-membership rejection.
+
+Commits:
+- runtime timeout integration: `0a3a1b55f43f3c5ed53e0ccb1a6b26bc7887f867`
+- runtime integration tests: `2f935874d3a237fa7acd81a758485737ce728c95`
+- timeout validator-membership hardening: `46ae55d052a1381a01d13d100ceb7697d4ff2fd1`
+- membership regression test: `bc9555c1efa4bc4f7f3bb49dff3ea3fb5afb5c82`
+
+CI gate must be verified against the resulting branch state before this milestone is considered complete.
