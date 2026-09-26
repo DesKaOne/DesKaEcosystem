@@ -170,7 +170,7 @@ func TestTimeoutMessageRejectsStaleTargetRound(t *testing.T) {
 		Round:           state.Round,
 		Sender:          []byte("validator-a"),
 		Type:            MessageTypeTimeout,
-		Payload:         encodeTimeoutTargetRound(state.Round),
+		Payload:         encodeTimeoutEvidence(state.Round, nil),
 	}
 	signed, err := msg.Sign(signer)
 	if err != nil {
@@ -190,3 +190,62 @@ func TestTimeoutMessageRejectsStaleTargetRound(t *testing.T) {
 	}
 }
 
+
+
+func TestTimeoutMessagesCarryCanonicalLockContext(t *testing.T) {
+	_, state, validators, power := runtimeFixture(t)
+	signerA, publicA := newTimeoutTestSigner(t)
+	signerB, publicB := newTimeoutTestSigner(t)
+	resolver := timeoutTestAuthorityResolver{keys: map[string]ed25519.PublicKey{
+		"validator-a": publicA,
+		"validator-b": publicB,
+	}}
+	rules := timeoutMessageRules(state)
+	locked := []byte("locked-proposal")
+
+	msgA, err := NewTimeoutMessageWithLock(state, []byte("validator-a"), state.Round+1, locked, signerA)
+	if err != nil { t.Fatal(err) }
+	msgB, err := NewTimeoutMessageWithLock(state, []byte("validator-b"), state.Round+1, locked, signerB)
+	if err != nil { t.Fatal(err) }
+
+	decoded, err := TimeoutLockedProposal(msgA)
+	if err != nil { t.Fatal(err) }
+	if !bytes.Equal(decoded, locked) { t.Fatalf("unexpected lock context: %q", decoded) }
+
+	certificate, err := NewTimeoutCertificateFromMessages(
+		state, validators, power, QuorumThreshold{Numerator: 2, Denominator: 3},
+		[]Message{msgA, msgB}, rules, resolver,
+	)
+	if err != nil { t.Fatal(err) }
+	if !bytes.Equal(certificate.LockedProposal, locked) {
+		t.Fatalf("certificate lost lock context: %q", certificate.LockedProposal)
+	}
+	decoded[0]++
+	if bytes.Equal(certificate.LockedProposal, decoded) {
+		t.Fatal("certificate lock context aliases decoded message data")
+	}
+}
+
+func TestTimeoutCertificateRejectsConflictingLockEvidence(t *testing.T) {
+	_, state, validators, power := runtimeFixture(t)
+	signerA, publicA := newTimeoutTestSigner(t)
+	signerB, publicB := newTimeoutTestSigner(t)
+	resolver := timeoutTestAuthorityResolver{keys: map[string]ed25519.PublicKey{
+		"validator-a": publicA,
+		"validator-b": publicB,
+	}}
+	rules := timeoutMessageRules(state)
+
+	msgA, err := NewTimeoutMessageWithLock(state, []byte("validator-a"), state.Round+1, []byte("lock-a"), signerA)
+	if err != nil { t.Fatal(err) }
+	msgB, err := NewTimeoutMessageWithLock(state, []byte("validator-b"), state.Round+1, []byte("lock-b"), signerB)
+	if err != nil { t.Fatal(err) }
+
+	_, err = NewTimeoutCertificateFromMessages(
+		state, validators, power, QuorumThreshold{Numerator: 2, Denominator: 3},
+		[]Message{msgA, msgB}, rules, resolver,
+	)
+	if !errors.Is(err, ErrConflictingTimeoutLock) {
+		t.Fatalf("expected conflicting lock error, got %v", err)
+	}
+}
