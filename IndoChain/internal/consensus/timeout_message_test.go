@@ -1,6 +1,7 @@
 package consensus
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"errors"
 	"testing"
