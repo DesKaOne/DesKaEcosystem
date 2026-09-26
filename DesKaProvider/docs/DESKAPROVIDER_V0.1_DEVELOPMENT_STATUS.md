@@ -5461,3 +5461,39 @@ Completed:
 ### Next milestone
 
 **#122 — PostgreSQL Persistence Mutation Error-Matrix Expansion**: extend deterministic coverage to persistence mutation failures, including atomic PutIfCurrentContext error propagation and insert/update failure boundaries, while preserving no-resubmission and no-financial-authorization invariants.
+
+### 45. Milestone Update — PostgreSQL Persistence Mutation Error-Matrix Expansion
+
+**Date:** 2026-09-26
+
+Completed:
+
+- added deterministic coverage for PutIfCurrent database execution failures;
+- verified database execution errors are propagated with their original cause intact;
+- verified database execution errors are not collapsed into ErrTransactionStateConflict;
+- retained existing coverage for RowsAffected failures and zero-row optimistic conflicts;
+- confirmed the atomic transition SQL path remains the persistence gate for pending-to-terminal state changes;
+- no retry, failover, resubmission, ledger mutation, treasury movement, or provider-funding authorization was introduced.
+
+### Verification
+
+- implementation HEAD: 5460f570893305825a99f759a26646fc5621c8f4;
+- CI #1236 / run 36236039141: GREEN for exact HEAD;
+- CI jobs test and race: success;
+- test job Vet: success.
+
+### Safety Boundary
+
+- PostgreSQL mutation failures remain observable persistence errors and are not interpreted as state conflicts;
+- optimistic zero-row conflicts remain coordination outcomes only;
+- transaction persistence remains authoritative, while audit and operational evidence remain non-authoritative;
+- no error path authorizes a second provider submission or financial mutation.
+
+### Known Limitations
+
+- local full Go/PostgreSQL verification remains unavailable in this runtime because external Git/network access is unavailable;
+- live external-provider credential validation remains environment-gated.
+
+### Next milestone
+
+**#123 — PostgreSQL Mutation Failure Coverage Extension**: evaluate the remaining PutContext mutation boundaries using a repository-compatible deterministic strategy, without weakening the database abstraction or introducing production behavior changes.
