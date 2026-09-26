@@ -534,6 +534,48 @@ func TestNewFromEnvironmentPreservesEnabledProviderLifecycleAcrossRestart(t *tes
 	if !state.Supports(operational.CapabilityPPOB) || !state.Supports(operational.CapabilityBalance) || !state.Supports(operational.CapabilityWebhook) { t.Fatalf("unexpected capabilities after restart: %#v", state.Capabilities) }
 }
 
+func TestNewFromEnvironmentCreatesFreshRuntimeOwnershipPerInstance(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("DIGIFLAZZ_USERNAME", "test-user")
+	t.Setenv("DIGIFLAZZ_API_KEY", "test-key")
+	t.Setenv("DESKAPROVIDER_OPERATIONAL_STORE_PATH", filepath.Join(root, "operational", "snapshots.json"))
+	t.Setenv("DESKAPROVIDER_PROVIDER_STATE_STORE_PATH", filepath.Join(root, "provider-state", "state.json"))
+	t.Setenv("DESKAPROVIDER_TRANSACTION_STORE_PATH", filepath.Join(root, "transactions", "state.json"))
+
+	first, err := NewFromEnvironment(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := NewFromEnvironment(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first == second {
+		t.Fatal("expected distinct service instances")
+	}
+	if first.databaseOwnership == nil || second.databaseOwnership == nil {
+		t.Fatal("expected database ownership on both runtime instances")
+	}
+	if first.databaseOwnership == second.databaseOwnership {
+		t.Fatal("expected fresh database ownership per runtime instance")
+	}
+	if first.balanceLifecycle == nil || second.balanceLifecycle == nil {
+		t.Fatal("expected balance lifecycle on both runtime instances")
+	}
+	if first.balanceLifecycle == second.balanceLifecycle {
+		t.Fatal("expected fresh balance lifecycle per runtime instance")
+	}
+	if first.catalogLifecycle == nil || second.catalogLifecycle == nil {
+		t.Fatal("expected catalog lifecycle on both runtime instances")
+	}
+	if first.catalogLifecycle == second.catalogLifecycle {
+		t.Fatal("expected fresh catalog lifecycle per runtime instance")
+	}
+	if first.providerState == nil || second.providerState == nil {
+		t.Fatal("expected provider state store on both runtime instances")
+	}
+}
+
 func TestServiceRestartRecoversPersistedOperationalSnapshot(t *testing.T) {
 	storePath := filepath.Join(t.TempDir(), "operational", "snapshots.json")
 	firstProvider := &balanceMock{Provider: mock.New(mock.Config{Products: []provider.Product{{Code: "xld10", Name: "Test"}}, PurchaseStatus: provider.StatusSuccess}), balance: 1750000}
