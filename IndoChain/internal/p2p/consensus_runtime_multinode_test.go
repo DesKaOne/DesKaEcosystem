@@ -201,6 +201,7 @@ func finalizeRuntimeForTest(t *testing.T, runtime *consensus.ValidatorRuntime, s
 		}
 		msg, err := msg.Sign(signer)
 		if err != nil { t.Fatal(err) }
+		if err := consensus.VerifyMessageSignature(msg, signer.PublicKey()); err != nil { t.Fatalf("fixture signature self-check failed for %q: %v", validator, err) }
 		if err := runtime.AddVote(msg); err != nil { t.Fatal(err) }
 	}
 	return runtime.FinalizeProposal(runtimeAuthorityForSigner(t, signer))
