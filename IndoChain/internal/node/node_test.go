@@ -815,7 +815,8 @@ func TestCommitRuntimeFinalizedBlockCrossesExplicitHandoff(t *testing.T) {
 
 func mustTestSigner(t *testing.T, seed byte) crypto.Signer {
 	t.Helper()
-	keyPair, err := crypto.NewEd25519KeyPair(bytes.Repeat([]byte{seed}, 32)); if err != nil { t.Fatal(err) }
+	seedBytes := make([]byte, 32); seedBytes[0] = seed
+	keyPair, err := crypto.NewEd25519KeyPair(seedBytes); if err != nil { t.Fatal(err) }
 	signer, err := crypto.NewEd25519Signer(keyPair.PrivateKey); if err != nil { t.Fatal(err) }
 	return signer
 }
