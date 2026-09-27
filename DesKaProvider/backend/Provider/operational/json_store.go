@@ -87,6 +87,15 @@ func (s *JSONFileStore) Put(snapshot Snapshot) error {
 	return nil
 }
 
+func syncJSONStoreDirectory(dir string) error {
+	file, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	return file.Sync()
+}
+
 func (s *JSONFileStore) persist(snapshots map[string]Snapshot) error {
 	state := jsonFileState{Snapshots: snapshots}
 	data, err := json.MarshalIndent(state, "", "  ")
@@ -124,6 +133,9 @@ func (s *JSONFileStore) persist(snapshots map[string]Snapshot) error {
 	}
 	if err := os.Rename(tmpName, s.path); err != nil {
 		return fmt.Errorf("replace operational store: %w", err)
+	}
+	if err := syncJSONStoreDirectory(dir); err != nil {
+		return fmt.Errorf("sync operational store directory: %w", err)
 	}
 	return nil
 }
