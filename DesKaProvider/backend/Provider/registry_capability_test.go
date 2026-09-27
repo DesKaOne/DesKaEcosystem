@@ -1,10 +1,13 @@
 package provider
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
 
 func TestRegistryCapabilitiesAreProviderScopedAndCopied(t *testing.T) {
 	registry := NewRegistry()
-	impl := &mockProvider{}
+	impl := &capabilityTestProvider{}
 	descriptor := CapabilityDescriptor{Capabilities: map[Capability]CapabilityStatus{
 		CapabilityPPOB: {Verified: true, AdapterImplemented: true, Enabled: true},
 	}}
@@ -29,3 +32,12 @@ func TestRegistryCapabilitiesAreProviderScopedAndCopied(t *testing.T) {
 		t.Fatal("registry capability metadata was not isolated from caller mutation")
 	}
 }
+
+
+type capabilityTestProvider struct{}
+
+func (capabilityTestProvider) GetProducts(context.Context, ProductRequest) ([]Product, error) { return nil, nil }
+func (capabilityTestProvider) Inquiry(context.Context, InquiryRequest) (InquiryResult, error) { return InquiryResult{}, nil }
+func (capabilityTestProvider) Purchase(context.Context, PurchaseRequest) (PurchaseResult, error) { return PurchaseResult{}, nil }
+func (capabilityTestProvider) GetStatus(context.Context, StatusRequest) (PurchaseStatus, error) { return PurchaseStatus{}, nil }
+func (capabilityTestProvider) HandleWebhook(context.Context, WebhookRequest) (WebhookEvent, error) { return WebhookEvent{}, nil }
