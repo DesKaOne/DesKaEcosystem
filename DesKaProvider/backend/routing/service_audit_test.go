@@ -502,18 +502,15 @@ func TestServiceWebhookAndReconciliationConvergeAcrossServiceInstances(t *testin
 		return service
 	}
 
-	firstStore, err := NewJSONFileTransactionStore(storePath)
-	if err != nil { t.Fatal(err) }
-	first := newService(firstStore)
+	sharedStore := NewMemoryTransactionStore()
+	first := newService(sharedStore)
 	req := PurchaseRequest{ProductCode:"pln20", CustomerNo:"08123456789", ReferenceID:"ref-webhook-reconcile-convergence", Amount:20000}
 	if execution, err := first.Purchase(context.Background(), req); err != nil || execution.Result.Status != provider.StatusPending {
 		t.Fatalf("expected pending purchase claim, execution=%#v err=%v", execution, err)
 	}
 	if got := base.PurchaseCount(req.ReferenceID); got != 1 { t.Fatalf("expected one provider submission, got %d", got) }
 
-	secondStore, err := NewJSONFileTransactionStore(storePath)
-	if err != nil { t.Fatal(err) }
-	second := newService(secondStore)
+	second := newService(sharedStore)
 
 	reconcileDone := make(chan struct{})
 	var reconcileExecution PurchaseExecution
@@ -552,7 +549,7 @@ func TestServiceWebhookAndReconciliationConvergeAcrossServiceInstances(t *testin
 		t.Fatalf("expected durable webhook observation to remain authoritative, got %#v", reconcileExecution.Result)
 	}
 
-	persisted, ok := secondStore.Get(req.ReferenceID)
+	persisted, ok := sharedStore.Get(req.ReferenceID)
 	if !ok || persisted.Execution.Result.Status != provider.StatusSuccess || persisted.Execution.Result.Message != "webhook observation" {
 		t.Fatalf("expected one deterministic durable terminal state, got %#v", persisted)
 	}
