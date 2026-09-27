@@ -2285,6 +2285,7 @@ func TestServiceRunCatalogCompletionErrorDoesNotSuppressDatabaseCleanup(t *testi
 		t.Fatal(err)
 	}
 	service.catalogLifecycle = newCatalogWorkerLifecycle()
+	service.catalogInterval = time.Hour
 
 	catalogErr := errors.New("catalog completion failed")
 	transactionErr := errors.New("transaction cleanup failed")
