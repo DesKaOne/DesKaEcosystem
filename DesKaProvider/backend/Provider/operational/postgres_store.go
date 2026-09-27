@@ -19,34 +19,34 @@ func NewPostgresStore(db *sql.DB) (*PostgresStore, error) {
     return &PostgresStore{db: db}, nil
 }
 
-func (s *PostgresStore) Get(name string) (Snapshot, bool) {
-    if name == "" {
-        return Snapshot{}, false
-    }
-    var snapshot Snapshot
-    var health string
-    err := s.db.QueryRow(
-        `SELECT provider_name, balance, currency, health, last_checked_at, last_success_at, last_error, consecutive_failures
-         FROM provider_operational_snapshots WHERE provider_name = $1`,
-        name,
-    ).Scan(
-        &snapshot.ProviderName,
-        &snapshot.Balance,
-        &snapshot.Currency,
-        &health,
-        &snapshot.LastCheckedAt,
-        &snapshot.LastSuccessAt,
-        &snapshot.LastError,
-        &snapshot.ConsecutiveFailures,
-    )
-    if errors.Is(err, sql.ErrNoRows) {
-        return Snapshot{}, false
-    }
-    if err != nil {
-        return Snapshot{}, false
-    }
-    snapshot.Health = Health(health)
-    return snapshot, true
+func (s *PostgresStore) GetWithError(name string) (Snapshot, bool, error) {
+	if name == "" {
+		return Snapshot{}, false, nil
+	}
+	var snapshot Snapshot
+	var health string
+	err := s.db.QueryRow(
+		`SELECT provider_name, balance, currency, health, last_checked_at, last_success_at, last_error, consecutive_failures
+		 FROM provider_operational_snapshots WHERE provider_name = $1`,
+		name,
+	).Scan(
+		&snapshot.ProviderName,
+		&snapshot.Balance,
+		&snapshot.Currency,
+		&health,
+		&snapshot.LastCheckedAt,
+		&snapshot.LastSuccessAt,
+		&snapshot.LastError,
+		&snapshot.ConsecutiveFailures,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Snapshot{}, false, nil
+	}
+	if err != nil {
+		return Snapshot{}, false, fmt.Errorf("load provider operational snapshot: %w", err)
+	}
+	snapshot.Health = Health(health)
+	return snapshot, true, nil
 }
 
 func (s *PostgresStore) Put(snapshot Snapshot) error {
