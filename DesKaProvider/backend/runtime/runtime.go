@@ -42,6 +42,8 @@ const (
 type Config struct{StorePath,TransactionStorePath,ProviderStateStorePath,TransactionStoreDriver,AuditStoreDriver,PostgresDSN string;SyncInterval time.Duration;FailureThreshold int;Currency,CatalogStorePath string;CatalogSyncInterval,CatalogMaxAge,OperationalSnapshotMaxAge time.Duration}
 type databaseCloser interface { Close() error }
 
+var ErrServiceClosed = errors.New("service is closed")
+
 var runtimeInitializationFailureHook func(string, *runtimeDatabaseOwnership) error
 
 func runRuntimeInitializationFailureHook(stage string, ownership *runtimeDatabaseOwnership) error {
@@ -87,6 +89,13 @@ func (o *runtimeDatabaseOwnership) cleanupBeforeTransfer() error {
 	o.closed = true
 	o.closeErr = closeRuntimeDatabases(o.transactionDB, o.auditDB)
 	return o.closeErr
+}
+
+func (o *runtimeDatabaseOwnership) isClosed() bool {
+	if o == nil { return false }
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.closed
 }
 
 func (o *runtimeDatabaseOwnership) closeOwned() error {
@@ -213,6 +222,7 @@ func runtimeShutdownContext(parent context.Context) (context.Context, context.Ca
 
 func (s *Service) Run(ctx context.Context) error {
 	if ctx == nil { return errors.New("context is required") }
+	if s.databaseOwnership != nil && s.databaseOwnership.isClosed() { return ErrServiceClosed }
 
 shutdown := func(primary, workerErr error) error {
 		catalogErr := s.shutdownCatalogLifecycle()
