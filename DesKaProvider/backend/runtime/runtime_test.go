@@ -3127,24 +3127,23 @@ func TestServiceRepeatedLifecycleCompletionPreservesOrderingAndSingleClose(t *te
 	if err := service.shutdownBalanceWorker(context.Background()); !errors.Is(err, balanceErr) {
 		t.Fatalf("expected first balance completion error, got %v", err)
 	}
-	if err := service.shutdownBalanceWorker(context.Background()); !errors.Is(err, balanceErr) {
-		t.Fatalf("expected repeated balance completion to preserve error identity, got %v", err)
+	if err := service.shutdownBalanceWorker(context.Background()); err != nil {
+		t.Fatalf("expected completed balance lifecycle to be a no-op, got %v", err)
 	}
 	if err := service.shutdownCatalogLifecycle(); !errors.Is(err, catalogErr) {
 		t.Fatalf("expected first catalog completion error, got %v", err)
 	}
-	if err := service.shutdownCatalogLifecycle(); !errors.Is(err, catalogErr) {
-		t.Fatalf("expected repeated catalog completion to preserve error identity, got %v", err)
+	if err := service.shutdownCatalogLifecycle(); err != nil {
+		t.Fatalf("expected completed catalog lifecycle to be a no-op, got %v", err)
 	}
 
-	if balanceCalls != 2 || catalogCalls != 2 {
-		t.Fatalf("expected explicit completion seams to remain deterministic, got balance=%d catalog=%d", balanceCalls, catalogCalls)
+	if balanceCalls != 1 || catalogCalls != 1 {
+		t.Fatalf("expected completed lifecycle shutdown seams to remain single-shot, got balance=%d catalog=%d", balanceCalls, catalogCalls)
 	}
 	if service.balanceLifecycle.Running() || service.catalogLifecycle.Running() {
 		t.Fatal("expected repeated completion to leave both lifecycles stopped")
 	}
 }
-
 
 func TestServiceRunShutdownDefersDatabaseCloseUntilAllLifecyclesStop(t *testing.T) {
 	workerErr := errors.New("injected shutdown worker error")
@@ -3898,5 +3897,96 @@ func TestServiceRepeatedPartialShutdownAttemptsConvergeBeforeDatabaseCleanup(t *
 	}
 	if tx.closeCount != 1 || audit.closeCount != 1 {
 		t.Fatalf("expected repeated Close not to double-close databases, got tx=%d audit=%d", tx.closeCount, audit.closeCount)
+	}
+}
+
+
+func TestServiceMixedShutdownConvergenceDoesNotReplaySuccessfulLifecycle(t *testing.T) {
+	service := newRuntimeTestService(t)
+	service.catalogSync, _ = catalog.NewSyncService(
+		&provider.Registry{},
+		catalog.NewMemoryStore(),
+	)
+	service.catalogLifecycle = newCatalogWorkerLifecycle()
+
+	catalogFirstErr := errors.New("catalog first convergence failure")
+	transactionErr := errors.New("mixed convergence transaction cleanup failure")
+	auditErr := errors.New("mixed convergence audit cleanup failure")
+	balanceCalls := 0
+	catalogCalls := 0
+	order := make([]string, 0, 6)
+
+	service.balanceShutdown = func(context.Context) error {
+		balanceCalls++
+		order = append(order, "balance")
+		service.balanceLifecycle.Shutdown(context.Background())
+		return nil
+	}
+	service.catalogShutdown = func() error {
+		catalogCalls++
+		order = append(order, "catalog")
+		if catalogCalls == 1 {
+			return catalogFirstErr
+		}
+		service.catalogLifecycle.Shutdown()
+		return nil
+	}
+
+	tx := &orderedCloseErrorDB{name: "transaction", order: &order, err: transactionErr}
+	audit := &orderedCloseErrorDB{name: "audit", order: &order, err: auditErr}
+	service.databaseOwnership = newRuntimeDatabaseOwnership(tx, audit)
+	service.databaseOwnership.transferToService()
+
+	if err := service.balanceLifecycle.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.catalogLifecycle.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := service.shutdownBalanceWorker(context.Background()); err != nil {
+		t.Fatalf("expected balance to converge successfully, got %v", err)
+	}
+	firstCatalogErr := service.shutdownCatalogLifecycle()
+	if !errors.Is(firstCatalogErr, catalogFirstErr) {
+		t.Fatalf("expected first catalog convergence error, got %v", firstCatalogErr)
+	}
+	if service.balanceLifecycle.Running() {
+		t.Fatal("expected successful balance convergence to stop the balance lifecycle")
+	}
+	if !service.catalogLifecycle.Running() {
+		t.Fatal("expected failed catalog convergence to leave catalog lifecycle active")
+	}
+	if tx.closeCount != 0 || audit.closeCount != 0 {
+		t.Fatalf("expected database cleanup to remain deferred while catalog is active: tx=%d audit=%d", tx.closeCount, audit.closeCount)
+	}
+
+	if err := service.shutdownBalanceWorker(context.Background()); err != nil {
+		t.Fatalf("expected already-converged balance lifecycle to be a no-op, got %v", err)
+	}
+	if err := service.shutdownCatalogLifecycle(); err != nil {
+		t.Fatalf("expected second catalog convergence to succeed, got %v", err)
+	}
+	if balanceCalls != 1 || catalogCalls != 2 {
+		t.Fatalf("expected only the still-active catalog to be retried, got balance=%d catalog=%d", balanceCalls, catalogCalls)
+	}
+	if service.balanceLifecycle.Running() || service.catalogLifecycle.Running() {
+		t.Fatal("expected both lifecycles to converge before database cleanup")
+	}
+
+	closeErr := service.Close()
+	for _, want := range []error{transactionErr, auditErr} {
+		if !errors.Is(closeErr, want) {
+			t.Fatalf("expected fresh database cleanup error %v, got %v", want, closeErr)
+		}
+	}
+	if errors.Is(closeErr, catalogFirstErr) {
+		t.Fatalf("terminal Close must not replay historical catalog convergence error: %v", closeErr)
+	}
+	if tx.closeCount != 1 || audit.closeCount != 1 {
+		t.Fatalf("expected one close per database, got tx=%d audit=%d", tx.closeCount, audit.closeCount)
+	}
+	if !reflect.DeepEqual(order, []string{"balance", "catalog", "catalog", "transaction", "audit"}) {
+		t.Fatalf("unexpected mixed convergence order: %v", order)
 	}
 }
