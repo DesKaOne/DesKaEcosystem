@@ -527,15 +527,15 @@ func preparePostgresSchema(ctx context.Context, db *sql.DB, mode string, version
 }
 
 func checkPostgresMigrationReadiness(ctx context.Context, db *sql.DB, version int) error {
-	var exists bool
-	err := db.QueryRowContext(ctx, "SELECT EXISTS (SELECT 1 FROM provider_schema_migrations WHERE version = $1)", version).Scan(&exists)
-	if err != nil {
-		return fmt.Errorf("check PostgreSQL migration %d readiness: %w", version, err)
+	if version == 1 {
+		var transactions, audit bool
+		if err := db.QueryRowContext(ctx, "SELECT to_regclass(current_schema() || '.provider_transactions') IS NOT NULL").Scan(&transactions); err != nil { return fmt.Errorf("check PostgreSQL migration 1 transaction schema: %w", err) }
+		if err := db.QueryRowContext(ctx, "SELECT to_regclass(current_schema() || '.provider_transaction_audit') IS NOT NULL").Scan(&audit); err != nil { return fmt.Errorf("check PostgreSQL migration 1 audit schema: %w", err) }
+		if !transactions || !audit { return errors.New("PostgreSQL migration 1 is not ready: apply DesKaProvider/backend/migrations/001_provider_transactions.sql") }
+		return nil
 	}
-	if !exists {
-		return fmt.Errorf("PostgreSQL migration %d is not applied: set DESKAPROVIDER_POSTGRES_SCHEMA_MODE=migrate once or apply the corresponding migration", version)
-	}
-	return nil
+	if version == 2 { return checkOperationalSchema(ctx, db) }
+	return fmt.Errorf("unsupported PostgreSQL migration readiness check: %d", version)
 }
 
 func checkOperationalSchema(ctx context.Context, db *sql.DB) error {
