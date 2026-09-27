@@ -5461,3 +5461,87 @@ func TestServiceRunShutdownSerializesCloseAndReplacementEntryPoints(t *testing.T
 		t.Fatalf("fresh generation must end with exactly one cleanup: %d", freshDB.closeCount)
 	}
 }
+
+
+func TestNewFromEnvironmentInitializationFailureClosesPartialGenerationBeforeOwnershipTransfer(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("DIGIFLAZZ_USERNAME", "test-user")
+	t.Setenv("DIGIFLAZZ_API_KEY", "test-key")
+	t.Setenv("DESKAPROVIDER_OPERATIONAL_STORE_PATH", filepath.Join(root, "operational", "snapshots.json"))
+	t.Setenv("DESKAPROVIDER_PROVIDER_STATE_STORE_PATH", filepath.Join(root, "provider-state", "state.json"))
+	t.Setenv("DESKAPROVIDER_TRANSACTION_STORE_PATH", filepath.Join(root, "transactions", "state.json"))
+
+	primary := errors.New("forced initialization failure")
+	var captured *runtimeDatabaseOwnership
+	runtimeInitializationFailureHook = func(stage string, ownership *runtimeDatabaseOwnership) error {
+		if stage != "after-router" {
+			return nil
+		}
+		captured = ownership
+		return primary
+	}
+	defer func() { runtimeInitializationFailureHook = nil }()
+
+	service, err := NewFromEnvironment(nil)
+	if service != nil {
+		t.Fatal("failed initialization must not return a service")
+	}
+	if !errors.Is(err, primary) {
+		t.Fatalf("expected primary initialization error, got %v", err)
+	}
+	if captured == nil {
+		t.Fatal("expected partial database ownership to be captured")
+	}
+	if !captured.isClosed() {
+		t.Fatal("partial generation must be closed before failed initialization returns")
+	}
+	if err := captured.closeOwned(); err != nil {
+		t.Fatalf("repeated cleanup should preserve recorded cleanup result: %v", err)
+	}
+}
+
+func TestNewFromEnvironmentInitializationFailureDoesNotPoisonSubsequentFreshGeneration(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("DIGIFLAZZ_USERNAME", "test-user")
+	t.Setenv("DIGIFLAZZ_API_KEY", "test-key")
+	t.Setenv("DESKAPROVIDER_OPERATIONAL_STORE_PATH", filepath.Join(root, "operational", "snapshots.json"))
+	t.Setenv("DESKAPROVIDER_PROVIDER_STATE_STORE_PATH", filepath.Join(root, "provider-state", "state.json"))
+	t.Setenv("DESKAPROVIDER_TRANSACTION_STORE_PATH", filepath.Join(root, "transactions", "state.json"))
+
+	primary := errors.New("forced initialization failure")
+	runtimeInitializationFailureHook = func(stage string, ownership *runtimeDatabaseOwnership) error {
+		if stage != "after-purchase-service" {
+			return nil
+		}
+		if ownership == nil {
+			t.Fatal("expected partial ownership at failure boundary")
+		}
+		return primary
+	}
+
+	failed, err := NewFromEnvironment(nil)
+	if failed != nil {
+		t.Fatal("failed initialization must not return a service")
+	}
+	if !errors.Is(err, primary) {
+		t.Fatalf("expected primary initialization error, got %v", err)
+	}
+	runtimeInitializationFailureHook = nil
+
+	fresh, err := NewFromEnvironment(nil)
+	if err != nil {
+		t.Fatalf("fresh initialization after failed generation should succeed: %v", err)
+	}
+	if fresh.databaseOwnership == nil {
+		t.Fatal("fresh service must own a database generation")
+	}
+	if fresh.databaseOwnership.isClosed() {
+		t.Fatal("fresh generation must remain open after successful initialization")
+	}
+	if err := fresh.Close(); err != nil {
+		t.Fatalf("fresh generation terminal Close failed: %v", err)
+	}
+	if !fresh.databaseOwnership.isClosed() {
+		t.Fatal("fresh generation must be closed by its own terminal Close")
+	}
+}
