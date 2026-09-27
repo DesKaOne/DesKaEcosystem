@@ -190,7 +190,12 @@ func finalizeRuntimeForTest(t *testing.T, runtime *consensus.ValidatorRuntime, s
 	payload := runtime.Proposal()
 	if len(payload) == 0 { t.Fatal("runtime proposal is empty") }
 	existing := make(map[string]struct{})
-	for _, vote := range runtime.PrecommitVotes() { existing[string(vote.Sender)] = struct{}{} }
+	for _, vote := range runtime.PrecommitVotes() {
+		if err := consensus.VerifyMessageSignature(vote, signer.PublicKey()); err != nil {
+			t.Fatalf("existing precommit evidence for %q has invalid signature/type=%d", vote.Sender, vote.Type)
+		}
+		existing[string(vote.Sender)] = struct{}{}
+	}
 	for _, validator := range runtime.Validators().Validators {
 		if _, ok := existing[string(validator)]; ok { continue }
 		msg := consensus.Message{
