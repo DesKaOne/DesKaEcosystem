@@ -10144,3 +10144,51 @@ This milestone is limited to runtime lifecycle convergence bookkeeping, completi
 **#193 — Runtime Shutdown Convergence Across Re-entry and Fresh Ownership**
 
 Focus next on the boundary where a partially converged lifecycle rejects Run re-entry, later converges, and a fresh Run performs a terminal shutdown without replaying historical lifecycle errors or duplicating ownership cleanup.
+
+
+## 193. Milestone Update — Runtime Shutdown Convergence Across Re-entry and Fresh Ownership
+
+**Date:** 2026-09-27
+
+Completed:
+
+- added deterministic regression coverage for a fresh `Service.Run()` after a previous partial lifecycle shutdown was explicitly converged;
+- verified the first Run preserves caller cancellation and the historical catalog completion error while database ownership remains open because catalog convergence is incomplete;
+- verified explicit catalog convergence clears the active lifecycle boundary without closing transferred database ownership prematurely;
+- verified a subsequent fresh Run resets the per-run lifecycle completion state and performs a new balance/catalog shutdown sequence;
+- verified the fresh Run does not replay the historical catalog completion error;
+- verified fresh transaction/audit cleanup errors remain observable and transaction cleanup occurs before audit cleanup;
+- verified each database handle closes exactly once and repeated `Service.Close()` preserves only the fresh cleanup errors;
+- initial CI #1943 was RED only because the new test omitted the explicit catalog-convergence event from its expected ordering; no production runtime failure was identified;
+- corrected regression expectation in commit `3cf067bd765e64af9c7b74fd30b80296a9b6787a`;
+- no production runtime behavior was changed by this milestone;
+- no provider retry/failover, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, provider funding, or synthetic transaction/audit reconstruction was introduced.
+
+### Verification
+
+- Initial regression test commit: `e928c0f65376cbd0ea3e1e29f1ba17bbb03e5524`.
+- CI #1943: RED — test expected ordering omitted the explicit manual catalog convergence event.
+- Corrected regression test commit: `3cf067bd765e64af9c7b74fd30b80296a9b6787a`.
+- CI #1945 on exact corrected test HEAD: **GREEN**.
+  - `go test ./...` — PASS
+  - `go vet ./...` — PASS
+  - PostgreSQL service-backed integration tests — PASS
+  - `go test -race ./...` — PASS
+
+### Safety Boundary
+
+This milestone is limited to runtime lifecycle re-entry, per-run completion bookkeeping, deferred database ownership, error identity, ordering, and single-shot cleanup. Historical lifecycle errors remain operational observations and are not promoted into transaction state, provider state, ledger state, treasury state, or financial authorization.
+
+### Known Limitations
+
+- production `catalogWorkerLifecycle.Shutdown()` remains void-returning; catalog completion errors continue to be represented through the existing internal test seam;
+- PostgreSQL integration coverage requires `DESKAPROVIDER_POSTGRES_DSN` and is skipped when unavailable;
+- database close remains non-context-aware;
+- per-run completion flags are lifecycle bookkeeping and do not constitute a recovery journal;
+- this milestone adds no provider retry/failover or transaction recovery behavior.
+
+### Next Milestone
+
+**#194 — Runtime Shutdown Convergence With Fresh Ownership Replacement**
+
+Focus next on replacing runtime-owned database resources after a partial lifecycle shutdown has converged, verifying stale cleanup errors and ownership state do not leak into the fresh ownership generation and each generation remains single-shot.
