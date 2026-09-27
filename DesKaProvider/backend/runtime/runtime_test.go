@@ -3160,9 +3160,9 @@ func TestServiceRunShutdownDefersDatabaseCloseUntilAllLifecyclesStop(t *testing.
 		catalogShutdown: func() error {
 			return catalogErr
 		},
-		catalogStart: func(parent context.Context) (context.Context, error) {
-			return service.catalogLifecycle.Start(parent)
-		},
+	}
+	service.catalogStart = func(parent context.Context) (context.Context, error) {
+		return service.catalogLifecycle.Start(parent)
 	}
 
 	runCtx, cancel := context.WithCancel(context.Background())
