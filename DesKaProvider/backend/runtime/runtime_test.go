@@ -4837,6 +4837,116 @@ func TestServiceOwnershipReplacementStressPreservesGenerationIsolationAcrossRepe
 }
 
 
+func TestServiceRunLongSequenceReusePreservesGenerationIsolation(t *testing.T) {
+	service := newRuntimeTestService(t)
+	service.catalogLifecycle = newCatalogWorkerLifecycle()
+
+	const cycles = 48
+	type generation struct {
+		tx, audit *orderedCloseErrorDB
+		txErr, auditErr error
+		ownership *runtimeDatabaseOwnership
+	}
+
+	makeGeneration := func(i int) generation {
+		name := fmt.Sprintf("long-%02d", i)
+		order := make([]string, 0, 2)
+		txErr := fmt.Errorf("%s transaction", name)
+		auditErr := fmt.Errorf("%s audit", name)
+		tx := &orderedCloseErrorDB{name: name + "-tx", order: &order, err: txErr}
+		audit := &orderedCloseErrorDB{name: name + "-audit", order: &order, err: auditErr}
+		ownership := newRuntimeDatabaseOwnership(tx, audit)
+		ownership.transferToService()
+		return generation{tx: tx, audit: audit, txErr: txErr, auditErr: auditErr, ownership: ownership}
+	}
+
+	current := makeGeneration(0)
+	service.databaseOwnership = current.ownership
+
+	for cycle := 1; cycle <= cycles; cycle++ {
+		next := makeGeneration(cycle)
+		if err := service.balanceLifecycle.Start(context.Background()); err != nil {
+			t.Fatalf("cycle %d start balance: %v", cycle, err)
+		}
+		if _, err := service.catalogLifecycle.Start(context.Background()); err != nil {
+			t.Fatalf("cycle %d start catalog: %v", cycle, err)
+		}
+
+		var wg sync.WaitGroup
+		errs := make(chan error, 8)
+		for i := 0; i < 8; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				errs <- service.replaceDatabaseOwnership(next.ownership)
+			}()
+		}
+		wg.Wait()
+		close(errs)
+		for err := range errs {
+			if !errors.Is(err, ErrServiceLifecycleActive) {
+				t.Fatalf("cycle %d active replacement bypassed lifecycle gate: %v", cycle, err)
+			}
+		}
+		if service.databaseOwnership != current.ownership {
+			t.Fatalf("cycle %d installed replacement before convergence", cycle)
+		}
+
+		service.catalogLifecycle.Shutdown()
+		if err := service.balanceLifecycle.Shutdown(context.Background()); err != nil {
+			t.Fatalf("cycle %d balance convergence: %v", cycle, err)
+		}
+
+		if err := service.replaceDatabaseOwnership(next.ownership); !errors.Is(err, current.txErr) || !errors.Is(err, current.auditErr) {
+			t.Fatalf("cycle %d expected current-generation cleanup errors, got %v", cycle, err)
+		}
+		if service.databaseOwnership != current.ownership {
+			t.Fatalf("cycle %d failed replacement changed ownership", cycle)
+		}
+		if current.tx.closeCount != 1 || current.audit.closeCount != 1 {
+			t.Fatalf("cycle %d current generation double cleanup: tx=%d audit=%d", cycle, current.tx.closeCount, current.audit.closeCount)
+		}
+		if next.tx.closeCount != 0 || next.audit.closeCount != 0 {
+			t.Fatalf("cycle %d fresh generation touched during failed replacement", cycle)
+		}
+
+		var retry sync.WaitGroup
+		retryErrs := make(chan error, 8)
+		for i := 0; i < 8; i++ {
+			retry.Add(1)
+			go func() {
+				defer retry.Done()
+				retryErrs <- service.replaceDatabaseOwnership(next.ownership)
+			}()
+		}
+		retry.Wait()
+		close(retryErrs)
+		for err := range retryErrs {
+			if err != nil {
+				t.Fatalf("cycle %d retry replacement failed: %v", cycle, err)
+			}
+		}
+		if service.databaseOwnership != next.ownership {
+			t.Fatalf("cycle %d fresh generation not installed after retry", cycle)
+		}
+		if next.tx.closeCount != 0 || next.audit.closeCount != 0 {
+			t.Fatalf("cycle %d fresh generation closed during install", cycle)
+		}
+		current = next
+	}
+
+	if err := service.Close(); !errors.Is(err, current.txErr) || !errors.Is(err, current.auditErr) {
+		t.Fatalf("long sequence final Close lost final generation errors: %v", err)
+	}
+	if current.tx.closeCount != 1 || current.audit.closeCount != 1 {
+		t.Fatalf("long sequence final generation double cleanup: tx=%d audit=%d", current.tx.closeCount, current.audit.closeCount)
+	}
+	if err := service.Close(); !errors.Is(err, current.txErr) || !errors.Is(err, current.auditErr) {
+		t.Fatalf("long sequence repeated Close lost final generation errors: %v", err)
+	}
+}
+
+
 func TestServiceRunShutdownErrorOwnershipBoundaryMatrixAndFreshGenerationReuse(t *testing.T) {
 	type shutdownCase struct {
 		name          string
