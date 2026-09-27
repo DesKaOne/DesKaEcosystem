@@ -619,7 +619,7 @@ func TestConsensusRuntimeNegativeCrossHeightInvalidFinalityEvidence(t *testing.T
 		t.Fatal(err)
 	}
 	certificate2.Height = certificate2.Height - 1
-	if err := n.CommitFinalizedBlock(ctx2, candidate2, certificate2, validators, power, validatorResolver, senderResolver); !errors.Is(err, consensus.ErrStateContextMismatch) {
+	if err := n.CommitFinalizedBlock(ctx2, candidate2, certificate2, validators, power, runtimeValidatorAuthorityResolver{publicKey: signer.PublicKey()}, senderResolver); !errors.Is(err, consensus.ErrStateContextMismatch) {
 		t.Fatalf("cross-height finality context error = %v, want %v", err, consensus.ErrStateContextMismatch)
 	}
 	if n.Head.Header.Height != 1 || n.HeadHash != canonicalHeight1Hash {
@@ -724,7 +724,7 @@ func TestConsensusRuntimeNegativeCrossHeightVoteContextMismatch(t *testing.T) {
 	}
 	certificate2.Votes[0].Height--
 
-	if err := n.CommitFinalizedBlock(ctx2, candidate2, certificate2, validators, power, validatorResolver, senderResolver); !errors.Is(err, consensus.ErrConsensusMessageContextMismatch) {
+	if err := n.CommitFinalizedBlock(ctx2, candidate2, certificate2, validators, power, runtimeValidatorAuthorityResolver{publicKey: signer.PublicKey()}, senderResolver); !errors.Is(err, consensus.ErrConsensusMessageContextMismatch) {
 		t.Fatalf("cross-height vote context error = %v, want %v", err, consensus.ErrConsensusMessageContextMismatch)
 	}
 	if n.Head.Header.Height != 1 || n.HeadHash != canonicalHeight1Hash {
@@ -734,7 +734,7 @@ func TestConsensusRuntimeNegativeCrossHeightVoteContextMismatch(t *testing.T) {
 	// Restore the vote context so the next mutation isolates certificate-level context.
 	certificate2.Votes[0].Height = state2.Height
 	certificate2.Round++
-	if err := n.CommitFinalizedBlock(ctx2, candidate2, certificate2, validators, power, validatorResolver, senderResolver); !errors.Is(err, consensus.ErrStateContextMismatch) {
+	if err := n.CommitFinalizedBlock(ctx2, candidate2, certificate2, validators, power, runtimeValidatorAuthorityResolver{publicKey: signer.PublicKey()}, senderResolver); !errors.Is(err, consensus.ErrStateContextMismatch) {
 		t.Fatalf("cross-height certificate round context error = %v, want %v", err, consensus.ErrStateContextMismatch)
 	}
 	if n.Head.Header.Height != 1 || n.HeadHash != canonicalHeight1Hash {
@@ -743,7 +743,7 @@ func TestConsensusRuntimeNegativeCrossHeightVoteContextMismatch(t *testing.T) {
 
 	certificate2.Round = state2.Round
 	certificate2.Epoch++
-	if err := n.CommitFinalizedBlock(ctx2, candidate2, certificate2, validators, power, validatorResolver, senderResolver); !errors.Is(err, consensus.ErrStateContextMismatch) {
+	if err := n.CommitFinalizedBlock(ctx2, candidate2, certificate2, validators, power, runtimeValidatorAuthorityResolver{publicKey: signer.PublicKey()}, senderResolver); !errors.Is(err, consensus.ErrStateContextMismatch) {
 		t.Fatalf("cross-height certificate epoch context error = %v, want %v", err, consensus.ErrStateContextMismatch)
 	}
 	if n.Head.Header.Height != 1 || n.HeadHash != canonicalHeight1Hash {
@@ -752,7 +752,7 @@ func TestConsensusRuntimeNegativeCrossHeightVoteContextMismatch(t *testing.T) {
 
 	certificate2.Epoch = state2.Epoch
 	certificate2.ProtocolVersion++
-	if err := n.CommitFinalizedBlock(ctx2, candidate2, certificate2, validators, power, validatorResolver, senderResolver); !errors.Is(err, consensus.ErrStateContextMismatch) {
+	if err := n.CommitFinalizedBlock(ctx2, candidate2, certificate2, validators, power, runtimeValidatorAuthorityResolver{publicKey: signer.PublicKey()}, senderResolver); !errors.Is(err, consensus.ErrStateContextMismatch) {
 		t.Fatalf("cross-height certificate protocol version context error = %v, want %v", err, consensus.ErrStateContextMismatch)
 	}
 	if n.Head.Header.Height != 1 || n.HeadHash != canonicalHeight1Hash {
@@ -761,7 +761,7 @@ func TestConsensusRuntimeNegativeCrossHeightVoteContextMismatch(t *testing.T) {
 
 	certificate2.ProtocolVersion = state2.ProtocolVersion
 	certificate2.ChainID++
-	if err := n.CommitFinalizedBlock(ctx2, candidate2, certificate2, validators, power, validatorResolver, senderResolver); !errors.Is(err, consensus.ErrStateContextMismatch) {
+	if err := n.CommitFinalizedBlock(ctx2, candidate2, certificate2, validators, power, runtimeValidatorAuthorityResolver{publicKey: signer.PublicKey()}, senderResolver); !errors.Is(err, consensus.ErrStateContextMismatch) {
 		t.Fatalf("cross-height certificate chain ID context error = %v, want %v", err, consensus.ErrStateContextMismatch)
 	}
 	if n.Head.Header.Height != 1 || n.HeadHash != canonicalHeight1Hash {
@@ -770,7 +770,7 @@ func TestConsensusRuntimeNegativeCrossHeightVoteContextMismatch(t *testing.T) {
 
 	certificate2.ChainID = state2.ChainID
 	certificate2.Height++
-	if err := n.CommitFinalizedBlock(ctx2, candidate2, certificate2, validators, power, validatorResolver, senderResolver); !errors.Is(err, consensus.ErrStateContextMismatch) {
+	if err := n.CommitFinalizedBlock(ctx2, candidate2, certificate2, validators, power, runtimeValidatorAuthorityResolver{publicKey: signer.PublicKey()}, senderResolver); !errors.Is(err, consensus.ErrStateContextMismatch) {
 		t.Fatalf("cross-height certificate height context error = %v, want %v", err, consensus.ErrStateContextMismatch)
 	}
 	if n.Head.Header.Height != 1 || n.HeadHash != canonicalHeight1Hash {
@@ -779,7 +779,7 @@ func TestConsensusRuntimeNegativeCrossHeightVoteContextMismatch(t *testing.T) {
 
 	certificate2.Height = state2.Height
 	certificate2.Threshold = consensus.QuorumThreshold{Numerator: 2, Denominator: 1}
-	if err := n.CommitFinalizedBlock(ctx2, candidate2, certificate2, validators, power, validatorResolver, senderResolver); !errors.Is(err, consensus.ErrInvalidQuorumThreshold) {
+	if err := n.CommitFinalizedBlock(ctx2, candidate2, certificate2, validators, power, runtimeValidatorAuthorityResolver{publicKey: signer.PublicKey()}, senderResolver); !errors.Is(err, consensus.ErrInvalidQuorumThreshold) {
 		t.Fatalf("cross-height certificate invalid threshold error = %v, want %v", err, consensus.ErrInvalidQuorumThreshold)
 	}
 	if n.Head.Header.Height != 1 || n.HeadHash != canonicalHeight1Hash {
@@ -947,7 +947,7 @@ func TestConsensusRuntimeNegativeCrossHeightReplayedCandidate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := n.CommitFinalizedBlock(ctx2, candidate2, certificate2, validators, power, validatorResolver, senderResolver); err != nil {
+	if err := n.CommitFinalizedBlock(ctx2, candidate2, certificate2, validators, power, runtimeValidatorAuthorityResolver{publicKey: signer.PublicKey()}, senderResolver); err != nil {
 		t.Fatal(err)
 	}
 	canonicalHeight2Hash := n.HeadHash
@@ -1056,7 +1056,7 @@ func TestConsensusRuntimeNegativeCrossHeightDifferentCandidate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := n.CommitFinalizedBlock(ctx2, candidate2, certificate2, validators, power, validatorResolver, senderResolver); err != nil {
+	if err := n.CommitFinalizedBlock(ctx2, candidate2, certificate2, validators, power, runtimeValidatorAuthorityResolver{publicKey: signer.PublicKey()}, senderResolver); err != nil {
 		t.Fatal(err)
 	}
 	canonicalHeight2Hash := n.HeadHash
@@ -1238,7 +1238,7 @@ func TestConsensusRuntimeNegativeCrossHeightFutureCandidateStalePreviousHash(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := n.CommitFinalizedBlock(ctx2, candidate2, certificate2, validators, power, validatorResolver, senderResolver); err != nil {
+	if err := n.CommitFinalizedBlock(ctx2, candidate2, certificate2, validators, power, runtimeValidatorAuthorityResolver{publicKey: signer.PublicKey()}, senderResolver); err != nil {
 		t.Fatal(err)
 	}
 	canonicalHeight2Hash := n.HeadHash
