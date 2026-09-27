@@ -8698,3 +8698,56 @@ This milestone is limited to shutdown ordering, error identity/composition, life
 **#186 — Runtime Shutdown Reentrancy & Ownership Guard Matrix**
 
 Focus next on repeated/concurrent shutdown entry points and ownership guards, including `Service.Close()`, completed `Run()`, shutdown timeout, and concurrent lifecycle completion, while preserving single-shot database ownership cleanup and avoiding new provider/transaction recovery behavior.
+
+
+## 186. Milestone Update — Runtime Shutdown Reentrancy & Ownership Guard Matrix
+
+**Date:** 2026-09-27
+
+Completed:
+
+- serialized runtime shutdown completion, direct `Service.Close()`, and `Service.Run()` re-entry through a dedicated runtime shutdown mutex;
+- moved the initial closed-ownership check and balance-worker startup under the same serialization boundary so a concurrent `Close()` cannot close transferred database ownership between the closed-state check and worker start;
+- changed the composed Run shutdown path to complete catalog lifecycle shutdown and database ownership cleanup while holding the same boundary, preventing direct `Close()` from closing databases during an in-progress lifecycle completion;
+- preserved the existing shutdown ordering: balance worker completion, catalog completion, transaction database cleanup, then audit database cleanup;
+- added regression coverage for concurrent `Close()` and `Run()` re-entry while catalog shutdown completion is deliberately blocked;
+- verified concurrent callers cannot observe an intermediate state or close runtime databases before the active shutdown completion finishes;
+- verified the re-entry attempt observes `ErrServiceClosed` after the first owned shutdown completes;
+- no provider retry/failover, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, provider funding, or synthetic transaction/audit reconstruction was introduced.
+
+### CI Failure and Correction
+
+CI #1749 on implementation/test commit `2bd5f63cc0e1a1d9c24c8a5971ca4ad9fe877258` was **RED** because the new interleaving fixture omitted `catalogInterval`, causing `time.NewTicker(0)` to panic in the test.
+
+The fixture was corrected at `9e160b10373eb6614b11e84737ddc5dc2c0bc944` by setting a valid catalog interval. The runtime serialization change itself was retained unchanged.
+
+### Verification
+
+- Runtime implementation commit: `769c4fbe9c3b62a7bb8e44c1b52d2622de334646`.
+- Initial regression test commit: `2bd5f63cc0e1a1d9c24c8a5971ca4ad9fe877258`.
+- Corrected regression test commit / exact HEAD: `9e160b10373eb6614b11e84737ddc5dc2c0bc944`.
+- CI #1749: RED — test fixture panic from zero catalog interval.
+- CI #1751 on exact corrected HEAD: **GREEN**.
+  - `go test ./...` — PASS
+  - `go vet ./...` — PASS
+  - PostgreSQL service-backed integration tests — PASS
+  - `go test -race ./...` — PASS
+
+### Safety Boundary
+
+This milestone is limited to runtime lifecycle serialization, shutdown re-entry, and database ownership closure ordering. The mutex does not create transaction or audit recovery authority and does not alter the authoritative transaction-state/idempotency boundary or append-only audit boundary.
+
+The change does not introduce provider retry/failover, transaction resubmission, ledger mutation, treasury movement, provider funding, or cross-domain recovery behavior.
+
+### Known Limitations
+
+- production `catalogWorkerLifecycle.Shutdown()` remains void-returning; catalog completion error composition continues to use the existing internal test seam;
+- PostgreSQL integration coverage requires `DESKAPROVIDER_POSTGRES_DSN` and is skipped when unavailable;
+- database close remains non-context-aware;
+- services constructed without transferred runtime database ownership retain their existing lifecycle semantics.
+
+### Next Milestone
+
+**#187 — Runtime Close-State Error Composition Across Direct and Run-Owned Shutdown**
+
+Focus next on stable closed-state error identity and cleanup-error preservation across direct `Service.Close()`, Run-owned shutdown, and repeated close attempts, without introducing new provider or transaction recovery behavior.
