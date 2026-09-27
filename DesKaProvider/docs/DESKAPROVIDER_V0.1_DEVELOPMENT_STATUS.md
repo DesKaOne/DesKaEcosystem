@@ -10048,3 +10048,46 @@ This milestone is limited to runtime lifecycle convergence, deferred database ow
 **#191 — Runtime Shutdown Convergence After Repeated Partial Attempts**
 
 Focus next on repeated partial-shutdown attempts across the same lifecycle, ensuring a failed first convergence, a failed second convergence, and a final successful convergence preserve error identity, defer ownership until terminal convergence, and keep database cleanup single-shot.
+
+
+## 191. Milestone Update — Runtime Shutdown Convergence After Repeated Partial Attempts
+
+**Date:** 2026-09-27
+
+Completed:
+
+- added deterministic regression coverage for repeated partial shutdown attempts across the balance and catalog lifecycles;
+- verified the first shutdown attempt can preserve caller cancellation plus independent balance/catalog completion errors while both lifecycles remain active;
+- verified a second shutdown attempt can fail independently without releasing database ownership prematurely;
+- verified a final successful convergence stops both lifecycles before runtime database cleanup begins;
+- verified terminal transaction cleanup occurs before audit cleanup and each owned database closes exactly once;
+- verified terminal `Service.Close()` exposes only the fresh database cleanup errors and does not replay historical lifecycle completion errors;
+- verified repeated `Service.Close()` preserves the terminal cleanup-error identity without double-closing;
+- no production runtime behavior was changed by this milestone; the change is regression coverage for the existing repeated-convergence and ownership contract;
+- no provider retry/failover, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, provider funding, or synthetic transaction/audit reconstruction was introduced.
+
+### Verification
+
+- Regression test commit: `03d6c8bb3edb9e2167e3c2fe8087f3ff06c560ae`.
+- CI #1931 on exact test HEAD: **GREEN**.
+  - `go test ./...` — PASS
+  - `go vet ./...` — PASS
+  - PostgreSQL service-backed integration tests — PASS
+  - `go test -race ./...` — PASS
+
+### Safety Boundary
+
+This milestone is limited to repeated lifecycle convergence, deferred database ownership cleanup, error identity, ordering, and single-shot close semantics. Historical lifecycle errors remain operational observations and are not promoted into transaction state, provider state, ledger state, treasury state, or financial authorization.
+
+### Known Limitations
+
+- production `catalogWorkerLifecycle.Shutdown()` remains void-returning; catalog completion errors continue to be represented through the internal test seam;
+- PostgreSQL integration coverage requires `DESKAPROVIDER_POSTGRES_DSN` and is skipped when unavailable;
+- database close remains non-context-aware;
+- this milestone adds no provider retry/failover or transaction recovery behavior.
+
+### Next Milestone
+
+**#192 — Runtime Shutdown Convergence Under Mixed Lifecycle Outcomes**
+
+Focus next on mixed outcomes where one lifecycle converges successfully while the other fails across repeated attempts, ensuring successful completion is not replayed, the still-active lifecycle continues to defer database cleanup, and final convergence preserves stable error identity and ordering.
