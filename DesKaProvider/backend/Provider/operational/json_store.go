@@ -53,6 +53,11 @@ func (s *JSONFileStore) Get(name string) (Snapshot, bool) {
 }
 
 func (s *JSONFileStore) GetWithError(name string) (Snapshot, bool, error) {
+	snapshot, found := s.Get(name)
+	return snapshot, found, nil
+}
+
+func (s *JSONFileStore) GetWithError(name string) (Snapshot, bool, error) {
 	return s.Get(name)
 }
 
