@@ -2870,3 +2870,110 @@ func TestServiceRecordedCleanupErrorPersistsAcrossRepeatedCloseAndReentry(t *tes
 		}
 	})
 }
+
+
+func TestRuntimeOwnershipRetainsCleanupErrorsAcrossSharedAndDedicatedTopologies(t *testing.T) {
+	tests := []struct {
+		name      string
+		shared    bool
+		runOwned  bool
+	}{
+		{name: "shared-direct-close", shared: true},
+		{name: "shared-run-owned", shared: true, runOwned: true},
+		{name: "dedicated-direct-close", shared: false},
+		{name: "dedicated-run-owned", shared: false, runOwned: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			transactionErr := errors.New("transaction cleanup failure")
+			auditErr := errors.New("audit cleanup failure")
+
+			tx := &closeErrorDB{err: transactionErr}
+			var audit *closeErrorDB
+			if tt.shared {
+				audit = tx
+			} else {
+				audit = &closeErrorDB{err: auditErr}
+			}
+
+			service := newRuntimeTestService(t)
+			service.databaseOwnership = newRuntimeDatabaseOwnership(tx, audit)
+			service.databaseOwnership.transferToService()
+
+			var firstErr error
+			if tt.runOwned {
+				service.catalogSync = nil
+				ctx, cancel := context.WithCancel(context.Background())
+				cancel()
+				firstErr = service.Run(ctx)
+				if !errors.Is(firstErr, context.Canceled) {
+					t.Fatalf("expected Run-owned cancellation identity, got %v", firstErr)
+				}
+			} else {
+				firstErr = service.Close()
+			}
+
+			if !errors.Is(firstErr, transactionErr) {
+				t.Fatalf("expected transaction cleanup error identity, got %v", firstErr)
+			}
+			if tt.shared {
+				if !errors.Is(firstErr, auditErr) {
+					t.Fatalf("shared topology should retain the same transaction/audit cleanup error only when they share the handle; got %v", firstErr)
+				}
+			} else if !errors.Is(firstErr, auditErr) {
+				t.Fatalf("expected dedicated audit cleanup error identity, got %v", firstErr)
+			}
+
+			secondErr := service.Close()
+			if secondErr == nil {
+				t.Fatal("expected repeated Close to retain recorded cleanup error")
+			}
+			if secondErr != service.databaseOwnership.closeErr {
+				t.Fatalf("expected repeated Close to return the stored ownership cleanup result object")
+			}
+			if !errors.Is(secondErr, transactionErr) {
+				t.Fatalf("expected repeated Close to preserve transaction cleanup error, got %v", secondErr)
+			}
+			if !tt.shared && !errors.Is(secondErr, auditErr) {
+				t.Fatalf("expected repeated Close to preserve dedicated audit cleanup error, got %v", secondErr)
+			}
+
+			if tx.closeCount != 1 {
+				t.Fatalf("expected transaction handle to close exactly once, got %d", tx.closeCount)
+			}
+			if tt.shared {
+				if audit.closeCount != 1 {
+					t.Fatalf("expected shared handle to close exactly once, got %d", audit.closeCount)
+				}
+			} else if audit.closeCount != 1 {
+				t.Fatalf("expected dedicated audit handle to close exactly once, got %d", audit.closeCount)
+			}
+
+			reentryErr := service.Run(context.Background())
+			if !errors.Is(reentryErr, ErrServiceClosed) {
+				t.Fatalf("expected closed-state re-entry rejection, got %v", reentryErr)
+			}
+			if errors.Is(reentryErr, transactionErr) || errors.Is(reentryErr, auditErr) {
+				t.Fatalf("closed-state re-entry must not replay historical cleanup errors: %v", reentryErr)
+			}
+		})
+	}
+}
+
+func newRuntimeTestService(t *testing.T) *Service {
+	t.Helper()
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", &balanceMock{Provider: mock.New(mock.Config{}), balance: 100000}); err != nil {
+		t.Fatal(err)
+	}
+	syncService, err := operational.NewSyncService(registry, operational.NewMemoryStore(), "IDR", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := New(syncService, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return service
+}
