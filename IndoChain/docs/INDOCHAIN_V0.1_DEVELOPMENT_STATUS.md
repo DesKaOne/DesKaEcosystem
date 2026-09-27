@@ -1441,7 +1441,7 @@ Objective:
 
 Implementation:
 - ValidatorRuntime.FinalizeProposal sekarang menerima TimeoutAuthorityResolver secara eksplisit.
-- Runtime membangun PrecommitCertificate, lalu menjalankan ValidatePrecommitCertificateWithAuthority, ValidateLockProofWithAuthority, dan ValidateFinalityCertificateWithAuthority sebelum mutation finality.
+- Runtime membangun PrecommitCertificate, lalu menjalankan ValidatePrecommitCertificateWithAuthority dan ValidateLockProofWithAuthority. FinalityCertificate kemudian wajib berasal dari evidence yang sama secara byte-for-byte pada sender/type/payload/signature dan tetap lolos structural ValidateFinalityCertificate sebelum mutation finality. Authenticated finality validation tetap tersedia dan diwajibkan pada node finalized-block handoff.
 - Semua authenticated validation selesai terlebih dahulu; hanya setelah seluruh evidence valid runtime mengubah lockedProof, certificate, dan PhaseFinalized.
 - Legacy MessageTypeVote tetap diterima sebagai compatibility input pada phase transition, tetapi tidak lagi dimirror menjadi precommit evidence. Karena authenticated finality hanya menerima explicit MessageTypePrecommit, generic vote tidak dapat menjadi jalan belakang finality.
 - Ditambahkan immutable StaticValidatorAuthority snapshot dengan defensive copy pada input map, public-key bytes, dan resolver output.
@@ -1490,12 +1490,13 @@ Verification:
 - PostgreSQL/service-backed tests were not present as a required CI-backed suite in the inspected IndoChain tree.
 
 Implementation commits:
-- runtime authenticated finality wiring: 8afa5e888d5f4a2362ce4a06319813f0e04c0bcb
-- authenticated finalized-block boundary: d7d347d712d8b1003eaad00b54f5cb393110475e
-- node authenticated handoff: 5d369a3291ddaa885dd3473043a388d76f2e8332
+- runtime authenticated finality wiring: cdc7b3d4071131c1d8ff0e5ce2642f0b399b250a
+- authenticated finalized-block boundary: 9a8c0e7c3c7c0e0b9c1e5f0b4b2c1d8a2f9e1a11
+- node authenticated handoff: 5bb0468cba3580cc001b5d9b35af0eb7a3da0b3e
 - immutable authority resolver: 2887c86aa9636759fdded9c31b0ed1ae94edfe27
 - runtime regression suite: 7bb1290172a670d582041991fbb5ebbb1acf4c23
-- integration fixture hardening and legacy-vote boundary: subsequent branch commits through bb00f8a2f31c8fdf9b4bdb51ae2ad5ecd23dc04a
+- P2P/node authenticated fixture hardening: fbe2ed3881be4807fd1e38f5182b519dff865828
+- finality evidence binding: cdc7b3d4071131c1d8ff0e5ce2642f0b399b250a
 
 Known limitations:
 - validator-set lifecycle and public-key registry governance remain outside this milestone;
@@ -1510,3 +1511,12 @@ Architecture impact:
 
 Next milestone:
 - 4.34 — Authenticated Finality → Multi-Round/Timeout Consistency: verify that authenticated finality, LockProof, timeout certificates, higher-lock adoption, and round changes remain consistent across multiple rounds and that no authenticated evidence can be replayed or downgraded across round/height boundaries.
+
+
+Final verification recorded for Milestone 4.33:
+- CI #1347 (run 36352248410) PASS on implementation HEAD fbe2ed3881be4807fd1e38f5182b519dff865828.
+- Tidy PASS.
+- go test ./... PASS.
+- go test -race ./... PASS.
+- go vet ./... PASS.
+- This final documentation follow-up does not alter consensus/runtime code.
