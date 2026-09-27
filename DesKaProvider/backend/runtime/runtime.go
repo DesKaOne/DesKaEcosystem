@@ -108,7 +108,7 @@ func (o *runtimeDatabaseOwnership) closeOwned() error {
 	defer o.mu.Unlock()
 	if o.closed { return o.closeErr }
 	o.closed = true
-	o.closeErr = closeRuntimeDatabases(o.transactionDB, o.auditDB)
+	o.closeErr = closeRuntimeDatabases(o.transactionDB, o.auditDB, o.operationalDB)
 	return o.closeErr
 }
 
@@ -201,6 +201,7 @@ func NewFromEnvironmentContext(ctx context.Context,httpClient *http.Client)(serv
  registry:=provider.NewRegistry()
  if e=registerConfiguredProviders(registry,cached,httpClient);e!=nil{return nil,e}
  var store operational.Store
+ var operationalDB *sql.DB
  catalogStore,e:=catalog.NewJSONFileStore(cfg.CatalogStorePath);if e!=nil{return nil,e}
  statusPersistence,e:=catalog.NewJSONFileStatusPersistence(cfg.CatalogSyncStatusStorePath);if e!=nil{return nil,e}
  catalogSync,e:=catalog.NewSyncServiceWithStatusPersistence(registry,catalogStore,statusPersistence);if e!=nil{return nil,e}
