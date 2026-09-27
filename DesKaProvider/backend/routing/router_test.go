@@ -553,23 +553,33 @@ func TestRouterRejectsFutureCatalogSnapshot(t *testing.T) {
 }
 
 
-func TestRouterExposesBothStaleReasonsWithoutChangingNoProviderAvailability(t *testing.T) {
+func TestRouterExposesBothStaleReasonsAcrossCandidates(t *testing.T) {
 	registry := provider.NewRegistry()
-	if err := registry.Register("mock", mock.New(mock.Config{Products: []provider.Product{{Code: "xld10", Name: "Test"}}})); err != nil {
-		t.Fatal(err)
+	for _, name := range []string{"operational-stale", "catalog-stale"} {
+		if err := registry.Register(name, mock.New(mock.Config{Products: []provider.Product{{Code: "xld10", Name: "Test"}}})); err != nil {
+			t.Fatal(err)
+		}
 	}
 	now := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
 	store := operational.NewMemoryStore()
-	if err := store.Put(operational.Snapshot{ProviderName: "mock", Balance: 100000, Health: operational.HealthHealthy, LastCheckedAt: now.Add(-2 * time.Hour)}); err != nil {
+	if err := store.Put(operational.Snapshot{ProviderName: "operational-stale", Balance: 100000, Health: operational.HealthHealthy, LastCheckedAt: now.Add(-2 * time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Put(operational.Snapshot{ProviderName: "catalog-stale", Balance: 100000, Health: operational.HealthHealthy, LastCheckedAt: now}); err != nil {
 		t.Fatal(err)
 	}
 	catalogs := catalog.NewMemoryStore()
-	if err := catalogs.Put(catalog.Snapshot{ProviderName: "mock", Products: []provider.Product{{Code: "xld10", Name: "Test"}}, SyncedAt: now.Add(-2 * time.Hour)}); err != nil {
+	if err := catalogs.Put(catalog.Snapshot{ProviderName: "operational-stale", Products: []provider.Product{{Code: "xld10", Name: "Test"}}, SyncedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := catalogs.Put(catalog.Snapshot{ProviderName: "catalog-stale", Products: []provider.Product{{Code: "xld10", Name: "Test"}}, SyncedAt: now.Add(-2 * time.Hour)}); err != nil {
 		t.Fatal(err)
 	}
 	states := operational.NewProviderStateStore()
-	if err := states.Put(operational.ProviderState{ProviderName: "mock", Lifecycle: operational.LifecycleEnabled, Capabilities: []operational.Capability{operational.CapabilityPPOB}}); err != nil {
-		t.Fatal(err)
+	for _, name := range []string{"operational-stale", "catalog-stale"} {
+		if err := states.Put(operational.ProviderState{ProviderName: name, Lifecycle: operational.LifecycleEnabled, Capabilities: []operational.Capability{operational.CapabilityPPOB}}); err != nil {
+			t.Fatal(err)
+		}
 	}
 	router, err := NewWithCatalogAndStateAndOperationalMaxAge(registry, store, nil, catalogs, states, time.Minute)
 	if err != nil {
@@ -578,6 +588,6 @@ func TestRouterExposesBothStaleReasonsWithoutChangingNoProviderAvailability(t *t
 	router.Now = func() time.Time { return now }
 	_, err = router.Select(context.Background(), Request{ProductCode: "xld10", Amount: 50000})
 	if !errors.Is(err, ErrNoProviderAvailable) || !errors.Is(err, ErrOperationalSnapshotStale) || !errors.Is(err, ErrCatalogStale) {
-		t.Fatalf("expected no-provider plus both stale reasons, got %v", err)
+		t.Fatalf("expected no-provider plus both stale reasons across candidates, got %v", err)
 	}
 }
