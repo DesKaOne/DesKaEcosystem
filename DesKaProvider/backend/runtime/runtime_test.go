@@ -4123,14 +4123,20 @@ func TestServiceMixedShutdownConvergenceDoesNotReplaySuccessfulLifecycle(t *test
 
 
 func TestServiceFreshOwnershipReplacementDoesNotReplayStaleCleanupErrors(t *testing.T) {
-	service, err := New(&operational.SyncService{}, time.Hour)
+	registry := provider.NewRegistry()
+	syncService, err := operational.NewSyncService(registry, operational.NewMemoryStore(), "IDR", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	service.catalogSync, err = catalog.NewSyncService(&provider.Registry{}, catalog.NewMemoryStore())
+	service, err := New(syncService, time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
+	service.catalogSync, err = catalog.NewSyncService(registry, catalog.NewMemoryStore())
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.catalogInterval = time.Hour
 	service.catalogLifecycle = newCatalogWorkerLifecycle()
 
 	oldTransactionErr := errors.New("stale transaction cleanup failure")
@@ -4141,8 +4147,9 @@ func TestServiceFreshOwnershipReplacementDoesNotReplayStaleCleanupErrors(t *test
 	service.databaseOwnership = newRuntimeDatabaseOwnership(oldTx, oldAudit)
 	service.databaseOwnership.transferToService()
 
-	if err := service.Close(); !errors.Is(err, oldTransactionErr) || !errors.Is(err, oldAuditErr) {
-		t.Fatalf("expected old ownership cleanup errors, got %v", err)
+	oldCloseErr := service.Close()
+	if !errors.Is(oldCloseErr, oldTransactionErr) || !errors.Is(oldCloseErr, oldAuditErr) {
+		t.Fatalf("expected old ownership cleanup errors, got %v", oldCloseErr)
 	}
 	if oldTx.closeCount != 1 || oldAudit.closeCount != 1 {
 		t.Fatalf("expected old ownership generation to close exactly once, got tx=%d audit=%d", oldTx.closeCount, oldAudit.closeCount)
@@ -4186,6 +4193,9 @@ func TestServiceFreshOwnershipReplacementDoesNotReplayStaleCleanupErrors(t *test
 		if errors.Is(runErr, oldTransactionErr) || errors.Is(runErr, oldAuditErr) {
 			t.Fatalf("fresh ownership Run replayed stale cleanup errors: %v", runErr)
 		}
+		if !errors.Is(runErr, newTransactionErr) || !errors.Is(runErr, newAuditErr) {
+			t.Fatalf("expected fresh ownership cleanup errors, got %v", runErr)
+		}
 	case <-time.After(time.Second):
 		t.Fatal("fresh ownership Run did not shut down")
 	}
@@ -4193,8 +4203,9 @@ func TestServiceFreshOwnershipReplacementDoesNotReplayStaleCleanupErrors(t *test
 	if newTx.closeCount != 1 || newAudit.closeCount != 1 {
 		t.Fatalf("expected fresh ownership generation to close exactly once, got tx=%d audit=%d", newTx.closeCount, newAudit.closeCount)
 	}
-	if !errors.Is(service.Close(), newTransactionErr) || !errors.Is(service.Close(), newAuditErr) {
-		t.Fatal("expected repeated Close to preserve only fresh ownership cleanup errors")
+	repeatedCloseErr := service.Close()
+	if !errors.Is(repeatedCloseErr, newTransactionErr) || !errors.Is(repeatedCloseErr, newAuditErr) {
+		t.Fatalf("expected repeated Close to preserve only fresh ownership cleanup errors, got %v", repeatedCloseErr)
 	}
 	if oldTx.closeCount != 1 || oldAudit.closeCount != 1 || newTx.closeCount != 1 || newAudit.closeCount != 1 {
 		t.Fatal("ownership generations must remain single-shot after repeated Close")
