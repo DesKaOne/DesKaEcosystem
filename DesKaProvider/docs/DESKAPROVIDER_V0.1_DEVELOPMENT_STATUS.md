@@ -10485,3 +10485,68 @@ No architecture document update is required. Milestone #198 adds repeated-conver
 **#199 — Runtime Shutdown Error / Ownership Generation Boundary Matrix**
 
 Focus next on a compact matrix of shutdown outcomes across lifecycle errors, database cleanup errors, replacement attempts, repeated Close, and subsequent lifecycle reuse, proving each error remains attributable to the correct runtime boundary without creating recovery authority.
+
+## 199. Milestone Update — Runtime Shutdown Error / Ownership Generation Boundary Matrix
+
+**Date:** 2026-09-27
+
+Completed:
+
+- added a compact deterministic matrix covering balance shutdown errors, catalog shutdown errors, transaction database cleanup errors, audit database cleanup errors, and the combined-error case;
+- verified `Service.Run()` preserves `context.Canceled` together with each injected shutdown/cleanup error through `errors.Is` without collapsing boundary identity;
+- verified lifecycle owners converge before database ownership cleanup is considered complete;
+- verified transaction database cleanup occurs before audit database cleanup and each resource closes exactly once;
+- verified a converged old generation can be replaced by a clean fresh ownership generation;
+- verified the fresh generation does not inherit historical shutdown or cleanup errors from the previous generation;
+- verified the fresh generation still returns its own `context.Canceled` shutdown signal while historical errors remain absent;
+- verified fresh transaction/audit cleanup remains single-shot and ordered;
+- verified historical ownership resources are not touched again after replacement and repeated terminal `Service.Close()` remains clean;
+- no production runtime implementation change was required;
+- no provider retry/failover, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, provider funding, or synthetic transaction/audit reconstruction was introduced.
+
+### CI Failure Analysis and Correction
+
+- CI #1990 on initial shutdown-boundary matrix commit `86e0186bd0247708805a3e99b893cbb66d7cbe90` was **RED** in both test and race jobs.
+- The failure was in the new fresh-generation assertion: the test incorrectly required a fresh `Service.Run()` to return `nil`, although a normally canceled run is expected to retain `context.Canceled`.
+- The runtime did not replay historical shutdown errors; the assertion itself confused the expected fresh context-cancellation boundary with historical-error isolation.
+- Corrected the test to require `context.Canceled` while explicitly rejecting every historical shutdown/cleanup error from the previous generation.
+- Final correction commit: `d772ef0439694f02776b58a1755d3ecced3f5328`.
+- CI #1991 on the exact correction HEAD: **GREEN**.
+  - `go test ./...` — PASS
+  - `go vet ./...` — PASS
+  - PostgreSQL service-backed integration tests — PASS
+  - `go test -race ./...` — PASS
+
+### Boundary / Generation Invariants
+
+- lifecycle shutdown errors remain attributable to their lifecycle boundary;
+- transaction and audit cleanup errors remain attributable to the ownership generation that produced them;
+- transaction cleanup remains ordered before audit cleanup;
+- converged old-generation cleanup completes before fresh-generation installation;
+- fresh-generation lifecycle and error state starts clean and does not replay historical shutdown errors;
+- `context.Canceled` remains the expected control-flow signal for a canceled fresh run and is distinct from historical generation errors;
+- repeated terminal Close does not replay or double-close historical resources;
+- ownership-generation state remains infrastructure lifecycle bookkeeping and cannot authorize financial state mutation.
+
+### Safety Boundary
+
+This milestone remains limited to runtime shutdown error composition, ownership-generation isolation, lifecycle convergence, cleanup ordering, error attribution, and fresh-generation reuse. It adds no provider retry/failover, transaction recovery, ledger mutation, customer-balance mutation, treasury movement, provider funding, or financial authorization.
+
+### Known Limitations
+
+- ownership replacement remains an internal runtime composition/testing boundary;
+- production `catalogWorkerLifecycle.Shutdown()` remains void-returning and does not expose an independent completion error;
+- database close remains non-context-aware;
+- direct manipulation of internal lifecycle test seams is not a production API;
+- PostgreSQL integration coverage requires `DESKAPROVIDER_POSTGRES_DSN` and is skipped when unavailable;
+- ownership-generation state remains lifecycle bookkeeping, not a recovery journal or transaction authority.
+
+### Architecture Impact
+
+No architecture document update is required. Milestone #199 adds a regression matrix around shutdown error identity and fresh-generation isolation without changing the documented provider, financial, or lifecycle authority model.
+
+### Next Milestone
+
+**#200 — Runtime Lifecycle Error Aggregation / Reuse Boundary Hardening**
+
+Focus next on the remaining runtime lifecycle/error boundary cases that are not covered by the #199 matrix, especially repeated lifecycle reuse and aggregation semantics across multiple shutdown/re-entry cycles, while preserving generation isolation and the existing financial/provider authority boundaries.
