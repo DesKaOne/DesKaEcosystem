@@ -195,11 +195,22 @@ func NewFromEnvironmentContext(ctx context.Context,httpClient *http.Client)(serv
  digiCfg,e:=config.LoadDigiFlazzConfig();if e!=nil{return nil,e}
  client,e:=digiflazz.New(digiCfg,httpClient);if e!=nil{return nil,e}
  cached,e:=digiflazz.NewCachedClient(client,defaultPriceListCacheTTL);if e!=nil{return nil,e}
- registry:=provider.NewRegistry();if e=registry.Register("digiflazz",cached);e!=nil{return nil,e}
+ registry:=provider.NewRegistry()
+ digiCapabilities:=provider.CapabilityDescriptor{Capabilities: map[provider.Capability]provider.CapabilityStatus{
+  provider.CapabilityPPOB:{Verified:true,Configured:true,AdapterImplemented:true,Enabled:false,LiveTested:false},
+  provider.CapabilityBalance:{Verified:true,Configured:true,AdapterImplemented:true,Enabled:false,LiveTested:false},
+  provider.CapabilityWebhook:{Verified:true,Configured:true,AdapterImplemented:true,Enabled:false,LiveTested:false},
+ }}
+ if e=registry.RegisterWithCapabilities("digiflazz",cached,digiCapabilities);e!=nil{return nil,e}
  if os.Getenv("IAK_USERNAME")!=""||os.Getenv("IAK_API_KEY")!="" {
   iakCfg,e:=config.LoadIAKConfig();if e!=nil{return nil,e}
   iakClient,e:=iak.New(iakCfg,httpClient);if e!=nil{return nil,e}
-  if e=registry.Register("iak",iakClient);e!=nil{return nil,e}
+  iakCapabilities:=provider.CapabilityDescriptor{Capabilities: map[provider.Capability]provider.CapabilityStatus{
+   provider.CapabilityPPOB:{Verified:false,Configured:true,AdapterImplemented:true,Enabled:false,LiveTested:false},
+   provider.CapabilityBalance:{Verified:false,Configured:true,AdapterImplemented:true,Enabled:false,LiveTested:false},
+   provider.CapabilityWebhook:{Verified:false,Configured:true,AdapterImplemented:true,Enabled:false,LiveTested:false},
+  }}
+  if e=registry.RegisterWithCapabilities("iak",iakClient,iakCapabilities);e!=nil{return nil,e}
  }
  store,e:=operational.NewJSONFileStore(cfg.StorePath);if e!=nil{return nil,e}
  syncService,e:=operational.NewSyncService(registry,store,cfg.Currency,cfg.FailureThreshold);if e!=nil{return nil,e}
