@@ -45,6 +45,15 @@ type ContextReadTransactionStore interface {
 	AllContextE(ctx context.Context) ([]TransactionState, error)
 }
 
+// CreateIfAbsentTransactionStore is the submission-authorization boundary.
+// A successful create returns created=true; an existing reference returns its
+// durable state with created=false. Implementations must make the decision
+// atomically so concurrent service instances cannot both authorize submission.
+type CreateIfAbsentTransactionStore interface {
+	ContextTransactionStore
+	CreateIfAbsentContext(ctx context.Context, state TransactionState) (existing TransactionState, created bool, err error)
+}
+
 // AtomicTransactionStore provides a compare-and-transition boundary for stores
 // that can enforce transaction identity and state transitions atomically.
 // Database-backed implementations must map this operation to a single
@@ -120,6 +129,7 @@ func NewMemoryTransactionStore() *MemoryTransactionStore {
 
 var _ ContextTransactionStore = (*MemoryTransactionStore)(nil)
 var _ ContextReadTransactionStore = (*MemoryTransactionStore)(nil)
+var _ CreateIfAbsentTransactionStore = (*MemoryTransactionStore)(nil)
 
 func (s *MemoryTransactionStore) GetContextE(ctx context.Context, referenceID string) (TransactionState, bool, error) {
 	if err := ctx.Err(); err != nil { return TransactionState{}, false, err }
@@ -158,6 +168,25 @@ func (s *MemoryTransactionStore) PutIfCurrentContext(ctx context.Context, refere
 		return err
 	}
 	return s.PutIfCurrent(referenceID, previous, next)
+}
+
+func (s *MemoryTransactionStore) CreateIfAbsentContext(ctx context.Context, state TransactionState) (TransactionState, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return TransactionState{}, false, err
+	}
+	if state.Request.ReferenceID == "" || state.Execution.ProviderName == "" {
+		return TransactionState{}, false, ErrReferenceConflict
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if current, ok := s.transactions[state.Request.ReferenceID]; ok {
+		if current.Request != state.Request || current.Execution.ProviderName != state.Execution.ProviderName {
+			return TransactionState{}, false, ErrReferenceConflict
+		}
+		return current, false, nil
+	}
+	s.transactions[state.Request.ReferenceID] = state
+	return state, true, nil
 }
 
 func (s *MemoryTransactionStore) Get(referenceID string) (TransactionState, bool) {
