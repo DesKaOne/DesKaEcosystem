@@ -3111,7 +3111,6 @@ func TestServiceRepeatedLifecycleCompletionPreservesOrderingAndSingleClose(t *te
 
 
 func TestServiceRunShutdownDefersDatabaseCloseUntilAllLifecyclesStop(t *testing.T) {
-	primaryErr := errors.New("injected shutdown primary error")
 	workerErr := errors.New("injected shutdown worker error")
 	catalogErr := errors.New("injected shutdown catalog error")
 	transactionCleanupErr := errors.New("injected deferred transaction cleanup error")
@@ -3161,19 +3160,26 @@ func TestServiceRunShutdownDefersDatabaseCloseUntilAllLifecyclesStop(t *testing.
 		catalogShutdown: func() error {
 			return catalogErr
 		},
+		catalogStart: func(parent context.Context) (context.Context, error) {
+			return service.catalogLifecycle.Start(parent)
+		},
 	}
 
 	runCtx, cancel := context.WithCancel(context.Background())
-	cancel()
-	service.catalogStart = func(context.Context) (context.Context, error) {
-		return context.Background(), nil
-	}
-	_ = primaryErr
-
 	result := make(chan error, 1)
 	go func() {
 		result <- service.Run(runCtx)
 	}()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for !balanceLifecycle.Running() || !service.catalogLifecycle.Running() {
+		if time.Now().After(deadline) {
+			cancel()
+			t.Fatal("timed out waiting for lifecycles to start")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	cancel()
 
 	select {
 	case runErr := <-result:
@@ -3186,26 +3192,29 @@ func TestServiceRunShutdownDefersDatabaseCloseUntilAllLifecyclesStop(t *testing.
 		if !errors.Is(runErr, catalogErr) {
 			t.Fatalf("expected catalog shutdown error, got %v", runErr)
 		}
-		if !errors.Is(runErr, transactionCleanupErr) {
-			t.Fatalf("database cleanup must not be omitted from composed shutdown result, got %v", runErr)
-		}
-		if !errors.Is(runErr, auditCleanupErr) {
-			t.Fatalf("database cleanup must not be omitted from composed shutdown result, got %v", runErr)
-		}
 	default:
-		t.Fatal("expected shutdown to complete synchronously")
+		t.Fatal("expected shutdown to complete")
 	}
 
+	if transactionDB.closeCount != 0 || auditDB.closeCount != 0 {
+		t.Fatalf("database cleanup must be deferred while catalog lifecycle remains active: tx=%d audit=%d", transactionDB.closeCount, auditDB.closeCount)
+	}
+	if !service.catalogLifecycle.Running() {
+		t.Fatal("expected catalog lifecycle to remain active after failed completion")
+	}
+	if balanceLifecycle.Running() {
+		t.Fatal("expected balance lifecycle to stop before deferred database cleanup")
+	}
+
+	service.catalogLifecycle.Shutdown()
+	closeErr := service.Close()
+	if !errors.Is(closeErr, transactionCleanupErr) || !errors.Is(closeErr, auditCleanupErr) {
+		t.Fatalf("expected deferred database cleanup errors after lifecycle completion, got %v", closeErr)
+	}
 	if transactionDB.closeCount != 1 || auditDB.closeCount != 1 {
-		t.Fatalf("expected database cleanup after shutdown, got tx=%d audit=%d", transactionDB.closeCount, auditDB.closeCount)
+		t.Fatalf("expected each database to close exactly once after all lifecycles stop: tx=%d audit=%d", transactionDB.closeCount, auditDB.closeCount)
 	}
 	if len(cleanupOrder) != 2 || cleanupOrder[0] != "transaction" || cleanupOrder[1] != "audit" {
 		t.Fatalf("expected transaction-before-audit cleanup order, got %v", cleanupOrder)
-	}
-	if service.catalogLifecycle.Running() {
-		t.Fatal("expected catalog lifecycle to be stopped before database cleanup")
-	}
-	if balanceLifecycle.Running() {
-		t.Fatal("expected balance lifecycle to be stopped before database cleanup")
 	}
 }
