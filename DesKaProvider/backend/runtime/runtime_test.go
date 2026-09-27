@@ -1368,6 +1368,71 @@ func TestServiceRunShutdownPreservesCompletionOrderingAndAllErrorIdentity(t *tes
 }
 
 
+
+func TestServiceRunShutdownErrorPrecedenceDoesNotReplayLifecycleCompletionOnRepeatedClose(t *testing.T) {
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", &balanceMock{Provider: mock.New(mock.Config{}), balance: 100000}); err != nil {
+		t.Fatal(err)
+	}
+	syncService, err := operational.NewSyncService(registry, operational.NewMemoryStore(), "IDR", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := New(syncService, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.catalogLifecycle = newCatalogWorkerLifecycle()
+
+	balanceErr := errors.New("balance completion failed")
+	catalogErr := errors.New("catalog completion failed")
+	transactionErr := errors.New("transaction close failed")
+	auditErr := errors.New("audit close failed")
+	catalogCalls := 0
+
+	service.balanceShutdown = func(context.Context) error {
+		service.balanceLifecycle.Shutdown(context.Background())
+		return balanceErr
+	}
+	service.catalogShutdown = func() error {
+		catalogCalls++
+		service.catalogLifecycle.Shutdown()
+		return catalogErr
+	}
+
+	tx := &orderedCloseErrorDB{name: "transaction", err: transactionErr}
+	audit := &orderedCloseErrorDB{name: "audit", err: auditErr}
+	service.databaseOwnership = newRuntimeDatabaseOwnership(tx, audit)
+	service.databaseOwnership.transferToService()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	runErr := service.Run(ctx)
+
+	for _, want := range []error{context.Canceled, balanceErr, catalogErr, transactionErr, auditErr} {
+		if !errors.Is(runErr, want) {
+			t.Fatalf("first shutdown error must preserve %v: %v", want, runErr)
+		}
+	}
+	if catalogCalls != 1 {
+		t.Fatalf("expected one catalog completion call during first shutdown, got %d", catalogCalls)
+	}
+
+	closeErr := service.Close()
+	if errors.Is(closeErr, catalogErr) {
+		t.Fatalf("repeated Close must not replay catalog completion error: %v", closeErr)
+	}
+	if !errors.Is(closeErr, transactionErr) || !errors.Is(closeErr, auditErr) {
+		t.Fatalf("repeated Close must preserve database cleanup errors: %v", closeErr)
+	}
+	if catalogCalls != 1 {
+		t.Fatalf("expected repeated Close not to replay catalog completion, got %d calls", catalogCalls)
+	}
+	if tx.closeCount != 1 || audit.closeCount != 1 {
+		t.Fatalf("expected database cleanup to remain single-shot: tx=%d audit=%d", tx.closeCount, audit.closeCount)
+	}
+}
+
 func TestServiceRunRejectsRepeatedRunAfterOwnedShutdown(t *testing.T) {
 	registry := provider.NewRegistry()
 	if err := registry.Register("mock", &balanceMock{Provider: mock.New(mock.Config{}), balance: 100000}); err != nil {
