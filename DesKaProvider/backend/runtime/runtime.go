@@ -503,7 +503,7 @@ func openOperationalStore(ctx context.Context, cfg Config, transactionDB *sql.DB
 			return nil, nil, fmt.Errorf("ping PostgreSQL operational store: %w", err)
 		}
 	}
-	if err := preparePostgresSchema(ctx, db, cfg.PostgresSchemaMode, 2); err != nil {
+	if cfg.PostgresSchemaMode != "" { if err := preparePostgresSchema(ctx, db, cfg.PostgresSchemaMode, 2); err != nil {
 		if owned { _ = db.Close() }
 		return nil, nil, err
 	}
@@ -512,6 +512,7 @@ func openOperationalStore(ctx context.Context, cfg Config, transactionDB *sql.DB
 		if owned { _ = db.Close() }
 		return nil, nil, err
 	}
+	if cfg.PostgresSchemaMode != "" { /* schema lifecycle was explicitly requested */ }
 	if owned { return store, db, nil }
 	return store, nil, nil
 }
@@ -556,7 +557,7 @@ func openAuditStore(ctx context.Context, cfg Config, transactionDB *sql.DB) (rou
 		return store, nil, nil
 	}
 	if transactionDB != nil {
-		if err := preparePostgresSchema(ctx, transactionDB, cfg.PostgresSchemaMode, 1); err != nil { return nil, nil, err }
+		if cfg.PostgresSchemaMode != "" { if err := preparePostgresSchema(ctx, transactionDB, cfg.PostgresSchemaMode, 1); err != nil { return nil, nil, err } }
 		store, err := routing.NewPostgresTransactionAuditStore(transactionDB)
 		if err != nil {
 			return nil, nil, err
@@ -571,7 +572,7 @@ func openAuditStore(ctx context.Context, cfg Config, transactionDB *sql.DB) (rou
 		_ = db.Close()
 		return nil, nil, fmt.Errorf("ping PostgreSQL audit store: %w", err)
 	}
-	if err := preparePostgresSchema(ctx, db, cfg.PostgresSchemaMode, 1); err != nil { _ = db.Close(); return nil, nil, err }
+	if cfg.PostgresSchemaMode != "" { if err := preparePostgresSchema(ctx, db, cfg.PostgresSchemaMode, 1); err != nil { _ = db.Close(); return nil, nil, err } }
 	store, err := routing.NewPostgresTransactionAuditStore(db)
 	if err != nil {
 		_ = db.Close()
