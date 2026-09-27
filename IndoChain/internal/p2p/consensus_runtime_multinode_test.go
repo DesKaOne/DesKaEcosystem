@@ -209,7 +209,15 @@ func finalizeRuntimeForTest(t *testing.T, runtime *consensus.ValidatorRuntime, s
 		if err := consensus.VerifyMessageSignature(msg, signer.PublicKey()); err != nil { t.Fatalf("fixture signature self-check failed for %q: %v", validator, err) }
 		if err := runtime.AddVote(msg); err != nil { t.Fatal(err) }
 	}
-	return runtime.FinalizeProposal(runtimeAuthorityForSigner(t, signer))
+	authority := runtimeAuthorityForSigner(t, signer)
+	for _, vote := range runtime.PrecommitVotes() {
+		key, err := authority.PublicKeyForValidator(vote.Sender)
+		if err != nil { t.Fatal(err) }
+		if err := consensus.VerifyMessageSignature(vote, key); err != nil {
+			t.Fatalf("authority resolver self-check failed for %q: %v", vote.Sender, err)
+		}
+	}
+	return runtime.FinalizeProposal(authority)
 }
 
 func runtimeAuthorityForSigner(t *testing.T, signer *crypto.Ed25519Signer) consensus.StaticValidatorAuthority {
