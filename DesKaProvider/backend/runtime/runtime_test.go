@@ -1474,6 +1474,7 @@ func TestServiceRunShutdownSerializesConcurrentCloseAndReentry(t *testing.T) {
 		t.Fatal(err)
 	}
 	service.catalogLifecycle = newCatalogWorkerLifecycle()
+	service.catalogInterval = time.Hour
 
 	tx := &closeErrorDB{}
 	service.databaseOwnership = newRuntimeDatabaseOwnership(tx, nil)
