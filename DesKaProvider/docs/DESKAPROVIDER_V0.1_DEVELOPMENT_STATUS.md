@@ -9383,3 +9383,47 @@ This milestone only locks runtime lifecycle completion ordering, error identity,
 **#186 — Runtime Shutdown Partial-Completion Recovery Boundary**
 
 Focus next on partial lifecycle completion where one shutdown boundary remains active, ensuring re-entry remains rejected, database ownership remains open, and a subsequent explicit completion can safely close ownership without replaying historical lifecycle errors.
+
+
+## 189. Milestone Update — Runtime Shutdown Error Retention Across Repeated Close/Re-entry
+
+**Date:** 2026-09-27
+
+Completed:
+
+- added focused regression coverage for recorded database cleanup errors across both direct `Service.Close()` and Run-owned shutdown;
+- verified repeated `Service.Close()` returns the same recorded cleanup error object rather than reconstructing or replacing the stored cleanup result;
+- verified repeated close remains single-shot for database ownership cleanup;
+- verified Run-owned shutdown preserves the primary cancellation error together with the recorded cleanup error on the first `Run()` result;
+- verified subsequent `Close()` returns only the recorded database cleanup result and does not replay the historical Run primary error;
+- verified subsequent `Run()` after ownership closure returns `ErrServiceClosed` without replaying historical cleanup or lifecycle errors;
+- preserved the existing runtime ownership mutex/closed-state semantics; no production runtime refactor was required;
+- no provider retry/failover, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, provider funding, or synthetic transaction/audit reconstruction was introduced.
+
+### Verification
+
+- Regression test commit: `899a8adc34ca281be0ee962f938155c0625d1d7f`.
+- CI #1847 on exact test HEAD: **GREEN**.
+  - `go test ./...` — PASS
+  - `go vet ./...` — PASS
+  - PostgreSQL service-backed integration tests — PASS
+  - `go test -race ./...` — PASS
+
+### Safety Boundary
+
+Recorded database cleanup errors remain infrastructure lifecycle evidence. Repeated `Close()` preserves the stored cleanup result, while closed-state `Run()` rejection remains a distinct runtime state and does not replay historical shutdown errors.
+
+Transaction persistence remains authoritative for transaction state/idempotency; audit persistence remains observational evidence. No recovery or financial authority is derived from cleanup errors.
+
+### Known Limitations
+
+- database close remains non-context-aware;
+- PostgreSQL integration coverage requires `DESKAPROVIDER_POSTGRES_DSN` and is skipped when unavailable;
+- catalog completion errors continue through the existing internal test seam because the production catalog lifecycle shutdown contract remains void-returning;
+- this milestone validates error-result retention and does not introduce a database reconnection or retry mechanism.
+
+### Next Milestone
+
+**#190 — Runtime Shutdown Error Retention Across Mixed Shared/Dedicated Ownership**
+
+Focus next on the same retained-error contract across shared transaction/audit database handles and independently owned dedicated handles, including single-close behavior and closed-state re-entry, without introducing provider or transaction recovery behavior.
