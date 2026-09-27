@@ -42,3 +42,32 @@ func TestJSONFileStoreRejectsSemanticallyInvalidSnapshot(t *testing.T) {
 	if err := os.WriteFile(path, payload, 0600); err != nil { t.Fatal(err) }
 	if _, err := NewJSONFileStore(path); err == nil { t.Fatal("expected semantically invalid snapshot error") }
 }
+
+
+func TestJSONFileStoreRejectsOlderSnapshot(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	newer := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
+	older := newer.Add(-time.Minute)
+	store, err := NewJSONFileStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Put(Snapshot{ProviderName: "mock", SyncedAt: newer}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Put(Snapshot{ProviderName: "mock", SyncedAt: older}); err != ErrSnapshotOlder {
+		t.Fatalf("expected older snapshot rejection, got %v", err)
+	}
+	got, ok := store.Get("mock")
+	if !ok || !got.SyncedAt.Equal(newer) {
+		t.Fatalf("older snapshot replaced current state: %#v", got)
+	}
+	reloaded, err := NewJSONFileStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok = reloaded.Get("mock")
+	if !ok || !got.SyncedAt.Equal(newer) {
+		t.Fatalf("older snapshot was persisted after rejection: %#v", got)
+	}
+}
