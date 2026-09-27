@@ -228,14 +228,17 @@ func (s *Service) Run(ctx context.Context) error {
 		return ErrServiceClosed
 	}
 
-shutdown := func(primary, workerErr error) error {
+catalogStarted := false
+	shutdown := func(primary, workerErr error) error {
 		s.shutdownMu.Lock()
 		defer s.shutdownMu.Unlock()
-		catalogErr := s.shutdownCatalogLifecycle()
+		var catalogErr error
+		if catalogStarted {
+			catalogErr = s.shutdownCatalogLifecycle()
+		}
 		closeErr := s.closeOwnedDatabases()
 		return combineRuntimeShutdownError(combineRuntimeShutdownError(combineRuntimeShutdownError(primary, workerErr), catalogErr), closeErr)
 	}
-
 	if s.balanceLifecycle == nil {
 		if s.catalogSync == nil {
 			runErr := s.syncService.Run(ctx, s.interval)
@@ -284,6 +287,7 @@ shutdown := func(primary, workerErr error) error {
 		workerErr := s.rollbackStartedLifecycles(workerShutdownCtx)
 		return shutdown(catalogStartErr, workerErr)
 	}
+	catalogStarted = true
 	_ = s.catalogSync.SyncAll(catalogCtx)
 	ticker := time.NewTicker(s.catalogInterval)
 	defer ticker.Stop()
