@@ -14,7 +14,7 @@ func TestRegisterCapabilityProviderWithoutPPOBProvider(t *testing.T) {
     impl := balanceOnlyProvider{}
     status := CapabilityStatus{
         Verified: true, Configured: true, AdapterImplemented: true,
-        Enabled: false, LiveTested: false,
+        Enabled: true, LiveTested: false,
     }
     if err := r.RegisterCapabilityProvider("xp-sindonesia", CapabilityBalance, impl, status); err != nil {
         t.Fatal(err)
