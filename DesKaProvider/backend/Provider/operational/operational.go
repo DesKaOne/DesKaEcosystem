@@ -62,6 +62,11 @@ func (s *MemoryStore) Get(name string) (Snapshot, bool) {
 }
 
 func (s *MemoryStore) GetWithError(name string) (Snapshot, bool, error) {
+	snapshot, found := s.Get(name)
+	return snapshot, found, nil
+}
+
+func (s *MemoryStore) GetWithError(name string) (Snapshot, bool, error) {
 	return s.Get(name)
 }
 
