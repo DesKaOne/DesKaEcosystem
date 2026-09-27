@@ -43,6 +43,7 @@ type Config struct{StorePath,TransactionStorePath,ProviderStateStorePath,Transac
 type databaseCloser interface { Close() error }
 
 var ErrServiceClosed = errors.New("service is closed")
+var ErrServiceLifecycleActive = errors.New("service lifecycle is still active")
 
 var runtimeInitializationFailureHook func(string, *runtimeDatabaseOwnership) error
 
@@ -226,6 +227,14 @@ func (s *Service) Run(ctx context.Context) error {
 	if s.databaseOwnership != nil && s.databaseOwnership.isClosed() {
 		s.shutdownMu.Unlock()
 		return ErrServiceClosed
+	}
+	if s.balanceLifecycle != nil && s.balanceLifecycle.Running() {
+		s.shutdownMu.Unlock()
+		return operational.ErrSyncWorkerRunning
+	}
+	if s.catalogLifecycle != nil && s.catalogLifecycle.Running() {
+		s.shutdownMu.Unlock()
+		return ErrServiceLifecycleActive
 	}
 
 catalogStarted := false
