@@ -1791,3 +1791,126 @@ func TestServiceRunCancellationPreservesCatalogShutdownCompletionAndDedicatedPos
 		t.Fatal("expected audit PostgreSQL database handle to be closed")
 	}
 }
+
+
+func TestServiceRunSuccessfulShutdownOrderingAndDedicatedPostgresSingleClose(t *testing.T) {
+	dsn := os.Getenv("DESKAPROVIDER_POSTGRES_DSN")
+	if dsn == "" {
+		t.Skip("DESKAPROVIDER_POSTGRES_DSN is not configured")
+	}
+
+	ctx := context.Background()
+	_, transactionDB, err := openTransactionStore(ctx, Config{TransactionStoreDriver: "postgres", PostgresDSN: dsn})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, auditDB, err := openAuditStore(ctx, Config{AuditStoreDriver: "postgres", PostgresDSN: dsn}, nil)
+	if err != nil {
+		_ = transactionDB.Close()
+		t.Fatal(err)
+	}
+	if transactionDB == nil || auditDB == nil || transactionDB == auditDB {
+		if transactionDB != nil {
+			_ = transactionDB.Close()
+		}
+		if auditDB != nil {
+			_ = auditDB.Close()
+		}
+		t.Fatal("expected independent dedicated transaction and audit PostgreSQL handles")
+	}
+
+	order := []string{}
+	transactionWrapped := &runtimeCleanupErrorDB{delegate: transactionDB, name: "transaction", order: &order}
+	auditWrapped := &runtimeCleanupErrorDB{delegate: auditDB, name: "audit", order: &order}
+	ownership := newRuntimeDatabaseOwnership(transactionWrapped, auditWrapped)
+	ownership.transferToService()
+
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", &balanceMock{Provider: mock.New(mock.Config{}), balance: 100000}); err != nil {
+		t.Fatal(err)
+	}
+	syncService, err := operational.NewSyncService(registry, operational.NewMemoryStore(), "IDR", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalogSync, err := catalog.NewSyncService(registry, catalog.NewMemoryStore())
+	if err != nil {
+		t.Fatal(err)
+	}
+	balanceLifecycle, err := operational.NewSyncWorkerLifecycle(syncService, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	service := &Service{
+		syncService:       syncService,
+		catalogSync:       catalogSync,
+		databaseOwnership: ownership,
+		balanceLifecycle:  balanceLifecycle,
+		catalogLifecycle:  newCatalogWorkerLifecycle(),
+		interval:          time.Hour,
+		catalogInterval:   time.Hour,
+		balanceShutdown: func(ctx context.Context) error {
+			err := balanceLifecycle.Shutdown(ctx)
+			order = append(order, "balance")
+			return err
+		},
+		catalogShutdown: func() error {
+			service.catalogLifecycle.Shutdown()
+			order = append(order, "catalog")
+			return nil
+		},
+	}
+
+	runCtx, cancel := context.WithCancel(ctx)
+	result := make(chan error, 1)
+	go func() {
+		result <- service.Run(runCtx)
+	}()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for !balanceLifecycle.Running() || !service.catalogLifecycle.Running() {
+		if time.Now().After(deadline) {
+			cancel()
+			t.Fatal("timed out waiting for balance and catalog workers to start")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	cancel()
+
+	select {
+	case runErr := <-result:
+		if !errors.Is(runErr, context.Canceled) {
+			t.Fatalf("expected context cancellation, got %v", runErr)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for shutdown")
+	}
+
+	wantOrder := []string{"balance", "catalog", "transaction", "audit"}
+	if !reflect.DeepEqual(order, wantOrder) {
+		t.Fatalf("unexpected successful shutdown ordering: got %v want %v", order, wantOrder)
+	}
+	if transactionWrapped.closeCount != 1 || auditWrapped.closeCount != 1 {
+		t.Fatalf("expected one close per dedicated PostgreSQL handle, got tx=%d audit=%d", transactionWrapped.closeCount, auditWrapped.closeCount)
+	}
+	if service.balanceLifecycle.Running() || service.catalogLifecycle.Running() {
+		t.Fatal("expected all service lifecycles to be stopped")
+	}
+
+	if err := service.Close(); err != nil {
+		t.Fatalf("expected repeated Close to remain successful, got %v", err)
+	}
+	if !reflect.DeepEqual(order, wantOrder) {
+		t.Fatalf("repeated Close must not replay lifecycle or database completion, got %v", order)
+	}
+	if transactionWrapped.closeCount != 1 || auditWrapped.closeCount != 1 {
+		t.Fatalf("repeated Close must not double-close dedicated PostgreSQL handles, got tx=%d audit=%d", transactionWrapped.closeCount, auditWrapped.closeCount)
+	}
+	if err := transactionDB.PingContext(ctx); err == nil {
+		t.Fatal("expected transaction PostgreSQL handle to be closed")
+	}
+	if err := auditDB.PingContext(ctx); err == nil {
+		t.Fatal("expected audit PostgreSQL handle to be closed")
+	}
+}
