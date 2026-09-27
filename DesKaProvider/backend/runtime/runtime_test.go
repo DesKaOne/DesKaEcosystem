@@ -3217,3 +3217,94 @@ func TestServiceRunShutdownDefersDatabaseCloseUntilAllLifecyclesStop(t *testing.
 		t.Fatalf("expected transaction-before-audit cleanup order, got %v", cleanupOrder)
 	}
 }
+
+
+func TestServiceRunReentryAfterPartialShutdownConvergesToTerminalState(t *testing.T) {
+	service := newRuntimeTestService(t)
+	service.catalogSync, _ = catalog.NewSyncService(
+		&provider.Registry{},
+		catalog.NewMemoryStore(),
+	)
+	service.catalogLifecycle = newCatalogWorkerLifecycle()
+	service.catalogInterval = time.Hour
+
+	partialCatalogErr := errors.New("partial catalog shutdown error")
+	cleanupErr := errors.New("terminal database cleanup error")
+	db := &closeErrorDB{err: cleanupErr}
+	service.databaseOwnership = newRuntimeDatabaseOwnership(db, nil)
+	service.databaseOwnership.transferToService()
+
+	service.catalogShutdown = func() error {
+		return partialCatalogErr
+	}
+
+	firstCtx, firstCancel := context.WithCancel(context.Background())
+	firstCancel()
+	firstErr := service.Run(firstCtx)
+	if !errors.Is(firstErr, context.Canceled) {
+		t.Fatalf("expected first shutdown cancellation, got %v", firstErr)
+	}
+	if !errors.Is(firstErr, partialCatalogErr) {
+		t.Fatalf("expected first partial catalog shutdown error, got %v", firstErr)
+	}
+	if !service.catalogLifecycle.Running() {
+		t.Fatal("expected catalog lifecycle to remain active after partial shutdown")
+	}
+	if db.closeCount != 0 {
+		t.Fatalf("expected database ownership to remain open during partial shutdown, got %d closes", db.closeCount)
+	}
+
+	reentryErr := service.Run(context.Background())
+	if !errors.Is(reentryErr, ErrServiceLifecycleActive) {
+		t.Fatalf("expected active-lifecycle re-entry rejection, got %v", reentryErr)
+	}
+	if errors.Is(reentryErr, partialCatalogErr) {
+		t.Fatalf("re-entry rejection must not replay historical catalog error: %v", reentryErr)
+	}
+
+	service.catalogShutdown = func() error {
+		service.catalogLifecycle.Shutdown()
+		return nil
+	}
+	if err := service.shutdownCatalogLifecycle(); err != nil {
+		t.Fatalf("expected lifecycle convergence without error, got %v", err)
+	}
+	if service.catalogLifecycle.Running() {
+		t.Fatal("expected catalog lifecycle to converge to stopped state")
+	}
+
+	secondCtx, secondCancel := context.WithCancel(context.Background())
+	secondCancel()
+	secondErr := service.Run(secondCtx)
+	if !errors.Is(secondErr, context.Canceled) {
+		t.Fatalf("expected second shutdown cancellation, got %v", secondErr)
+	}
+	if errors.Is(secondErr, partialCatalogErr) {
+		t.Fatalf("second Run must not replay historical catalog error: %v", secondErr)
+	}
+	if errors.Is(secondErr, cleanupErr) {
+		t.Fatalf("second Run must not replay cleanup error before terminal Close: %v", secondErr)
+	}
+	if db.closeCount != 1 {
+		t.Fatalf("expected terminal Run shutdown to close database ownership once, got %d", db.closeCount)
+	}
+
+	closeErr := service.Close()
+	if !errors.Is(closeErr, cleanupErr) {
+		t.Fatalf("expected repeated Close to preserve terminal cleanup error, got %v", closeErr)
+	}
+	if errors.Is(closeErr, partialCatalogErr) || errors.Is(closeErr, context.Canceled) {
+		t.Fatalf("terminal Close must not replay historical lifecycle/primary errors: %v", closeErr)
+	}
+	if db.closeCount != 1 {
+		t.Fatalf("expected terminal Close not to double-close database ownership, got %d", db.closeCount)
+	}
+
+	terminalErr := service.Run(context.Background())
+	if !errors.Is(terminalErr, ErrServiceClosed) {
+		t.Fatalf("expected terminal closed-state rejection, got %v", terminalErr)
+	}
+	if errors.Is(terminalErr, partialCatalogErr) || errors.Is(terminalErr, cleanupErr) {
+		t.Fatalf("terminal re-entry must not replay historical shutdown errors: %v", terminalErr)
+	}
+}
