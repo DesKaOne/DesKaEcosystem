@@ -167,7 +167,7 @@ func TestInMemoryTransportConsensusRuntimeIntegration(t *testing.T) {
 		t.Fatalf("node B phase = %v, want prevote", nodeBRuntime.State().Phase)
 	}
 
-	certificate, err := nodeARuntime.FinalizeProposal(runtimeAuthorityForSigner(t, signer))
+	certificate, err := finalizeRuntimeForTest(t, nodeARuntime, signer)
 	if err != nil {
 		t.Fatalf("node A finalization: %v", err)
 	}
@@ -184,6 +184,25 @@ func TestInMemoryTransportConsensusRuntimeIntegration(t *testing.T) {
 
 
 type runtimeValidatorAuthorityResolver struct{}
+func finalizeRuntimeForTest(t *testing.T, runtime *consensus.ValidatorRuntime, signer *crypto.Ed25519Signer) (consensus.FinalityCertificate, error) {
+	t.Helper()
+	state := runtime.State()
+	payload := runtime.Proposal()
+	if len(payload) == 0 { t.Fatal("runtime proposal is empty") }
+	for _, validator := range runtime.Validators().Validators {
+		msg := consensus.Message{
+			ProtocolVersion: state.ProtocolVersion, ChainID: state.ChainID,
+			Epoch: state.Epoch, Height: state.Height, Round: state.Round,
+			Sender: append([]byte(nil), validator...), Type: consensus.MessageTypePrecommit,
+			Payload: append([]byte(nil), payload...),
+		}
+		msg, err := msg.Sign(signer)
+		if err != nil { t.Fatal(err) }
+		if err := runtime.AddVote(msg); err != nil { t.Fatal(err) }
+	}
+	return finalizeRuntimeForTest(t, runtime, signer)
+}
+
 func runtimeAuthorityForSigner(t *testing.T, signer *crypto.Ed25519Signer) consensus.StaticValidatorAuthority {
 	t.Helper()
 	ids := []string{"validator-a", "validator-b", "validator-c", "fixture-validator"}
@@ -352,7 +371,7 @@ func TestInMemoryTransportRuntimeFinalizedBlockHandoff(t *testing.T) {
 	if err := runtimeA.AddVote(received); err != nil {
 		t.Fatal(err)
 	}
-	certificate, err := runtimeA.FinalizeProposal(runtimeAuthorityForSigner(t, signer))
+	certificate, err := finalizeRuntimeForTest(t, runtimeA, signer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -504,7 +523,7 @@ func TestInMemoryTransportRuntimeFinalizedBlockMultiHeight(t *testing.T) {
 		} else if err := runtimeA.AddVote(received); err != nil {
 			t.Fatal(err)
 		}
-		certificate, err := runtimeA.FinalizeProposal(runtimeAuthorityForSigner(t, signer))
+		certificate, err := finalizeRuntimeForTest(t, runtimeA, signer)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -578,7 +597,7 @@ func TestConsensusRuntimeNegativeCrossHeightInvalidFinalityEvidence(t *testing.T
 	if err := runtime.AddVote(vote); err != nil {
 		t.Fatal(err)
 	}
-	certificate2, err := runtime.FinalizeProposal(runtimeAuthorityForSigner(t, signer))
+	certificate2, err := finalizeRuntimeForTest(t, runtime, signer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -682,7 +701,7 @@ func TestConsensusRuntimeNegativeCrossHeightVoteContextMismatch(t *testing.T) {
 	if err := runtime.AddVote(vote); err != nil {
 		t.Fatal(err)
 	}
-	certificate2, err := runtime.FinalizeProposal(runtimeAuthorityForSigner(t, signer))
+	certificate2, err := finalizeRuntimeForTest(t, runtime, signer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -907,7 +926,7 @@ func TestConsensusRuntimeNegativeCrossHeightReplayedCandidate(t *testing.T) {
 	if err := runtime.AddVote(vote); err != nil {
 		t.Fatal(err)
 	}
-	certificate2, err := runtime.FinalizeProposal(runtimeAuthorityForSigner(t, signer))
+	certificate2, err := finalizeRuntimeForTest(t, runtime, signer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1016,7 +1035,7 @@ func TestConsensusRuntimeNegativeCrossHeightDifferentCandidate(t *testing.T) {
 	if err := runtime2.AddVote(vote2); err != nil {
 		t.Fatal(err)
 	}
-	certificate2, err := runtime2.FinalizeProposal(runtimeAuthorityForSigner(t, signer))
+	certificate2, err := finalizeRuntimeForTest(t, runtime2, signer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1086,7 +1105,7 @@ func TestConsensusRuntimeNegativeCrossHeightDifferentCandidate(t *testing.T) {
 	if err := alternateRuntime.AddVote(alternateVote); err != nil {
 		t.Fatal(err)
 	}
-	alternateCertificate, err := alternateRuntime.FinalizeProposal(runtimeAuthorityForSigner(t, signer))
+	alternateCertificate, err := finalizeRuntimeForTest(t, alternateRuntime, signer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1198,7 +1217,7 @@ func TestConsensusRuntimeNegativeCrossHeightFutureCandidateStalePreviousHash(t *
 	if err := runtime.AddVote(vote); err != nil {
 		t.Fatal(err)
 	}
-	certificate2, err := runtime.FinalizeProposal(runtimeAuthorityForSigner(t, signer))
+	certificate2, err := finalizeRuntimeForTest(t, runtime, signer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1274,7 +1293,7 @@ func TestConsensusRuntimeNegativeCrossHeightFutureCandidateStalePreviousHash(t *
 	if err := runtime3.AddVote(vote3); err != nil {
 		t.Fatal(err)
 	}
-	certificate3, err := runtime3.FinalizeProposal(runtimeAuthorityForSigner(t, signer))
+	certificate3, err := finalizeRuntimeForTest(t, runtime3, signer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1379,7 +1398,7 @@ func TestConsensusRuntimeNegativeCrossHeightStaleContext(t *testing.T) {
 	if err := runtime.AddVote(vote); err != nil {
 		t.Fatal(err)
 	}
-	certificate2, err := runtime.FinalizeProposal(runtimeAuthorityForSigner(t, signer))
+	certificate2, err := finalizeRuntimeForTest(t, runtime, signer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1723,7 +1742,7 @@ func finalizedHandoffFixture(t *testing.T) (*node.Node, block.Block, consensus.F
 	if err := runtime.AddVote(vote); err != nil {
 		t.Fatal(err)
 	}
-	certificate, err := runtime.FinalizeProposal(runtimeAuthorityForSigner(t, signer))
+	certificate, err := finalizeRuntimeForTest(t, runtime, signer)
 	if err != nil {
 		t.Fatal(err)
 	}
