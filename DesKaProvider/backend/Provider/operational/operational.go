@@ -66,9 +66,6 @@ func (s *MemoryStore) GetWithError(name string) (Snapshot, bool, error) {
 	return snapshot, found, nil
 }
 
-func (s *MemoryStore) GetWithError(name string) (Snapshot, bool, error) {
-	return s.Get(name)
-}
 
 func (s *MemoryStore) Put(snapshot Snapshot) error {
 	if snapshot.ProviderName == "" {
