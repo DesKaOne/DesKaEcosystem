@@ -9880,3 +9880,45 @@ This milestone is limited to runtime shutdown error precedence, lifecycle conver
 **#189 — Runtime Shutdown Error Precedence Under Deferred Ownership Cleanup**
 
 Focus next on precedence when lifecycle completion is incomplete and database cleanup is deferred across a later explicit `Service.Close()`, ensuring historical primary/lifecycle errors are not replayed while fresh cleanup errors remain observable and ownership remains single-shot.
+
+
+## 189. Milestone Update — Runtime Shutdown Error Precedence Under Deferred Ownership Cleanup
+
+**Date:** 2026-09-27
+
+Completed:
+
+- added deterministic regression coverage for a first `Service.Run()` shutdown that preserves caller cancellation and catalog completion errors while catalog lifecycle completion remains incomplete;
+- verified transaction/audit database ownership cleanup is deferred while an auxiliary lifecycle remains active;
+- verified later explicit `Service.Close()` observes only the fresh transaction/audit cleanup errors after lifecycle convergence;
+- verified historical caller cancellation and historical catalog completion errors are not replayed by the later explicit `Service.Close()`;
+- verified transaction cleanup remains before audit cleanup and each database closes exactly once;
+- preserved the existing lifecycle convergence boundary and runtime ownership semantics;
+- no production runtime behavior was changed by this milestone; coverage locks the existing deferred-cleanup precedence contract;
+- no provider retry/failover, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, provider funding, or synthetic transaction/audit reconstruction was introduced.
+
+### Verification
+
+- Regression test commit: `d8eccd0cb62d4eb36e625eedcf2378afe6f5e38f`.
+- CI #1911 on exact test HEAD: **GREEN**.
+  - `go test ./...` — PASS
+  - `go vet ./...` — PASS
+  - PostgreSQL service-backed integration tests — PASS
+  - `go test -race ./...` — PASS
+
+### Safety Boundary
+
+This milestone is limited to shutdown error precedence, deferred lifecycle completion, and database ownership cleanup. Historical Run errors are not persisted as new service state and are not reused as financial or provider transaction outcomes. Transaction persistence remains authoritative for transaction state/idempotency; audit persistence remains observational.
+
+### Known Limitations
+
+- production `catalogWorkerLifecycle.Shutdown()` remains void-returning; catalog completion errors continue to be represented through the existing internal test seam;
+- PostgreSQL integration coverage requires `DESKAPROVIDER_POSTGRES_DSN` and is skipped when unavailable;
+- database close remains non-context-aware;
+- this milestone adds no provider retry/failover or transaction recovery behavior.
+
+### Next Milestone
+
+**#190 — Runtime Shutdown Ownership Convergence Matrix**
+
+Focus next on the remaining lifecycle/ownership combinations where one or both auxiliary lifecycles fail to converge on the first shutdown attempt, verifying that a later convergence and explicit `Service.Close()` remain single-shot and preserve only fresh cleanup errors.
