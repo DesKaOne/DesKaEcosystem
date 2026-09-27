@@ -3700,8 +3700,18 @@ func TestServiceFreshRunAfterPartialLifecycleConvergenceDoesNotReplayHistoricalE
 	service.databaseOwnership.transferToService()
 
 	firstCtx, firstCancel := context.WithCancel(context.Background())
+	firstDone := make(chan error, 1)
+	go func() { firstDone <- service.Run(firstCtx) }()
+	deadline := time.Now().Add(5 * time.Second)
+	for !service.balanceLifecycle.Running() || !service.catalogLifecycle.Running() {
+		if time.Now().After(deadline) {
+			firstCancel()
+			t.Fatal("timed out waiting for both lifecycles to start")
+		}
+		time.Sleep(time.Millisecond)
+	}
 	firstCancel()
-	firstErr := service.Run(firstCtx)
+	firstErr := <-firstDone
 	if !errors.Is(firstErr, context.Canceled) || !errors.Is(firstErr, historicalCatalogErr) {
 		t.Fatalf("expected first Run to preserve cancellation and historical catalog error, got %v", firstErr)
 	}
@@ -3794,8 +3804,18 @@ func TestServiceRunBothLifecyclesRemainActiveThenConvergeBeforeFreshCloseCleanup
 	service.databaseOwnership.transferToService()
 
 	ctx, cancel := context.WithCancel(context.Background())
+	runDone := make(chan error, 1)
+	go func() { runDone <- service.Run(ctx) }()
+	deadline := time.Now().Add(5 * time.Second)
+	for !service.balanceLifecycle.Running() || !service.catalogLifecycle.Running() {
+		if time.Now().After(deadline) {
+			cancel()
+			t.Fatal("timed out waiting for both lifecycles to start")
+		}
+		time.Sleep(time.Millisecond)
+	}
 	cancel()
-	runErr := service.Run(ctx)
+	runErr := <-runDone
 
 	if !errors.Is(runErr, context.Canceled) {
 		t.Fatalf("expected first Run to preserve caller cancellation, got %v", runErr)
