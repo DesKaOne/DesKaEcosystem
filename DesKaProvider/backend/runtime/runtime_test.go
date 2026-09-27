@@ -1222,6 +1222,92 @@ func TestServiceRunShutdownCompletionOrderingAndRepeatedClose(t *testing.T) {
 	}
 }
 
+
+func TestServiceCatalogStartFailurePreservesCompletionOrderingAndAllErrorIdentity(t *testing.T) {
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", &balanceMock{Provider: mock.New(mock.Config{}), balance: 100000}); err != nil {
+		t.Fatal(err)
+	}
+	syncService, err := operational.NewSyncService(registry, operational.NewMemoryStore(), "IDR", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := New(syncService, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.catalogSync, err = catalog.NewSyncService(registry, catalog.NewMemoryStore())
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.catalogLifecycle = newCatalogWorkerLifecycle()
+
+	catalogStartErr := errors.New("catalog start failed")
+	balanceErr := errors.New("balance rollback failed")
+	catalogErr := errors.New("catalog completion failed")
+	transactionErr := errors.New("transaction close failed")
+	auditErr := errors.New("audit close failed")
+
+	order := make([]string, 0, 4)
+	var mu sync.Mutex
+	record := func(name string) {
+		mu.Lock()
+		defer mu.Unlock()
+		order = append(order, name)
+	}
+
+	service.balanceShutdown = func(context.Context) error {
+		service.balanceLifecycle.Shutdown(context.Background())
+		record("balance")
+		return balanceErr
+	}
+	service.catalogStart = func(context.Context) (context.Context, error) {
+		return nil, catalogStartErr
+	}
+	service.catalogShutdown = func() error {
+		service.catalogLifecycle.Shutdown()
+		record("catalog")
+		return catalogErr
+	}
+	tx := &orderedCloseErrorDB{name: "transaction", order: &order, err: transactionErr}
+	audit := &orderedCloseErrorDB{name: "audit", order: &order, err: auditErr}
+	service.databaseOwnership = newRuntimeDatabaseOwnership(tx, audit)
+	service.databaseOwnership.transferToService()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	runErr := service.Run(ctx)
+
+	for _, want := range []error{catalogStartErr, balanceErr, catalogErr, transactionErr, auditErr} {
+		if !errors.Is(runErr, want) {
+			t.Fatalf("expected shutdown error identity %v, got %v", want, runErr)
+		}
+	}
+	if !reflect.DeepEqual(order, []string{"balance", "catalog", "transaction", "audit"}) {
+		t.Fatalf("unexpected catalog-start failure shutdown ordering: got %v", order)
+	}
+	if service.balanceLifecycle.Running() {
+		t.Fatal("expected balance lifecycle to be stopped")
+	}
+	if service.catalogLifecycle.Running() {
+		t.Fatal("expected catalog lifecycle to be stopped")
+	}
+	if tx.closeCount != 1 || audit.closeCount != 1 {
+		t.Fatalf("expected single database close each, got tx=%d audit=%d", tx.closeCount, audit.closeCount)
+	}
+
+	repeatedCloseErr := service.Close()
+	if !errors.Is(repeatedCloseErr, transactionErr) || !errors.Is(repeatedCloseErr, auditErr) {
+		t.Fatalf("expected repeated Close to preserve database cleanup errors, got %v", repeatedCloseErr)
+	}
+	if errors.Is(repeatedCloseErr, catalogErr) || errors.Is(repeatedCloseErr, balanceErr) {
+		t.Fatalf("repeated Close must not replay lifecycle completion errors: %v", repeatedCloseErr)
+	}
+	if tx.closeCount != 1 || audit.closeCount != 1 {
+		t.Fatalf("expected repeated Close not to double-close, got tx=%d audit=%d", tx.closeCount, audit.closeCount)
+	}
+}
+
 func TestServiceRollbackUsesSingleCatalogShutdownCompletionBoundary(t *testing.T) {
 	registry := provider.NewRegistry()
 	if err := registry.Register("mock", &balanceMock{Provider: mock.New(mock.Config{}), balance: 100000}); err != nil {
