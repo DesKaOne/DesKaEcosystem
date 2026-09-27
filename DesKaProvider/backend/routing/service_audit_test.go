@@ -3,7 +3,7 @@ package routing
 import (
 	"context"
 	"errors"
-	"path/filepath"
+	"path/filepath"\n\t"sync"
 	"testing"
 
 	provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
@@ -457,4 +457,104 @@ func TestServiceWebhookCorrelationSurvivesRestartAndRejectsWrongProvider(t *test
 	if err != nil { t.Fatal(err) }
 	if repeat.Result.Status != provider.StatusSuccess { t.Fatalf("expected duplicate terminal webhook to converge, got %#v", repeat) }
 	if got := mock.PurchaseCount(req.ReferenceID); got != 1 { t.Fatalf("webhook correlation must never resubmit provider purchase, got %d", got) }
+}
+
+
+type blockingStatusProvider struct {
+	*Mock.Provider
+	entered chan struct{}
+	release chan struct{}
+	once sync.Once
+}
+
+func (p *blockingStatusProvider) GetStatus(ctx context.Context, req provider.StatusRequest) (provider.PurchaseStatus, error) {
+	p.once.Do(func() { close(p.entered) })
+	select {
+	case <-p.release:
+	case <-ctx.Done():
+		return provider.PurchaseStatus{}, ctx.Err()
+	}
+	return p.Provider.GetStatus(ctx, req)
+}
+
+func TestServiceWebhookAndReconciliationConvergeAcrossServiceInstances(t *testing.T) {
+	storePath := filepath.Join(t.TempDir(), "transactions", "state.json")
+	base := Mock.New(Mock.Config{
+		Products: []provider.Product{{Code: "pln20", Name: "PLN 20"}},
+		ProviderCode: "00",
+		Message: "pending",
+		PurchaseStatus: provider.StatusPending,
+		Price: 20000,
+	})
+	blocking := &blockingStatusProvider{Provider: base, entered: make(chan struct{}), release: make(chan struct{})}
+
+	newService := func(store TransactionStore) *Service {
+		registry := provider.NewRegistry()
+		if err := registry.Register("mock", blocking); err != nil { t.Fatal(err) }
+		ops := operational.NewMemoryStore()
+		if err := ops.Put(operational.Snapshot{ProviderName: "mock", Balance: 100000, Health: operational.HealthHealthy}); err != nil { t.Fatal(err) }
+		router, err := New(registry, ops, map[string]int{"mock": 1})
+		if err != nil { t.Fatal(err) }
+		service, err := NewServiceWithStoreAndAudit(router, store, NewMemoryTransactionAuditStore())
+		if err != nil { t.Fatal(err) }
+		return service
+	}
+
+	firstStore, err := NewJSONFileTransactionStore(storePath)
+	if err != nil { t.Fatal(err) }
+	first := newService(firstStore)
+	req := PurchaseRequest{ProductCode:"pln20", CustomerNo:"08123456789", ReferenceID:"ref-webhook-reconcile-convergence", Amount:20000}
+	if execution, err := first.Purchase(context.Background(), req); err != nil || execution.Result.Status != provider.StatusPending {
+		t.Fatalf("expected pending purchase claim, execution=%#v err=%v", execution, err)
+	}
+	if got := base.PurchaseCount(req.ReferenceID); got != 1 { t.Fatalf("expected one provider submission, got %d", got) }
+
+	secondStore, err := NewJSONFileTransactionStore(storePath)
+	if err != nil { t.Fatal(err) }
+	second := newService(secondStore)
+
+	reconcileDone := make(chan struct{})
+	var reconcileExecution PurchaseExecution
+	var reconcileErr error
+	go func() {
+		reconcileExecution, reconcileErr = second.Reconcile(context.Background(), req.ReferenceID)
+		close(reconcileDone)
+	}()
+
+	select {
+	case <-blocking.entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("reconciliation did not reach provider status lookup")
+	}
+
+	webhookExecution, webhookErr := first.HandleWebhookFromProvider(context.Background(), "mock", provider.WebhookEvent{
+		ReferenceID:req.ReferenceID, ProductCode:req.ProductCode, CustomerNo:req.CustomerNo,
+		Status:provider.StatusSuccess, ProviderCode:"00", Message:"webhook observation", Price:20000,
+	})
+	if webhookErr != nil || webhookExecution.Result.Status != provider.StatusSuccess {
+		t.Fatalf("expected webhook to durably commit terminal success, execution=%#v err=%v", webhookExecution, webhookErr)
+	}
+
+	base.SetTransactionStatus(req.ReferenceID, provider.StatusSuccess, "reconciliation observation")
+	close(blocking.release)
+
+	select {
+	case <-reconcileDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("reconciliation did not converge after webhook transition")
+	}
+	if reconcileErr != nil || reconcileExecution.Result.Status != provider.StatusSuccess {
+		t.Fatalf("expected reconciliation to converge to webhook terminal state, execution=%#v err=%v", reconcileExecution, reconcileErr)
+	}
+	if reconcileExecution.Result.Message != "webhook observation" {
+		t.Fatalf("expected durable webhook observation to remain authoritative, got %#v", reconcileExecution.Result)
+	}
+
+	persisted, ok := secondStore.Get(req.ReferenceID)
+	if !ok || persisted.Execution.Result.Status != provider.StatusSuccess || persisted.Execution.Result.Message != "webhook observation" {
+		t.Fatalf("expected one deterministic durable terminal state, got %#v", persisted)
+	}
+	if got := base.PurchaseCount(req.ReferenceID); got != 1 {
+		t.Fatalf("webhook/reconciliation convergence must never resubmit provider purchase, got %d", got)
+	}
 }
