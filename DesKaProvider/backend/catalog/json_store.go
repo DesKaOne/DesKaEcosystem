@@ -29,7 +29,7 @@ func NewJSONFileStore(path string) (*JSONFileStore, error) {
 	if len(raw) == 0 { return s, nil }
 	var payload fileData
 	if err := json.Unmarshal(raw, &payload); err != nil { return nil, fmt.Errorf("decode catalog store: %w", err) }
-	if payload.Snapshots != nil { s.data = payload.Snapshots }
+	if payload.Snapshots != nil { for name, snapshot := range payload.Snapshots { if name == "" || snapshot.ProviderName == "" || snapshot.ProviderName != name || snapshot.SyncedAt.IsZero() { return nil, fmt.Errorf("invalid catalog snapshot %q", name) } snapshot.Products = append([]provider.Product(nil), snapshot.Products...); s.data[name] = snapshot } }
 	return s, nil
 }
 
