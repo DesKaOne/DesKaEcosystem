@@ -3659,3 +3659,115 @@ func TestServiceRunCloseReentryInterleavingsRemainSingleShot(t *testing.T) {
 		t.Fatalf("terminal Run re-entry must not reuse or close runtime database, got %d closes", db.closeCount)
 	}
 }
+
+
+func TestServiceRunBothLifecyclesRemainActiveThenConvergeBeforeFreshCloseCleanup(t *testing.T) {
+	service := newRuntimeTestService(t)
+	service.catalogSync, _ = catalog.NewSyncService(
+		&provider.Registry{},
+		catalog.NewMemoryStore(),
+	)
+	service.catalogLifecycle = newCatalogWorkerLifecycle()
+	service.catalogInterval = time.Hour
+
+	balanceShutdownErr := errors.New("first balance shutdown did not converge")
+	catalogShutdownErr := errors.New("first catalog shutdown did not converge")
+	transactionErr := errors.New("fresh transaction cleanup after convergence")
+	auditErr := errors.New("fresh audit cleanup after convergence")
+	order := make([]string, 0, 4)
+
+	service.balanceShutdown = func(context.Context) error {
+		order = append(order, "balance-attempt")
+		return balanceShutdownErr
+	}
+	service.catalogShutdown = func() error {
+		order = append(order, "catalog-attempt")
+		return catalogShutdownErr
+	}
+	service.catalogStart = func(parent context.Context) (context.Context, error) {
+		return service.catalogLifecycle.Start(parent)
+	}
+
+	tx := &orderedCloseErrorDB{name: "transaction", order: &order, err: transactionErr}
+	audit := &orderedCloseErrorDB{name: "audit", order: &order, err: auditErr}
+	service.databaseOwnership = newRuntimeDatabaseOwnership(tx, audit)
+	service.databaseOwnership.transferToService()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	runErr := service.Run(ctx)
+
+	if !errors.Is(runErr, context.Canceled) {
+		t.Fatalf("expected first Run to preserve caller cancellation, got %v", runErr)
+	}
+	if !errors.Is(runErr, balanceShutdownErr) {
+		t.Fatalf("expected first Run to preserve balance completion error, got %v", runErr)
+	}
+	if !errors.Is(runErr, catalogShutdownErr) {
+		t.Fatalf("expected first Run to preserve catalog completion error, got %v", runErr)
+	}
+	if service.balanceLifecycle == nil || !service.balanceLifecycle.Running() {
+		t.Fatal("expected balance lifecycle to remain active after first failed convergence")
+	}
+	if !service.catalogLifecycle.Running() {
+		t.Fatal("expected catalog lifecycle to remain active after first failed convergence")
+	}
+	if tx.closeCount != 0 || audit.closeCount != 0 {
+		t.Fatalf("expected database cleanup to remain deferred while both lifecycles are active: tx=%d audit=%d", tx.closeCount, audit.closeCount)
+	}
+	if !reflect.DeepEqual(order, []string{"balance-attempt", "catalog-attempt"}) {
+		t.Fatalf("unexpected first shutdown attempt order: %v", order)
+	}
+
+	service.balanceShutdown = func(context.Context) error {
+		service.balanceLifecycle.Shutdown(context.Background())
+		order = append(order, "balance-converged")
+		return nil
+	}
+	service.catalogShutdown = func() error {
+		service.catalogLifecycle.Shutdown()
+		order = append(order, "catalog-converged")
+		return nil
+	}
+
+	if err := service.shutdownBalanceWorker(context.Background()); err != nil {
+		t.Fatalf("expected balance convergence without error, got %v", err)
+	}
+	if err := service.shutdownCatalogLifecycle(); err != nil {
+		t.Fatalf("expected catalog convergence without error, got %v", err)
+	}
+	if service.balanceLifecycle.Running() || service.catalogLifecycle.Running() {
+		t.Fatal("expected both lifecycles to be stopped before explicit Close")
+	}
+
+	closeErr := service.Close()
+	if !errors.Is(closeErr, transactionErr) || !errors.Is(closeErr, auditErr) {
+		t.Fatalf("expected fresh database cleanup errors after lifecycle convergence, got %v", closeErr)
+	}
+	if errors.Is(closeErr, context.Canceled) ||
+		errors.Is(closeErr, balanceShutdownErr) ||
+		errors.Is(closeErr, catalogShutdownErr) {
+		t.Fatalf("explicit Close must not replay historical Run errors: %v", closeErr)
+	}
+	if tx.closeCount != 1 || audit.closeCount != 1 {
+		t.Fatalf("expected exactly one database close each, got tx=%d audit=%d", tx.closeCount, audit.closeCount)
+	}
+	if !reflect.DeepEqual(order, []string{
+		"balance-attempt",
+		"catalog-attempt",
+		"balance-converged",
+		"catalog-converged",
+		"transaction",
+		"audit",
+	}) {
+		t.Fatalf("unexpected final cleanup ordering: %v", order)
+	}
+
+	repeatedClose := service.Close()
+	if !errors.Is(repeatedClose, transactionErr) || !errors.Is(repeatedClose, auditErr) {
+		t.Fatalf("expected repeated Close to preserve fresh cleanup errors, got %v", repeatedClose)
+	}
+	if tx.closeCount != 1 || audit.closeCount != 1 {
+		t.Fatalf("expected repeated Close not to double-close databases, got tx=%d audit=%d", tx.closeCount, audit.closeCount)
+	}
+}
