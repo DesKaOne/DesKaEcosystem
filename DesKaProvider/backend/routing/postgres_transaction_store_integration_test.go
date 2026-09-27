@@ -2598,3 +2598,59 @@ func TestPostgresTransactionStoreWrappedContextErrorPreservesSentinel(t *testing
 		t.Fatalf("expected adapter context in wrapped error, got %v", err)
 	}
 }
+
+func TestPostgresTransactionStoreAtomicCreateIfAbsent(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	applyPostgresMigration(t, db)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	ref := postgresIntegrationReference()
+	defer func() { _, _ = db.ExecContext(ctx, "DELETE FROM provider_transactions WHERE reference_id = $1", ref) }()
+
+	state := postgresPendingState()
+	state.Request.ReferenceID = ref
+	state.Execution.Result.ReferenceID = ref
+
+	first, err := NewPostgresTransactionStore(db)
+	if err != nil { t.Fatal(err) }
+	second, err := NewPostgresTransactionStore(db)
+	if err != nil { t.Fatal(err) }
+
+	type result struct {
+		state   TransactionState
+		created bool
+		err     error
+	}
+	results := make(chan result, 2)
+	start := make(chan struct{})
+	for _, store := range []*PostgresTransactionStore{first, second} {
+		go func(s *PostgresTransactionStore) {
+			<-start
+			got, created, err := s.CreateIfAbsentContext(ctx, state)
+			results <- result{state: got, created: created, err: err}
+		}(store)
+	}
+	close(start)
+
+	var createdCount int
+	for i := 0; i < 2; i++ {
+		got := <-results
+		if got.err != nil { t.Fatal(got.err) }
+		if got.state.Request != state.Request || got.state.Execution.ProviderName != state.Execution.ProviderName {
+			t.Fatalf("atomic claim returned mismatched state: %#v", got.state)
+		}
+		if got.created { createdCount++ }
+	}
+	if createdCount != 1 {
+		t.Fatalf("expected exactly one durable creator, got %d", createdCount)
+	}
+
+	persisted, ok := first.Get(ref)
+	if !ok {
+		t.Fatal("expected claimed transaction to persist")
+	}
+	if persisted.Execution.Result.Status != provider.StatusPending {
+		t.Fatalf("expected durable pending state, got %s", persisted.Execution.Result.Status)
+	}
+}
