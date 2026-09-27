@@ -1,8 +1,11 @@
 package consensus
 
 import (
+	"bytes"
 	"errors"
 	"testing"
+
+	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/crypto"
 
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/block"
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/types"
@@ -40,6 +43,37 @@ func runtimeFixture(t *testing.T) (*ValidatorRuntime, RoundState, ValidatorSet, 
 		t.Fatal(err)
 	}
 	return runtime, state, validators, power
+}
+
+func runtimeTestAuthority(t *testing.T) StaticValidatorAuthority {
+	t.Helper()
+	keys := map[string][]byte{}
+	for _, item := range []struct{ id string; seed byte }{{"validator-a", 0x31}, {"validator-b", 0x32}} {
+		kp, err := crypto.NewEd25519KeyPair(bytes.Repeat([]byte{item.seed}, 32))
+		if err != nil { t.Fatal(err) }
+		keys[item.id] = append([]byte(nil), kp.PublicKey...)
+	}
+	authority, err := NewStaticValidatorAuthority(keys)
+	if err != nil { t.Fatal(err) }
+	return authority
+}
+
+func runtimeSignedMessage(t *testing.T, state RoundState, sender string, kind MessageType, payload string) Message {
+	t.Helper()
+	var seed byte
+	switch sender {
+	case "validator-a": seed = 0x31
+	case "validator-b": seed = 0x32
+	default: t.Fatalf("unknown runtime test validator %q", sender)
+	}
+	kp, err := crypto.NewEd25519KeyPair(bytes.Repeat([]byte{seed}, 32))
+	if err != nil { t.Fatal(err) }
+	signer, err := crypto.NewEd25519Signer(kp.PrivateKey)
+	if err != nil { t.Fatal(err) }
+	msg := runtimeMessage(state, sender, kind, payload)
+	signed, err := msg.Sign(signer)
+	if err != nil { t.Fatal(err) }
+	return signed
 }
 
 func runtimeMessage(state RoundState, sender string, kind MessageType, payload string) Message {
@@ -88,14 +122,14 @@ func TestValidatorRuntimeAdvancesAndFinalizesAfterQuorum(t *testing.T) {
 	if runtime.State().Phase != PhasePrecommit {
 		t.Fatalf("expected precommit after prevote quorum, got %v", runtime.State().Phase)
 	}
-	if err := runtime.AddVote(runtimeMessage(runtime.State(), "validator-a", MessageTypePrecommit, "block-8")); err != nil {
+	if err := runtime.AddVote(runtimeSignedMessage(t, runtime.State(), "validator-a", MessageTypePrecommit, "block-8")); err != nil {
 		t.Fatal(err)
 	}
-	if err := runtime.AddVote(runtimeMessage(runtime.State(), "validator-b", MessageTypePrecommit, "block-8")); err != nil {
+	if err := runtime.AddVote(runtimeSignedMessage(t, runtime.State(), "validator-b", MessageTypePrecommit, "block-8")); err != nil {
 		t.Fatal(err)
 	}
 
-	certificate, err := runtime.FinalizeProposal()
+	certificate, err := runtime.FinalizeProposal(runtimeTestAuthority(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,7 +236,7 @@ func TestValidatorRuntimeRejectsRoundChangeAfterFinalization(t *testing.T) {
 	}
 	if err := runtime.AddVote(runtimeMessage(runtime.State(), "validator-a", MessageTypePrecommit, "block-8")); err != nil { t.Fatal(err) }
 	if err := runtime.AddVote(runtimeMessage(runtime.State(), "validator-b", MessageTypePrecommit, "block-8")); err != nil { t.Fatal(err) }
-	if _, err := runtime.FinalizeProposal(); err != nil {
+	if _, err := runtime.FinalizeProposal(runtimeTestAuthority(t)); err != nil {
 		t.Fatal(err)
 	}
 	if err := runtime.AdvanceRound(1); !errors.Is(err, ErrRoundChangeFinalized) {
@@ -221,7 +255,7 @@ func TestValidatorRuntimeDoesNotFinalizeWithoutQuorum(t *testing.T) {
 	if err := runtime.AddVote(runtimeMessage(state, "validator-a", MessageTypePrevote, "block-8")); err != nil {
 		t.Fatal(err)
 	}
-	_, err := runtime.FinalizeProposal()
+	_, err := runtime.FinalizeProposal(runtimeTestAuthority(t))
 	if !errors.Is(err, ErrInvalidRuntimePhase) {
 		t.Fatalf("expected invalid runtime phase, got %v", err)
 	}
@@ -286,7 +320,7 @@ func TestValidatorRuntimeExposesClonedFinalityCertificate(t *testing.T) {
 	if err := runtime.AddVote(runtimeMessage(state, "validator-b", MessageTypePrevote, "block-8")); err != nil { t.Fatal(err) }
 	if err := runtime.AddVote(runtimeMessage(runtime.State(), "validator-a", MessageTypePrecommit, "block-8")); err != nil { t.Fatal(err) }
 	if err := runtime.AddVote(runtimeMessage(runtime.State(), "validator-b", MessageTypePrecommit, "block-8")); err != nil { t.Fatal(err) }
-	if _, err := runtime.FinalizeProposal(); err != nil { t.Fatal(err) }
+	if _, err := runtime.FinalizeProposal(runtimeTestAuthority(t)); err != nil { t.Fatal(err) }
 	certificate, err := runtime.FinalizedCertificate(); if err != nil { t.Fatal(err) }
 	certificate.Payload[0] = 'X'
 	certificate.Votes[0].Payload[0] = 'Y'
