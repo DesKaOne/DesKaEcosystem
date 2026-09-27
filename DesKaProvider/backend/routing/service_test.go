@@ -1301,11 +1301,15 @@ func TestServicePurchaseDurableClaimPreventsCrossInstanceSubmission(t *testing.T
 	for i := 0; i < 2; i++ {
 		if err := <-errs; err != nil { t.Fatal(err) }
 	}
-	var firstResult PurchaseExecution
 	for i := 0; i < 2; i++ {
 		result := <-results
-		if i == 0 { firstResult = result; continue }
-		if result != firstResult { t.Fatalf("cross-instance result mismatch: %#v != %#v", result, firstResult) }
+		if result.ProviderName != "mock" ||
+			result.Result.ReferenceID != req.ReferenceID ||
+			result.Result.CustomerNo != req.CustomerNo ||
+			result.Result.ProductCode != req.ProductCode ||
+			result.Result.Status != provider.StatusPending {
+			t.Fatalf("cross-instance durable claim returned invalid state: %#v", result)
+		}
 	}
 	if got := mock.PurchaseCount(req.ReferenceID); got != 1 {
 		t.Fatalf("durable create-if-absent claim must authorize exactly one provider submission, got %d", got)
