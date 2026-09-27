@@ -12122,3 +12122,96 @@ The routing layer now consumes the provider-neutral capability matrix without ex
 ### Next Milestone
 
 Continue with the next smallest capability-matrix integration gap: provider registration/composition for the verified adapter pool, beginning only where the provider capability contract and deterministic adapter tests are actually established.
+
+## 225. Milestone Update — Explicit Provider Registry Composition Boundary
+
+**Date:** 2026-09-28
+
+### Completed
+
+- extracted runtime provider registration from `NewFromEnvironmentContext()` into the explicit `registerConfiguredProviders()` composition boundary;
+- kept DigiFlazz registration provider-neutral through `RegisterWithCapabilities`;
+- preserved conservative DigiFlazz capability metadata:
+  - PPOB: verified/configured/adapter-implemented, disabled, not live-tested;
+  - balance: verified/configured/adapter-implemented, disabled, not live-tested;
+  - webhook: verified/configured/adapter-implemented, disabled, not live-tested;
+- preserved conditional IAK registration only when IAK credentials are configured;
+- preserved conservative IAK capability metadata with `Enabled=false` and `LiveTested=false`;
+- ensured incomplete IAK configuration fails before an IAK registry entry or capability descriptor is installed;
+- added deterministic provider-composition tests for capability metadata, conditional IAK registration, and partial-configuration safety;
+- did not register XP SINDONESIA in this milestone because its current adapter does not implement the full PPOBProvider contract (`GetProducts`, `Inquiry`, and `GetStatus` return `ErrUnsupportedOperation`);
+- did not add RCB or Midtrans runtime registration because the current source does not establish production adapter implementations for them.
+
+### Implementation Details
+
+Runtime composition now has one explicit boundary:
+
+```text
+runtime configuration
+       |
+       v
+registerConfiguredProviders()
+       |
+       +--> DigiFlazz + CapabilityDescriptor
+       |
+       +--> IAK only when configured + CapabilityDescriptor
+       |
+       v
+Provider Registry
+       |
+       +--> ProviderState reconstruction
+       |
+       v
+Capability-aware Router
+```
+
+Provider-specific credentials remain loaded through configuration and are not embedded in the registry abstraction.
+
+The composition boundary is intentionally conservative: registration does not imply capability enablement or live validation.
+
+### Verification
+
+- implementation commit before documentation: `83c233a0c054183f04dbb7ffdcf1e4f31624ab71`;
+- exact implementation CI run #2201: **GREEN**;
+- `go test ./...`: PASS;
+- `go vet ./...`: PASS;
+- `go test -race ./...`: PASS;
+- PostgreSQL-backed workflow service: PASS;
+- intermediate implementation CI #2199 was RED due to a compile error caused by an invalid `provider.Provider` type reference; corrected to the actual `provider.PPOBProvider` contract before final verification;
+- no live provider credentials or external provider calls were introduced.
+
+### Invariants
+
+- registry composition does not authorize provider transactions;
+- capability registration does not imply capability enablement;
+- `LiveTested=false` remains the default without credential-backed live validation;
+- provider-specific protocol remains inside provider adapters;
+- provider credentials remain configuration/secret inputs;
+- operational provider balance remains a liquidity snapshot, not customer balance authority;
+- routing remains subject to catalog, health, freshness, and balance gates;
+- no retry, automatic failover, resubmission, ledger mutation, treasury movement, or provider funding is introduced;
+- restart remains a reconstruction boundary, not a provider submission boundary.
+
+### Safety Boundary
+
+This milestone establishes runtime composition only. A provider entering the registry is not automatically eligible for routing because the capability descriptor remains conservative and the operational state gate remains separate.
+
+XP SINDONESIA is deliberately not registered yet because the current adapter contract is incomplete for the registry's PPOBProvider interface. Treating a partial adapter as fully implemented PPOB capability would weaken the capability matrix.
+
+### Known Limitations
+
+- XP SINDONESIA remains source-implemented but not runtime-registered;
+- its current adapter supports Purchase, Balance, and Webhook but explicitly returns unsupported for product catalog, inquiry, and status operations;
+- RCB and Midtrans remain without production adapter implementations in the current source;
+- capability evidence is still metadata rather than a durable evidence/audit store;
+- legacy `Registry.Register` compatibility remains until all relevant callers migrate to explicit capability descriptors.
+
+### Architecture Impact
+
+Runtime provider registration is now a distinct composition boundary. This makes future provider registration auditable and testable without putting provider-specific logic into DesKaCash or the routing layer.
+
+No public API, financial ledger, customer balance authority, treasury authority, or automatic provider funding path is introduced.
+
+### Next Milestone
+
+Complete the next provider only when its adapter contract is actually established. The smallest candidate is XP SINDONESIA adapter capability completion or another verified provider with a demonstrable provider-neutral contract. Do not mark capability READY until adapter tests and the corresponding capability matrix evidence are present.
