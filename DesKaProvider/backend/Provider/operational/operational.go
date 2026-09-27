@@ -61,6 +61,10 @@ func (s *MemoryStore) Get(name string) (Snapshot, bool) {
 	return v, ok
 }
 
+func (s *MemoryStore) GetWithError(name string) (Snapshot, bool, error) {
+	return s.Get(name)
+}
+
 func (s *MemoryStore) Put(snapshot Snapshot) error {
 	if snapshot.ProviderName == "" {
 		return errors.New("provider name is required")
