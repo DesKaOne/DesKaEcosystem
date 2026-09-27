@@ -10733,3 +10733,59 @@ No architecture document update is required. Milestone #202 adds deterministic c
 **#203 — Runtime Initialization / Shutdown Cross-Boundary Matrix**
 
 Focus next on deterministic interleavings between runtime initialization ownership handoff, initialization failure cleanup, terminal Close, and subsequent lifecycle reuse, ensuring partially initialized database generations cannot leak or become authoritative.
+
+
+## 203. Milestone Update — Runtime Initialization / Shutdown Cross-Boundary Matrix
+
+**Date:** 2026-09-27
+
+Completed:
+
+- added deterministic coverage for initialization failure after database ownership acquisition;
+- verified a partially initialized runtime generation is closed before failed initialization returns;
+- verified initialization cleanup remains single-shot when the captured partial ownership is subsequently closed again;
+- added deterministic coverage proving a failed initialization generation does not poison a subsequent fresh runtime initialization;
+- verified the fresh runtime receives distinct ownership and remains open after successful initialization until its own terminal Close;
+- preserved the existing transaction-before-audit cleanup ordering and generation isolation guarantees;
+- no production runtime implementation change was required because the existing initialization ownership guard already closes untransferred resources on every failure path;
+- no provider retry/failover, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, provider funding, or synthetic transaction/audit reconstruction was introduced.
+
+### CI
+
+- Final #203 test commit: c0930416099fe8cbcd24e004e3ab8797e0e47441.
+- CI #2014 on the exact test HEAD: GREEN.
+  - go test ./... — PASS
+  - go vet ./... — PASS
+  - PostgreSQL service-backed integration tests — PASS
+  - go test -race ./... — PASS
+
+### Boundary / Initialization Invariants
+
+- initialization owns acquired database resources until explicit transfer to the returned Service;
+- every tested initialization failure boundary closes the partial generation before returning the primary error;
+- cleanup errors remain observable without replacing the primary initialization failure identity;
+- repeated cleanup does not double-close a partial generation;
+- successful ownership transfer disables initialization cleanup and leaves the generation for Service lifecycle ownership;
+- a later fresh initialization receives a distinct generation and does not inherit prior cleanup state;
+- a successful fresh generation remains untouched until its own terminal lifecycle/Close boundary.
+
+### Safety Boundary
+
+This milestone remains limited to runtime initialization ownership, partial-generation cleanup, ownership handoff, and subsequent lifecycle reuse. It adds no provider retry/failover, transaction recovery, ledger mutation, customer-balance mutation, treasury movement, provider funding, or financial authorization.
+
+### Known Limitations
+
+- initialization failure injection is an internal test seam and is not a production API;
+- database close remains non-context-aware;
+- PostgreSQL integration coverage requires DESKAPROVIDER_POSTGRES_DSN and is skipped when unavailable;
+- ownership-generation state remains lifecycle bookkeeping, not a recovery journal or transaction authority.
+
+### Architecture Impact
+
+No architecture document update is required. Milestone #203 strengthens deterministic initialization cleanup and ownership handoff guarantees without changing the documented provider, financial, or lifecycle authority model.
+
+### Next Milestone
+
+**#204 — Runtime Initialization Failure Error Attribution Matrix**
+
+Focus next on failure attribution across initialization stages, database acquisition/cleanup errors, and subsequent successful initialization, ensuring primary initialization errors and cleanup errors remain independently discoverable without replay or cross-generation contamination.
