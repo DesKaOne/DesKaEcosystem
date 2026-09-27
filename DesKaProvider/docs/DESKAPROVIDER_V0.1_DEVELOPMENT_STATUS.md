@@ -10789,3 +10789,62 @@ No architecture document update is required. Milestone #203 strengthens determin
 **#204 — Runtime Initialization Failure Error Attribution Matrix**
 
 Focus next on failure attribution across initialization stages, database acquisition/cleanup errors, and subsequent successful initialization, ensuring primary initialization errors and cleanup errors remain independently discoverable without replay or cross-generation contamination.
+
+
+## 204. Milestone Update — Runtime Initialization Failure Error Attribution Matrix
+
+**Date:** 2026-09-27
+
+Completed:
+
+- added deterministic coverage across all runtime initialization failure injection stages: database acquisition, provider-state store setup, router setup, purchase-service setup, and the pre-ownership-transfer boundary;
+- verified each injected initialization failure preserves the primary initialization error identity through `errors.Is`;
+- verified each partially acquired runtime generation is closed before failed initialization returns;
+- verified database acquisition failures remain distinct from later initialization-stage failures and do not reach later initialization hooks;
+- added deterministic cleanup-error coverage proving transaction and audit cleanup failures remain independently discoverable alongside the primary initialization error;
+- verified transaction and audit database resources are each closed exactly once even when cleanup reports errors;
+- verified a failed generation does not poison a subsequent fresh runtime initialization, which receives distinct open ownership and closes only on its own terminal lifecycle;
+- no production runtime behavior change was required; the milestone strengthens the existing ownership/error boundaries with deterministic regression coverage.
+
+### Verification
+
+- implementation/test commit: `1c108061cfe0b3a949d4e1d3e701715cc7572324`;
+- fixture correction commit: `f748cad51197d34ca2fbfce6f7aa9e5b991f86ce`;
+- CI #2018 exposed a test-fixture environment omission in the transaction-acquisition failure case; the test reached DigiFlazz configuration failure before the intended PostgreSQL acquisition failure;
+- fixture corrected by setting `DIGIFLAZZ_USERNAME` and `DIGIFLAZZ_API_KEY` before the transaction-store acquisition assertion;
+- final CI #2020 / run `36330669159` is **GREEN** for exact HEAD `f748cad51197d34ca2fbfce6f7aa9e5b991f86ce`;
+- `go test ./...` — PASS;
+- `go vet ./...` — PASS;
+- PostgreSQL service-backed integration tests — PASS;
+- `go test -race ./...` — PASS.
+
+### Error Attribution / Ownership Invariants
+
+- primary initialization errors remain independently discoverable and are not replaced by cleanup failures;
+- cleanup failures remain independently discoverable as supplemental infrastructure errors;
+- database acquisition failure is distinguishable from post-acquisition initialization failure;
+- partially acquired ownership is cleaned before initialization returns;
+- cleanup remains single-shot for each database handle/generation;
+- successful ownership transfer leaves the generation under Service lifecycle ownership;
+- a failed generation cannot contaminate or become authoritative for a subsequent fresh generation;
+- no cleanup or initialization error is interpreted as a provider transaction result or retry/failover authorization.
+
+### Safety Boundary
+
+This milestone remains limited to runtime initialization error attribution, database acquisition/cleanup ownership, and fresh-generation isolation. It adds no provider retry/failover, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, provider funding, or financial authorization.
+
+### Known Limitations
+
+- cleanup-error injection is deterministic at the database-closer test boundary and does not reproduce every PostgreSQL driver/OS shutdown failure mode;
+- database close remains non-context-aware;
+- PostgreSQL integration coverage requires `DESKAPROVIDER_POSTGRES_DSN` and is skipped when unavailable;
+- initialization failure hooks are internal test seams, not production APIs;
+- ownership-generation state remains lifecycle bookkeeping, not a recovery journal or transaction authority.
+
+### Architecture Impact
+
+No architecture document update is required. Milestone #204 strengthens initialization error attribution and cleanup observability without changing provider, transaction, financial, or lifecycle authority boundaries.
+
+### Next Milestone
+
+Continue from the updated runtime lifecycle/reliability status by identifying the next concrete initialization, shutdown, persistence, or routing boundary gap. Preserve the established invariants that transaction persistence is authoritative, audit/operational evidence is non-authoritative, and infrastructure errors cannot authorize provider retry, failover, resubmission, or financial mutation.
