@@ -108,7 +108,15 @@ func (s *SyncService) SyncProvider(ctx context.Context, name string) (Snapshot, 
 func (s *SyncService) SyncAll(ctx context.Context) map[string]error {
 	errorsByProvider := make(map[string]error)
 	for _, name := range s.Registry.Names() {
-		if _, err := s.SyncProvider(ctx, name); err != nil { errorsByProvider[name] = err }
+		if err := ctx.Err(); err != nil {
+			break
+		}
+		if _, err := s.SyncProvider(ctx, name); err != nil {
+			errorsByProvider[name] = err
+		}
+		if err := ctx.Err(); err != nil {
+			break
+		}
 	}
 	return errorsByProvider
 }
