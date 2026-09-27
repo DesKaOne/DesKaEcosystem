@@ -11010,3 +11010,60 @@ No architecture document update is required. Milestone #207 strengthens the exis
 ### Next Milestone
 
 Continue from the runtime lifecycle/reliability status with the next concrete boundary gap, prioritizing deterministic behavior around startup rollback, shutdown convergence, persistence, or routing only where a currently observable invariant is not yet locked by tests.
+
+
+## 208. Milestone Update — Runtime Catalog Initial Sync Failure Retry Boundary
+
+**Date:** 2026-09-27
+
+Completed:
+
+- added deterministic coverage for a catalog synchronization failure occurring immediately after the catalog lifecycle starts;
+- verified an initial catalog sync failure does not terminate Service.Run() and does not trigger premature database ownership cleanup;
+- verified the catalog lifecycle remains active after the failed initial sync so the configured periodic sync boundary can retry;
+- verified a subsequent successful catalog sync replaces the missing/stale catalog condition with a fresh persisted snapshot;
+- verified normal context cancellation still converges both balance and catalog lifecycles before database ownership cleanup;
+- verified the runtime-owned database generation is closed exactly once after the service actually shuts down;
+- preserved the existing production behavior that catalog sync errors are operationally best-effort while routing separately refuses missing or stale catalog snapshots through its existing availability/freshness boundaries;
+- no production runtime change was required; this milestone locks the existing retry/lifecycle boundary with deterministic regression coverage;
+- no provider retry/failover, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, provider funding, or synthetic transaction/audit reconstruction was introduced.
+
+### Verification
+
+- implementation/test commit: 8813ba90665d5f0810db6135411b2c9a016c1592;
+- CI #2039 / run 36334001753 is **GREEN** for exact test HEAD 8813ba90665d5f0810db6135411b2c9a016c1592;
+- go test ./... — PASS;
+- go vet ./... — PASS;
+- PostgreSQL service-backed integration tests — PASS;
+- go test -race ./... — PASS.
+
+### Catalog / Lifecycle Invariants
+
+- catalog lifecycle startup remains independent from the success of the first provider catalog fetch;
+- a transient catalog provider error does not terminate the runtime worker or close transferred database ownership;
+- periodic catalog synchronization remains the retry mechanism after an initial failure;
+- a successful retry produces the catalog snapshot consumed by routing;
+- routing freshness remains an independent safety boundary: missing or stale catalog data does not become provider selection authority;
+- terminal shutdown still stops active lifecycles before closing the owned database generation;
+- cleanup remains single-shot for the transferred generation.
+
+### Safety Boundary
+
+This milestone remains limited to catalog synchronization retry semantics, runtime lifecycle continuity, catalog snapshot freshness, and ownership cleanup. It adds no provider retry/failover policy for financial transactions, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, provider funding, or financial authorization.
+
+### Known Limitations
+
+- catalog sync errors are still not surfaced as a separate runtime health/error channel; this milestone only verifies the existing best-effort retry behavior;
+- retry cadence remains the configured CatalogSyncInterval and is not backoff-aware;
+- catalog snapshots remain operational cache data and are not transaction authority;
+- PostgreSQL integration coverage requires DESKAPROVIDER_POSTGRES_DSN and is skipped when unavailable;
+- database close remains non-context-aware;
+- ownership-generation state remains lifecycle bookkeeping, not a recovery journal or transaction authority.
+
+### Architecture Impact
+
+No architecture document update is required. Milestone #208 adds deterministic regression coverage for catalog-sync failure continuity and retry without changing the documented provider, transaction, financial, or lifecycle authority model.
+
+### Next Milestone
+
+Continue from the runtime lifecycle/reliability status with the next concrete initialization, shutdown, persistence, routing, or operational-observability boundary gap only where a currently observable invariant is not yet locked by tests.
