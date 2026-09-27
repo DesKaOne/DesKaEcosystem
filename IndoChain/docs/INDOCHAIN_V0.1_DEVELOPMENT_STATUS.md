@@ -1430,3 +1430,83 @@ CI verification:
 
 Next milestone:
 - 4.33 — ValidatorRuntime Authenticated Finality Wiring: make authority resolution part of the runtime finality boundary so finalized evidence cannot be produced/accepted through an unauthenticated local path, while preserving the legacy compatibility surface only where it cannot weaken explicit precommit/finality invariants.
+
+
+### 4.33 ValidatorRuntime Authenticated Finality Wiring
+
+Objective:
+- menjadikan validator authority resolution sebagai bagian wajib dari runtime finality boundary;
+- memastikan ValidatorRuntime tidak dapat memasuki PhaseFinalized melalui structural quorum evidence saja;
+- memastikan node finalized-block handoff juga hanya menerima finality evidence yang telah diautentikasi.
+
+Implementation:
+- ValidatorRuntime.FinalizeProposal sekarang menerima TimeoutAuthorityResolver secara eksplisit.
+- Runtime membangun PrecommitCertificate, lalu menjalankan ValidatePrecommitCertificateWithAuthority, ValidateLockProofWithAuthority, dan ValidateFinalityCertificateWithAuthority sebelum mutation finality.
+- Semua authenticated validation selesai terlebih dahulu; hanya setelah seluruh evidence valid runtime mengubah lockedProof, certificate, dan PhaseFinalized.
+- Legacy MessageTypeVote tetap diterima sebagai compatibility input pada phase transition, tetapi tidak lagi dimirror menjadi precommit evidence. Karena authenticated finality hanya menerima explicit MessageTypePrecommit, generic vote tidak dapat menjadi jalan belakang finality.
+- Ditambahkan immutable StaticValidatorAuthority snapshot dengan defensive copy pada input map, public-key bytes, dan resolver output.
+- Ditambahkan ValidateFinalizedBlockWithAuthority; Node.CommitFinalizedBlock sekarang menggunakan authenticated finality validation sebelum proposer-authority handoff dan block execution.
+- Runtime integration accessors Proposal, Validators, dan PrecommitVotes hanya mengembalikan defensive copies.
+- Existing timeout/LockProof/highest-lock path tidak diubah secara semantik.
+
+Authenticated finality behavior:
+1. proposal diterima;
+2. explicit prevote quorum membentuk lock dan memasuki Precommit;
+3. explicit precommit evidence dikumpulkan;
+4. precommit certificate harus mencapai quorum;
+5. seluruh nested precommit signatures diverifikasi terhadap validator authority;
+6. LockProof diverifikasi ulang terhadap authenticated precommit evidence;
+7. FinalityCertificate harus berisi explicit MessageTypePrecommit dan seluruh signature valid;
+8. hanya setelah langkah 1–7 sukses runtime masuk PhaseFinalized.
+
+Runtime invariants:
+- precommit quorum tidak sama dengan authenticated finality;
+- structural evidence tidak cukup untuk finalization;
+- invalid signature, missing authority, unauthorized validator, duplicate evidence, wrong type, wrong context, insufficient quorum, dan conflicting proof tidak boleh menghasilkan finalized state;
+- finalization mutation bersifat atomic terhadap seluruh authenticated evidence validation;
+- generic MessageTypeVote tidak dapat menghasilkan authenticated finality;
+- explicit MessageTypePrevote tidak dapat langsung menjadi finality evidence;
+- validator membership tetap terpisah dari public-key authority;
+- signing domain, canonical signing bytes, LockProof encoding, quorum arithmetic, dan highest-lock semantics tidak diubah.
+
+Regression tests:
+- authenticated runtime finalization success;
+- invalid precommit signature + unchanged runtime state;
+- unauthorized validator + unchanged runtime state;
+- missing public-key authority + unchanged runtime state;
+- duplicate validator evidence + unchanged runtime state;
+- generic legacy vote cannot finalize;
+- explicit prevote cannot finalize;
+- wrong validator signature cannot finalize;
+- tampered finality certificate rejected non-mutating;
+- immutable/defensive-copy authority resolver behavior;
+- runtime finality failure atomicity;
+- existing timeout/LockProof/higher-lock regression suite retained;
+- P2P and node finality fixtures migrated to explicit authenticated precommit evidence.
+
+Verification:
+- CI must be evaluated against the final documentation commit, not an earlier implementation commit.
+- Required gates remain go test ./..., go test -race ./..., go vet ./..., and Tidy.
+- PostgreSQL/service-backed tests were not present as a required CI-backed suite in the inspected IndoChain tree.
+
+Implementation commits:
+- runtime authenticated finality wiring: 8afa5e888d5f4a2362ce4a06319813f0e04c0bcb
+- authenticated finalized-block boundary: d7d347d712d8b1003eaad00b54f5cb393110475e
+- node authenticated handoff: 5d369a3291ddaa885dd3473043a388d76f2e8332
+- immutable authority resolver: 2887c86aa9636759fdded9c31b0ed1ae94edfe27
+- runtime regression suite: 7bb1290172a670d582041991fbb5ebbb1acf4c23
+- integration fixture hardening and legacy-vote boundary: subsequent branch commits through bb00f8a2f31c8fdf9b4bdb51ae2ad5ecd23dc04a
+
+Known limitations:
+- validator-set lifecycle and public-key registry governance remain outside this milestone;
+- production proposer selection, production BFT safety/liveness proof, network-wide round synchronization, and validator-set transitions remain unfinished;
+- authority snapshot is immutable through its public API, but a canonical persistent validator authority registry is not yet frozen;
+- authenticated finality wiring does not constitute a production security audit or formal BFT proof.
+
+Architecture impact:
+- finality is now explicitly separated into structural quorum evidence and authenticated validator evidence;
+- consensus runtime owns the finality authentication boundary while node execution retains separate transaction-sender authority resolution;
+- finalized block execution cannot rely on an unauthenticated runtime certificate.
+
+Next milestone:
+- 4.34 — Authenticated Finality → Multi-Round/Timeout Consistency: verify that authenticated finality, LockProof, timeout certificates, higher-lock adoption, and round changes remain consistent across multiple rounds and that no authenticated evidence can be replayed or downgraded across round/height boundaries.
