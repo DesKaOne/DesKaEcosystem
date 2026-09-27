@@ -3771,3 +3771,132 @@ func TestServiceRunBothLifecyclesRemainActiveThenConvergeBeforeFreshCloseCleanup
 		t.Fatalf("expected repeated Close not to double-close databases, got tx=%d audit=%d", tx.closeCount, audit.closeCount)
 	}
 }
+
+
+func TestServiceRepeatedPartialShutdownAttemptsConvergeBeforeDatabaseCleanup(t *testing.T) {
+	service := newRuntimeTestService(t)
+	service.catalogSync, _ = catalog.NewSyncService(
+		&provider.Registry{},
+		catalog.NewMemoryStore(),
+	)
+	service.catalogLifecycle = newCatalogWorkerLifecycle()
+	service.catalogInterval = time.Hour
+
+	firstBalanceErr := errors.New("first balance convergence failure")
+	firstCatalogErr := errors.New("first catalog convergence failure")
+	secondBalanceErr := errors.New("second balance convergence failure")
+	secondCatalogErr := errors.New("second catalog convergence failure")
+	transactionErr := errors.New("terminal transaction cleanup failure")
+	auditErr := errors.New("terminal audit cleanup failure")
+	order := make([]string, 0, 8)
+
+	service.balanceShutdown = func(context.Context) error {
+		order = append(order, "balance-attempt")
+		return firstBalanceErr
+	}
+	service.catalogShutdown = func() error {
+		order = append(order, "catalog-attempt")
+		return firstCatalogErr
+	}
+	service.catalogStart = func(parent context.Context) (context.Context, error) {
+		return service.catalogLifecycle.Start(parent)
+	}
+
+	tx := &orderedCloseErrorDB{name: "transaction", order: &order, err: transactionErr}
+	audit := &orderedCloseErrorDB{name: "audit", order: &order, err: auditErr}
+	service.databaseOwnership = newRuntimeDatabaseOwnership(tx, audit)
+	service.databaseOwnership.transferToService()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	firstRunErr := service.Run(ctx)
+	if !errors.Is(firstRunErr, context.Canceled) ||
+		!errors.Is(firstRunErr, firstBalanceErr) ||
+		!errors.Is(firstRunErr, firstCatalogErr) {
+		t.Fatalf("expected first partial shutdown to preserve all identities, got %v", firstRunErr)
+	}
+	if !service.balanceLifecycle.Running() || !service.catalogLifecycle.Running() {
+		t.Fatal("expected both lifecycles to remain active after first failed convergence")
+	}
+	if tx.closeCount != 0 || audit.closeCount != 0 {
+		t.Fatalf("expected database cleanup to remain deferred after first failure: tx=%d audit=%d", tx.closeCount, audit.closeCount)
+	}
+
+	service.balanceShutdown = func(context.Context) error {
+		order = append(order, "balance-attempt-2")
+		return secondBalanceErr
+	}
+	service.catalogShutdown = func() error {
+		order = append(order, "catalog-attempt-2")
+		return secondCatalogErr
+	}
+
+	secondBalance := service.shutdownBalanceWorker(context.Background())
+	secondCatalog := service.shutdownCatalogLifecycle()
+	if !errors.Is(secondBalance, secondBalanceErr) {
+		t.Fatalf("expected second balance convergence error, got %v", secondBalance)
+	}
+	if !errors.Is(secondCatalog, secondCatalogErr) {
+		t.Fatalf("expected second catalog convergence error, got %v", secondCatalog)
+	}
+	if !service.balanceLifecycle.Running() || !service.catalogLifecycle.Running() {
+		t.Fatal("expected both lifecycles to remain active after second failed convergence")
+	}
+	if tx.closeCount != 0 || audit.closeCount != 0 {
+		t.Fatalf("expected database cleanup to remain deferred after second failure: tx=%d audit=%d", tx.closeCount, audit.closeCount)
+	}
+
+	service.balanceShutdown = func(context.Context) error {
+		service.balanceLifecycle.Shutdown(context.Background())
+		order = append(order, "balance-converged")
+		return nil
+	}
+	service.catalogShutdown = func() error {
+		service.catalogLifecycle.Shutdown()
+		order = append(order, "catalog-converged")
+		return nil
+	}
+
+	if err := service.shutdownBalanceWorker(context.Background()); err != nil {
+		t.Fatalf("expected final balance convergence, got %v", err)
+	}
+	if err := service.shutdownCatalogLifecycle(); err != nil {
+		t.Fatalf("expected final catalog convergence, got %v", err)
+	}
+	if service.balanceLifecycle.Running() || service.catalogLifecycle.Running() {
+		t.Fatal("expected both lifecycles stopped before database cleanup")
+	}
+
+	closeErr := service.Close()
+	if !errors.Is(closeErr, transactionErr) || !errors.Is(closeErr, auditErr) {
+		t.Fatalf("expected terminal cleanup errors after final convergence, got %v", closeErr)
+	}
+	if errors.Is(closeErr, firstBalanceErr) || errors.Is(closeErr, firstCatalogErr) ||
+		errors.Is(closeErr, secondBalanceErr) || errors.Is(closeErr, secondCatalogErr) {
+		t.Fatalf("terminal Close must not replay historical lifecycle errors: %v", closeErr)
+	}
+	if tx.closeCount != 1 || audit.closeCount != 1 {
+		t.Fatalf("expected exactly one terminal close per database, got tx=%d audit=%d", tx.closeCount, audit.closeCount)
+	}
+	if !reflect.DeepEqual(order, []string{
+		"balance-attempt",
+		"catalog-attempt",
+		"balance-attempt-2",
+		"catalog-attempt-2",
+		"balance-converged",
+		"catalog-converged",
+		"transaction",
+		"audit",
+	}) {
+		t.Fatalf("unexpected repeated convergence order: %v", order)
+	}
+
+	repeatedCloseErr := service.Close()
+	if !errors.Is(repeatedCloseErr, transactionErr) || !errors.Is(repeatedCloseErr, auditErr) {
+		t.Fatalf("expected repeated Close to preserve terminal cleanup errors, got %v", repeatedCloseErr)
+	}
+	if tx.closeCount != 1 || audit.closeCount != 1 {
+		t.Fatalf("expected repeated Close not to double-close databases, got tx=%d audit=%d", tx.closeCount, audit.closeCount)
+	}
+}
