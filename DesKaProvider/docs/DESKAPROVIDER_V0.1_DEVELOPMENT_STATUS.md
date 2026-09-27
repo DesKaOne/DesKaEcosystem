@@ -8657,3 +8657,44 @@ The change does not introduce provider retry/failover, transaction resubmission,
 **#186 — Runtime Shutdown Failure Isolation Across Auxiliary Lifecycle Boundaries**
 
 Focus next on isolating independent balance/catalog lifecycle failures so one auxiliary completion failure cannot suppress another completion attempt or runtime ownership cleanup, while preserving the existing transaction/audit persistence boundary and single-shot cleanup.
+
+
+## 185. Milestone Update — Runtime Shutdown Completion Ordering & Error Precedence Review
+
+**Date:** 2026-09-27
+
+Completed:
+
+- reviewed the final shutdown ordering across the balance worker, catalog lifecycle, and runtime database ownership;
+- added regression coverage for the catalog-start failure path, where rollback must complete in deterministic order: balance rollback, catalog completion, transaction database close, then audit database close;
+- verified that primary catalog-start failure, balance rollback failure, catalog completion failure, transaction cleanup failure, and audit cleanup failure all remain discoverable through the returned error;
+- verified repeated `Service.Close()` preserves database cleanup errors without replaying lifecycle completion errors and without double-closing either database;
+- confirmed the existing successful shutdown path preserves the same lifecycle-to-database ordering and repeated-close semantics;
+- no production behavior change was required for the ordering contract; the milestone closes the remaining regression-coverage gap around the catalog-start rollback boundary;
+- no provider retry/failover, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, or synthetic transaction/audit reconstruction was introduced.
+
+### Verification
+
+- Regression test commit: `ccfcf4c82c1f00e192b2c1443e9a1f504ff08263`.
+- CI #1743 on exact test HEAD: **GREEN**.
+  - `go test ./...` — PASS
+  - `go vet ./...` — PASS
+  - PostgreSQL service-backed integration tests — PASS
+  - `go test -race ./...` — PASS
+
+### Safety Boundary
+
+This milestone is limited to shutdown ordering, error identity/composition, lifecycle completion, and existing runtime database ownership cleanup. It does not introduce new provider execution, retry/failover, transaction recovery, ledger authority, treasury movement, or funding behavior.
+
+### Known Limitations
+
+- the production `catalogWorkerLifecycle.Shutdown()` contract remains void-returning; completion error injection remains an internal test seam;
+- PostgreSQL integration coverage requires `DESKAPROVIDER_POSTGRES_DSN` and is skipped when unavailable;
+- database close remains non-context-aware;
+- error composition uses Go error joining rather than a single exclusive precedence winner, so callers should use error identity checks rather than parse a combined error string.
+
+### Next Milestone
+
+**#186 — Runtime Shutdown Reentrancy & Ownership Guard Matrix**
+
+Focus next on repeated/concurrent shutdown entry points and ownership guards, including `Service.Close()`, completed `Run()`, shutdown timeout, and concurrent lifecycle completion, while preserving single-shot database ownership cleanup and avoiding new provider/transaction recovery behavior.
