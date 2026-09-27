@@ -11123,3 +11123,57 @@ No architecture document update is required. Milestone #209 adds deterministic r
 ### Next Milestone
 
 Continue from the runtime lifecycle/reliability status with the next concrete initialization, shutdown, persistence, routing, or operational-observability boundary gap only where a currently observable invariant is not yet locked by tests.
+
+
+## 210. Milestone Update — Runtime In-Flight Catalog Fetch Cancellation Boundary
+
+**Date:** 2026-09-27
+
+Completed:
+
+- added deterministic coverage for cancellation while a catalog provider fetch is actively in flight;
+- verified the in-flight catalog fetch receives runtime context cancellation and returns context.Canceled rather than leaving Service.Run() blocked indefinitely;
+- verified database ownership remains open while the catalog fetch is still active;
+- verified terminal shutdown converges the balance and catalog lifecycles before closing the transferred database generation;
+- verified the database generation closes exactly once after the in-flight fetch returns and shutdown proceeds;
+- no production runtime change was required; the milestone locks the existing context-propagation and cleanup ordering with regression coverage;
+- no provider retry/failover, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, provider funding, or synthetic transaction/audit reconstruction was introduced.
+
+### Verification
+
+- implementation/test commit: c79c0eef8459e6e66c55c7471e0d648a6a1bbb49;
+- CI #2047 / run 36335036487 is GREEN for exact test HEAD c79c0eef8459e6e66c55c7471e0d648a6a1bbb49;
+- CI #2048 / run 36335039673 is GREEN for the same exact test HEAD;
+- go test ./... — PASS;
+- go vet ./... — PASS;
+- PostgreSQL service-backed integration tests — PASS;
+- go test -race ./... — PASS.
+
+### In-Flight Catalog / Ownership Invariants
+
+- catalog provider calls use the runtime catalog context;
+- cancellation propagates into the active provider fetch;
+- ownership cleanup does not occur while an active catalog fetch still owns the runtime call path;
+- once the fetch returns, shutdown converges lifecycles before database cleanup;
+- cleanup remains single-shot for the transferred generation.
+
+### Safety Boundary
+
+This milestone is limited to context propagation, catalog fetch cancellation, lifecycle convergence, and ownership cleanup. It does not add transaction retry/failover, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, provider funding, or financial authorization behavior.
+
+### Known Limitations
+
+- cancellation behavior still depends on each provider implementation honoring the supplied context;
+- a provider that ignores context cancellation can still delay shutdown until its call returns;
+- catalog synchronization failures are not exposed through a dedicated runtime health/error channel;
+- retry cadence remains the configured CatalogSyncInterval and is not backoff-aware;
+- database close remains non-context-aware;
+- ownership-generation state remains lifecycle bookkeeping, not a recovery journal or transaction authority.
+
+### Architecture Impact
+
+No architecture document update is required. Milestone #210 adds deterministic regression coverage for an existing context and cleanup boundary without changing the documented provider, transaction, financial, or lifecycle authority model.
+
+### Next Milestone
+
+Continue from the runtime lifecycle/reliability status with the next concrete initialization, shutdown, persistence, routing, or operational-observability boundary gap only where a currently observable invariant is not yet locked by tests.
