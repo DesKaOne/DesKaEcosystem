@@ -1271,3 +1271,83 @@ func TestServiceRollbackUsesSingleCatalogShutdownCompletionBoundary(t *testing.T
 		t.Fatal("expected balance lifecycle to be stopped after rollback")
 	}
 }
+
+
+func TestServiceRunShutdownPreservesCompletionOrderingAndAllErrorIdentity(t *testing.T) {
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", &balanceMock{Provider: mock.New(mock.Config{}), balance: 100000}); err != nil {
+		t.Fatal(err)
+	}
+	syncService, err := operational.NewSyncService(registry, operational.NewMemoryStore(), "IDR", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := New(syncService, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.catalogSync = &catalog.SyncService{}
+	service.catalogLifecycle = newCatalogWorkerLifecycle()
+
+	balanceErr := errors.New("balance shutdown failed")
+	catalogErr := errors.New("catalog shutdown failed")
+	transactionErr := errors.New("transaction close failed")
+	auditErr := errors.New("audit close failed")
+
+	order := make([]string, 0, 4)
+	var mu sync.Mutex
+	record := func(name string) {
+		mu.Lock()
+		defer mu.Unlock()
+		order = append(order, name)
+	}
+
+	service.balanceShutdown = func(context.Context) error {
+		service.balanceLifecycle.Shutdown(context.Background())
+		record("balance")
+		return balanceErr
+	}
+	service.catalogShutdown = func() error {
+		service.catalogLifecycle.Shutdown()
+		record("catalog")
+		return catalogErr
+	}
+	tx := &orderedCloseErrorDB{name: "transaction", order: &order, err: transactionErr}
+	audit := &orderedCloseErrorDB{name: "audit", order: &order, err: auditErr}
+	service.databaseOwnership = newRuntimeDatabaseOwnership(tx, audit)
+	service.databaseOwnership.transferToService()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	runErr := service.Run(ctx)
+
+	if !errors.Is(runErr, context.Canceled) {
+		t.Fatalf("expected context cancellation identity, got %v", runErr)
+	}
+	if !errors.Is(runErr, balanceErr) {
+		t.Fatalf("expected balance shutdown error identity, got %v", runErr)
+	}
+	if !errors.Is(runErr, catalogErr) {
+		t.Fatalf("expected catalog shutdown error identity, got %v", runErr)
+	}
+	if !errors.Is(runErr, transactionErr) {
+		t.Fatalf("expected transaction close error identity, got %v", runErr)
+	}
+	if !errors.Is(runErr, auditErr) {
+		t.Fatalf("expected audit close error identity, got %v", runErr)
+	}
+	if !reflect.DeepEqual(order, []string{"balance", "catalog", "transaction", "audit"}) {
+		t.Fatalf("unexpected shutdown ordering: got %v", order)
+	}
+	if tx.closeCount != 1 || audit.closeCount != 1 {
+		t.Fatalf("expected single database close each, got tx=%d audit=%d", tx.closeCount, audit.closeCount)
+	}
+
+	secondClose := service.Close()
+	if !errors.Is(secondClose, transactionErr) || !errors.Is(secondClose, auditErr) {
+		t.Fatalf("expected repeated Service.Close to preserve database cleanup errors, got %v", secondClose)
+	}
+	if tx.closeCount != 1 || audit.closeCount != 1 {
+		t.Fatalf("expected repeated Service.Close not to double-close, got tx=%d audit=%d", tx.closeCount, audit.closeCount)
+	}
+}
