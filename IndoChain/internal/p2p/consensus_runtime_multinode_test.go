@@ -118,7 +118,7 @@ func TestInMemoryTransportConsensusRuntimeIntegration(t *testing.T) {
 		Height:          state.Height,
 		Round:           state.Round,
 		Sender:          []byte("validator-a"),
-		Type:            consensus.MessageTypeVote,
+		Type:            consensus.MessageTypePrevote,
 		Payload:         append([]byte(nil), proposal.Payload...),
 	}
 	if err := nodeARuntime.AddVote(voteA); err != nil {
@@ -132,7 +132,7 @@ func TestInMemoryTransportConsensusRuntimeIntegration(t *testing.T) {
 		Height:          state.Height,
 		Round:           state.Round,
 		Sender:          []byte("validator-b"),
-		Type:            consensus.MessageTypeVote,
+		Type:            consensus.MessageTypePrevote,
 		Payload:         append([]byte(nil), proposal.Payload...),
 	}
 	voteB, err = voteB.Sign(signer)
@@ -350,7 +350,7 @@ func TestInMemoryTransportRuntimeFinalizedBlockHandoff(t *testing.T) {
 		Height: state.Height,
 		Round: state.Round,
 		Sender: append([]byte(nil), validatorID...),
-		Type: consensus.MessageTypeVote,
+		Type: consensus.MessageTypePrevote,
 		Payload: proposal.MessagePayload(),
 	}
 	vote, err = vote.Sign(signer)
@@ -506,7 +506,7 @@ func TestInMemoryTransportRuntimeFinalizedBlockMultiHeight(t *testing.T) {
 		vote := consensus.Message{
 			ProtocolVersion: state.ProtocolVersion, ChainID: state.ChainID,
 			Epoch: state.Epoch, Height: state.Height, Round: state.Round,
-			Sender: append([]byte(nil), validatorID...), Type: consensus.MessageTypeVote,
+			Sender: append([]byte(nil), validatorID...), Type: consensus.MessageTypePrevote,
 			Payload: proposal.MessagePayload(),
 		}
 		vote, err = vote.Sign(signer)
@@ -592,7 +592,7 @@ func TestConsensusRuntimeNegativeCrossHeightInvalidFinalityEvidence(t *testing.T
 	if err := runtime.AcceptProposal(proposalMsg); err != nil {
 		t.Fatal(err)
 	}
-	vote := consensus.Message{ProtocolVersion: state2.ProtocolVersion, ChainID: state2.ChainID, Epoch: state2.Epoch, Height: state2.Height, Round: state2.Round, Sender: append([]byte(nil), candidate2.Header.Proposer...), Type: consensus.MessageTypeVote, Payload: proposal.MessagePayload()}
+	vote := consensus.Message{ProtocolVersion: state2.ProtocolVersion, ChainID: state2.ChainID, Epoch: state2.Epoch, Height: state2.Height, Round: state2.Round, Sender: append([]byte(nil), candidate2.Header.Proposer...), Type: consensus.MessageTypePrevote, Payload: proposal.MessagePayload()}
 	vote, err = vote.Sign(signer)
 	if err != nil {
 		t.Fatal(err)
@@ -694,7 +694,7 @@ func TestConsensusRuntimeNegativeCrossHeightVoteContextMismatch(t *testing.T) {
 		Height: state2.Height,
 		Round: state2.Round,
 		Sender: append([]byte(nil), candidate2.Header.Proposer...),
-		Type: consensus.MessageTypeVote,
+		Type: consensus.MessageTypePrevote,
 		Payload: proposal.MessagePayload(),
 	}
 	vote, err = vote.Sign(signer)
@@ -919,7 +919,7 @@ func TestConsensusRuntimeNegativeCrossHeightReplayedCandidate(t *testing.T) {
 		Height:          state2.Height,
 		Round:           state2.Round,
 		Sender:          append([]byte(nil), candidate2.Header.Proposer...),
-		Type:            consensus.MessageTypeVote,
+		Type:            consensus.MessageTypePrevote,
 		Payload:         proposal.MessagePayload(),
 	}
 	vote, err = vote.Sign(signer)
@@ -1028,7 +1028,7 @@ func TestConsensusRuntimeNegativeCrossHeightDifferentCandidate(t *testing.T) {
 		Height: state2.Height,
 		Round: state2.Round,
 		Sender: append([]byte(nil), candidate2.Header.Proposer...),
-		Type: consensus.MessageTypeVote,
+		Type: consensus.MessageTypePrevote,
 		Payload: proposal2.MessagePayload(),
 	}
 	vote2, err = vote2.Sign(signer)
@@ -1098,7 +1098,7 @@ func TestConsensusRuntimeNegativeCrossHeightDifferentCandidate(t *testing.T) {
 		Height: ctx1.State.Height,
 		Round: ctx1.State.Round,
 		Sender: append([]byte(nil), alternateCandidate.Header.Proposer...),
-		Type: consensus.MessageTypeVote,
+		Type: consensus.MessageTypePrevote,
 		Payload: alternateProposal.MessagePayload(),
 	}
 	alternateVote, err = alternateVote.Sign(signer)
@@ -1210,7 +1210,7 @@ func TestConsensusRuntimeNegativeCrossHeightFutureCandidateStalePreviousHash(t *
 		Height: state2.Height,
 		Round: state2.Round,
 		Sender: append([]byte(nil), candidate2.Header.Proposer...),
-		Type: consensus.MessageTypeVote,
+		Type: consensus.MessageTypePrevote,
 		Payload: proposal.MessagePayload(),
 	}
 	vote, err = vote.Sign(signer)
@@ -1286,7 +1286,7 @@ func TestConsensusRuntimeNegativeCrossHeightFutureCandidateStalePreviousHash(t *
 		Height: state3.Height,
 		Round: state3.Round,
 		Sender: append([]byte(nil), candidate3.Header.Proposer...),
-		Type: consensus.MessageTypeVote,
+		Type: consensus.MessageTypePrevote,
 		Payload: proposal3.MessagePayload(),
 	}
 	vote3, err = vote3.Sign(signer)
@@ -1391,7 +1391,7 @@ func TestConsensusRuntimeNegativeCrossHeightStaleContext(t *testing.T) {
 		Height: state2.Height,
 		Round: state2.Round,
 		Sender: append([]byte(nil), candidate2.Header.Proposer...),
-		Type: consensus.MessageTypeVote,
+		Type: consensus.MessageTypePrevote,
 		Payload: proposal.MessagePayload(),
 	}
 	vote, err = vote.Sign(signer)
@@ -1735,7 +1735,7 @@ func finalizedHandoffFixture(t *testing.T) (*node.Node, block.Block, consensus.F
 	vote := consensus.Message{
 		ProtocolVersion: state.ProtocolVersion, ChainID: state.ChainID,
 		Epoch: state.Epoch, Height: state.Height, Round: state.Round,
-		Sender: append([]byte(nil), validatorID...), Type: consensus.MessageTypeVote,
+		Sender: append([]byte(nil), validatorID...), Type: consensus.MessageTypePrevote,
 		Payload: proposal.MessagePayload(),
 	}
 	vote, err = vote.Sign(signer)
