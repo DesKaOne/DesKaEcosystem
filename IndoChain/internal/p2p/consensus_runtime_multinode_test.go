@@ -203,7 +203,7 @@ func finalizeRuntimeForTest(t *testing.T, runtime *consensus.ValidatorRuntime, s
 		if err != nil { t.Fatal(err) }
 		if err := runtime.AddVote(msg); err != nil { t.Fatal(err) }
 	}
-	return finalizeRuntimeForTest(t, runtime, signer)
+	return runtime.FinalizeProposal(runtimeAuthorityForSigner(t, signer))
 }
 
 func runtimeAuthorityForSigner(t *testing.T, signer *crypto.Ed25519Signer) consensus.StaticValidatorAuthority {
