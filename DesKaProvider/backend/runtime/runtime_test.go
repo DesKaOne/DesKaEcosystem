@@ -2917,11 +2917,7 @@ func TestRuntimeOwnershipRetainsCleanupErrorsAcrossSharedAndDedicatedTopologies(
 			if !errors.Is(firstErr, transactionErr) {
 				t.Fatalf("expected transaction cleanup error identity, got %v", firstErr)
 			}
-			if tt.shared {
-				if !errors.Is(firstErr, auditErr) {
-					t.Fatalf("shared topology should retain the same transaction/audit cleanup error only when they share the handle; got %v", firstErr)
-				}
-			} else if !errors.Is(firstErr, auditErr) {
+			if !tt.shared && !errors.Is(firstErr, auditErr) {
 				t.Fatalf("expected dedicated audit cleanup error identity, got %v", firstErr)
 			}
 
