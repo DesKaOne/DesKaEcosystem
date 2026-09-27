@@ -9523,3 +9523,45 @@ This milestone only strengthens verification of runtime lifecycle shutdown order
 **#186 — Runtime Shutdown Re-entry & Partial Lifecycle Convergence**
 
 Focus next on re-entry after partial shutdown completion, including convergence of an auxiliary lifecycle that remains active after an injected shutdown-completion error, while preserving closed-state rejection, single-shot database ownership cleanup, and no replay of historical lifecycle errors.
+
+
+## 185. Milestone Update — Runtime Shutdown Completion Ordering & Repeated Lifecycle Completion
+
+**Date:** 2026-09-27
+
+Completed:
+
+- reviewed the runtime shutdown ordering after Milestone #184;
+- verified the established shutdown sequence remains: balance lifecycle -> catalog lifecycle -> transaction database -> audit database;
+- verified database ownership is closed only after the relevant lifecycles have stopped;
+- verified repeated Service.Close() returns the recorded runtime database cleanup result without double-closing owned database handles;
+- added regression coverage for repeated balance/catalog lifecycle completion through the existing internal completion seams;
+- verified repeated completion leaves both lifecycle states stopped and preserves the injected completion-error identity;
+- no production provider retry/failover, transaction resubmission, ledger mutation, treasury movement, funding, or synthetic transaction/audit recovery behavior was introduced.
+
+### Verification
+
+- Implementation/test HEAD: `ddee74d6154e2223fea840c18c9bf7a478564b08`.
+- CI #1861 on exact implementation/test HEAD: **GREEN**.
+  - `go test ./...` — PASS
+  - `go vet ./...` — PASS
+  - PostgreSQL service-backed integration tests — PASS
+  - `go test -race ./...` — PASS
+- Status documentation is updated only after the implementation/test HEAD passed the CI gate.
+
+### Safety Boundary
+
+This milestone is limited to shutdown completion ordering, repeated lifecycle completion behavior, and preservation of existing database ownership cleanup semantics. The transaction persistence boundary remains authoritative; audit remains observational; lifecycle completion does not authorize provider resubmission or financial mutation.
+
+### Known Limitations
+
+- the production catalog shutdown method remains void-returning; error composition coverage continues to use the internal catalogShutdown seam;
+- database close remains non-context-aware;
+- PostgreSQL integration tests require DESKAPROVIDER_POSTGRES_DSN and are skipped when unavailable;
+- this milestone does not introduce new production retry/failover/recovery behavior.
+
+### Next Milestone
+
+**#186 — Runtime Shutdown Cancellation/Deadline Boundary**
+
+Focus next on cancellation/deadline behavior during the shutdown phase itself, including preservation of the original lifecycle error composition and ownership cleanup boundary without allowing shutdown-time cancellation to create provider resubmission or financial-state mutation.
