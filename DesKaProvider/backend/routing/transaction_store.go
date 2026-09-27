@@ -50,7 +50,6 @@ type ContextReadTransactionStore interface {
 // durable state with created=false. Implementations must make the decision
 // atomically so concurrent service instances cannot both authorize submission.
 type CreateIfAbsentTransactionStore interface {
-	ContextTransactionStore
 	CreateIfAbsentContext(ctx context.Context, state TransactionState) (existing TransactionState, created bool, err error)
 }
 
