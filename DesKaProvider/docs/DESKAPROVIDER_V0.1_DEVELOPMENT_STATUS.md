@@ -11875,3 +11875,71 @@ No architecture document update is required. Milestone #221 aligns operational b
 ### Next Milestone
 
 Continue with the next concrete shutdown/recovery-convergence or durable operational-state gap from the actual implementation, prioritizing lifecycle convergence, persistence durability, and stale-state safety before introducing new provider or business integration.
+
+
+### 222. Milestone Update — JSON Store Directory fsync Durability Reconciliation
+
+**Date:** 2026-09-28
+
+Completed:
+
+- audited the actual JSON persistence implementations against the documented durability boundary from the earlier operational-persistence work;
+- found a source/documentation mismatch: the operational JSON snapshot store and provider-state JSON store both performed file sync plus atomic rename, but the current source did not actually fsync the containing directory after rename;
+- added a shared `syncJSONStoreDirectory(dir)` helper in the operational package that opens the containing directory and calls `Sync()`;
+- updated the operational balance/health JSON store so a successful atomic rename is followed by containing-directory fsync before the persistence operation reports success;
+- updated the provider lifecycle/state JSON store with the same containing-directory fsync boundary;
+- preserved the existing file-content fsync, restrictive permissions, temporary-file replacement, and commit-before-in-memory-state semantics;
+- kept the change provider-neutral and limited to local persistence durability; no provider API, routing policy, transaction retry, failover, resubmission, ledger mutation, customer-balance mutation, treasury movement, or provider funding behavior was introduced.
+
+### Source / Documentation Reconciliation
+
+The prior durability documentation stated that the JSON stores used a file-sync + atomic-rename + directory-sync sequence, but the live source audit at the start of this milestone showed that directory synchronization was absent from both:
+
+- `DesKaProvider/backend/Provider/operational/json_store.go`;
+- `DesKaProvider/backend/Provider/operational/provider_state_json.go`.
+
+Source is treated as authoritative for implementation state. This milestone therefore reconciles the implementation with the documented durability contract rather than treating the stale documentation as proof of an existing guarantee.
+
+### Verification
+
+- operational-store directory-fsync implementation commit: `<see branch history immediately before this status commit>`;
+- provider-state directory-fsync implementation commit: `<see branch history immediately before this status commit>`;
+- final implementation/test HEAD before this status-document commit: `f3119dcd73743df3710981b2c411c32c6f26b0c1`;
+- push CI run 36349361230: **GREEN**;
+- pull-request CI run 36349364055: **GREEN**;
+- test gate: success;
+- vet gate: success;
+- race gate: success;
+- PostgreSQL-backed workflow service: success.
+
+### Persistence / Recovery Invariants
+
+- file contents are synchronized before atomic replacement;
+- the containing directory is synchronized after the atomic rename, making the rename metadata durable before persistence success is reported;
+- operational/provider-state callers retain their existing commit-like semantics and do not expose an in-memory state change as durable before persistence succeeds;
+- directory-sync failure remains a persistence error and does not become a provider transaction outcome;
+- persisted operational/provider lifecycle state remains recovery/operational state and is not financial authority;
+- stale operational/catalog snapshots remain subject to existing routing freshness gates;
+- transaction persistence remains the authoritative transaction-state boundary;
+- audit persistence remains operational evidence only.
+
+### Safety Boundary
+
+This milestone is strictly a local JSON durability hardening change. It does not create transaction retry authority, provider failover authority, provider resubmission authority, ledger authority, customer-balance authority, treasury authority, or automatic provider-funding authority.
+
+A persistence failure remains a persistence failure. It cannot be interpreted as a successful provider transaction or as permission to submit the same financial operation again.
+
+### Known Limitations
+
+- directory fsync behavior depends on the underlying operating system/filesystem supporting directory synchronization;
+- JSON stores remain an interim v0.1 persistence boundary; PostgreSQL remains the documented production persistence target;
+- no historical event journal is introduced by this change;
+- status persistence remains operational observability rather than transaction authority.
+
+### Architecture Impact
+
+No architecture document update is required. The change closes a concrete implementation/documentation mismatch in the existing JSON durability boundary without changing provider, routing, transaction, audit, or financial authority architecture.
+
+### Next Milestone
+
+Continue with the next concrete shutdown/recovery-convergence or persistence-safety gap found in the actual implementation, prioritizing durable state correctness and stale-state safety before introducing new provider or business integration.
