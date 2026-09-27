@@ -12678,3 +12678,119 @@ This closes the remaining runtime-selection gap from milestone #229 while preser
 ### Next Milestone
 
 Harden PostgreSQL migration/schema lifecycle integration around the existing migration set without moving migration authority into provider adapters. The next step should preserve explicit startup failure for unavailable or incompatible persistence and add end-to-end runtime integration coverage for a fully PostgreSQL-backed operational path.
+
+
+## 231. Milestone Update — PostgreSQL Migration/Schema Lifecycle Contract
+
+**Date:** 2026-09-28
+
+### Completed
+
+- added embedded PostgreSQL migration definitions under `DesKaProvider/backend/migrations`;
+- added a provider migration lifecycle package with version validation and idempotent migration application;
+- added a PostgreSQL migration ledger `provider_schema_migrations` for migrations executed through the explicit runtime migration mode;
+- added `DESKAPROVIDER_POSTGRES_SCHEMA_MODE`:
+  - `check` is the production-direction default when the environment variable is absent;
+  - `migrate` explicitly applies the required provider migration before store construction;
+  - an explicitly empty value is retained only for low-level legacy helper compatibility and is not the runtime default;
+- connected transaction/audit PostgreSQL stores to migration 001 readiness/lifecycle;
+- connected operational PostgreSQL store to migration 002 readiness/lifecycle;
+- preserved shared PostgreSQL DB-handle reuse between transaction, audit, and operational stores;
+- preserved the invariant that explicit PostgreSQL operational selection never falls back to JSON;
+- preserved externally applied migration compatibility in `check` mode by validating actual schema objects rather than requiring the runtime migration ledger to exist;
+- added deterministic runtime coverage for invalid schema mode, explicit operational PostgreSQL migration, and operational schema readiness;
+- isolated legacy low-level PostgreSQL lifecycle tests from runtime schema-mode enforcement without weakening production `LoadConfig` defaults;
+- documented the new schema lifecycle configuration in `DesKaProvider/backend/.env.example`.
+
+### Implementation Details
+
+The PostgreSQL schema lifecycle is now:
+
+```text
+DESKAPROVIDER_POSTGRES_SCHEMA_MODE
+             |
+       +-----+------+
+       |            |
+      check       migrate
+       |            |
+ validate actual   apply selected
+ schema objects   embedded migration
+       |            |
+     ready        record version
+       |            |
+       +-----+------+
+             |
+        store startup
+```
+
+Migration authority remains provider infrastructure/runtime-level. Provider adapters do not own database migrations.
+
+Required migration mapping:
+
+```text
+Transaction PostgreSQL --> migration 001
+Audit PostgreSQL       --> migration 001
+Operational PostgreSQL --> migration 002
+```
+
+Migration 001 remains shared by transaction and append-only audit storage. Migration 002 remains operational snapshot storage only.
+
+### Verification
+
+- CI #2279: **RED**; root cause was the initial missing `ValidateVersionSet` implementation in the new migration package;
+- CI #2281: **RED**; schema readiness enforcement initially broke direct low-level PostgreSQL lifecycle tests that intentionally construct empty schemas;
+- CI #2291: **RED**; transaction-store helper compatibility guard was incomplete;
+- CI #2293: **RED**; integration TestMain still caused empty schema mode to be normalized back to `check`;
+- root causes were fixed while retaining production default schema checking;
+- exact final implementation HEAD: `21dad4b93070d0d5059004e4b00badd64a5a8cae`;
+- exact implementation CI #2297: **GREEN**;
+- CI test job: PASS;
+- CI vet job: PASS;
+- CI race job: PASS;
+- PostgreSQL-backed workflow service: PASS.
+
+### Invariants
+
+- schema readiness failure is an initialization failure, not a runtime cache miss;
+- explicit `migrate` is the only runtime mode that executes migrations;
+- `check` never mutates the database;
+- externally applied migrations remain valid in `check` mode;
+- migration execution is idempotent and version-recorded;
+- transaction, audit, and operational PostgreSQL handles retain existing lifecycle ownership rules;
+- shared handles are not double-closed;
+- operational snapshots remain non-financial provider state;
+- persistence/schema errors never authorize transaction retry, failover, ledger mutation, treasury movement, or provider funding;
+- provider adapters remain independent of PostgreSQL migration implementation.
+
+### Safety Boundary
+
+This milestone establishes database schema lifecycle mechanics only. It does not change provider transaction semantics, customer balances, financial ledger authority, treasury behavior, provider funding, or external provider retry/failover behavior.
+
+### Known Limitations
+
+- `migrate` is intentionally explicit rather than automatic for every PostgreSQL startup;
+- the migration ledger tracks migrations applied by this runtime lifecycle, while `check` mode also accepts schemas created by existing external migration processes;
+- no live external provider call was introduced;
+- no production migration execution was claimed or performed against an external deployment.
+
+### Architecture Impact
+
+```text
+runtime.Service
+      |
+      +--> PostgreSQL schema lifecycle
+      |       |
+      |       +--> check / migrate
+      |       +--> migration 001
+      |       +--> migration 002
+      |
+      +--> Transaction Store
+      +--> Audit Store
+      +--> Operational Store
+```
+
+The runtime now has one explicit PostgreSQL schema boundary instead of independent store-specific assumptions.
+
+### Next Milestone
+
+Add full end-to-end PostgreSQL runtime integration for the combined transaction + audit + operational persistence path, including restart/reopen validation and explicit migration-mode startup coverage, while preserving single-shot DB ownership and operational-only balance semantics.
