@@ -9257,3 +9257,47 @@ The runtime now treats an active catalog lifecycle after partial shutdown as an 
 **#187 — Runtime Shutdown Re-entry After Ownership Cleanup Failure**
 
 Focus next on repeated Run/Close behavior when lifecycle completion succeeds but database ownership cleanup records an error, ensuring closed-state rejection, stable cleanup-error identity, and no lifecycle restart or double-close.
+
+
+## 187. Milestone Update — Runtime Shutdown Re-entry After Ownership Cleanup Failure
+
+**Date:** 2026-09-27
+
+Completed:
+
+- verified the runtime ownership boundary when lifecycle shutdown completes but database cleanup returns one or more errors;
+- added regression coverage for simultaneous transaction and audit database cleanup failures after a cancellation-owned shutdown;
+- verified the first `Service.Run()` result preserves the primary cancellation plus both independent database cleanup error identities;
+- verified runtime database ownership is marked closed after the cleanup attempt and each owned database is closed exactly once;
+- verified a subsequent `Service.Run()` is rejected with `ErrServiceClosed` and does not replay the historical cancellation or database cleanup errors;
+- verified a subsequent `Service.Close()` preserves the recorded database cleanup errors without re-closing either database;
+- preserved lifecycle idempotence and prevented any lifecycle restart after ownership cleanup has completed with an error;
+- no provider retry/failover, transaction resubmission, ledger mutation, treasury movement, provider funding, or synthetic transaction/audit reconstruction was introduced.
+
+### Verification
+
+- Regression test commit: `f1af5e1a4345f00b9082ff1e825b2156d2f4a1bf`.
+- CI #1835 on exact test HEAD: **GREEN**.
+  - `go test ./...` — PASS
+  - `go vet ./...` — PASS
+  - PostgreSQL service-backed integration tests — PASS
+  - `go test -race ./...` — PASS
+- Existing runtime ownership implementation already records the cleanup result and closed state atomically under the ownership mutex; this milestone adds the regression boundary rather than changing production cleanup semantics.
+
+### Safety Boundary
+
+A database cleanup error after ownership closure is a terminal runtime ownership state, not a signal to reopen resources or restart lifecycle workers. Historical cleanup errors remain available through repeated `Service.Close()`, while a new `Run()` observes only the closed-state rejection.
+
+Transaction persistence remains authoritative for transaction state and idempotency; audit persistence remains observational. No recovery authority is added.
+
+### Known Limitations
+
+- database close remains non-context-aware;
+- PostgreSQL integration coverage requires `DESKAPROVIDER_POSTGRES_DSN` and is skipped when unavailable;
+- this milestone validates runtime ownership/error semantics and does not add a retry or reconnection mechanism for failed database cleanup.
+
+### Next Milestone
+
+**#188 — Runtime Ownership Error Persistence Across Shared vs Dedicated Database Topologies**
+
+Focus next on the same closed-state and cleanup-error contract across shared transaction/audit database ownership versus independently owned dedicated database handles, preserving single-shot cleanup and no lifecycle restart.
