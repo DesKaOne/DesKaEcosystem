@@ -8514,3 +8514,52 @@ This milestone is limited to runtime lifecycle reuse prevention after owned data
 **#187 — Runtime Close-State Error Composition Across Direct and Run-Owned Shutdown**
 
 Focus next on stable closed-state error identity and cleanup-error preservation across direct Service.Close(), Run-owned shutdown, and repeated close attempts, without introducing new provider or transaction recovery behavior.
+
+
+## 185. Milestone Update — Runtime Shutdown Completion Ordering & Error Precedence Review
+
+**Date:** 2026-09-27
+
+Completed:
+
+- reviewed the full runtime shutdown path after lifecycle startup and cancellation;
+- confirmed the production completion ordering is deterministic:
+  1. balance worker completion,
+  2. catalog lifecycle completion,
+  3. transaction database close,
+  4. audit database close;
+- confirmed shutdown error composition preserves the primary runtime error plus balance shutdown error, catalog shutdown completion error, and database cleanup errors through `errors.Join` composition;
+- confirmed repeated `Service.Close()` does not replay catalog or balance completion errors and does not double-close owned transaction/audit database handles;
+- confirmed repeated `Service.Run()` after transferred runtime ownership has been closed returns `ErrServiceClosed` without restarting lifecycle workers;
+- retained the existing deterministic regression coverage in `runtime_test.go` for completion ordering, error identity, repeated close, and repeated run behavior;
+- removed only an accidentally duplicated copy of the existing shutdown-ordering regression test introduced during milestone review; no production runtime behavior was changed by this cleanup;
+- no provider retry/failover, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, funding, or synthetic transaction/audit reconstruction was introduced.
+
+### Verification
+
+- Final source/test cleanup commit: `6a440e66527031cd7e98227e53966fc9533b406f`.
+- CI #1723: RED — duplicate regression test introduced during review caused a compile-time redeclaration.
+- CI #1725: RED — follow-up cleanup temporarily left an orphaned duplicate test body.
+- CI #1727: RED — follow-up cleanup still had an incomplete test-file boundary.
+- CI #1729 on exact restored HEAD: **GREEN**.
+  - `go test ./...` — PASS
+  - `go vet ./...` — PASS
+  - PostgreSQL service-backed integration tests — PASS
+  - `go test -race ./...` — PASS
+
+### Safety Boundary
+
+This milestone is a shutdown ordering/error-precedence review only. The authoritative transaction-state boundary, append-only audit boundary, runtime database ownership transfer, and single-shot cleanup semantics remain unchanged. No recovery authority was added across transaction, audit, provider, ledger, treasury, or funding domains.
+
+### Known Limitations
+
+- production `catalogWorkerLifecycle.Shutdown()` remains void-returning; catalog completion error composition continues to be validated through the internal test seam;
+- PostgreSQL integration coverage requires `DESKAPROVIDER_POSTGRES_DSN` and is skipped when unavailable;
+- database close remains non-context-aware;
+- no new production catalog error source was introduced.
+
+### Next Milestone
+
+**#186 — Runtime Shutdown Idempotence Across Repeated Run/Close Interleavings**
+
+Focus next on repeated `Run()` / `Close()` interleavings after partial and completed shutdown, preserving lifecycle single-shot semantics, ownership closure, stable error identity, and the existing recovery safety boundary.
