@@ -3390,3 +3390,77 @@ func TestServiceRunShutdownDeadlineDefersDatabaseCleanupWhileBalanceLifecycleRem
 		t.Fatalf("unexpected final completion ordering: %v", order)
 	}
 }
+
+
+func TestServiceRunShutdownCancellationVsLifecycleCompletionPrecedence(t *testing.T) {
+	service := newRuntimeTestService(t)
+	service.catalogSync, _ = catalog.NewSyncService(
+		&provider.Registry{},
+		catalog.NewMemoryStore(),
+	)
+	service.catalogLifecycle = newCatalogWorkerLifecycle()
+	service.catalogInterval = time.Hour
+
+	balanceErr := errors.New("balance completion deadline")
+	catalogErr := errors.New("catalog completion cancellation")
+	transactionErr := errors.New("transaction cleanup after cancellation")
+	auditErr := errors.New("audit cleanup after cancellation")
+	order := make([]string, 0, 4)
+
+	service.balanceShutdown = func(context.Context) error {
+		service.balanceLifecycle.Shutdown(context.Background())
+		order = append(order, "balance")
+		return balanceErr
+	}
+	service.catalogShutdown = func() error {
+		service.catalogLifecycle.Shutdown()
+		order = append(order, "catalog")
+		return catalogErr
+	}
+
+	tx := &orderedCloseErrorDB{name: "transaction", order: &order, err: transactionErr}
+	audit := &orderedCloseErrorDB{name: "audit", order: &order, err: auditErr}
+	service.databaseOwnership = newRuntimeDatabaseOwnership(tx, audit)
+	service.databaseOwnership.transferToService()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	runErr := service.Run(ctx)
+	if !errors.Is(runErr, context.Canceled) {
+		t.Fatalf("expected caller cancellation identity, got %v", runErr)
+	}
+	for _, want := range []error{balanceErr, catalogErr, transactionErr, auditErr} {
+		if !errors.Is(runErr, want) {
+			t.Fatalf("expected composed shutdown error identity %v, got %v", want, runErr)
+		}
+	}
+	wantErr := "context canceled\nbalance completion deadline\ncatalog completion cancellation\ntransaction cleanup after cancellation\naudit cleanup after cancellation"
+	if runErr == nil || runErr.Error() != wantErr {
+		t.Fatalf("unexpected shutdown error precedence: got %q want %q", runErr, wantErr)
+	}
+	if !reflect.DeepEqual(order, []string{"balance", "catalog", "transaction", "audit"}) {
+		t.Fatalf("unexpected shutdown completion ordering: got %v", order)
+	}
+	if service.balanceLifecycle.Running() || service.catalogLifecycle.Running() {
+		t.Fatal("expected both lifecycles to converge before database cleanup")
+	}
+	if tx.closeCount != 1 || audit.closeCount != 1 {
+		t.Fatalf("expected one database close each, got tx=%d audit=%d", tx.closeCount, audit.closeCount)
+	}
+
+	repeatedCloseErr := service.Close()
+	for _, want := range []error{transactionErr, auditErr} {
+		if !errors.Is(repeatedCloseErr, want) {
+			t.Fatalf("expected repeated Close to preserve cleanup error %v, got %v", want, repeatedCloseErr)
+		}
+	}
+	if errors.Is(repeatedCloseErr, context.Canceled) ||
+		errors.Is(repeatedCloseErr, balanceErr) ||
+		errors.Is(repeatedCloseErr, catalogErr) {
+		t.Fatalf("repeated Close must not replay historical shutdown errors: %v", repeatedCloseErr)
+	}
+	if tx.closeCount != 1 || audit.closeCount != 1 {
+		t.Fatalf("expected repeated Close not to double-close databases, got tx=%d audit=%d", tx.closeCount, audit.closeCount)
+	}
+}
