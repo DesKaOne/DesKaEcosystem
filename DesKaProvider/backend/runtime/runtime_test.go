@@ -5015,3 +5015,97 @@ func expectedShutdownMatrixOrder(balanceErr, catalogErr error) []string {
 	order = append(order, "transaction", "audit")
 	return order
 }
+
+func TestServiceRunRepeatedReuseCyclesIsolateShutdownErrors(t *testing.T) {
+	service := newRuntimeTestService(t)
+	service.catalogSync, _ = catalog.NewSyncService(&provider.Registry{}, catalog.NewMemoryStore())
+	service.catalogLifecycle = newCatalogWorkerLifecycle()
+	service.catalogInterval = time.Hour
+
+	type generation struct {
+		balanceErr     error
+		catalogErr     error
+		transactionErr error
+		auditErr       error
+	}
+	generations := []generation{
+		{balanceErr: errors.New("cycle-1 balance"), transactionErr: errors.New("cycle-1 transaction")},
+		{catalogErr: errors.New("cycle-2 catalog"), auditErr: errors.New("cycle-2 audit")},
+		{balanceErr: errors.New("cycle-3 balance"), catalogErr: errors.New("cycle-3 catalog"), transactionErr: errors.New("cycle-3 transaction"), auditErr: errors.New("cycle-3 audit")},
+	}
+
+	for i, tc := range generations {
+		t.Run(fmt.Sprintf("cycle-%d", i+1), func(t *testing.T) {
+			order := make([]string, 0, 4)
+			tx := &orderedCloseErrorDB{name: fmt.Sprintf("cycle-%d-transaction", i+1), order: &order, err: tc.transactionErr}
+			audit := &orderedCloseErrorDB{name: fmt.Sprintf("cycle-%d-audit", i+1), order: &order, err: tc.auditErr}
+			ownership := newRuntimeDatabaseOwnership(tx, audit)
+			ownership.transferToService()
+			service.databaseOwnership = ownership
+
+			service.balanceShutdown = func(context.Context) error {
+				service.balanceLifecycle.Shutdown(context.Background())
+				return tc.balanceErr
+			}
+			service.catalogShutdown = func() error {
+				service.catalogLifecycle.Shutdown()
+				return tc.catalogErr
+			}
+
+			ctx, cancel := context.WithCancel(context.Background())
+			runDone := make(chan error, 1)
+			go func() { runDone <- service.Run(ctx) }()
+
+			deadline := time.After(time.Second)
+			for !service.balanceLifecycle.Running() || !service.catalogLifecycle.Running() {
+				select {
+				case <-deadline:
+					t.Fatal("Run did not start both lifecycle owners")
+				default:
+					time.Sleep(time.Millisecond)
+				}
+			}
+			cancel()
+
+			var runErr error
+			select {
+			case runErr = <-runDone:
+			case <-time.After(time.Second):
+				t.Fatal("Run did not converge")
+			}
+			if !errors.Is(runErr, context.Canceled) {
+				t.Fatalf("expected cycle %d context cancellation, got %v", i+1, runErr)
+			}
+
+			for _, want := range []error{tc.balanceErr, tc.catalogErr, tc.transactionErr, tc.auditErr} {
+				if want != nil && !errors.Is(runErr, want) {
+					t.Fatalf("cycle %d lost current-generation error %v: %v", i+1, want, runErr)
+				}
+			}
+			for j, previous := range generations[:i] {
+				for _, historicalErr := range []error{previous.balanceErr, previous.catalogErr, previous.transactionErr, previous.auditErr} {
+					if historicalErr != nil && errors.Is(runErr, historicalErr) {
+						t.Fatalf("cycle %d replayed cycle %d error %v: %v", i+1, j+1, historicalErr, runErr)
+					}
+				}
+			}
+
+			if service.balanceLifecycle.Running() || service.catalogLifecycle.Running() {
+				t.Fatalf("cycle %d left a lifecycle owner active", i+1)
+			}
+			if tx.closeCount != 1 || audit.closeCount != 1 {
+				t.Fatalf("cycle %d ownership cleanup was not single-shot: tx=%d audit=%d", i+1, tx.closeCount, audit.closeCount)
+			}
+			expectedOrder := []string{"cycle-%d-transaction", "cycle-%d-audit"}
+			_ = expectedOrder
+			if !reflect.DeepEqual(order, []string{fmt.Sprintf("cycle-%d-transaction", i+1), fmt.Sprintf("cycle-%d-audit", i+1)}) {
+				t.Fatalf("cycle %d cleanup order changed: %v", i+1, order)
+			}
+			cancel()
+		})
+	}
+
+	if err := service.Close(); err != nil {
+		t.Fatalf("repeated terminal Close after reuse cycles must be clean, got %v", err)
+	}
+}
