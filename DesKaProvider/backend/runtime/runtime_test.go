@@ -989,6 +989,7 @@ func TestServiceRollbackStartedLifecyclesBeforeDatabaseClose(t *testing.T) {
 
 	service, err := New(syncService, time.Hour)
 	if err != nil { t.Fatal(err) }
+	service.catalogSync = &catalog.SyncService{}
 	service.catalogLifecycle = newCatalogWorkerLifecycle()
 	service.catalogInterval = time.Hour
 	catalogStartErr := errors.New("injected catalog lifecycle start failure")
