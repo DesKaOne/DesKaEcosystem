@@ -2992,8 +2992,7 @@ func TestServiceRunDoesNotCloseDatabasesWhileBalanceCompletionLeavesLifecycleRun
 	order := make([]string, 0, 4)
 
 	service.balanceStart = func(context.Context) error {
-		_, err := service.balanceLifecycle.Start(context.Background())
-		return err
+		return service.balanceLifecycle.Start(context.Background())
 	}
 	service.balanceShutdown = func(context.Context) error {
 		order = append(order, "balance")
