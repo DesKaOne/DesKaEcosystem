@@ -93,6 +93,16 @@ func NewValidatorRuntime(config RuntimeConfig) (*ValidatorRuntime, error) {
 }
 
 func (r *ValidatorRuntime) State() RoundState { return r.state }
+\nfunc (r *ValidatorRuntime) Proposal() []byte {
+	if r == nil { return nil }
+	return append([]byte(nil), r.proposal...)
+}
+
+func (r *ValidatorRuntime) Validators() ValidatorSet {
+	if r == nil { return ValidatorSet{} }
+	return cloneValidatorSet(r.validators)
+}
+
 
 // AdvanceRound moves the runtime to a strictly newer round after a timeout
 // or round-change event. The current proposal and round-local votes are reset,
