@@ -706,7 +706,8 @@ func TestCommitFinalizedBlockUsesExplicitAuthorityBoundaries(t *testing.T) {
 	candidate := block.Block{Header: block.Header{Version: devnet.ProtocolVersion, ChainID: devnet.ChainID, Height: 1, Timestamp: n.Head.Header.Timestamp + 1, PreviousHash: n.HeadHash, StateRoot: working.Root(), Proposer: validatorID}, Transactions: []any{tx}}
 	candidate.Header.TransactionsRoot, err = block.TransactionsRoot(candidate.Transactions); if err != nil { t.Fatal(err) }
 	payload, err := consensus.ValidateProducedBlock(ctx, candidate); if err != nil { t.Fatal(err) }
-	vote := consensus.Message{ProtocolVersion: 1, ChainID: 1001, Epoch: 1, Height: 0, Round: 0, Sender: validatorID, Type: consensus.MessageTypeVote, Payload: payload[:]}
+	vote := consensus.Message{ProtocolVersion: 1, ChainID: 1001, Epoch: 1, Height: 0, Round: 0, Sender: validatorID, Type: consensus.MessageTypePrecommit, Payload: payload[:]}
+	vote, err = vote.Sign(signer); if err != nil { t.Fatal(err) }
 	certificate, err := consensus.NewFinalityCertificate(ctx.State, validators, power, consensus.QuorumThreshold{Numerator: 1, Denominator: 1}, payload[:], []consensus.Message{vote}); if err != nil { t.Fatal(err) }
 	if err := n.CommitFinalizedBlock(ctx, candidate, certificate, validators, power, validatorAuthorityResolver{publicKey: signer.PublicKey()}, senderAuthorityResolver{publicKey: signer.PublicKey()}); err != nil { t.Fatal(err) }
 	if n.Head.Header.Height != 1 { t.Fatalf("head height = %d, want 1", n.Head.Header.Height) }
