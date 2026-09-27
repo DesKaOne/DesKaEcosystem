@@ -2975,6 +2975,84 @@ func newRuntimeTestService(t *testing.T) *Service {
 }
 
 
+
+func TestServiceRunDoesNotCloseDatabasesWhileBalanceCompletionLeavesLifecycleRunning(t *testing.T) {
+	service := newRuntimeTestService(t)
+	service.catalogSync, _ = catalog.NewSyncService(
+		&provider.Registry{},
+		catalog.NewMemoryStore(),
+	)
+	service.catalogLifecycle = newCatalogWorkerLifecycle()
+	service.catalogInterval = time.Hour
+
+	balanceErr := errors.New("balance completion failed while lifecycle remains active")
+	catalogErr := errors.New("catalog completion failed after balance failure")
+	transactionErr := errors.New("transaction close must be deferred")
+	auditErr := errors.New("audit close must be deferred")
+	order := make([]string, 0, 4)
+
+	service.balanceShutdown = func(context.Context) error {
+		order = append(order, "balance")
+		return balanceErr
+	}
+	service.catalogShutdown = func() error {
+		service.catalogLifecycle.Shutdown()
+		order = append(order, "catalog")
+		return catalogErr
+	}
+	tx := &orderedCloseErrorDB{name: "transaction", order: &order, err: transactionErr}
+	audit := &orderedCloseErrorDB{name: "audit", order: &order, err: auditErr}
+	service.databaseOwnership = newRuntimeDatabaseOwnership(tx, audit)
+	service.databaseOwnership.transferToService()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	runErr := service.Run(ctx)
+
+	for _, want := range []error{context.Canceled, balanceErr, catalogErr} {
+		if !errors.Is(runErr, want) {
+			t.Fatalf("expected shutdown error identity for %v, got %v", want, runErr)
+		}
+	}
+	for _, unexpected := range []error{transactionErr, auditErr} {
+		if errors.Is(runErr, unexpected) {
+			t.Fatalf("database cleanup must not run while balance lifecycle remains active: %v", runErr)
+		}
+	}
+
+	if !reflect.DeepEqual(order, []string{"balance", "catalog"}) {
+		t.Fatalf("unexpected partial shutdown ordering: got %v", order)
+	}
+	if !service.balanceLifecycle.Running() {
+		t.Fatal("expected balance lifecycle to remain active after injected completion failure")
+	}
+	if service.catalogLifecycle.Running() {
+		t.Fatal("expected catalog lifecycle to complete after balance completion failure")
+	}
+	if tx.closeCount != 0 || audit.closeCount != 0 {
+		t.Fatalf("expected database ownership to remain open, got tx=%d audit=%d", tx.closeCount, audit.closeCount)
+	}
+
+	closeErr := service.Close()
+	if closeErr == nil {
+		t.Fatal("expected Close to reject while balance lifecycle remains active")
+	}
+	if tx.closeCount != 0 || audit.closeCount != 0 {
+		t.Fatalf("Close must not close database ownership while balance lifecycle remains active, got tx=%d audit=%d", tx.closeCount, audit.closeCount)
+	}
+
+	service.balanceLifecycle.Shutdown(context.Background())
+	if closeErr = service.Close(); !errors.Is(closeErr, transactionErr) || !errors.Is(closeErr, auditErr) {
+		t.Fatalf("expected converged Close to return recorded database cleanup errors, got %v", closeErr)
+	}
+	if tx.closeCount != 1 || audit.closeCount != 1 {
+		t.Fatalf("expected converged ownership cleanup exactly once, got tx=%d audit=%d", tx.closeCount, audit.closeCount)
+	}
+	if !reflect.DeepEqual(order, []string{"balance", "catalog", "transaction", "audit"}) {
+		t.Fatalf("unexpected final cleanup ordering: got %v", order)
+	}
+}
+
 func TestServiceRepeatedLifecycleCompletionPreservesOrderingAndSingleClose(t *testing.T) {
 	service := newRuntimeTestService(t)
 	service.catalogSync, _ = catalog.NewSyncService(
