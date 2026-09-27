@@ -10005,3 +10005,46 @@ This milestone is test-only hardening of existing runtime error composition. It 
 **#187 — Runtime Shutdown Error Identity Across Repeated Close/Re-entry**
 
 Focus next on ensuring historical cleanup errors remain available through repeated `Service.Close()` while terminal `Service.Run()` re-entry returns only the current lifecycle-state error, without replaying historical primary/lifecycle failures or introducing new provider/transaction recovery behavior.
+
+
+## 190. Milestone Update — Runtime Shutdown Ownership Convergence Matrix
+
+**Date:** 2026-09-27
+
+Completed:
+
+- added deterministic regression coverage for the case where both auxiliary lifecycles remain active after the first shutdown attempt;
+- verified the first Service.Run shutdown preserves the caller cancellation plus both independent lifecycle-completion errors;
+- verified transaction/audit database ownership remains open while either lifecycle is still active;
+- verified both lifecycles can later converge explicitly without replaying the historical shutdown errors;
+- verified a later explicit Service.Close observes only the fresh transaction/audit cleanup errors after lifecycle convergence;
+- verified transaction cleanup remains before audit cleanup and each database closes exactly once;
+- verified repeated Service.Close preserves the fresh cleanup-error identity without double-closing runtime ownership;
+- no production runtime behavior was changed by this milestone; this is regression coverage for the existing lifecycle/ownership contract;
+- no provider retry/failover, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, provider funding, or synthetic transaction/audit reconstruction was introduced.
+
+### Verification
+
+- Regression test commit: 323008ffba693b7b0d9aedf5ccf11cd94be7a002.
+- CI #1927 on exact test HEAD: **GREEN**.
+  - go test ./... — PASS
+  - go vet ./... — PASS
+  - PostgreSQL service-backed integration tests — PASS
+  - go test -race ./... — PASS
+
+### Safety Boundary
+
+This milestone is limited to runtime lifecycle convergence, deferred database ownership cleanup, error identity, and single-shot close semantics. Historical lifecycle errors remain operational observations and are not promoted into transaction state, provider state, ledger state, treasury state, or financial authorization.
+
+### Known Limitations
+
+- production catalogWorkerLifecycle.Shutdown() remains void-returning; catalog completion errors continue to be represented through the internal test seam;
+- PostgreSQL integration coverage requires DESKAPROVIDER_POSTGRES_DSN and is skipped when unavailable;
+- database close remains non-context-aware;
+- this milestone adds no provider retry/failover or transaction recovery behavior.
+
+### Next Milestone
+
+**#191 — Runtime Shutdown Convergence After Repeated Partial Attempts**
+
+Focus next on repeated partial-shutdown attempts across the same lifecycle, ensuring a failed first convergence, a failed second convergence, and a final successful convergence preserve error identity, defer ownership until terminal convergence, and keep database cleanup single-shot.
