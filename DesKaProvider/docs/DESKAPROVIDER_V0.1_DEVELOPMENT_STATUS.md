@@ -9607,3 +9607,14 @@ This milestone validates shutdown ordering and ownership gating only. A database
 **#186 — Runtime Shutdown Re-entry & Lifecycle Convergence Matrix**
 
 Focus next on re-entry after partial lifecycle shutdown, convergence after an initially active lifecycle becomes stoppable, and ensuring no historical lifecycle error is replayed as a new Run result, without introducing new provider or transaction recovery behavior.
+
+### CI #1867 Flake / Rerun
+
+- Initial CI #1867 race attempt was **RED** in an existing PostgreSQL race test because a pre-existing fixture attempted to insert `amount=0` into `provider_transactions`, violating the database `amount_check` constraint.
+- The `test` and `vet` jobs passed on the same exact HEAD.
+- The failed race job was rerun without source changes and **PASS**ed.
+- No #185 production/runtime code change was required for this CI failure.
+
+### Final Gate
+
+The exact documentation HEAD must have a subsequent CI run with both test and race jobs green before this milestone is considered closed.
