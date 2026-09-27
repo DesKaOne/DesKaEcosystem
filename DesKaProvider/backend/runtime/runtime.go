@@ -288,6 +288,9 @@ func (s *Service) Close() error {
 	if s.balanceLifecycle != nil && s.balanceLifecycle.Running() {
 		return errors.New("service close requires worker shutdown")
 	}
+	if s.catalogLifecycle != nil && s.catalogLifecycle.Running() {
+		return errors.New("service close requires catalog worker shutdown")
+	}
 	return s.closeOwnedDatabases()
 }
 
