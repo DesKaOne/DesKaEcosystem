@@ -71,3 +71,33 @@ func TestJSONFileStoreRejectsOlderSnapshot(t *testing.T) {
 		t.Fatalf("older snapshot was persisted after rejection: %#v", got)
 	}
 }
+
+
+func TestJSONFileStoreKeepsMemoryStateWhenPersistenceFails(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "catalog.json")
+	store, err := NewJSONFileStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := Snapshot{ProviderName: "mock", SyncedAt: time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)}
+	if err := store.Put(original); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(path, 0750); err != nil {
+		t.Fatal(err)
+	}
+
+	replacement := Snapshot{ProviderName: "mock", SyncedAt: original.SyncedAt.Add(time.Minute)}
+	if err := store.Put(replacement); err == nil {
+		t.Fatal("expected persistence failure")
+	}
+
+	got, ok := store.Get("mock")
+	if !ok || !got.SyncedAt.Equal(original.SyncedAt) {
+		t.Fatalf("memory state changed despite persistence failure: %#v", got)
+	}
+}
