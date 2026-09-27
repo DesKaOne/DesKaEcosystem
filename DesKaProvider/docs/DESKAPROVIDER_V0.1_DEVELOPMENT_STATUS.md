@@ -9055,3 +9055,50 @@ This milestone is limited to runtime shutdown ordering, error identity, repeated
 **#186 — Runtime Shutdown Context/Timeout Boundary**
 
 Focus next on the boundary between shutdown context deadlines, worker completion, lifecycle completion, and database ownership closure, preserving the rule that database ownership must not be released while an owned worker remains running.
+
+
+## 185. Milestone Update — Runtime Shutdown Completion Ordering & Error Precedence Review
+
+**Date:** 2026-09-27
+
+Completed:
+
+- reviewed the final runtime shutdown ordering across balance-worker completion, catalog completion, and owned database cleanup;
+- confirmed the production shutdown path composes completion in deterministic order: primary/context error, balance-worker shutdown error, catalog shutdown completion error, transaction database cleanup error, then audit database cleanup error;
+- added regression coverage that validates the **actual `Service.Run()` error string ordering**, not only `errors.Is` identity or independent lifecycle event order;
+- retained transaction-before-audit database cleanup ordering;
+- retained single-shot database ownership cleanup and repeated `Service.Close()` error identity;
+- retained the catalog single-completion boundary established by milestone #184;
+- no provider retry/failover, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, provider funding, or synthetic transaction/audit reconstruction was introduced.
+
+### Verification
+
+- Test hardening commit: `6e5e50cf6d858689f3c8a5474052c1e5729b2cb8`.
+- CI #1815 on exact test HEAD: **GREEN**.
+  - `go test ./...` — PASS
+  - `go vet ./...` — PASS
+  - PostgreSQL service-backed integration tests — PASS
+  - `go test -race ./...` — PASS
+- Expected runtime error ordering is locked as:
+  `context canceled`
+  → `balance shutdown failed`
+  → `catalog shutdown failed`
+  → `close transaction database: ...`
+  → `close audit database: ...`
+
+### Safety Boundary
+
+This milestone only hardens lifecycle shutdown ordering, error composition, and cleanup idempotence. It does not change transaction authority, provider execution semantics, recovery authority, or financial/ledger behavior.
+
+### Known Limitations
+
+- the production `catalogWorkerLifecycle.Shutdown()` contract remains void-returning; catalog completion errors are still represented through the internal test seam;
+- PostgreSQL integration coverage requires `DESKAPROVIDER_POSTGRES_DSN` and is skipped when unavailable;
+- database close remains non-context-aware;
+- error ordering is deterministic within the runtime composition boundary, but external provider error semantics remain provider-specific.
+
+### Next Milestone
+
+**#186 — Runtime Shutdown Partial-Completion Safety**
+
+Focus next on shutdown paths where one lifecycle reports an error or remains running, verifying that database ownership is not released prematurely and that repeated shutdown attempts preserve stable lifecycle and cleanup state, without introducing new provider or transaction recovery behavior.
