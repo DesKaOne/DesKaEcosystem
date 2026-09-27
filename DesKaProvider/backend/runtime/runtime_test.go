@@ -3800,8 +3800,11 @@ func TestServiceRunBothLifecyclesRemainActiveThenConvergeBeforeFreshCloseCleanup
 		order = append(order, "catalog-attempt")
 		return catalogShutdownErr
 	}
-	service.catalogStart = func(parent context.Context) (context.Context, error) {
-		return service.catalogLifecycle.Start(parent)
+	service.balanceStart = func(context.Context) error {
+		return service.balanceLifecycle.Start(context.Background())
+	}
+	service.catalogStart = func(context.Context) (context.Context, error) {
+		return service.catalogLifecycle.Start(context.Background())
 	}
 
 	tx := &orderedCloseErrorDB{name: "transaction", order: &order, err: transactionErr}
