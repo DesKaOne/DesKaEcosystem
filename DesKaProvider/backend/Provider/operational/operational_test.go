@@ -123,6 +123,54 @@ func (testProvider) HandleWebhook(context.Context, provider.WebhookRequest) (pro
 	return provider.WebhookEvent{}, provider.ErrUnsupportedOperation
 }
 
+type cancellationAwareBalanceProvider struct {
+	balanceStub
+	calls  int
+	cancel context.CancelFunc
+}
+
+func (p *cancellationAwareBalanceProvider) GetBalance(ctx context.Context) (int64, error) {
+	p.calls++
+	if p.cancel != nil {
+		p.cancel()
+		p.cancel = nil
+	}
+	return p.balanceStub.GetBalance(ctx)
+}
+
+func TestSyncAllStopsAfterContextCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	first := &cancellationAwareBalanceProvider{
+		balanceStub: balanceStub{balance: 1000000},
+		cancel:      cancel,
+	}
+	second := &cancellationAwareBalanceProvider{
+		balanceStub: balanceStub{balance: 2000000},
+	}
+	registry := provider.NewRegistry()
+	if err := registry.Register("first", first); err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.Register("second", second); err != nil {
+		t.Fatal(err)
+	}
+
+	svc, err := NewSyncService(registry, NewMemoryStore(), "IDR", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	errs := svc.SyncAll(ctx)
+	if len(errs) != 0 {
+		t.Fatalf("expected successful first sync with cancellation stopping progression, got %#v", errs)
+	}
+	if first.calls != 1 {
+		t.Fatalf("expected first provider to be attempted once, got %d", first.calls)
+	}
+	if second.calls != 0 {
+		t.Fatalf("expected second provider not to be attempted after cancellation, got %d", second.calls)
+	}
+}
 
 func TestSyncServiceRunPerformsImmediateSyncAndStopsOnContextCancellation(t *testing.T) {
 	registry := provider.NewRegistry()
