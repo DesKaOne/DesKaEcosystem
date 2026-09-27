@@ -53,6 +53,9 @@ func (s *JSONFileStore) Put(snapshot Snapshot) error {
 	if snapshot.SyncedAt.IsZero() { return errors.New("catalog sync time is required") }
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if current, ok := s.data[snapshot.ProviderName]; ok && snapshot.SyncedAt.Before(current.SyncedAt) {
+		return ErrSnapshotOlder
+	}
 	s.data[snapshot.ProviderName] = Snapshot{ProviderName:snapshot.ProviderName, Products:append([]provider.Product(nil), snapshot.Products...), SyncedAt:snapshot.SyncedAt}
 	return s.persistLocked()
 }
