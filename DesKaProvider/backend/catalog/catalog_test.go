@@ -48,3 +48,45 @@ func TestMemoryStoreRejectsOlderSnapshot(t *testing.T) {
 		t.Fatalf("older snapshot replaced current state: %#v", got)
 	}
 }
+
+
+func TestSyncServiceRecordsFailureAndRecoveryStatus(t *testing.T) {
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", mock.New(mock.Config{Products: []provider.Product{{Code: "xld10", Name: "XL 10K"}}})); err != nil {
+		t.Fatal(err)
+	}
+	store := NewMemoryStore()
+	svc, err := NewSyncService(registry, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
+	second := first.Add(time.Minute)
+	now := first
+	svc.Now = func() time.Time { return now }
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := svc.SyncProvider(ctx, "mock"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected canceled sync, got %v", err)
+	}
+	status, ok := svc.Status("mock")
+	if !ok {
+		t.Fatal("expected provider sync status after failed attempt")
+	}
+	if !status.LastAttemptAt.Equal(first) || status.LastSuccessAt.IsZero() || status.ConsecutiveFailures != 1 || status.LastError != context.Canceled.Error() {
+		t.Fatalf("unexpected failure status: %#v", status)
+	}
+
+	now = second
+	if _, err := svc.SyncProvider(context.Background(), "mock"); err != nil {
+		t.Fatal(err)
+	}
+	status, ok = svc.Status("mock")
+	if !ok {
+		t.Fatal("expected provider sync status after recovery")
+	}
+	if !status.LastAttemptAt.Equal(second) || !status.LastSuccessAt.Equal(second) || status.ConsecutiveFailures != 0 || status.LastError != "" {
+		t.Fatalf("unexpected recovered status: %#v", status)
+	}
+}
