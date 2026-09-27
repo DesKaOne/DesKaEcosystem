@@ -4390,6 +4390,203 @@ func TestServiceOwnershipReplacementConcurrentLifecycleActivityCannotInstallFres
 	}
 }
 
+
+func TestServiceOwnershipReplacementWaitsForConcurrentRunConvergence(t *testing.T) {
+	service := newRuntimeTestService(t)
+	service.catalogSync, _ = catalog.NewSyncService(&provider.Registry{}, catalog.NewMemoryStore())
+	service.catalogLifecycle = newCatalogWorkerLifecycle()
+	service.catalogInterval = time.Hour
+
+	oldOrder := make([]string, 0, 2)
+	oldTx := &orderedCloseErrorDB{name: "old-transaction", order: &oldOrder}
+	oldAudit := &orderedCloseErrorDB{name: "old-audit", order: &oldOrder}
+	oldOwnership := newRuntimeDatabaseOwnership(oldTx, oldAudit)
+	oldOwnership.transferToService()
+	service.databaseOwnership = oldOwnership
+
+	freshOrder := make([]string, 0, 2)
+	freshTx := &orderedCloseErrorDB{name: "fresh-transaction", order: &freshOrder}
+	freshAudit := &orderedCloseErrorDB{name: "fresh-audit", order: &freshOrder}
+	freshOwnership := newRuntimeDatabaseOwnership(freshTx, freshAudit)
+	freshOwnership.transferToService()
+
+	balanceStarted := make(chan struct{})
+	allowBalanceShutdown := make(chan struct{})
+	balanceShutdownDone := make(chan struct{})
+	service.balanceStart = func(context.Context) error {
+		close(balanceStarted)
+		return service.balanceLifecycle.Start(context.Background())
+	}
+	service.balanceShutdown = func(context.Context) error {
+		service.balanceLifecycle.Shutdown(context.Background())
+		close(balanceShutdownDone)
+		<-allowBalanceShutdown
+		return nil
+	}
+	service.catalogStart = func(context.Context) (context.Context, error) {
+		return service.catalogLifecycle.Start(context.Background())
+	}
+	service.catalogShutdown = func() error {
+		service.catalogLifecycle.Shutdown()
+		return nil
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	runDone := make(chan error, 1)
+	go func() {
+		runDone <- service.Run(ctx)
+	}()
+
+	select {
+	case <-balanceStarted:
+	case <-time.After(time.Second):
+		t.Fatal("Run did not start the balance lifecycle")
+	}
+	for !service.catalogLifecycle.Running() {
+		select {
+		case <-time.After(time.Millisecond):
+		default:
+		}
+	}
+
+	cancel()
+	select {
+	case <-balanceShutdownDone:
+	case <-time.After(time.Second):
+		t.Fatal("Run did not enter balance convergence")
+	}
+
+	if service.balanceLifecycle.Running() {
+		t.Fatal("balance lifecycle must report converged before ownership cleanup proceeds")
+	}
+	if service.databaseOwnership != oldOwnership {
+		t.Fatal("old ownership must remain active while Run still owns shutdown convergence")
+	}
+	if oldTx.closeCount != 0 || oldAudit.closeCount != 0 {
+		t.Fatalf("ownership cleanup must remain deferred while shutdown is blocked: tx=%d audit=%d", oldTx.closeCount, oldAudit.closeCount)
+	}
+
+	replacementDone := make(chan error, 1)
+	go func() {
+		replacementDone <- service.replaceDatabaseOwnership(freshOwnership)
+	}()
+
+	select {
+	case err := <-replacementDone:
+		t.Fatalf("replacement installed or rejected before Run convergence completed: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	close(allowBalanceShutdown)
+
+	select {
+	case runErr := <-runDone:
+		if !errors.Is(runErr, context.Canceled) {
+			t.Fatalf("expected Run cancellation, got %v", runErr)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Run did not finish after allowing convergence")
+	}
+
+	select {
+	case err := <-replacementDone:
+		if err != nil {
+			t.Fatalf("expected replacement after serialized convergence to succeed, got %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("replacement remained blocked after Run convergence")
+	}
+
+	if service.databaseOwnership != freshOwnership {
+		t.Fatal("expected fresh ownership only after Run completed its convergence boundary")
+	}
+	if oldTx.closeCount != 1 || oldAudit.closeCount != 1 {
+		t.Fatalf("expected old ownership to close exactly once before replacement: tx=%d audit=%d", oldTx.closeCount, oldAudit.closeCount)
+	}
+	if !reflect.DeepEqual(oldOrder, []string{"old-transaction", "old-audit"}) {
+		t.Fatalf("expected transaction-before-audit old cleanup ordering, got %v", oldOrder)
+	}
+	if freshTx.closeCount != 0 || freshAudit.closeCount != 0 {
+		t.Fatalf("fresh ownership must remain open immediately after installation: tx=%d audit=%d", freshTx.closeCount, freshAudit.closeCount)
+	}
+
+	if err := service.Close(); err != nil {
+		t.Fatalf("expected fresh terminal Close to succeed, got %v", err)
+	}
+	if freshTx.closeCount != 1 || freshAudit.closeCount != 1 {
+		t.Fatalf("expected fresh ownership to close exactly once, got tx=%d audit=%d", freshTx.closeCount, freshAudit.closeCount)
+	}
+}
+
+func TestServiceConcurrentReplacementCannotObservePartialLifecycleConvergence(t *testing.T) {
+	service := newRuntimeTestService(t)
+	service.catalogLifecycle = newCatalogWorkerLifecycle()
+
+	oldTx := &closeErrorDB{}
+	oldAudit := &closeErrorDB{}
+	oldOwnership := newRuntimeDatabaseOwnership(oldTx, oldAudit)
+	oldOwnership.transferToService()
+	service.databaseOwnership = oldOwnership
+
+	freshTx := &closeErrorDB{}
+	freshAudit := &closeErrorDB{}
+	freshOwnership := newRuntimeDatabaseOwnership(freshTx, freshAudit)
+	freshOwnership.transferToService()
+
+	if err := service.balanceLifecycle.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.catalogLifecycle.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	const attempts = 128
+	results := make(chan error, attempts)
+	var wg sync.WaitGroup
+	for i := 0; i < attempts; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			results <- service.replaceDatabaseOwnership(freshOwnership)
+		}()
+	}
+	wg.Wait()
+	close(results)
+
+	for err := range results {
+		if !errors.Is(err, ErrServiceLifecycleActive) {
+			t.Fatalf("replacement observed a non-active transient state: %v", err)
+		}
+	}
+	if service.databaseOwnership != oldOwnership {
+		t.Fatal("partial lifecycle convergence must not install fresh ownership")
+	}
+	if oldTx.closeCount != 0 || oldAudit.closeCount != 0 {
+		t.Fatalf("old ownership must remain untouched while lifecycle activity exists: tx=%d audit=%d", oldTx.closeCount, oldAudit.closeCount)
+	}
+	if freshTx.closeCount != 0 || freshAudit.closeCount != 0 {
+		t.Fatalf("fresh ownership must remain untouched while replacement is rejected: tx=%d audit=%d", freshTx.closeCount, freshAudit.closeCount)
+	}
+
+	service.catalogLifecycle.Shutdown()
+	if err := service.balanceLifecycle.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if service.catalogLifecycle.Running() || service.balanceLifecycle.Running() {
+		t.Fatal("expected all lifecycle owners to converge")
+	}
+
+	if err := service.replaceDatabaseOwnership(freshOwnership); err != nil {
+		t.Fatalf("expected replacement after full convergence, got %v", err)
+	}
+	if service.databaseOwnership != freshOwnership {
+		t.Fatal("expected fresh ownership after full convergence")
+	}
+	if oldTx.closeCount != 1 || oldAudit.closeCount != 1 {
+		t.Fatalf("expected old generation single-shot cleanup, got tx=%d audit=%d", oldTx.closeCount, oldAudit.closeCount)
+	}
+}
+
 func TestServiceFreshOwnershipReplacementDoesNotReplayStaleCleanupErrors(t *testing.T) {
 	registry := provider.NewRegistry()
 	syncService, err := operational.NewSyncService(registry, operational.NewMemoryStore(), "IDR", 1)
