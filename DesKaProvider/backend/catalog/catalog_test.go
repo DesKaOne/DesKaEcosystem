@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
