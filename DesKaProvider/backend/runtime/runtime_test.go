@@ -1366,3 +1366,47 @@ func TestServiceRunShutdownPreservesCompletionOrderingAndAllErrorIdentity(t *tes
 		t.Fatalf("expected repeated Service.Close not to double-close, got tx=%d audit=%d", tx.closeCount, audit.closeCount)
 	}
 }
+
+
+func TestServiceRunRejectsRepeatedRunAfterOwnedShutdown(t *testing.T) {
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", &balanceMock{Provider: mock.New(mock.Config{}), balance: 100000}); err != nil {
+		t.Fatal(err)
+	}
+	syncService, err := operational.NewSyncService(registry, operational.NewMemoryStore(), "IDR", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := New(syncService, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	closeErr := errors.New("owned database close failed")
+	service.databaseOwnership = newRuntimeDatabaseOwnership(&closeErrorDB{err: closeErr}, nil)
+	service.databaseOwnership.transferToService()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	firstErr := service.Run(ctx)
+	if !errors.Is(firstErr, context.Canceled) || !errors.Is(firstErr, closeErr) {
+		t.Fatalf("expected first run to preserve cancellation and close errors, got %v", firstErr)
+	}
+	if service.balanceLifecycle.Running() {
+		t.Fatal("expected first shutdown to stop balance lifecycle")
+	}
+
+	secondErr := service.Run(context.Background())
+	if !errors.Is(secondErr, ErrServiceClosed) {
+		t.Fatalf("expected repeated Run to return ErrServiceClosed, got %v", secondErr)
+	}
+	if service.balanceLifecycle.Running() {
+		t.Fatal("expected repeated Run not to restart balance lifecycle")
+	}
+
+	if err := service.Close(); !errors.Is(err, closeErr) {
+		t.Fatalf("expected repeated Close to preserve original cleanup error, got %v", err)
+	}
+	if service.databaseOwnership.isClosed() != true {
+		t.Fatal("expected runtime ownership to remain closed")
+	}
+}
