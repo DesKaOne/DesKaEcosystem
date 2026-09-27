@@ -2125,6 +2125,74 @@ func TestServiceRunShutdownCompletionOrderingAcrossWorkersAndDatabaseOwnership(t
 }
 
 
+func TestServiceRunCleanupFailureClosesOwnershipAndRejectsReentryWithoutReplay(t *testing.T) {
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", &balanceMock{Provider: mock.New(mock.Config{}), balance: 100000}); err != nil {
+		t.Fatal(err)
+	}
+	syncService, err := operational.NewSyncService(registry, operational.NewMemoryStore(), "IDR", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := New(syncService, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.catalogSync = nil
+
+	transactionErr := errors.New("transaction ownership cleanup failed")
+	auditErr := errors.New("audit ownership cleanup failed")
+	tx := &orderedCloseErrorDB{name: "transaction", err: transactionErr}
+	audit := &orderedCloseErrorDB{name: "audit", err: auditErr}
+	service.databaseOwnership = newRuntimeDatabaseOwnership(tx, audit)
+	service.databaseOwnership.transferToService()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	firstErr := service.Run(ctx)
+
+	for _, want := range []error{context.Canceled, transactionErr, auditErr} {
+		if !errors.Is(firstErr, want) {
+			t.Fatalf("expected first shutdown to preserve %v, got %v", want, firstErr)
+		}
+	}
+	if !service.databaseOwnership.isClosed() {
+		t.Fatal("expected runtime ownership to be closed after cleanup attempt")
+	}
+	if tx.closeCount != 1 || audit.closeCount != 1 {
+		t.Fatalf("expected each database to close once, got tx=%d audit=%d", tx.closeCount, audit.closeCount)
+	}
+	if service.balanceLifecycle.Running() {
+		t.Fatal("expected balance lifecycle to stop after shutdown")
+	}
+
+	secondErr := service.Run(context.Background())
+	if !errors.Is(secondErr, ErrServiceClosed) {
+		t.Fatalf("expected re-entry to reject closed service, got %v", secondErr)
+	}
+	for _, historical := range []error{context.Canceled, transactionErr, auditErr} {
+		if errors.Is(secondErr, historical) {
+			t.Fatalf("closed-state rejection must not replay historical error %v: %v", historical, secondErr)
+		}
+	}
+	if tx.closeCount != 1 || audit.closeCount != 1 {
+		t.Fatalf("re-entry must not double-close databases, got tx=%d audit=%d", tx.closeCount, audit.closeCount)
+	}
+
+	closeErr := service.Close()
+	for _, want := range []error{transactionErr, auditErr} {
+		if !errors.Is(closeErr, want) {
+			t.Fatalf("repeated Close must preserve recorded cleanup error %v, got %v", want, closeErr)
+		}
+	}
+	if errors.Is(closeErr, context.Canceled) {
+		t.Fatalf("repeated Close must not replay primary Run error: %v", closeErr)
+	}
+	if tx.closeCount != 1 || audit.closeCount != 1 {
+		t.Fatalf("repeated Close must not double-close databases, got tx=%d audit=%d", tx.closeCount, audit.closeCount)
+	}
+}
+
 func TestServiceClosedStateSeparatesRunRejectionFromRecordedCleanupError(t *testing.T) {
 	cleanupErr := errors.New("recorded database cleanup failure")
 
