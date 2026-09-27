@@ -101,3 +101,11 @@ func TestJSONFileStoreKeepsMemoryStateWhenPersistenceFails(t *testing.T) {
 		t.Fatalf("memory state changed despite persistence failure: %#v", got)
 	}
 }
+
+
+func TestSyncDirectory(t *testing.T) {
+	dir := t.TempDir()
+	if err := syncDirectory(dir); err != nil {
+		t.Fatal(err)
+	}
+}
