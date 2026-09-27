@@ -4697,7 +4697,7 @@ func TestServiceOwnershipReplacementStressPreservesGenerationIsolationAcrossRepe
 		audit *orderedCloseErrorDB
 		txErr error
 		auditErr error
-		order []string
+		order *[]string
 		ownership *runtimeDatabaseOwnership
 	}
 
@@ -4710,7 +4710,7 @@ func TestServiceOwnershipReplacementStressPreservesGenerationIsolationAcrossRepe
 		audit := &orderedCloseErrorDB{name: name + "-audit", order: &order, err: auditErr}
 		ownership := newRuntimeDatabaseOwnership(tx, audit)
 		ownership.transferToService()
-		return &generation{name: name, tx: tx, audit: audit, txErr: txErr, auditErr: auditErr, order: order, ownership: ownership}
+		return &generation{name: name, tx: tx, audit: audit, txErr: txErr, auditErr: auditErr, order: &order, ownership: ownership}
 	}
 
 	current := newGeneration(0)
@@ -4771,8 +4771,8 @@ func TestServiceOwnershipReplacementStressPreservesGenerationIsolationAcrossRepe
 		if current.tx.closeCount != 1 || current.audit.closeCount != 1 {
 			t.Fatalf("%s: current generation must close exactly once after failed replacement: tx=%d audit=%d", next.name, current.tx.closeCount, current.audit.closeCount)
 		}
-		if !reflect.DeepEqual(current.order, []string{current.name + "-transaction", current.name + "-audit"}) {
-			t.Fatalf("%s: current cleanup order changed: %v", next.name, current.order)
+		if !reflect.DeepEqual(*current.order, []string{current.name + "-transaction", current.name + "-audit"}) {
+			t.Fatalf("%s: current cleanup order changed: %v", next.name, *current.order)
 		}
 		if errors.Is(err, next.txErr) || errors.Is(err, next.auditErr) {
 			t.Fatalf("%s: fresh generation cleanup errors leaked into failed replacement: %v", next.name, err)
@@ -4821,8 +4821,8 @@ func TestServiceOwnershipReplacementStressPreservesGenerationIsolationAcrossRepe
 	if current.tx.closeCount != 1 || current.audit.closeCount != 1 {
 		t.Fatalf("final generation must close exactly once: tx=%d audit=%d", current.tx.closeCount, current.audit.closeCount)
 	}
-	if !reflect.DeepEqual(current.order, []string{current.name + "-transaction", current.name + "-audit"}) {
-		t.Fatalf("final generation cleanup order changed: %v", current.order)
+	if !reflect.DeepEqual(*current.order, []string{current.name + "-transaction", current.name + "-audit"}) {
+		t.Fatalf("final generation cleanup order changed: %v", *current.order)
 	}
 
 	// Repeated Close must preserve the final generation's terminal errors without replaying
