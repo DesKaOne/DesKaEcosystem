@@ -89,6 +89,9 @@ func applyPostgresMigration(t *testing.T, db DBTX) {
 
 func seedTerminalTransactionContext(ctx context.Context, store *PostgresTransactionStore, state TransactionState) error {
 	pending := state
+	if pending.Request.Amount <= 0 {
+		pending.Request.Amount = 1
+	}
 	pending.Version = 1
 	pending.Execution.Result.Status = provider.StatusPending
 	pending.Execution.Result.ProviderCode = "00"
