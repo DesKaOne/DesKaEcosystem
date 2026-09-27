@@ -318,8 +318,8 @@ func TestValidatorRuntimeExposesClonedFinalityCertificate(t *testing.T) {
 	if err := runtime.AcceptProposal(runtimeMessage(state, "validator-a", MessageTypeProposal, "block-8")); err != nil { t.Fatal(err) }
 	if err := runtime.AddVote(runtimeMessage(state, "validator-a", MessageTypePrevote, "block-8")); err != nil { t.Fatal(err) }
 	if err := runtime.AddVote(runtimeMessage(state, "validator-b", MessageTypePrevote, "block-8")); err != nil { t.Fatal(err) }
-	if err := runtime.AddVote(runtimeMessage(runtime.State(), "validator-a", MessageTypePrecommit, "block-8")); err != nil { t.Fatal(err) }
-	if err := runtime.AddVote(runtimeMessage(runtime.State(), "validator-b", MessageTypePrecommit, "block-8")); err != nil { t.Fatal(err) }
+	if err := runtime.AddVote(runtimeSignedMessage(t, runtime.State(), "validator-a", MessageTypePrecommit, "block-8")); err != nil { t.Fatal(err) }
+	if err := runtime.AddVote(runtimeSignedMessage(t, runtime.State(), "validator-b", MessageTypePrecommit, "block-8")); err != nil { t.Fatal(err) }
 	if _, err := runtime.FinalizeProposal(runtimeTestAuthority(t)); err != nil { t.Fatal(err) }
 	certificate, err := runtime.FinalizedCertificate(); if err != nil { t.Fatal(err) }
 	certificate.Payload[0] = 'X'
