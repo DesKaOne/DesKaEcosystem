@@ -56,8 +56,16 @@ func (s *JSONFileStore) Put(snapshot Snapshot) error {
 	if current, ok := s.data[snapshot.ProviderName]; ok && snapshot.SyncedAt.Before(current.SyncedAt) {
 		return ErrSnapshotOlder
 	}
-	s.data[snapshot.ProviderName] = Snapshot{ProviderName:snapshot.ProviderName, Products:append([]provider.Product(nil), snapshot.Products...), SyncedAt:snapshot.SyncedAt}
-	return s.persistLocked()
+	next := make(map[string]Snapshot, len(s.data)+1)
+	for name, current := range s.data {
+		next[name] = Snapshot{ProviderName: current.ProviderName, Products: append([]provider.Product(nil), current.Products...), SyncedAt: current.SyncedAt}
+	}
+	next[snapshot.ProviderName] = Snapshot{ProviderName:snapshot.ProviderName, Products:append([]provider.Product(nil), snapshot.Products...), SyncedAt:snapshot.SyncedAt}
+	if err := s.persistLocked(next); err != nil {
+		return err
+	}
+	s.data = next
+	return nil
 }
 
 func (s *JSONFileStore) All() []Snapshot {
@@ -70,9 +78,9 @@ func (s *JSONFileStore) All() []Snapshot {
 	return result
 }
 
-func (s *JSONFileStore) persistLocked() error {
+func (s *JSONFileStore) persistLocked(data map[string]Snapshot) error {
 	if err := os.MkdirAll(filepath.Dir(s.path), 0750); err != nil { return err }
-	payload, err := json.MarshalIndent(fileData{Snapshots:s.data},"","  ")
+	payload, err := json.MarshalIndent(fileData{Snapshots:data},"","  ")
 	if err != nil { return err }
 	tmp, err := os.CreateTemp(filepath.Dir(s.path), ".catalog-*.tmp")
 	if err != nil { return err }
