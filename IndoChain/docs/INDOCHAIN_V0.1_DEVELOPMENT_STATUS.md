@@ -1491,10 +1491,10 @@ Verification:
 
 Implementation commits:
 - runtime authenticated finality wiring: cdc7b3d4071131c1d8ff0e5ce2642f0b399b250a
-- authenticated finalized-block boundary: 9a8c0e7c3c7c0e0b9c1e5f0b4b2c1d8a2f9e1a11
+- authenticated finalized-block boundary: d7d347d712d8b1003eaad00b54f5cb393110475e
 - node authenticated handoff: 5bb0468cba3580cc001b5d9b35af0eb7a3da0b3e
 - immutable authority resolver: 2887c86aa9636759fdded9c31b0ed1ae94edfe27
-- runtime regression suite: 7bb1290172a670d582041991fbb5ebbb1acf4c23
+- runtime regression suite: 7f421fd1fc558b9f86ffb4e032c4ca4bf415f8d6
 - P2P/node authenticated fixture hardening: fbe2ed3881be4807fd1e38f5182b519dff865828
 - finality evidence binding: cdc7b3d4071131c1d8ff0e5ce2642f0b399b250a
 
