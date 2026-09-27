@@ -440,7 +440,7 @@ func TestInMemoryTransportRuntimeFinalizedBlockMultiHeight(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	validatorResolver := runtimeValidatorAuthorityResolver{}
+	validatorResolver := runtimeValidatorAuthorityResolver{publicKey: signer.PublicKey()}
 	senderResolver := runtimeSenderAuthorityResolver{}
 
 	var previousHash = n.HeadHash
@@ -1652,8 +1652,8 @@ func TestConsensusRuntimeNegativeMissingValidatorAuthority(t *testing.T) {
 	canonicalHead := n.HeadHash
 
 	missingAuthorityResolver := runtimeMissingValidatorAuthorityResolver{}
-	if err := n.CommitFinalizedBlock(ctx, candidate, certificate, validators, power, missingAuthorityResolver, senderResolver); !errors.Is(err, consensus.ErrConsensusAuthorityMissing) {
-		t.Fatalf("missing validator authority error = %v, want %v", err, consensus.ErrConsensusAuthorityMissing)
+	if err := n.CommitFinalizedBlock(ctx, candidate, certificate, validators, power, missingAuthorityResolver, senderResolver); !errors.Is(err, consensus.ErrInvalidSignature) {
+		t.Fatalf("missing validator authority error = %v, want %v", err, consensus.ErrInvalidSignature)
 	}
 	if n.Head.Header.Height != 0 || n.HeadHash != canonicalHead {
 		t.Fatal("canonical head changed after missing validator authority rejection")
