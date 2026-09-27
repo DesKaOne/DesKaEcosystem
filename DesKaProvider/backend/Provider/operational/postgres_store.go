@@ -22,6 +22,11 @@ func (s *PostgresStore) Get(name string) (Snapshot, bool) {
 	return snapshot, found
 }
 
+func (s *PostgresStore) Get(name string) (Snapshot, bool) {
+	snapshot, found, _ := s.GetWithError(name)
+	return snapshot, found
+}
+
 func (s *PostgresStore) GetWithError(name string) (Snapshot, bool, error) {
 	if name == "" {
 		return Snapshot{}, false, nil
