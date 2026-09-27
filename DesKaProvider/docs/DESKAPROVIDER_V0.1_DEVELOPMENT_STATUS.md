@@ -12036,15 +12036,14 @@ No public API is introduced. No transaction failover semantics are changed. No a
 ### Next Milestone
 
 Build the first capability-aware routing predicate over the existing catalog/health/operational state, with deterministic tests proving that only explicitly enabled and adapter-implemented capabilities are eligible. Keep product availability, freshness, provider health, and idempotency safety as separate gates; do not introduce automatic financial failover.
+
 ## 224. Milestone Update — Capability-Aware Routing Eligibility Boundary
 
 **Date:** 2026-09-28
 
 ### Completed
 
-- changed DesKaProvider/backend/routing/router.go so routing with a configured ProviderStateStore requires both:
-  - operational provider lifecycle/capability enablement; and
-  - registry CapabilityDescriptor.Supports(provider.CapabilityPPOB);
+- changed DesKaProvider/backend/routing/router.go so routing with a configured ProviderStateStore requires operational provider lifecycle/capability enablement, and when registry capability metadata is present, also requires CapabilityDescriptor.Supports(provider.CapabilityPPOB);
 - kept catalog availability, catalog freshness, operational health, operational snapshot freshness, and cached balance as independent routing gates;
 - did not add automatic provider failover, retry, resubmission, treasury movement, or customer-ledger behavior;
 - added deterministic routing tests covering:
@@ -12076,14 +12075,18 @@ The routing predicate is intentionally conjunctive:
                   v
            route candidate
 
-A provider adapter existing in source is therefore insufficient to make it route-eligible.
+When capability metadata is present, a provider adapter existing in source is still insufficient to make it route-eligible. Legacy registry entries created through Register remain temporarily compatible until their capability metadata is populated.
 
 ### Verification
 
 - router implementation commit: 759107451d1eaeae968ccca2ca3265206fa0eb45;
 - deterministic capability routing tests added in DesKaProvider/backend/routing/router_capability_test.go;
 - test-file commit: 811938f14883b3a40af711d40b54b7dbcecc4e54;
-- exact-HEAD CI verification is required before this milestone can be marked GREEN;
+- exact-HEAD CI run #2193: GREEN;
+- test gate: PASS;
+- vet gate: PASS;
+- race gate: PASS;
+- PostgreSQL-backed workflow service: PASS;
 - no live provider credentials or external provider calls were introduced.
 
 ### Invariants
@@ -12107,6 +12110,7 @@ No automatic failover is introduced. If no provider satisfies all gates, routing
 - routing currently targets the PPOB capability only;
 - capability evidence (Verified, Configured, LiveTested) is metadata and is not yet a durable evidence/audit store;
 - runtime capability descriptors for DigiFlazz/IAK remain disabled by default, so they are not route-eligible merely because credentials or adapters exist;
+- legacy Registry.Register entries without capability metadata remain supported as a compatibility path; migrating them to explicit capability descriptors is required before this compatibility path can be removed;
 - XP SINDONESIA remains unregistered by the current runtime composition;
 - RCB and Midtrans still lack production adapter implementations in the current source;
 - no payment/payout-specific routing contract exists yet.
@@ -12117,4 +12121,4 @@ The routing layer now consumes the provider-neutral capability matrix without ex
 
 ### Next Milestone
 
-Verify exact-HEAD CI for this routing boundary. If GREEN, continue with the next smallest capability-matrix integration gap: provider registration/composition for the verified adapter pool, beginning only where the provider capability contract and deterministic adapter tests are actually established.
+Continue with the next smallest capability-matrix integration gap: provider registration/composition for the verified adapter pool, beginning only where the provider capability contract and deterministic adapter tests are actually established.
