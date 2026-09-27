@@ -10848,3 +10848,58 @@ No architecture document update is required. Milestone #204 strengthens initiali
 ### Next Milestone
 
 Continue from the updated runtime lifecycle/reliability status by identifying the next concrete initialization, shutdown, persistence, or routing boundary gap. Preserve the established invariants that transaction persistence is authoritative, audit/operational evidence is non-authoritative, and infrastructure errors cannot authorize provider retry, failover, resubmission, or financial mutation.
+
+
+## 205. Milestone Update — Runtime Initialization Context Cancellation Boundary
+
+**Date:** 2026-09-27
+
+Completed:
+
+- added deterministic coverage for context cancellation occurring after runtime database ownership has been acquired but before ownership transfer;
+- verified cancellation is surfaced as `context.Canceled` rather than allowing a partially initialized Service to escape;
+- verified the captured partial database generation is closed before canceled initialization returns;
+- verified a subsequent fresh initialization succeeds and receives an open, independent generation after the canceled attempt;
+- verified the fresh generation reaches its own terminal Close without inheriting cancellation state from the failed generation;
+- retained the existing production `checkRuntimeInitializationContext` boundary because the implementation already performs the required pre-transfer context check and ownership defer cleanup;
+- no production runtime, persistence, provider, retry/failover, transaction authority, or financial authorization behavior was broadened.
+
+### Verification
+
+- implementation/test commit: `a90de5cc5c8b2732ae79b28d60bce548ebce0963`;
+- focused follow-up commit: `0dfa9eaf5a558c5758ea67208bbf577dca2f6f21`;
+- the follow-up removed an initially drafted deadline-named test that only exercised cancellation, keeping the milestone scope precise rather than claiming unsupported deadline coverage;
+- final CI #2026 / run `36331937763` is **GREEN** for exact HEAD `0dfa9eaf5a558c5758ea67208bbf577dca2f6f21`;
+- `go test ./...` — PASS;
+- `go vet ./...` — PASS;
+- PostgreSQL service-backed integration tests — PASS;
+- `go test -race ./...` — PASS.
+
+### Context / Ownership Invariants
+
+- a canceled initialization context cannot cross the ownership-transfer boundary into a returned Service;
+- cancellation observed after database acquisition still triggers cleanup of untransferred ownership;
+- the cancellation error identity remains `context.Canceled`;
+- partial cleanup remains single-shot through the existing ownership guard;
+- a subsequent fresh generation is independent and does not inherit cancellation or cleanup state from the failed generation;
+- context cancellation remains an initialization/lifecycle control outcome and cannot authorize provider retry, failover, resubmission, or financial mutation.
+
+### Safety Boundary
+
+This milestone remains limited to initialization context cancellation, ownership cleanup, and fresh-generation isolation. It adds no provider retry/failover, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, provider funding, or financial authorization.
+
+### Known Limitations
+
+- this milestone deterministically covers cancellation after ownership acquisition; it does not claim equivalent coverage for every PostgreSQL wire-level timeout/deadline timing variant;
+- the cancellation trigger is a test seam coordinated at the pre-transfer initialization boundary;
+- database close remains non-context-aware;
+- PostgreSQL integration coverage requires `DESKAPROVIDER_POSTGRES_DSN` and is skipped when unavailable;
+- ownership-generation state remains lifecycle bookkeeping, not a recovery journal or transaction authority.
+
+### Architecture Impact
+
+No architecture document update is required. Milestone #205 validates an existing initialization context boundary and cleanup invariant without changing the documented provider, transaction, financial, or lifecycle authority model.
+
+### Next Milestone
+
+Continue from the runtime lifecycle/reliability status with the next concrete boundary gap, prioritizing deterministic behavior around initialization, shutdown, persistence, or routing only where a currently observable invariant is not yet locked by tests.
