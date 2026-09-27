@@ -297,7 +297,6 @@ func (r *ValidatorRuntime) AddVote(msg Message) error {
 	if len(r.proposal) == 0 {
 		return ErrInvalidConsensusRuntime
 	}
-	legacyVote := msg.Type == MessageTypeVote
 	// Legacy MessageTypeVote remains accepted as a compatibility input and is
 	// normalized into the explicit phase-specific evidence bucket.
 	if msg.Type == MessageTypeVote {
@@ -337,19 +336,6 @@ func (r *ValidatorRuntime) AddVote(msg Message) error {
 			r.lockedProposal = append([]byte(nil), r.proposal...)
 			r.lockedRound = r.state.Round
 			r.lockedProof = nil
-			// Preserve v0.1 compatibility for callers that still emit the
-			// legacy generic vote: once that legacy prevote reaches quorum,
-			// mirror its already-validated evidence into the explicit
-			// precommit bucket. New callers should send MessageTypePrecommit
-			// explicitly in the Precommit phase.
-			if legacyVote {
-				for _, vote := range r.prevotes.VotesForPayload(r.proposal) {
-					vote.Type = MessageTypePrecommit
-					if err := r.precommits.AddVote(vote); err != nil {
-						return err
-					}
-				}
-			}
 			r.state.Phase = PhasePrecommit
 		}
 		return nil
