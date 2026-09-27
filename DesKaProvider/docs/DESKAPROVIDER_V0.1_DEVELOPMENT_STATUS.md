@@ -10674,3 +10674,62 @@ No architecture document update is required. Milestone #201 extends regression c
 **#202 — Runtime Close / Run Concurrency Boundary Matrix**
 
 Focus next on deterministic interleavings between terminal `Service.Close()`, `Service.Run()` shutdown convergence, and ownership replacement, preserving single-shot cleanup and generation isolation under concurrent entry points.
+
+## 202. Milestone Update — Runtime Close / Run Concurrency Boundary Matrix
+
+**Date:** 2026-09-27
+
+Completed:
+
+- added deterministic coverage for the terminal Service.Close() boundary racing with ownership replacement;
+- verified Service.Close() holds the runtime shutdown boundary through database cleanup before a concurrent ownership replacement can install a fresh generation;
+- verified the blocked replacement does not touch the fresh generation while the previous generation is still owned by the terminal Close operation;
+- verified the replacement can safely linearize after the terminal Close completes and the fresh generation remains untouched until its own terminal Close;
+- added deterministic coverage for Service.Run() shutdown convergence with concurrent Service.Close() and ownership replacement entry points;
+- verified concurrent Close/replacement calls cannot bypass an active Run shutdown boundary or touch either ownership generation before lifecycle convergence;
+- verified the old generation closes exactly once after Run convergence;
+- verified the serialized fresh generation remains single-shot and can be closed independently after replacement;
+- no production runtime implementation change was required because the existing shutdownMu serialization and ownership single-shot semantics satisfy the tested interleavings;
+- no provider retry/failover, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, provider funding, or synthetic transaction/audit reconstruction was introduced.
+
+### CI
+
+- Final #202 test commit: ec06d266e084e3b445d99197a55ae35a38ab8189.
+- CI #2010 on the exact test HEAD: **GREEN**.
+  - go test ./... — PASS
+  - go vet ./... — PASS
+  - PostgreSQL service-backed integration tests — PASS
+  - go test -race ./... — PASS
+
+### Boundary / Concurrency Invariants
+
+- Service.Run() shutdown convergence remains serialized against terminal Service.Close() and ownership replacement entry points;
+- terminal Close cannot be bypassed by a concurrent ownership replacement that has not yet acquired the shutdown boundary;
+- ownership replacement cannot install or touch a fresh generation while Run still owns an active lifecycle-convergence boundary;
+- old-generation cleanup remains single-shot and completes before a serialized fresh generation becomes current;
+- fresh-generation resources remain untouched until their own lifecycle/Close operation linearizes;
+- concurrent entry points do not create a second cleanup authority or replay historical generation errors;
+- ownership-generation state remains infrastructure lifecycle bookkeeping and cannot authorize financial state mutation.
+
+### Safety Boundary
+
+This milestone remains limited to deterministic Close/Run/replacement interleavings, lifecycle convergence serialization, ownership-generation isolation, and single-shot cleanup. It adds no provider retry/failover, transaction recovery, ledger mutation, customer-balance mutation, treasury movement, provider funding, or financial authorization.
+
+### Known Limitations
+
+- ownership replacement remains an internal runtime composition/testing boundary;
+- production catalogWorkerLifecycle.Shutdown() remains void-returning and does not expose an independent completion error;
+- database close remains non-context-aware;
+- direct manipulation of internal lifecycle test seams is not a production API;
+- PostgreSQL integration coverage requires DESKAPROVIDER_POSTGRES_DSN and is skipped when unavailable;
+- ownership-generation state remains lifecycle bookkeeping, not a recovery journal or transaction authority.
+
+### Architecture Impact
+
+No architecture document update is required. Milestone #202 adds deterministic concurrency regression guarantees around the existing runtime shutdown mutex and ownership boundary without changing the documented provider, financial, or lifecycle authority model.
+
+### Next Milestone
+
+**#203 — Runtime Initialization / Shutdown Cross-Boundary Matrix**
+
+Focus next on deterministic interleavings between runtime initialization ownership handoff, initialization failure cleanup, terminal Close, and subsequent lifecycle reuse, ensuring partially initialized database generations cannot leak or become authoritative.
