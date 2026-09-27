@@ -104,6 +104,7 @@ func TestLoadConfigDefaults(t *testing.T) {
 	t.Setenv("DESKAPROVIDER_BALANCE_SYNC_INTERVAL", "")
 	t.Setenv("DESKAPROVIDER_BALANCE_FAILURE_THRESHOLD", "")
 	t.Setenv("DESKAPROVIDER_CATALOG_SYNC_INTERVAL", "")
+	t.Setenv("DESKAPROVIDER_CATALOG_SYNC_STATUS_STORE_PATH", "")
 	t.Setenv("DESKAPROVIDER_CATALOG_MAX_AGE", "")
 	t.Setenv("DESKAPROVIDER_OPERATIONAL_SNAPSHOT_MAX_AGE", "")
 	t.Setenv("DESKAPROVIDER_TRANSACTION_STORE_DRIVER", "")
@@ -114,7 +115,7 @@ func TestLoadConfigDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.StorePath != defaultStorePath || cfg.TransactionStorePath != defaultTransactionStorePath || cfg.SyncInterval != defaultSyncInterval ||
+	if cfg.StorePath != defaultStorePath || cfg.CatalogSyncStatusStorePath != defaultCatalogSyncStatusStorePath || cfg.TransactionStorePath != defaultTransactionStorePath || cfg.SyncInterval != defaultSyncInterval ||
 		cfg.FailureThreshold != defaultFailureThreshold || cfg.Currency != defaultCurrency || cfg.TransactionStoreDriver != defaultTransactionStoreDriver || cfg.AuditStoreDriver != defaultAuditStoreDriver || cfg.CatalogSyncInterval != defaultCatalogSyncInterval || cfg.CatalogMaxAge != defaultCatalogMaxAge || cfg.OperationalSnapshotMaxAge != defaultOperationalSnapshotMaxAge {
 		t.Fatalf("unexpected defaults: %#v", cfg)
 	}
@@ -6188,5 +6189,16 @@ func TestServiceCatalogSyncStatusesExposeProviderFailure(t *testing.T) {
 	}
 	if statuses[0].ProviderName != "mock" || statuses[0].ConsecutiveFailures != 1 || statuses[0].LastError != context.Canceled.Error() {
 		t.Fatalf("unexpected catalog sync status: %#v", statuses[0])
+	}
+}
+
+
+func TestLoadConfigReadsCatalogSyncStatusStorePath(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "catalog", "status.json")
+	t.Setenv("DESKAPROVIDER_CATALOG_SYNC_STATUS_STORE_PATH", path)
+	cfg, err := LoadConfig()
+	if err != nil { t.Fatal(err) }
+	if cfg.CatalogSyncStatusStorePath != path {
+		t.Fatalf("expected configured catalog sync status store path %q, got %q", path, cfg.CatalogSyncStatusStorePath)
 	}
 }
