@@ -12215,3 +12215,90 @@ No public API, financial ledger, customer balance authority, treasury authority,
 ### Next Milestone
 
 Complete the next provider only when its adapter contract is actually established. The smallest candidate is XP SINDONESIA adapter capability completion or another verified provider with a demonstrable provider-neutral contract. Do not mark capability READY until adapter tests and the corresponding capability matrix evidence are present.
+
+## 226. Milestone Update — Partial Capability Registry Boundary
+
+**Date:** 2026-09-28
+
+### Completed
+
+- extended the provider registry so an optional capability implementation can be registered without pretending the provider implements the full `PPOBProvider` contract;
+- added `RegisterCapabilityProvider` for capability-specific implementations;
+- added `GetCapabilityProvider` for retrieving an explicitly registered optional capability implementation;
+- kept `Registry.Get` strict: capability-only entries are not returned as PPOB providers;
+- preserved explicit capability metadata through `CapabilityDescriptor`;
+- added deterministic registry tests proving:
+  - a balance-only implementation can be registered without a PPOB implementation;
+  - balance capability registration does not imply PPOB capability;
+  - duplicate capability registration is rejected;
+  - PPOB lookup does not expose a capability-only registry entry.
+
+### Implementation Details
+
+The registry now distinguishes two boundaries:
+
+```text
+Provider Registry
+  |
+  +--> PPOBProvider
+  |      |
+  |      +--> Get()
+  |      +--> routing / transaction path
+  |
+  +--> Optional Capability Provider
+         |
+         +--> GetCapabilityProvider()
+         +--> Balance / future capability-specific consumers
+```
+
+This allows a provider such as XP SINDONESIA to be represented accurately when it has an independently implemented capability (for example balance) without falsely claiming that its incomplete PPOB contract is fully implemented.
+
+The capability-specific registration path still requires `AdapterImplemented=true` in the supplied metadata. Enablement and live-test status remain explicit metadata and are not inferred.
+
+### Provider Evidence Boundary
+
+The current XP SINDONESIA source implements `Purchase`, `GetBalance`, and webhook handling, while `GetProducts`, `Inquiry`, and `GetStatus` explicitly return `ErrUnsupportedOperation`. Public XP SINDONESIA pages expose a frequently updated product-price catalog, but that public HTML is not treated as sufficient evidence of a stable machine-readable product API contract. citeturn0search0turn0search3
+
+Therefore this milestone does **not** mark XP SINDONESIA PPOB READY, does not scrape its HTML catalog, and does not add an unverified API contract.
+
+### Verification
+
+- implementation sequence finalized at `c96a951acdf80c1907730a73fd2b5f7c6e54c5f3`;
+- exact implementation CI run #2211: **GREEN**;
+- `go test ./...`: PASS;
+- `go vet ./...`: PASS;
+- `go test -race ./...`: PASS;
+- PostgreSQL-backed workflow service: PASS;
+- intermediate CI #2209 was RED because `Registry.Get` treated a capability-only registry entry as an existing PPOB provider even though its PPOB implementation was nil; this was corrected before final implementation verification;
+- no live provider credentials or external provider calls were introduced.
+
+### Invariants
+
+- capability-only registration cannot authorize PPOB transaction execution;
+- optional capability metadata does not imply PPOB capability;
+- `LiveTested=false` remains the safe default without credential-backed live validation;
+- provider-specific protocol remains inside provider adapters;
+- operational balance remains a provider-liquidity snapshot, not customer balance authority;
+- no retry, automatic failover, resubmission, ledger mutation, treasury movement, or provider funding is introduced.
+
+### Safety Boundary
+
+This milestone is registry modeling only. It does not change transaction submission, routing authority, or financial state.
+
+A capability provider can be discovered only through its capability-specific lookup. Existing PPOB routing continues through `Registry.Get` and therefore cannot accidentally consume a balance-only/partial provider.
+
+### Known Limitations
+
+- capability-specific consumers beyond registry lookup are not yet wired;
+- XP SINDONESIA remains not fully PPOB-ready;
+- no machine-readable XP product catalog contract has been verified from the available source evidence;
+- RCB and Midtrans production adapters remain future work;
+- capability evidence remains metadata rather than durable audit evidence.
+
+### Architecture Impact
+
+The provider registry now supports partial capability composition without weakening the PPOB transaction boundary. This is the required foundation for provider balance/health/catalog capabilities that may exist independently of the full transaction contract.
+
+### Next Milestone
+
+Use the new optional capability boundary for the next smallest operational capability integration: provider balance synchronization for explicitly registered `BalanceProvider` implementations. Keep cached balance operational-only and require freshness/health gates; do not treat it as customer balance authority or automatic provider funding.
