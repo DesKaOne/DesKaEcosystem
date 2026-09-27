@@ -631,7 +631,8 @@ func TestCommitFinalizedBlockRejectsTransactionExecutionFailureWithoutMutation(t
 	validatorID := candidate.Header.Proposer
 	validators, err := consensus.NewValidatorSet([][]byte{validatorID}); if err != nil { t.Fatal(err) }
 	power, err := consensus.NewVotingPowerSet([]consensus.ValidatorVotingPower{{ValidatorID: validatorID, Power: 1}}); if err != nil { t.Fatal(err) }
-	vote := consensus.Message{ProtocolVersion: devnet.ProtocolVersion, ChainID: devnet.ChainID, Epoch: 1, Height: 0, Round: 0, Sender: validatorID, Type: consensus.MessageTypeVote, Payload: payload[:]}
+	vote := consensus.Message{ProtocolVersion: devnet.ProtocolVersion, ChainID: devnet.ChainID, Epoch: 1, Height: 0, Round: 0, Sender: validatorID, Type: consensus.MessageTypePrecommit, Payload: payload[:]}
+	vote, err = vote.Sign(mustTestSigner(t, 23)); if err != nil { t.Fatal(err) }
 	certificate, err := consensus.NewFinalityCertificate(ctx.State, validators, power, consensus.QuorumThreshold{Numerator: 1, Denominator: 1}, payload[:], []consensus.Message{vote}); if err != nil { t.Fatal(err) }
 	beforeHead, beforeHash, beforeRoot := n.Head, n.HeadHash, n.State.Root()
 	if err := n.CommitFinalizedBlock(ctx, candidate, certificate, validators, power, validatorResolver, senderResolver); err == nil { t.Fatal("expected transaction execution failure") }
