@@ -1354,6 +1354,10 @@ func TestServiceRollbackDoesNotCompleteCatalogBeforeSuccessfulStart(t *testing.T
 
 
 
+type runtimeTypedShutdownError struct{ stage string }
+
+func (e *runtimeTypedShutdownError) Error() string { return "runtime shutdown " + e.stage + " error" }
+
 type orderedCloseErrorDB struct {
 	name string
 	order *[]string
