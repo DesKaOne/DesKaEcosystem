@@ -1,7 +1,6 @@
 package node
 
 import (
-	"bytes"
 	"errors"
 	"reflect"
 	"testing"
