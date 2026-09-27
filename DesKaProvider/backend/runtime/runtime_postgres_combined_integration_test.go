@@ -23,8 +23,10 @@ func postgresSchemaDSN(t *testing.T, dsn, schema string) string {
         t.Skip("DESKAPROVIDER_POSTGRES_DSN must be a PostgreSQL URL for runtime schema-isolated integration")
     }
     query := parsed.Query()
-    query.Set("options", "-c search_path="+schema)
+    query.Del("options")
     parsed.RawQuery = query.Encode()
+    if parsed.RawQuery != "" { parsed.RawQuery += "&" }
+    parsed.RawQuery += "options=-c%20search_path%3D" + url.QueryEscape(schema)
     return parsed.String()
 }
 
