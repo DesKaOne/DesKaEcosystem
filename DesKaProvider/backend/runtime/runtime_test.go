@@ -1022,7 +1022,7 @@ type rollbackOrderDB struct {
 
 func (db *rollbackOrderDB) Close() error {
 	if db.service != nil && db.service.balanceLifecycle != nil {
-		db.workerWasRunningAtClose = db.service.balanceLifecycle.Shutdown(context.Background()) != nil
+		db.workerWasRunningAtClose = db.service.balanceLifecycle.Running()
 	}
 	db.closed = true
 	return nil
