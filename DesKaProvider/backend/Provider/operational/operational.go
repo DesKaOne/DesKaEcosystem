@@ -81,10 +81,21 @@ func NewSyncService(registry *provider.Registry, store Store, currency string, f
 }
 
 func (s *SyncService) SyncProvider(ctx context.Context, name string) (Snapshot, error) {
-	p, err := s.Registry.Get(name)
-	if err != nil { return Snapshot{}, err }
-	balanceProvider, ok := p.(provider.BalanceProvider)
-	if !ok { return Snapshot{}, provider.ErrUnsupportedOperation }
+	var balanceProvider provider.BalanceProvider
+	if implementation, err := s.Registry.GetCapabilityProvider(name, provider.CapabilityBalance); err == nil {
+		var ok bool
+		balanceProvider, ok = implementation.(provider.BalanceProvider)
+		if !ok { return Snapshot{}, provider.ErrUnsupportedOperation }
+	} else {
+		// Compatibility path for legacy PPOBProvider registrations that already
+		// implement BalanceProvider. New partial capability adapters should use
+		// the explicit capability registry boundary above.
+		p, getErr := s.Registry.Get(name)
+		if getErr != nil { return Snapshot{}, getErr }
+		var ok bool
+		balanceProvider, ok = p.(provider.BalanceProvider)
+		if !ok { return Snapshot{}, provider.ErrUnsupportedOperation }
+	}
 	now := s.Now()
 	previous, _ := s.Store.Get(name)
 	balance, err := balanceProvider.GetBalance(ctx)
