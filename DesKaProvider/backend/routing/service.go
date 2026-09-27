@@ -142,15 +142,31 @@ func (s *Service) Purchase(ctx context.Context, req PurchaseRequest) (PurchaseEx
 		}
 	}
 
+	// Resolve durable state before routing or provider submission. A restart
+	// or another service instance may already own this reference.
+	existing, found, readErr := getTransactionContextE(ctx, s.Store, req.ReferenceID)
+	if readErr != nil {
+		err := fmt.Errorf("load existing transaction before submission: %w", readErr)
+		s.finishPurchase(call, PurchaseExecution{}, err)
+		return PurchaseExecution{}, err
+	}
+	if found {
+		if existing.Request != req {
+			s.finishPurchase(call, PurchaseExecution{}, ErrReferenceConflict)
+			return PurchaseExecution{}, ErrReferenceConflict
+		}
+		s.finishPurchase(call, existing.Execution, nil)
+		return existing.Execution, nil
+	}
+
 	providerName, err := s.selectProvider(ctx, req)
 	if err != nil {
 		s.finishPurchase(call, PurchaseExecution{}, err)
 		return PurchaseExecution{}, err
 	}
 
-	// Persist the selected provider and a pending state before the external
-	// submission. A crash after this point must recover to reconciliation,
-	// not silently create a second provider submission.
+	// Atomically create the durable pending state. Only the service instance
+	// that creates the row is authorized to submit to the external provider.
 	pending := PurchaseExecution{
 		ProviderName: providerName,
 		Result: provider.PurchaseResult{
@@ -160,10 +176,19 @@ func (s *Service) Purchase(ctx context.Context, req PurchaseRequest) (PurchaseEx
 			Status:      provider.StatusPending,
 		},
 	}
-	if err := putTransactionContext(ctx, s.Store, TransactionState{Request: req, Execution: pending}); err != nil {
-		err = fmt.Errorf("persist pending transaction state: %w", err)
-		s.finishPurchase(call, pending, err)
-		return pending, err
+	claimed, created, err := createTransactionIfAbsentContext(ctx, s.Store, TransactionState{Request: req, Execution: pending})
+	if err != nil {
+		err = fmt.Errorf("create pending transaction state: %w", err)
+		s.finishPurchase(call, PurchaseExecution{}, err)
+		return PurchaseExecution{}, err
+	}
+	if !created {
+		if claimed.Request != req {
+			s.finishPurchase(call, PurchaseExecution{}, ErrReferenceConflict)
+			return PurchaseExecution{}, ErrReferenceConflict
+		}
+		s.finishPurchase(call, claimed.Execution, nil)
+		return claimed.Execution, nil
 	}
 	s.mu.Lock()
 	call.result = pending
@@ -575,6 +600,14 @@ func putTransactionContext(ctx context.Context, store TransactionStore, state Tr
 		return scoped.PutContext(ctx, state)
 	}
 	return store.Put(state)
+}
+
+func createTransactionIfAbsentContext(ctx context.Context, store TransactionStore, state TransactionState) (TransactionState, bool, error) {
+	scoped, ok := store.(CreateIfAbsentTransactionStore)
+	if !ok {
+		return TransactionState{}, false, errors.New("transaction store does not support atomic create-if-absent")
+	}
+	return scoped.CreateIfAbsentContext(ctx, state)
 }
 
 
