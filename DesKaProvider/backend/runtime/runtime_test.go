@@ -2003,6 +2003,44 @@ func TestServiceBalanceStartFailureDoesNotCompleteUnstartedLifecycles(t *testing
 	}
 }
 
+func TestServiceBalanceStartFailurePreservesOwnershipCleanupErrorIdentity(t *testing.T) {
+	service := newRuntimeTestService(t)
+	service.catalogSync = nil
+	service.catalogLifecycle = newCatalogWorkerLifecycle()
+
+	balanceStartErr := errors.New("injected balance start failure")
+	transactionCleanupErr := errors.New("transaction cleanup after balance start failure")
+	tx := &closeErrorDB{err: transactionCleanupErr}
+	service.databaseOwnership = newRuntimeDatabaseOwnership(tx, nil)
+	service.databaseOwnership.transferToService()
+	service.balanceStart = func(context.Context) error {
+		return balanceStartErr
+	}
+
+	runErr := service.Run(context.Background())
+	if !errors.Is(runErr, balanceStartErr) {
+		t.Fatalf("expected balance start error identity, got %v", runErr)
+	}
+	if !errors.Is(runErr, transactionCleanupErr) {
+		t.Fatalf("expected ownership cleanup error identity, got %v", runErr)
+	}
+	if tx.closeCount != 1 {
+		t.Fatalf("expected ownership cleanup exactly once after startup failure, got %d", tx.closeCount)
+	}
+	if !service.databaseOwnership.isClosed() {
+		t.Fatal("expected ownership generation to be closed after startup failure")
+	}
+
+	closeErr := service.Close()
+	if !errors.Is(closeErr, transactionCleanupErr) {
+		t.Fatalf("expected terminal Close to preserve cleanup error identity, got %v", closeErr)
+	}
+	if tx.closeCount != 1 {
+		t.Fatalf("repeated Close must not double-close startup-failure ownership, got %d", tx.closeCount)
+	}
+}
+
+
 
 func TestServiceRunShutdownSerializesConcurrentCloseDuringBalanceCompletion(t *testing.T) {
 	registry := provider.NewRegistry()
