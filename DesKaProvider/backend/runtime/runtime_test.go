@@ -1273,6 +1273,22 @@ func TestServiceRollbackUsesSingleCatalogShutdownCompletionBoundary(t *testing.T
 }
 
 
+
+type orderedCloseErrorDB struct {
+	name string
+	order *[]string
+	err error
+	closeCount int
+}
+
+func (db *orderedCloseErrorDB) Close() error {
+	db.closeCount++
+	if db.order != nil {
+		*db.order = append(*db.order, db.name)
+	}
+	return db.err
+}
+
 func TestServiceRunShutdownPreservesCompletionOrderingAndAllErrorIdentity(t *testing.T) {
 	registry := provider.NewRegistry()
 	if err := registry.Register("mock", &balanceMock{Provider: mock.New(mock.Config{}), balance: 100000}); err != nil {
