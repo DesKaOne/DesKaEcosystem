@@ -9214,3 +9214,46 @@ The database ownership guard remains single-shot, and repeated cleanup returns t
 **#186 — Runtime Shutdown Re-entry & Ownership State Convergence**
 
 Focus next on repeated/concurrent shutdown entry after partial lifecycle completion, ensuring ownership state, lifecycle state, and recorded cleanup errors converge deterministically without reopening or resubmitting provider transactions.
+
+
+## 186. Milestone Update — Runtime Shutdown Re-entry & Ownership State Convergence
+
+**Date:** 2026-09-27
+
+Completed:
+
+- identified the partial-shutdown state where catalog lifecycle completion can report an error while the catalog lifecycle remains active;
+- added an explicit `ErrServiceLifecycleActive` runtime boundary for re-entry attempts while an active catalog lifecycle remains after partial shutdown;
+- preserved the existing `operational.ErrSyncWorkerRunning` behavior for re-entry while the balance lifecycle is already active;
+- ensured rejected re-entry does not restart the balance worker and does not close runtime database ownership;
+- added regression coverage for partial catalog shutdown followed by Run re-entry, manual lifecycle convergence, and final idempotent Service.Close();
+- verified that database ownership remains open until lifecycle state converges to stopped;
+- preserved single-shot database cleanup and historical cleanup-error semantics;
+- no provider retry/failover, transaction resubmission, ledger mutation, treasury movement, provider funding, or synthetic transaction/audit reconstruction was introduced.
+
+### Verification
+
+- Runtime correction commit: `3097d0bf48d58763ef6e51a6b0bad6e0382191e1`.
+- Regression test commit: `259889739a7bca8f5ee9aa216bd5732d75a05caa`.
+- CI #1831 on exact code/test HEAD: **GREEN**.
+  - `go test ./...` — PASS
+  - `go vet ./...` — PASS
+  - PostgreSQL service-backed integration tests — PASS
+  - `go test -race ./...` — PASS
+
+### Safety Boundary
+
+The runtime now treats an active catalog lifecycle after partial shutdown as an ownership-state boundary. A new Run attempt is rejected before starting another balance lifecycle or releasing database ownership. Database closure remains conditional on lifecycle completion and remains single-shot.
+
+### Known Limitations
+
+- the production `catalogWorkerLifecycle.Shutdown()` contract remains void-returning; partial completion error behavior is still exercised through the internal runtime test seam;
+- PostgreSQL integration coverage requires `DESKAPROVIDER_POSTGRES_DSN` and is skipped when unavailable;
+- database close remains non-context-aware;
+- this milestone does not introduce a new provider or transaction recovery authority.
+
+### Next Milestone
+
+**#187 — Runtime Shutdown Re-entry After Ownership Cleanup Failure**
+
+Focus next on repeated Run/Close behavior when lifecycle completion succeeds but database ownership cleanup records an error, ensuring closed-state rejection, stable cleanup-error identity, and no lifecycle restart or double-close.
