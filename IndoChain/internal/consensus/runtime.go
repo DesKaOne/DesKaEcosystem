@@ -93,7 +93,8 @@ func NewValidatorRuntime(config RuntimeConfig) (*ValidatorRuntime, error) {
 }
 
 func (r *ValidatorRuntime) State() RoundState { return r.state }
-\nfunc (r *ValidatorRuntime) Proposal() []byte {
+
+func (r *ValidatorRuntime) Proposal() []byte {
 	if r == nil { return nil }
 	return append([]byte(nil), r.proposal...)
 }
