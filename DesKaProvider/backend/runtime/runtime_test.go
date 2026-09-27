@@ -2973,3 +2973,56 @@ func newRuntimeTestService(t *testing.T) *Service {
 	}
 	return service
 }
+
+
+func TestServiceRepeatedLifecycleCompletionPreservesOrderingAndSingleClose(t *testing.T) {
+	service := newRuntimeTestService(t)
+	service.catalogSync, _ = catalog.NewSyncService(
+		&provider.Registry{},
+		catalog.NewMemoryStore(),
+	)
+	service.catalogLifecycle = newCatalogWorkerLifecycle()
+
+	balanceErr := errors.New("repeated balance shutdown error")
+	catalogErr := errors.New("repeated catalog shutdown error")
+	balanceCalls := 0
+	catalogCalls := 0
+
+	service.balanceShutdown = func(context.Context) error {
+		balanceCalls++
+		service.balanceLifecycle.Shutdown(context.Background())
+		return balanceErr
+	}
+	service.catalogShutdown = func() error {
+		catalogCalls++
+		service.catalogLifecycle.Shutdown()
+		return catalogErr
+	}
+
+	if err := service.balanceLifecycle.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.catalogLifecycle.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := service.shutdownBalanceWorker(context.Background()); !errors.Is(err, balanceErr) {
+		t.Fatalf("expected first balance completion error, got %v", err)
+	}
+	if err := service.shutdownBalanceWorker(context.Background()); !errors.Is(err, balanceErr) {
+		t.Fatalf("expected repeated balance completion to preserve error identity, got %v", err)
+	}
+	if err := service.shutdownCatalogLifecycle(); !errors.Is(err, catalogErr) {
+		t.Fatalf("expected first catalog completion error, got %v", err)
+	}
+	if err := service.shutdownCatalogLifecycle(); !errors.Is(err, catalogErr) {
+		t.Fatalf("expected repeated catalog completion to preserve error identity, got %v", err)
+	}
+
+	if balanceCalls != 2 || catalogCalls != 2 {
+		t.Fatalf("expected explicit completion seams to remain deterministic, got balance=%d catalog=%d", balanceCalls, catalogCalls)
+	}
+	if service.balanceLifecycle.Running() || service.catalogLifecycle.Running() {
+		t.Fatal("expected repeated completion to leave both lifecycles stopped")
+	}
+}
