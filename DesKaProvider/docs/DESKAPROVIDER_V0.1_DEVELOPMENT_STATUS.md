@@ -11487,3 +11487,67 @@ No architecture document update is required. Milestone #215 strengthens the exis
 ### Next Milestone
 
 Continue with the next concrete persistence/recovery or routing-safety gap from the actual implementation, prioritizing stale-state/error observability and recovery convergence before introducing new provider or business integration.
+
+
+## 216. Milestone Update — Catalog Sync Error Observability
+
+**Date:** 2026-09-28
+
+Completed:
+
+- identified that catalog.SyncService.SyncAll already returned per-provider synchronization errors, but runtime.Service discarded those results, leaving catalog failures observable only as stale-cache/routing effects;
+- added provider-scoped SyncStatus state with:
+  - LastAttemptAt;
+  - LastSuccessAt;
+  - LastError;
+  - ConsecutiveFailures;
+- synchronization attempts now record deterministic failure state for provider lookup, provider catalog fetch, and catalog persistence failures;
+- successful synchronization clears the previous error and failure counter while recording the successful synchronization timestamp;
+- exposed sorted catalog synchronization status snapshots through SyncService.Status / Statuses;
+- exposed the same operational status through runtime.Service.CatalogSyncStatuses;
+- added deterministic failure-to-recovery coverage and runtime exposure coverage;
+- preserved stale-state safety: catalog data remains an operational cache and routing freshness checks remain the authority for whether a recovered/stale catalog may participate in provider selection;
+- no provider execution, transaction retry, failover, resubmission, ledger mutation, customer-balance mutation, treasury movement, provider funding, or financial authority was introduced.
+
+### Verification
+
+- final implementation/test HEAD: `afa740644064cd5361f63c0e20d078d96077286f`;
+- CI #2103 / run `36338819301`: **GREEN** for exact HEAD `afa740644064cd5361f63c0e20d078d96077286f`;
+- CI #2102 / run `36338817043`: **GREEN** for exact HEAD `afa740644064cd5361f63c0e20d078d96077286f`;
+- final test gate: **success**;
+- final vet gate: **success**;
+- final PostgreSQL-backed integration path: **success**;
+- final race gate: **success**;
+- an intermediate CI run #2101 failed only because the newly added catalog regression test lacked the errors import; the import was corrected before the final exact HEAD verification, and both final push/PR runs are green.
+
+### Persistence / Recovery / Observability Invariants
+
+- catalog synchronization failure does not erase the last persisted snapshot;
+- catalog synchronization failure is now retained as structured provider-scoped operational status;
+- successful recovery clears the provider's previous synchronization error and failure counter;
+- stale catalog data remains non-routeable when CatalogMaxAge is exceeded;
+- missing catalog data remains non-routeable;
+- recovered catalog data remains operational cache data and is never financial authority;
+- synchronization status does not authorize provider routing, failover, transaction retry, transaction resubmission, or ledger mutation;
+- runtime lifecycle shutdown behavior remains unchanged and still waits for active catalog work before owned database cleanup.
+
+### Safety Boundary
+
+This milestone adds operational observability for catalog synchronization and recovery convergence. It does not turn synchronization errors into transaction errors, does not authorize financial retries/failover, and does not change the routing eligibility rules already enforced by provider state, operational health/freshness, and catalog freshness.
+
+### Known Limitations
+
+- synchronization status is process-local and is not yet persisted as a dedicated operational event/history stream;
+- status retention is current-state only; historical error timelines are not stored;
+- catalog retry cadence remains the configured CatalogSyncInterval and is not backoff-aware;
+- database close remains non-context-aware;
+- PostgreSQL integration coverage requires DESKAPROVIDER_POSTGRES_DSN and is skipped when unavailable;
+- ownership-generation state remains lifecycle bookkeeping, not a recovery journal or transaction authority.
+
+### Architecture Impact
+
+No architecture document update is required. Milestone #216 closes the previously documented catalog error-observability gap while preserving the existing stale-state and routing-safety boundaries.
+
+### Next Milestone
+
+Continue with the next concrete recovery-convergence or routing-safety gap from the actual implementation, prioritizing operational-state durability/observability and stale-state handling before introducing new provider or business integration.
