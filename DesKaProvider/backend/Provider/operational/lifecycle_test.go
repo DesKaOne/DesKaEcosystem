@@ -120,6 +120,21 @@ func TestSyncWorkerLifecycleRecoversPersistedSnapshotAcrossRestart(t *testing.T)
 	if err := first.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
+
+	deadline := time.After(time.Second)
+	for {
+		persisted, ok := store.Get("mock")
+		if ok && persisted.Balance == 2200000 && persisted.Health == HealthHealthy {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("owned worker did not persist its immediate snapshot")
+		default:
+			time.Sleep(time.Millisecond)
+		}
+	}
+
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), time.Second)
 	if err := first.Shutdown(shutdownCtx); err != nil {
 		cancel()
@@ -155,7 +170,7 @@ func TestSyncWorkerLifecycleRecoversPersistedSnapshotAcrossRestart(t *testing.T)
 		t.Fatal(err)
 	}
 
-	deadline := time.After(time.Second)
+	deadline = time.After(time.Second)
 	for {
 		snapshot, ok := restartedStore.Get("mock")
 		if ok && snapshot.Balance == 3300000 && snapshot.Health == HealthHealthy {
