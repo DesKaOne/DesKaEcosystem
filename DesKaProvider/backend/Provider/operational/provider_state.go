@@ -14,14 +14,14 @@ const (
 	LifecycleEnabled  Lifecycle = "enabled"
 )
 
-type Capability string
+type Capability = provider.Capability
 
 const (
-	CapabilityPayment  Capability = "payment"
-	CapabilityPPOB     Capability = "ppob"
-	CapabilityPayout   Capability = "payout"
-	CapabilityBalance  Capability = "balance"
-	CapabilityWebhook  Capability = "webhook"
+	CapabilityPayment = provider.CapabilityPayment
+	CapabilityPPOB    = provider.CapabilityPPOB
+	CapabilityPayout  = provider.CapabilityPayout
+	CapabilityBalance = provider.CapabilityBalance
+	CapabilityWebhook = provider.CapabilityWebhook
 )
 
 type ProviderState struct {
