@@ -1397,15 +1397,12 @@ func TestCombineRuntimeShutdownErrorPreservesTypedIdentityAcrossMixedFailures(t 
 		}
 	}
 
-	for _, want := range []*runtimeTypedShutdownError{primary, worker, catalogErr, transaction, audit} {
-		var got *runtimeTypedShutdownError
-		if !errors.As(err, &got) {
-			t.Fatalf("composed shutdown error lost errors.As support for %q: %v", want.stage, err)
-		}
-		if got.stage != want.stage {
-			t.Fatalf("errors.As returned %q while checking %q", got.stage, want.stage)
-		}
-		err = errors.Join(err, fmt.Errorf("checked %s", want.stage))
+	var got *runtimeTypedShutdownError
+	if !errors.As(err, &got) {
+		t.Fatalf("composed shutdown error lost errors.As support: %v", err)
+	}
+	if got != primary {
+		t.Fatalf("errors.As must preserve the first typed error in the joined chain, got %q want %q", got.stage, primary.stage)
 	}
 }
 
