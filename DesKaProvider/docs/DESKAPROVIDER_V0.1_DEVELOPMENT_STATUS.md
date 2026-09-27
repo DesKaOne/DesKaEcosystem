@@ -10903,3 +10903,56 @@ No architecture document update is required. Milestone #205 validates an existin
 ### Next Milestone
 
 Continue from the runtime lifecycle/reliability status with the next concrete boundary gap, prioritizing deterministic behavior around initialization, shutdown, persistence, or routing only where a currently observable invariant is not yet locked by tests.
+
+
+## 206. Milestone Update — Runtime Initialization Deadline Boundary
+
+**Date:** 2026-09-27
+
+Completed:
+
+- added deterministic coverage for a context deadline being observed after runtime database ownership has been acquired but before ownership transfer;
+- verified deadline expiration is surfaced as `context.DeadlineExceeded` rather than allowing a partially initialized Service to escape;
+- verified the captured partial database generation is closed before deadline-exceeded initialization returns;
+- verified a subsequent fresh initialization succeeds with an open, independent generation after the deadline-exceeded attempt;
+- verified the fresh generation reaches its own terminal Close without inheriting deadline or cleanup state from the failed generation;
+- retained the existing production `checkRuntimeInitializationContext` boundary because the implementation already returns `ctx.Err()` immediately before ownership transfer;
+- no production runtime, persistence, provider, retry/failover, transaction authority, or financial authorization behavior was broadened.
+
+### Verification
+
+- test implementation commit: `10e59d69519004ae91caee0fbf9261313bc01d84`;
+- import-format follow-up commit: `6dc9177cb93d8e934cf540f9cde03fcb639f67e4`;
+- final CI #2032 / run `36332676185` is **GREEN** for exact HEAD `6dc9177cb93d8e934cf540f9cde03fcb639f67e4`;
+- `go test ./...` — PASS;
+- `go vet ./...` — PASS;
+- PostgreSQL service-backed integration tests — PASS;
+- `go test -race ./...` — PASS.
+
+### Context / Ownership Invariants
+
+- a deadline-exceeded initialization context cannot cross the ownership-transfer boundary into a returned Service;
+- deadline expiration observed after database acquisition still triggers cleanup of untransferred ownership;
+- the deadline error identity remains `context.DeadlineExceeded`;
+- partial cleanup remains single-shot through the existing ownership guard;
+- a subsequent fresh generation is independent and does not inherit deadline or cleanup state from the failed generation;
+- initialization deadline handling remains a lifecycle control outcome and cannot authorize provider retry, failover, resubmission, or financial mutation.
+
+### Safety Boundary
+
+This milestone remains limited to initialization deadline/error identity, ownership cleanup, and fresh-generation isolation. It adds no provider retry/failover, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, provider funding, or financial authorization.
+
+### Known Limitations
+
+- the deadline transition is coordinated by a deterministic test context rather than waiting on wall-clock expiry, so the test does not claim coverage of every timer, scheduler, or PostgreSQL wire-level timeout variant;
+- database close remains non-context-aware;
+- PostgreSQL integration coverage requires `DESKAPROVIDER_POSTGRES_DSN` and is skipped when unavailable;
+- ownership-generation state remains lifecycle bookkeeping, not a recovery journal or transaction authority.
+
+### Architecture Impact
+
+No architecture document update is required. Milestone #206 validates the existing initialization context error boundary for deadline expiration without changing the documented provider, transaction, financial, or lifecycle authority model.
+
+### Next Milestone
+
+Continue from the runtime lifecycle/reliability status with the next concrete boundary gap, prioritizing deterministic behavior around initialization, shutdown, persistence, or routing only where a currently observable invariant is not yet locked by tests.
