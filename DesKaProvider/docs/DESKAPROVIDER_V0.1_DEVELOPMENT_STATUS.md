@@ -11810,3 +11810,68 @@ No architecture document update is required. Milestone #220 strengthens the exis
 ### Next Milestone
 
 Continue with the next concrete shutdown/recovery-convergence or routing-safety gap from the actual implementation, prioritizing lifecycle convergence and durable operational-state correctness before introducing new provider or business integration.
+
+## 221. Milestone Update — Operational Balance Sync Cancellation Convergence
+
+**Date:** 2026-09-28
+
+Completed:
+
+- identified and closed the concrete lifecycle-convergence gap left after Milestone #219: catalog synchronization already stopped provider progression after cancellation, while operational balance synchronization still iterated to later providers after the context became canceled;
+- updated operational SyncService.SyncAll to check the context before each provider attempt and immediately after each provider synchronization returns;
+- cancellation/deadline now prevents advancement to subsequent operational balance providers, matching the established catalog synchronization convergence rule;
+- added deterministic regression coverage proving that cancellation raised during the first balance-provider attempt prevents the second provider from being attempted;
+- updated the operational lifecycle restart/recovery regression so it waits for the initial durable snapshot before requesting shutdown, making the test express the actual asynchronous worker contract rather than relying on scheduling luck;
+- preserved the existing distinction between lifecycle cancellation and provider/financial failure: cancellation stops operational synchronization progression but does not authorize retry, failover, transaction resubmission, or financial state mutation;
+- no provider-specific API behavior, transaction retry, financial retry, failover, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, provider funding, or financial authority was introduced.
+
+### Verification
+
+- implementation commit: 49aaea91c852d2e54af06457ff99ae6e60015915;
+- cancellation regression-test commit: 2305f9388c05c7294266e4fa5195c8ade63f9b15;
+- intermediate exact HEAD 2305f9388c05c7294266e4fa5195c8ade63f9b15 exposed an existing asynchronous lifecycle-test assumption: TestSyncWorkerLifecycleRecoversPersistedSnapshotAcrossRestart could request shutdown before the worker's immediate sync had persisted its first snapshot;
+- CI push run 36348852080 and pull-request run 36348854753 were red on that intermediate HEAD because the restart test expected persisted state before waiting for the asynchronous initial sync;
+- root cause was confined to the test's timing assumption, not a production persistence failure;
+- corrected lifecycle regression-test commit: 85ed0d5055078d0dd9b68eb0e5f0af28027d6928;
+- final push CI run 36348930804: **GREEN** for exact HEAD 85ed0d5055078d0dd9b68eb0e5f0af28027d6928;
+- final pull-request CI run 36348934489: **GREEN** for exact HEAD 85ed0d5055078d0dd9b68eb0e5f0af28027d6928;
+- final test gate: success;
+- final vet gate: success;
+- final race gate: success;
+- PostgreSQL-backed integration path: success.
+
+### Persistence / Recovery / Lifecycle Invariants
+
+- operational balance synchronization observes cancellation/deadline before starting each provider attempt;
+- cancellation observed after a provider attempt prevents advancement to later providers;
+- operational worker shutdown can therefore converge without starting additional provider balance work after cancellation is already known;
+- durable operational snapshots remain persistence/recovery data and are not financial authority;
+- the lifecycle restart test now establishes the persisted snapshot before shutdown, preserving deterministic evidence that recovery reads durable operational state;
+- provider balance synchronization failure semantics remain separate from lifecycle cancellation semantics;
+- cancellation does not authorize provider retry, transaction retry, failover, resubmission, or ledger mutation;
+- catalog synchronization retains its existing cancellation convergence and deterministic provider ordering;
+- status-persistence health remains operational observability only;
+- runtime shutdown still waits for an active balance worker when its shutdown context permits completion and avoids closing owned databases while lifecycle ownership remains active.
+
+### Safety Boundary
+
+This milestone strengthens operational worker shutdown/convergence only. A canceled or deadline-exceeded operational synchronization stops progression through providers; it does not reinterpret cancellation as a financial transaction failure and does not create any transaction retry or resubmission authority.
+
+### Known Limitations
+
+- cancellation remains cooperative and depends on the active provider implementation honoring the supplied context;
+- a provider call that does not return after cancellation can still delay worker shutdown until the runtime shutdown context expires;
+- operational balance synchronization retry cadence remains the configured interval and is not backoff-aware;
+- operational snapshots remain current-state recovery data rather than a historical event stream;
+- status persistence remains best-effort after in-memory operational state is updated;
+- database close remains non-context-aware;
+- PostgreSQL integration coverage requires DESKAPROVIDER_POSTGRES_DSN and is skipped when unavailable;
+- ownership-generation state remains lifecycle bookkeeping, not a recovery journal or transaction authority.
+
+### Architecture Impact
+
+No architecture document update is required. Milestone #221 aligns operational balance synchronization with the established catalog cancellation-convergence boundary while preserving provider, persistence, routing, runtime lifecycle, transaction, and financial authority boundaries.
+
+### Next Milestone
+
+Continue with the next concrete shutdown/recovery-convergence or durable operational-state gap from the actual implementation, prioritizing lifecycle convergence, persistence durability, and stale-state safety before introducing new provider or business integration.
