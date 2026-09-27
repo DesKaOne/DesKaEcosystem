@@ -57,9 +57,6 @@ func (s *JSONFileStore) GetWithError(name string) (Snapshot, bool, error) {
 	return snapshot, found, nil
 }
 
-func (s *JSONFileStore) GetWithError(name string) (Snapshot, bool, error) {
-	return s.Get(name)
-}
 
 func (s *JSONFileStore) All() []Snapshot {
 	s.mu.RLock()
