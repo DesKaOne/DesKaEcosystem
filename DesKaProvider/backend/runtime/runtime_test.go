@@ -4872,7 +4872,11 @@ func TestServiceRunShutdownErrorOwnershipBoundaryMatrixAndFreshGenerationReuse(t
 			audit := &orderedCloseErrorDB{name: "audit", order: &order, err: tc.auditErr}
 			ownership := newRuntimeDatabaseOwnership(tx, audit)
 			ownership.transferToService()
-			service.databaseOwnership = ownership
+			if i == 0 {
+				service.databaseOwnership = ownership
+			} else if err := service.replaceDatabaseOwnership(ownership); err != nil {
+				t.Fatalf("cycle %d ownership replacement failed: %v", i+1, err)
+			}
 
 			service.balanceStart = func(context.Context) error {
 				return service.balanceLifecycle.Start(context.Background())
@@ -5096,8 +5100,6 @@ func TestServiceRunRepeatedReuseCyclesIsolateShutdownErrors(t *testing.T) {
 			if tx.closeCount != 1 || audit.closeCount != 1 {
 				t.Fatalf("cycle %d ownership cleanup was not single-shot: tx=%d audit=%d", i+1, tx.closeCount, audit.closeCount)
 			}
-			expectedOrder := []string{"cycle-%d-transaction", "cycle-%d-audit"}
-			_ = expectedOrder
 			if !reflect.DeepEqual(order, []string{fmt.Sprintf("cycle-%d-transaction", i+1), fmt.Sprintf("cycle-%d-audit", i+1)}) {
 				t.Fatalf("cycle %d cleanup order changed: %v", i+1, order)
 			}
