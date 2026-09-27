@@ -104,6 +104,11 @@ func (r *ValidatorRuntime) Validators() ValidatorSet {
 	return cloneValidatorSet(r.validators)
 }
 
+func (r *ValidatorRuntime) PrecommitVotes() []Message {
+	if r == nil || r.precommits == nil { return nil }
+	return cloneVotes(r.precommits.Votes)
+}
+
 
 // AdvanceRound moves the runtime to a strictly newer round after a timeout
 // or round-change event. The current proposal and round-local votes are reset,
