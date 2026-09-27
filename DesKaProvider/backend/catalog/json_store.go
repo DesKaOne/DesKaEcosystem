@@ -90,5 +90,13 @@ func (s *JSONFileStore) persistLocked(data map[string]Snapshot) error {
 	if _, err := tmp.Write(payload); err != nil { tmp.Close(); return err }
 	if err := tmp.Sync(); err != nil { tmp.Close(); return err }
 	if err := tmp.Close(); err != nil { return err }
-	return os.Rename(tmpName,s.path)
+	if err := os.Rename(tmpName, s.path); err != nil { return err }
+	return syncDirectory(filepath.Dir(s.path))
+}
+
+func syncDirectory(dir string) error {
+	f, err := os.Open(dir)
+	if err != nil { return err }
+	defer f.Close()
+	return f.Sync()
 }
