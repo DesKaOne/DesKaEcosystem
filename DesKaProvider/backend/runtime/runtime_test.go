@@ -2772,3 +2772,101 @@ func TestServiceRunShutdownErrorCompositionPreservesPrimaryThenLifecycleThenData
 		}
 	}
 }
+
+
+func TestServiceRecordedCleanupErrorPersistsAcrossRepeatedCloseAndReentry(t *testing.T) {
+	t.Run("direct close", func(t *testing.T) {
+		cleanupErr := errors.New("persistent direct cleanup failure")
+		registry := provider.NewRegistry()
+		if err := registry.Register("mock", &balanceMock{Provider: mock.New(mock.Config{}), balance: 100000}); err != nil {
+			t.Fatal(err)
+		}
+		syncService, err := operational.NewSyncService(registry, operational.NewMemoryStore(), "IDR", 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		service, err := New(syncService, time.Hour)
+		if err != nil {
+			t.Fatal(err)
+		}
+		db := &closeErrorDB{err: cleanupErr}
+		service.databaseOwnership = newRuntimeDatabaseOwnership(db, nil)
+		service.databaseOwnership.transferToService()
+
+		firstClose := service.Close()
+		secondClose := service.Close()
+		if firstClose == nil || secondClose == nil {
+			t.Fatal("expected both Close calls to return the recorded cleanup error")
+		}
+		if firstClose != secondClose {
+			t.Fatalf("expected repeated Close to return the same recorded error object, got first=%p second=%p", firstClose, secondClose)
+		}
+		if !errors.Is(firstClose, cleanupErr) || !errors.Is(secondClose, cleanupErr) {
+			t.Fatalf("expected repeated Close errors to preserve cleanup identity, first=%v second=%v", firstClose, secondClose)
+		}
+		if db.closeCount != 1 {
+			t.Fatalf("expected direct-close ownership cleanup exactly once, got %d", db.closeCount)
+		}
+
+		reentryErr := service.Run(context.Background())
+		if !errors.Is(reentryErr, ErrServiceClosed) {
+			t.Fatalf("expected closed-state re-entry rejection, got %v", reentryErr)
+		}
+		if errors.Is(reentryErr, cleanupErr) {
+			t.Fatalf("re-entry rejection must not replay recorded cleanup error: %v", reentryErr)
+		}
+	})
+
+	t.Run("run-owned shutdown", func(t *testing.T) {
+		cleanupErr := errors.New("persistent run-owned cleanup failure")
+		registry := provider.NewRegistry()
+		if err := registry.Register("mock", &balanceMock{Provider: mock.New(mock.Config{}), balance: 100000}); err != nil {
+			t.Fatal(err)
+		}
+		syncService, err := operational.NewSyncService(registry, operational.NewMemoryStore(), "IDR", 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		service, err := New(syncService, time.Hour)
+		if err != nil {
+			t.Fatal(err)
+		}
+		service.catalogSync = nil
+		db := &closeErrorDB{err: cleanupErr}
+		service.databaseOwnership = newRuntimeDatabaseOwnership(db, nil)
+		service.databaseOwnership.transferToService()
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		runErr := service.Run(ctx)
+		if !errors.Is(runErr, context.Canceled) || !errors.Is(runErr, cleanupErr) {
+			t.Fatalf("expected Run to preserve primary and cleanup errors, got %v", runErr)
+		}
+
+		firstClose := service.Close()
+		secondClose := service.Close()
+		if firstClose == nil || secondClose == nil {
+			t.Fatal("expected repeated Close to return the recorded cleanup error")
+		}
+		if firstClose != secondClose {
+			t.Fatalf("expected repeated Close to return the same recorded error object, got first=%p second=%p", firstClose, secondClose)
+		}
+		if !errors.Is(firstClose, cleanupErr) || !errors.Is(secondClose, cleanupErr) {
+			t.Fatalf("expected repeated Close errors to preserve cleanup identity, first=%v second=%v", firstClose, secondClose)
+		}
+		if errors.Is(firstClose, context.Canceled) || errors.Is(secondClose, context.Canceled) {
+			t.Fatal("repeated Close must not replay the Run primary error")
+		}
+		if db.closeCount != 1 {
+			t.Fatalf("expected Run-owned cleanup exactly once, got %d", db.closeCount)
+		}
+
+		reentryErr := service.Run(context.Background())
+		if !errors.Is(reentryErr, ErrServiceClosed) {
+			t.Fatalf("expected closed-state re-entry rejection, got %v", reentryErr)
+		}
+		if errors.Is(reentryErr, cleanupErr) || errors.Is(reentryErr, context.Canceled) {
+			t.Fatalf("re-entry rejection must not replay historical shutdown errors: %v", reentryErr)
+		}
+	})
+}
