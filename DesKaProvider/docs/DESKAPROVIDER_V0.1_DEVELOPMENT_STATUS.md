@@ -9155,3 +9155,62 @@ This milestone is limited to lifecycle shutdown ordering, error identity/composi
 **#186 — Runtime Shutdown Ownership Boundary Under Repeated Run/Close Attempts**
 
 Focus next on repeated `Run()`/`Close()` attempts after partial and completed shutdown states, preserving `ErrServiceClosed`, single-shot database ownership cleanup, lifecycle idempotence, and historical error separation without introducing provider or transaction recovery behavior.
+
+
+## 185. Milestone Update — Runtime Shutdown Completion Ordering & Error Precedence Review
+
+**Date:** 2026-09-27
+
+Completed:
+
+- reviewed the runtime shutdown ordering contract across balance-worker completion, catalog completion, and owned database closure;
+- preserved the invariant that runtime database ownership is closed only after all lifecycle components owned by the current shutdown path are confirmed stopped;
+- added regression coverage for a catalog completion error that intentionally leaves the catalog lifecycle active;
+- verified that the primary cancellation error and catalog completion error remain observable while database cleanup is withheld;
+- verified that explicit `Service.Close()` also refuses to close active catalog-owned resources in this injected failure scenario;
+- preserved transaction-before-audit database cleanup ordering and single-shot ownership cleanup;
+- preserved repeated `Service.Close()` behavior and closed-state rejection semantics from the existing shutdown matrix;
+- no provider retry/failover, transaction resubmission, ledger mutation, treasury movement, provider funding, or synthetic transaction/audit reconstruction was introduced.
+
+### Safety Boundary
+
+The shutdown path treats lifecycle completion as a prerequisite for database ownership release. A lifecycle completion error does not by itself authorize database closure when the lifecycle remains active.
+
+The intended ordering remains:
+
+```
+balance lifecycle completion
+        ↓
+catalog lifecycle completion
+        ↓
+verify lifecycles stopped
+        ↓
+transaction database close
+        ↓
+audit database close
+```
+
+The database ownership guard remains single-shot, and repeated cleanup returns the recorded cleanup result without replaying lifecycle or primary shutdown errors.
+
+### Verification
+
+- Regression test commit: `706d0afac81870e3d9bd210bf965481c2c8dd9ea`.
+- CI #1825 on exact test HEAD: **GREEN**.
+  - `go test ./...` — PASS
+  - `go vet ./...` — PASS
+  - PostgreSQL service-backed integration tests — PASS
+  - `go test -race ./...` — PASS
+- Status documentation is updated in the follow-up commit and must itself pass the same CI gate before #185 is considered closed.
+
+### Known Limitations
+
+- the production catalog shutdown operation remains void-returning; completion-error behavior is still exercised through the internal runtime test seam;
+- the injected failure test intentionally models a lifecycle that reports a completion error without stopping, which is a safety-boundary test rather than a claim about a current production catalog failure mode;
+- database close remains non-context-aware;
+- PostgreSQL integration coverage requires `DESKAPROVIDER_POSTGRES_DSN` and is skipped when unavailable.
+
+### Next Milestone
+
+**#186 — Runtime Shutdown Re-entry & Ownership State Convergence**
+
+Focus next on repeated/concurrent shutdown entry after partial lifecycle completion, ensuring ownership state, lifecycle state, and recorded cleanup errors converge deterministically without reopening or resubmitting provider transactions.
