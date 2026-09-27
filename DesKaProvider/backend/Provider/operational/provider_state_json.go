@@ -42,5 +42,6 @@ func (s *JSONFileProviderStateStore) Save(states []ProviderState) error {
 	if err := tmp.Sync(); err != nil { return fmt.Errorf("sync provider state store: %w", err) }
 	if err := tmp.Close(); err != nil { return fmt.Errorf("close provider state store: %w", err) }
 	if err := os.Rename(tmpName, s.path); err != nil { return fmt.Errorf("replace provider state store: %w", err) }
+	if err := syncJSONStoreDirectory(dir); err != nil { return fmt.Errorf("sync provider state store directory: %w", err) }
 	return nil
 }
