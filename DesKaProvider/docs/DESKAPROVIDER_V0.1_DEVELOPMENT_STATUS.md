@@ -10290,4 +10290,67 @@ This milestone is limited to runtime ownership-generation replacement, lifecycle
 
 **#196 — Runtime Ownership Replacement Error Isolation**
 
-Focus next on replacement when the previous ownership generation itself returns cleanup errors: verify the fresh generation is not installed on partial/failed old-generation cleanup, old cleanup errors remain attributable to the old generation, and a later retry after convergence can install the fresh generation without cross-generation error leakage.
+Focus on replacement when the previous ownership generation itself returns cleanup errors: verify the fresh generation is not installed on failed old-generation cleanup, old cleanup errors remain attributable to the old generation, and a later retry after terminal convergence can install the fresh generation without cross-generation error leakage.
+
+## 196. Milestone Update — Runtime Ownership Replacement Error Isolation
+
+**Date:** 2026-09-27
+
+Completed:
+
+- preserved the existing production ownership-replacement implementation as the smallest safe design; no production lifecycle refactor was required;
+- added deterministic regression coverage for old-generation transaction cleanup errors;
+- added deterministic regression coverage for old-generation audit cleanup errors;
+- added deterministic coverage for transaction-success/audit-failure ordering, confirming transaction cleanup still occurs before audit cleanup;
+- verified a failed replacement does not install or touch the fresh ownership generation;
+- verified old-generation cleanup errors remain attributable to the old generation through the failed replacement result;
+- verified the old generation becomes terminal after its cleanup attempt and can be replaced on a later retry without double-close;
+- verified the fresh generation starts with no historical old-generation cleanup errors and remains open until its own terminal Close;
+- verified repeated replacement attempts and repeated Service.Close() do not double-close either generation;
+- added concurrent lifecycle/replacement coverage proving active balance or catalog lifecycle ownership rejects replacement and cannot be bypassed by concurrent callers;
+- verified fresh-generation terminal cleanup reports only fresh-generation cleanup errors;
+- no provider retry/failover, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, provider funding, or synthetic transaction/audit reconstruction was introduced.
+
+### Verification
+
+- Regression implementation/test commit: `8684de4f953023a3ef6c168a5e78cac7b9470e2f`.
+- CI #1968 on exact regression test HEAD: **GREEN**.
+  - `go test ./...` — PASS
+  - `go vet ./...` — PASS
+  - PostgreSQL service-backed integration tests — PASS
+  - `go test -race ./...` — PASS
+- CI #1964 for the preceding Milestone #195 regression HEAD `dc1d72f319c5892edb16fd87e57a356586b67186` remains **GREEN**.
+
+### Ownership/Error Invariants
+
+- failed old-generation cleanup blocks ownership replacement;
+- old-generation cleanup errors are stored only on that ownership generation;
+- fresh-generation resources are untouched until replacement succeeds;
+- old-generation cleanup is transaction-before-audit and single-shot;
+- retry after terminal old-generation cleanup may install the fresh generation;
+- fresh-generation lifecycle/error state is independent of the old generation;
+- historical old-generation cleanup errors are never replayed as fresh-generation errors;
+- repeated `Service.Close()` remains idempotent per active ownership generation.
+
+### Safety Boundary
+
+This milestone is limited to runtime ownership replacement, lifecycle/error isolation, cleanup ordering, concurrent lifecycle gating, and single-shot database ownership cleanup. Runtime lifecycle errors remain infrastructure signals and cannot authorize provider execution, transaction recovery, ledger mutation, customer-balance mutation, treasury movement, provider funding, or financial authorization.
+
+### Known Limitations
+
+- ownership replacement remains an internal runtime composition/testing boundary; normal production initialization still establishes ownership once and transfers it to Service;
+- production `catalogWorkerLifecycle.Shutdown()` remains void-returning; catalog completion errors continue to be represented through the existing internal test seam;
+- PostgreSQL integration coverage requires `DESKAPROVIDER_POSTGRES_DSN` and is skipped when unavailable;
+- database close remains non-context-aware;
+- ownership-generation state is runtime lifecycle bookkeeping, not a recovery journal or transaction authority;
+- this milestone adds no provider retry/failover or transaction recovery behavior.
+
+### Architecture Impact
+
+No architecture document update is required. Milestone #196 verifies and hardens the existing ownership-generation boundary; it does not change the documented financial/provider/lifecycle authority model.
+
+### Next Milestone
+
+**#197 — Runtime Ownership Replacement Under Concurrent Convergence**
+
+Focus next on the remaining concurrent replacement/convergence boundary: coordinate lifecycle convergence and ownership replacement without allowing a replacement caller to observe a transiently converged state, install ownership prematurely, or cross generation error/cleanup boundaries.
