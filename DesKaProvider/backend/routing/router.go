@@ -111,7 +111,15 @@ func (r *Router) Select(ctx context.Context, req Request) (string, error) {
 			// capability descriptor must also explicitly mark PPOB as implemented
 			// and enabled before this provider becomes route-eligible.
 			descriptor, err := r.Registry.Capabilities(name)
-			if err != nil || !descriptor.Supports(provider.CapabilityPPOB) {
+			if err != nil {
+				continue
+			}
+			// Registry.Register predates the capability matrix. An empty
+			// descriptor is retained as a compatibility mode for callers that
+			// have not migrated their registry entry yet. Once capability
+			// metadata exists, eligibility is strict and must explicitly require
+			// an implemented and enabled PPOB capability.
+			if len(descriptor.Capabilities) > 0 && !descriptor.Supports(provider.CapabilityPPOB) {
 				continue
 			}
 		}
