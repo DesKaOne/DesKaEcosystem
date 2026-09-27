@@ -48,6 +48,29 @@ func NewJSONFileTransactionStore(path string) (*JSONFileTransactionStore, error)
     return store, nil
 }
 
+func (s *JSONFileTransactionStore) CreateIfAbsentContext(ctx context.Context, state TransactionState) (TransactionState, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return TransactionState{}, false, err
+	}
+	if state.Request.ReferenceID == "" || state.Execution.ProviderName == "" {
+		return TransactionState{}, false, ErrReferenceConflict
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if current, ok := s.transactions[state.Request.ReferenceID]; ok {
+		if current.Request != state.Request || current.Execution.ProviderName != state.Execution.ProviderName {
+			return TransactionState{}, false, ErrReferenceConflict
+		}
+		return current, false, nil
+	}
+	s.transactions[state.Request.ReferenceID] = state
+	if err := s.persistLocked(); err != nil {
+		delete(s.transactions, state.Request.ReferenceID)
+		return TransactionState{}, false, err
+	}
+	return state, true, nil
+}
+
 func (s *JSONFileTransactionStore) Get(referenceID string) (TransactionState, bool) {
     s.mu.RLock()
     defer s.mu.RUnlock()
