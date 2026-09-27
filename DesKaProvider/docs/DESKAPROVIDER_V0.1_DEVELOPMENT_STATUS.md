@@ -9474,3 +9474,52 @@ Transaction persistence remains authoritative for transaction state/idempotency;
 **#191 — Runtime Shutdown Error Retention Across Mixed Lifecycle + Ownership Failures**
 
 Focus next on combined lifecycle completion failures and shared/dedicated database cleanup failures, preserving independent error identity, single-shot ownership cleanup, and closed-state separation without introducing provider or transaction recovery behavior.
+
+
+## 185. Milestone Update — Runtime Shutdown Completion Ordering & Error Precedence Review
+
+**Date:** 2026-09-27
+
+Completed:
+
+- reviewed the final runtime shutdown ordering across balance-worker completion, catalog completion, and runtime database ownership closure;
+- confirmed the production shutdown path composes errors in deterministic order: primary lifecycle error, balance-worker shutdown error, catalog shutdown completion error, transaction database cleanup error, then audit database cleanup error;
+- confirmed database ownership closes only after the balance and catalog lifecycle boundaries report stopped, preventing database cleanup while an auxiliary lifecycle remains active;
+- extended PostgreSQL-backed integration coverage to assert the composed shutdown error message preserves the same primary/lifecycle/database precedence ordering as the deterministic unit boundary;
+- preserved single-shot database cleanup and repeated `Service.Close()` behavior;
+- no production runtime behavior was changed by this milestone; the change is verification coverage only;
+- no provider retry/failover, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, or synthetic transaction/audit reconstruction was introduced.
+
+### Verification
+
+- PostgreSQL shutdown-order regression test commit: `29cbeb7a619b9e2d92e36a92add77a348b903f4a`.
+- CI #1857 on exact test HEAD: **GREEN**.
+  - `go test ./...` — PASS
+  - `go vet ./...` — PASS
+  - PostgreSQL service-backed integration tests — PASS
+  - `go test -race ./...` — PASS
+- PostgreSQL integration now verifies the composed error ordering:
+  1. primary cancellation;
+  2. balance-worker rollback error;
+  3. catalog shutdown completion error;
+  4. transaction database cleanup error;
+  5. audit database cleanup error.
+- Cleanup order remains transaction database before audit database.
+- Repeated `Service.Close()` does not replay lifecycle/primary errors and does not double-close runtime-owned database handles.
+
+### Safety Boundary
+
+This milestone only strengthens verification of runtime lifecycle shutdown ordering and error composition. Database cleanup remains a resource-ownership boundary, not a provider transaction result or financial authorization signal. No retry, failover, resubmission, ledger, treasury, funding, or cross-domain recovery authority is introduced.
+
+### Known Limitations
+
+- the production `catalogWorkerLifecycle.Shutdown()` contract remains void-returning; the completion error channel remains an internal test seam;
+- PostgreSQL integration coverage requires `DESKAPROVIDER_POSTGRES_DSN` and is skipped when unavailable;
+- database close remains non-context-aware;
+- the milestone does not introduce a new production source of catalog shutdown errors.
+
+### Next Milestone
+
+**#186 — Runtime Shutdown Re-entry & Partial Lifecycle Convergence**
+
+Focus next on re-entry after partial shutdown completion, including convergence of an auxiliary lifecycle that remains active after an injected shutdown-completion error, while preserving closed-state rejection, single-shot database ownership cleanup, and no replay of historical lifecycle errors.
