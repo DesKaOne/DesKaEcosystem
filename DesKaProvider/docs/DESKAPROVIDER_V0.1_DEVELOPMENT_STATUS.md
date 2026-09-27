@@ -12302,3 +12302,100 @@ The provider registry now supports partial capability composition without weaken
 ### Next Milestone
 
 Use the new optional capability boundary for the next smallest operational capability integration: provider balance synchronization for explicitly registered `BalanceProvider` implementations. Keep cached balance operational-only and require freshness/health gates; do not treat it as customer balance authority or automatic provider funding.
+
+## 227. Milestone Update — Explicit Balance Capability Synchronization
+
+**Date:** 2026-09-28
+
+### Completed
+
+- changed operational balance synchronization to prefer the explicit `CapabilityBalance` registry boundary;
+- added a deterministic test proving a balance-only provider can be synchronized without implementing `PPOBProvider`;
+- retained a compatibility fallback for legacy registry entries whose `PPOBProvider` implementation also implements `BalanceProvider`;
+- kept the operational snapshot model unchanged: provider balance is an operational liquidity snapshot, not customer balance authority;
+- preserved existing failure-threshold, last-known-balance, health escalation, context cancellation, and periodic worker behavior.
+
+### Implementation Details
+
+Balance synchronization now resolves the capability in this order:
+
+```text
+SyncProvider(provider)
+      |
+      v
+GetCapabilityProvider(provider, balance)
+      |
+      +--> BalanceProvider
+      |
+      +--> unavailable
+             |
+             v
+        legacy Registry.Get()
+             |
+             +--> PPOBProvider implementing BalanceProvider
+```
+
+The explicit capability path is the preferred boundary. The fallback exists only to avoid breaking existing providers while callers migrate to capability-specific registration.
+
+A capability-only provider therefore can participate in operational balance synchronization without entering the PPOB transaction path.
+
+### Verification
+
+- implementation finalized at `7fc88a0556d6c829003b47635fb1add058d44ddf`;
+- exact implementation CI run #2217: **GREEN**;
+- `go test ./...`: PASS;
+- `go vet ./...`: PASS;
+- `go test -race ./...`: PASS;
+- PostgreSQL-backed workflow service: PASS;
+- no live provider credentials or external provider calls were introduced.
+
+### Invariants
+
+- balance synchronization never creates customer ledger state;
+- provider balance remains operational liquidity data;
+- balance capability registration does not imply PPOB capability;
+- stale operational data remains a routing concern and is not silently refreshed by a transaction;
+- synchronization failures never authorize transaction retry, failover, or resubmission;
+- context cancellation continues to stop synchronization progression.
+
+### Safety Boundary
+
+This milestone only connects the already-defined operational sync service to the explicit optional capability registry. It does not make a provider transaction-eligible, does not mutate financial balances, and does not introduce automatic provider funding.
+
+### Known Limitations
+
+- the periodic worker is not yet composed with the production service lifecycle;
+- durable PostgreSQL operational snapshot persistence remains the next infrastructure boundary where applicable;
+- XP SINDONESIA is not marked PPOB READY;
+- no live provider balance validation was executed without runtime credentials;
+- legacy PPOB balance implementations still use the compatibility fallback until migrated.
+
+### Architecture Impact
+
+The capability registry and operational synchronization layers now share the same provider-neutral balance boundary:
+
+```text
+Provider Adapter
+      |
+      v
+BalanceProvider
+      |
+      v
+Capability Registry
+      |
+      v
+Operational SyncService
+      |
+      v
+Provider Balance Snapshot
+      |
+      +--> health
+      +--> freshness
+      +--> routing input
+```
+
+This keeps provider-specific balance protocols inside adapters while allowing partial providers to expose operational capabilities independently of PPOB transaction support.
+
+### Next Milestone
+
+Wire the balance synchronization worker into the runtime service lifecycle, with explicit startup/shutdown ownership and cancellation propagation. Keep the worker operational-only and ensure lifecycle errors do not become provider transaction failures.
