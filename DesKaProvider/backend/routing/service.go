@@ -251,7 +251,27 @@ func (s *Service) Purchase(ctx context.Context, req PurchaseRequest) (PurchaseEx
 	return result, nil
 }
 
+// HandleWebhook applies a normalized provider event when the caller has
+// already authenticated and selected the provider adapter. It is retained as
+// a compatibility path for trusted internal callers; new ingress code should
+// use HandleWebhookFromProvider so the provider identity is verified against
+// the durable transaction before state mutation.
 func (s *Service) HandleWebhook(ctx context.Context, event provider.WebhookEvent) (PurchaseExecution, error) {
+	return s.handleWebhook(ctx, "", event)
+}
+
+// HandleWebhookFromProvider applies a normalized webhook only when the event
+// source provider matches the provider durably selected for the transaction.
+// Provider identity is correlation data, not customer/account data, and must
+// never be inferred from the event reference alone.
+func (s *Service) HandleWebhookFromProvider(ctx context.Context, providerName string, event provider.WebhookEvent) (PurchaseExecution, error) {
+	if strings.TrimSpace(providerName) == "" {
+		return PurchaseExecution{}, fmt.Errorf("%w: provider name is required", ErrInvalidWebhookEvent)
+	}
+	return s.handleWebhook(ctx, providerName, event)
+}
+
+func (s *Service) handleWebhook(ctx context.Context, providerName string, event provider.WebhookEvent) (PurchaseExecution, error) {
 	if err := validateWebhookEvent(event); err != nil {
 		return PurchaseExecution{}, err
 	}
@@ -267,6 +287,9 @@ func (s *Service) HandleWebhook(ctx context.Context, event provider.WebhookEvent
 		return PurchaseExecution{}, ErrWebhookTransactionNotFound
 	}
 	if call.request.ProductCode != event.ProductCode || call.request.CustomerNo != event.CustomerNo {
+		return PurchaseExecution{}, ErrWebhookReferenceConflict
+	}
+	if providerName != "" && call.result.ProviderName != providerName {
 		return PurchaseExecution{}, ErrWebhookReferenceConflict
 	}
 
@@ -566,12 +589,15 @@ func validateWebhookEvent(event provider.WebhookEvent) error {
 }
 
 func samePurchaseResult(a, b provider.PurchaseResult) bool {
+	// Message is observational text and may be normalized differently across
+	// repeated provider deliveries. Transaction identity and provider result
+	// fields remain strict so a materially different terminal observation is
+	// still rejected.
 	return a.ReferenceID == b.ReferenceID &&
 		a.CustomerNo == b.CustomerNo &&
 		a.ProductCode == b.ProductCode &&
 		a.Status == b.Status &&
 		a.ProviderCode == b.ProviderCode &&
-		a.Message == b.Message &&
 		a.SerialNumber == b.SerialNumber &&
 		a.Price == b.Price
 }
