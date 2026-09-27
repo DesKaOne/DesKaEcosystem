@@ -29,3 +29,9 @@ func TestJSONFileStoreRejectsCorruptJSON(t *testing.T) {
 	if err := os.WriteFile(path, []byte("{bad"), 0600); err != nil { t.Fatal(err) }
 	if _, err := NewJSONFileStore(path); err == nil { t.Fatal("expected corrupt JSON error") }
 }
+
+func TestJSONFileStoreRejectsReadErrorInsteadOfTreatingPathAsMissing(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "catalog-dir")
+	if err := os.Mkdir(path, 0750); err != nil { t.Fatal(err) }
+	if _, err := NewJSONFileStore(path); err == nil { t.Fatal("expected read error for directory path") }
+}
