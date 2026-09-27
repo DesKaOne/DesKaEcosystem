@@ -234,7 +234,12 @@ catalogStarted := false
 		if catalogStarted {
 			catalogErr = s.shutdownCatalogLifecycle()
 		}
-		closeErr := s.closeOwnedDatabases()
+		var closeErr error
+		balanceStopped := s.balanceLifecycle == nil || !s.balanceLifecycle.Running()
+		catalogStopped := !catalogStarted || s.catalogLifecycle == nil || !s.catalogLifecycle.Running()
+		if balanceStopped && catalogStopped {
+			closeErr = s.closeOwnedDatabases()
+		}
 		return combineRuntimeShutdownError(combineRuntimeShutdownError(combineRuntimeShutdownError(primary, workerErr), catalogErr), closeErr)
 	}
 	shutdown := func(primary, workerErr error) error {
