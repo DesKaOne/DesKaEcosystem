@@ -2691,3 +2691,84 @@ func TestServiceRunShutdownErrorCompositionPreservesOrdering(t *testing.T) {
 		t.Fatalf("expected one database cleanup each, got tx=%d audit=%d", tx.closeCount, audit.closeCount)
 	}
 }
+
+
+func TestServiceRunShutdownErrorCompositionPreservesPrimaryThenLifecycleThenDatabaseOrder(t *testing.T) {
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", &balanceMock{Provider: mock.New(mock.Config{}), balance: 100000}); err != nil {
+		t.Fatal(err)
+	}
+	syncService, err := operational.NewSyncService(registry, operational.NewMemoryStore(), "IDR", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := New(syncService, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.catalogSync, err = catalog.NewSyncService(registry, catalog.NewMemoryStore())
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.catalogLifecycle = newCatalogWorkerLifecycle()
+	service.catalogInterval = time.Hour
+
+	primaryErr := context.Canceled
+	balanceErr := errors.New("primary-order balance shutdown failure")
+	catalogErr := errors.New("primary-order catalog shutdown failure")
+	transactionErr := errors.New("primary-order transaction cleanup failure")
+	auditErr := errors.New("primary-order audit cleanup failure")
+
+	service.balanceShutdown = func(context.Context) error {
+		service.balanceLifecycle.Shutdown(context.Background())
+		return balanceErr
+	}
+	service.catalogShutdown = func() error {
+		service.catalogLifecycle.Shutdown()
+		return catalogErr
+	}
+	tx := &orderedCloseErrorDB{name: "transaction", err: transactionErr}
+	audit := &orderedCloseErrorDB{name: "audit", err: auditErr}
+	service.databaseOwnership = newRuntimeDatabaseOwnership(tx, audit)
+	service.databaseOwnership.transferToService()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	runErr := service.Run(ctx)
+
+	orderedNeedles := []string{
+		"context canceled",
+		"primary-order balance shutdown failure",
+		"primary-order catalog shutdown failure",
+		"close transaction database: primary-order transaction cleanup failure",
+		"close audit database: primary-order audit cleanup failure",
+	}
+	last := -1
+	for _, needle := range orderedNeedles {
+		index := strings.Index(runErr.Error(), needle)
+		if index < 0 {
+			t.Fatalf("expected composed error to contain %q: %v", needle, runErr)
+		}
+		if index <= last {
+			t.Fatalf("expected primary/lifecycle/database precedence order, got %q", runErr)
+		}
+		last = index
+	}
+	for _, want := range []error{primaryErr, balanceErr, catalogErr, transactionErr, auditErr} {
+		if !errors.Is(runErr, want) {
+			t.Fatalf("expected composed shutdown error to preserve %v, got %v", want, runErr)
+		}
+	}
+
+	closeErr := service.Close()
+	for _, want := range []error{transactionErr, auditErr} {
+		if !errors.Is(closeErr, want) {
+			t.Fatalf("expected repeated Close to preserve database cleanup error %v, got %v", want, closeErr)
+		}
+	}
+	for _, want := range []error{primaryErr, balanceErr, catalogErr} {
+		if errors.Is(closeErr, want) {
+			t.Fatalf("repeated Close must not replay lifecycle error %v: %v", want, closeErr)
+		}
+	}
+}
