@@ -11234,3 +11234,61 @@ No architecture document update is required. Milestone #211 tightens the existin
 ### Next Milestone
 
 Continue with the next concrete persistence/recovery or routing-safety gap identified from the actual implementation, prioritizing catalog/operational persistence recovery semantics before introducing new provider or business integration.
+
+
+## 212. Milestone Update — Catalog Persisted Snapshot Semantic Recovery Boundary
+
+**Date:** 2026-09-28
+
+Completed:
+
+- identified a concrete persistence/recovery gap in the actual catalog JSON store: persisted JSON was decoded directly into the in-memory map, bypassing the semantic invariants already enforced by Store.Put;
+- added deterministic regression coverage for a syntactically valid persisted snapshot with an empty ProviderName and zero SyncedAt;
+- changed catalog store recovery to reject snapshots whose map key is empty, whose ProviderName is empty, whose ProviderName disagrees with the persisted map key, or whose SyncedAt is zero;
+- preserved valid catalog recovery and existing atomic persistence behavior;
+- copied recovered product slices before storing them in the runtime map, preserving the store's ownership/isolation behavior;
+- no runtime lifecycle redesign was required;
+- no provider retry/failover, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, provider funding, or synthetic transaction/audit reconstruction was introduced.
+
+### Verification
+
+- regression test commit: `6f9f42364d5e19904c5a007d9dc92b64f1016da1`;
+- production fix commit: `dfb8c91cb289da0afdce0387019fdb0c8c2ad942`;
+- CI #2062 / run `36336029508`: **RED** because the first production edit contained a Go syntax error in the compact validation block;
+- CI #2063 / run `36336032757`: **RED** for the same exact HEAD through pull-request validation;
+- syntax correction commit: `6c85c7b7a73e10e2e586c8e4e3f6a7f8f4ac5096`;
+- CI #2064 / run `36336155244`: **GREEN** for exact implementation/test HEAD `6c85c7b7a73e10e2e586c8e4e3f6a7f8f4ac5096`;
+- exact CI execution passed: `go test ./...`, `go vet ./...`, PostgreSQL service-backed integration, and `go test -race ./...`.
+
+### Persistence / Recovery Invariants
+
+- missing catalog file remains an empty initial store;
+- readable zero-byte catalog file remains an empty initial store;
+- non-ENOENT read failures remain startup/recovery errors;
+- corrupt JSON remains a startup/recovery error;
+- syntactically valid but semantically invalid snapshots cannot enter the runtime catalog store;
+- persisted provider identity must match the catalog map identity;
+- persisted snapshots must contain a non-zero synchronization timestamp;
+- recovered product data remains operational catalog cache data and is never financial authority;
+- persistence recovery does not authorize routing, provider failover, transaction retry, or transaction resubmission.
+
+### Safety Boundary
+
+This milestone is limited to semantic validation of persisted catalog state during recovery. It does not change provider execution, routing priority, transaction state, financial authority, customer balances, treasury state, or runtime database ownership.
+
+### Known Limitations
+
+- semantic validation currently covers the invariants already expressed by Store.Put; it does not attempt to validate provider-specific product schemas;
+- catalog synchronization errors are still not exposed through a dedicated runtime health/error channel;
+- retry cadence remains the configured CatalogSyncInterval and is not backoff-aware;
+- database close remains non-context-aware;
+- PostgreSQL integration coverage requires DESKAPROVIDER_POSTGRES_DSN and is skipped when unavailable;
+- ownership-generation state remains lifecycle bookkeeping, not a recovery journal or transaction authority.
+
+### Architecture Impact
+
+No architecture document update is required. Milestone #212 strengthens the existing catalog persistence/recovery boundary without changing the documented provider, transaction, financial, routing, or lifecycle authority model.
+
+### Next Milestone
+
+Continue with the next concrete persistence/recovery or routing-safety gap from the actual implementation, with particular attention to recovery freshness/monotonicity and stale-state handling before introducing new provider or business integration.
