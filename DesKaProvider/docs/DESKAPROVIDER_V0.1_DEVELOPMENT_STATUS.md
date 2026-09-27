@@ -8376,3 +8376,45 @@ This milestone is limited to runtime shutdown ordering, lifecycle completion, re
 **#186 — Runtime Shutdown Error Identity Across Mixed Primary and Cleanup Failures**
 
 Focus next on preserving independent error identity and deterministic context when primary cancellation/startup errors, worker completion errors, catalog completion errors, and transaction/audit cleanup errors coexist, without introducing new provider or transaction recovery behavior.
+
+
+## 185. Milestone Update — Runtime Shutdown Completion Ordering & Error Precedence Review
+
+**Date:** 2026-09-27
+
+Completed:
+
+- reviewed the final runtime shutdown ordering across balance-worker completion, catalog completion, and database ownership cleanup;
+- identified that `Service.Close()` guarded against a running balance worker but did not guard against a running catalog lifecycle;
+- added a catalog lifecycle guard so direct/repeated `Service.Close()` cannot close owned databases while the catalog worker is still running;
+- added regression coverage proving premature database cleanup is rejected while catalog lifecycle is active, then succeeds after catalog shutdown;
+- preserved single-shot database ownership cleanup and repeated `Service.Close()` idempotence after lifecycle completion;
+- preserved the existing shutdown composition order: balance completion, catalog completion, then transaction/audit database cleanup;
+- no provider retry/failover, transaction resubmission, ledger mutation, treasury movement, provider funding, or synthetic transaction/audit reconstruction was introduced.
+
+### Verification
+
+- Runtime correction commit: `bb71794722d782496a5e0c5e516675de692f1e2c`.
+- Regression test commit: `d1d125fd8517fd2428b5164e87698da5ae09b2d9`.
+- CI #1703 on exact runtime/test HEAD: **GREEN**.
+  - `go test ./...` — PASS
+  - `go vet ./...` — PASS
+  - PostgreSQL service-backed integration tests — PASS
+  - `go test -race ./...` — PASS
+
+### Safety Boundary
+
+This milestone is limited to shutdown ordering and runtime ownership protection. The catalog lifecycle remains operational-only; database ownership remains single-shot and closes transaction storage before audit storage when handles are distinct. No new financial authority or provider recovery behavior is introduced.
+
+### Known Limitations
+
+- `catalogWorkerLifecycle.Shutdown()` remains void-returning in production; catalog completion errors remain an internal test seam;
+- PostgreSQL integration coverage requires `DESKAPROVIDER_POSTGRES_DSN` and is skipped when unavailable;
+- database close remains non-context-aware;
+- the guard protects direct `Service.Close()`; normal `Service.Run()` shutdown continues to own lifecycle completion before invoking `Close()`.
+
+### Next Milestone
+
+**#186 — Runtime Shutdown Error Identity Across Direct Close Guards**
+
+Focus next on stable error identity and cleanup-error preservation when direct `Service.Close()` is attempted during active auxiliary lifecycle shutdown, including repeated calls after the lifecycle transitions to stopped, without introducing new provider or transaction recovery behavior.
