@@ -9672,3 +9672,57 @@ This milestone is limited to runtime shutdown ordering, lifecycle completion, er
 **#186 — Runtime Shutdown Re-entry & Terminal-State Consistency**
 
 Focus next on repeated/re-entrant `Service.Run()` and `Service.Close()` calls after successful shutdown, failed lifecycle completion, and deferred ownership cleanup, ensuring terminal-state/error identity remains stable without introducing new recovery behavior.
+
+## 186. Milestone Update — Runtime Shutdown Re-entry & Terminal-State Consistency
+
+**Date:** 2026-09-27
+
+Completed:
+
+- reviewed repeated and re-entrant Service.Run() / Service.Close() behavior across partial lifecycle shutdown, lifecycle convergence, and terminal database ownership cleanup;
+- added regression coverage for the transition: partial catalog shutdown failure -> Run() re-entry rejection while the catalog lifecycle remains active -> explicit lifecycle convergence -> subsequent Run() -> terminal ownership cleanup;
+- verified re-entry while an auxiliary lifecycle remains active returns ErrServiceLifecycleActive and does not replay the historical lifecycle completion error;
+- verified that after lifecycle convergence, a subsequent Run() can complete a fresh shutdown and return only errors belonging to that fresh shutdown, including the current cleanup error;
+- verified the historical partial-shutdown error is not replayed by the converged Run(), repeated Service.Close(), or terminal ErrServiceClosed re-entry;
+- verified runtime database ownership closes exactly once after terminal shutdown and repeated Service.Close() preserves the stored cleanup error without double-closing;
+- no production runtime behavior was changed; this milestone is regression coverage for the existing terminal-state contract;
+- no provider retry/failover, transaction resubmission, ledger mutation, treasury movement, funding, or synthetic transaction/audit recovery behavior was introduced.
+
+### CI Corrections
+
+- CI #1885 on a27c126f8d917a874331d61abca4deac12149d06 was RED because the new test incorrectly expected the second, converged Run() not to return the database cleanup error. The existing runtime contract correctly performs terminal ownership cleanup during that Run().
+- The test was corrected to require the fresh cleanup error while still forbidding replay of the historical partial-shutdown error.
+- Corrected test commit: 57d506d2efe024bc0f2f6b388adb33d07451b576.
+- CI #1887 on exact corrected HEAD: GREEN.
+
+### Verification
+
+- CI #1887: GREEN
+  - go test ./... — PASS
+  - go vet ./... — PASS
+  - PostgreSQL service-backed integration tests — PASS
+  - go test -race ./... — PASS
+- Regression coverage verifies:
+  1. active-lifecycle re-entry is rejected;
+  2. historical lifecycle errors are not replayed;
+  3. lifecycle convergence permits a fresh shutdown cycle;
+  4. fresh terminal cleanup errors remain discoverable;
+  5. terminal database ownership closes exactly once;
+  6. repeated Service.Close() and terminal Run() re-entry preserve their established state/error boundaries.
+
+### Safety Boundary
+
+This milestone only validates runtime lifecycle re-entry, convergence, terminal-state rejection, and existing database ownership cleanup. Historical lifecycle errors are observational shutdown results and are not promoted into transaction state, provider state, ledger state, treasury state, or financial authorization. No recovery authority is added.
+
+### Known Limitations
+
+- production catalogWorkerLifecycle.Shutdown() remains void-returning; injected completion errors continue to be represented through the internal test seam;
+- PostgreSQL integration coverage requires DESKAPROVIDER_POSTGRES_DSN and is skipped when unavailable;
+- database close remains non-context-aware;
+- this milestone adds no new production retry/failover/recovery behavior.
+
+### Next Milestone
+
+**#187 — Runtime Shutdown Cancellation/Deadline Boundary**
+
+Focus next on shutdown behavior when the caller context is canceled or reaches its deadline during lifecycle completion, preserving the original primary/lifecycle error composition and ownership cleanup boundary without allowing shutdown cancellation to authorize provider resubmission or financial-state mutation.
