@@ -2478,3 +2478,74 @@ func TestServiceRunDoesNotCloseDatabasesWhileCatalogCompletionLeavesLifecycleRun
 		t.Fatalf("explicit Close must not close database while catalog lifecycle remains active, got %d closes", tx.closeCount)
 	}
 }
+
+
+func TestServiceRunRejectsReentryWhilePartialCatalogShutdownRemainsActive(t *testing.T) {
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", &balanceMock{Provider: mock.New(mock.Config{}), balance: 100000}); err != nil {
+		t.Fatal(err)
+	}
+	syncService, err := operational.NewSyncService(registry, operational.NewMemoryStore(), "IDR", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := New(syncService, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.catalogSync, err = catalog.NewSyncService(registry, catalog.NewMemoryStore())
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.catalogLifecycle = newCatalogWorkerLifecycle()
+	service.catalogInterval = time.Hour
+
+	catalogErr := errors.New("catalog shutdown left lifecycle active")
+	service.catalogShutdown = func() error {
+		return catalogErr
+	}
+	db := &closeErrorDB{}
+	service.databaseOwnership = newRuntimeDatabaseOwnership(db, nil)
+	service.databaseOwnership.transferToService()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	runErr := service.Run(ctx)
+	if !errors.Is(runErr, context.Canceled) {
+		t.Fatalf("expected cancellation, got %v", runErr)
+	}
+	if !errors.Is(runErr, catalogErr) {
+		t.Fatalf("expected partial catalog shutdown error, got %v", runErr)
+	}
+	if !service.catalogLifecycle.Running() {
+		t.Fatal("expected catalog lifecycle to remain active")
+	}
+	if db.closeCount != 0 {
+		t.Fatalf("expected database ownership to remain open, got %d closes", db.closeCount)
+	}
+
+	reentryErr := service.Run(context.Background())
+	if !errors.Is(reentryErr, ErrServiceLifecycleActive) {
+		t.Fatalf("expected partial-shutdown re-entry rejection, got %v", reentryErr)
+	}
+	if service.balanceLifecycle.Running() {
+		t.Fatal("re-entry rejection must not restart the balance lifecycle")
+	}
+	if db.closeCount != 0 {
+		t.Fatalf("re-entry rejection must not close database ownership, got %d closes", db.closeCount)
+	}
+
+	service.catalogLifecycle.Shutdown()
+	if err := service.Close(); err != nil {
+		t.Fatalf("expected cleanup after lifecycle convergence, got %v", err)
+	}
+	if db.closeCount != 1 {
+		t.Fatalf("expected database ownership to close exactly once after convergence, got %d", db.closeCount)
+	}
+	if err := service.Close(); err != nil {
+		t.Fatalf("expected repeated Close to remain idempotent, got %v", err)
+	}
+	if db.closeCount != 1 {
+		t.Fatalf("expected repeated Close not to double-close, got %d", db.closeCount)
+	}
+}
