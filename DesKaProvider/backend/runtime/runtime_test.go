@@ -3191,8 +3191,8 @@ func TestServiceRunShutdownDefersDatabaseCloseUntilAllLifecyclesStop(t *testing.
 		if !errors.Is(runErr, catalogErr) {
 			t.Fatalf("expected catalog shutdown error, got %v", runErr)
 		}
-	default:
-		t.Fatal("expected shutdown to complete")
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for shutdown completion")
 	}
 
 	if transactionDB.closeCount != 0 || auditDB.closeCount != 0 {
