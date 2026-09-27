@@ -16,6 +16,7 @@ import (
 
  provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
  "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/catalog"
+	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/migrations"
  digiflazz "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/DigiFlazz"
  iak "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/IAK"
  "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/operational"
@@ -513,6 +514,28 @@ func openOperationalStore(ctx context.Context, cfg Config, transactionDB *sql.DB
 	}
 	if owned { return store, db, nil }
 	return store, nil, nil
+}
+
+func preparePostgresSchema(ctx context.Context, db *sql.DB, mode string, version int) error {
+	if db == nil { return errors.New("PostgreSQL schema database is required") }
+	if err := migrations.ValidateVersionSet(version); err != nil { return err }
+	if mode == "migrate" {
+		if err := migrations.Apply(ctx, db, version); err != nil { return fmt.Errorf("apply PostgreSQL provider migration %d: %w", version, err) }
+		return nil
+	}
+	return checkPostgresMigrationReadiness(ctx, db, version)
+}
+
+func checkPostgresMigrationReadiness(ctx context.Context, db *sql.DB, version int) error {
+	var exists bool
+	err := db.QueryRowContext(ctx, "SELECT EXISTS (SELECT 1 FROM provider_schema_migrations WHERE version = $1)", version).Scan(&exists)
+	if err != nil {
+		return fmt.Errorf("check PostgreSQL migration %d readiness: %w", version, err)
+	}
+	if !exists {
+		return fmt.Errorf("PostgreSQL migration %d is not applied: set DESKAPROVIDER_POSTGRES_SCHEMA_MODE=migrate once or apply the corresponding migration", version)
+	}
+	return nil
 }
 
 func checkOperationalSchema(ctx context.Context, db *sql.DB) error {
