@@ -1777,6 +1777,76 @@ func TestServiceShutdownTimeoutPreservesWorkerOwnershipBeforeDatabaseClose(t *te
 	}
 }
 
+
+func TestServiceRunShutdownTimeoutKeepsDatabaseOwnershipUntilWorkerStops(t *testing.T) {
+	mockProvider := &blockingBalanceMock{
+		Provider: mock.New(mock.Config{}),
+		balance: 100000,
+		entered: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", mockProvider); err != nil {
+		t.Fatal(err)
+	}
+	syncService, err := operational.NewSyncService(registry, operational.NewMemoryStore(), "IDR", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := New(syncService, time.Millisecond)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.catalogSync = nil
+
+	db := &closeErrorDB{}
+	service.databaseOwnership = newRuntimeDatabaseOwnership(db, nil)
+	service.databaseOwnership.transferToService()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	runDone := make(chan error, 1)
+	go func() {
+		runDone <- service.Run(ctx)
+	}()
+
+	select {
+	case <-mockProvider.entered:
+	case <-time.After(time.Second):
+		t.Fatal("balance worker did not enter the blocking provider call")
+	}
+
+	select {
+	case runErr := <-runDone:
+		if !errors.Is(runErr, context.DeadlineExceeded) {
+			t.Fatalf("expected shutdown deadline error, got %v", runErr)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("service Run did not return after shutdown timeout")
+	}
+
+	if !service.balanceLifecycle.Running() {
+		t.Fatal("expected balance worker to remain running after shutdown timeout")
+	}
+	if db.closeCount != 0 {
+		t.Fatalf("expected database to remain open while worker is still running, got %d closes", db.closeCount)
+	}
+	if service.databaseOwnership.isClosed() {
+		t.Fatal("expected runtime database ownership to remain open while worker is still running")
+	}
+
+	close(mockProvider.release)
+	if err := service.balanceLifecycle.Shutdown(context.Background()); err != nil {
+		t.Fatalf("expected worker to stop after provider release, got %v", err)
+	}
+	if err := service.Close(); err != nil {
+		t.Fatalf("expected database close after worker completion, got %v", err)
+	}
+	if db.closeCount != 1 {
+		t.Fatalf("expected one database close after worker completion, got %d", db.closeCount)
+	}
+}
+
 func TestServiceRunBalanceOnlyShutdownPreservesCompletionPrecedenceAndDatabaseCleanup(t *testing.T) {
 	registry := provider.NewRegistry()
 	if err := registry.Register("mock", &balanceMock{Provider: mock.New(mock.Config{}), balance: 100000}); err != nil {
