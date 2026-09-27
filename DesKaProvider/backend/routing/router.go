@@ -107,6 +107,13 @@ func (r *Router) Select(ctx context.Context, req Request) (string, error) {
 			if !ok || !state.Enabled() || !state.Supports(operational.CapabilityPPOB) {
 				continue
 			}
+			// Operational enablement is not sufficient by itself. The registry
+			// capability descriptor must also explicitly mark PPOB as implemented
+			// and enabled before this provider becomes route-eligible.
+			descriptor, err := r.Registry.Capabilities(name)
+			if err != nil || !descriptor.Supports(provider.CapabilityPPOB) {
+				continue
+			}
 		}
 		snapshot, ok := r.Store.Get(name)
 		if !ok || snapshot.Health != operational.HealthHealthy || snapshot.Balance < req.Amount {
