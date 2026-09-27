@@ -8830,3 +8830,63 @@ The shutdown ordering is an infrastructure lifecycle contract only. Error preced
 ### Next Milestone
 
 **#186 — Runtime Shutdown Re-entry & Post-Completion State Review:** verify repeated/concurrent `Run()` and `Close()` calls after completed shutdown remain stable, single-shot, and preserve the recorded cleanup result without reopening lifecycle resources.
+
+
+## 186. Milestone Update — Runtime Shutdown Reentrancy, Partial Lifecycle Completion & Ownership Guard Matrix
+
+**Date:** 2026-09-27
+
+Completed:
+
+- hardened the runtime shutdown boundary so balance-only shutdown keeps the same `shutdownMu` serialization through worker completion and database ownership cleanup;
+- preserved the invariant that direct `Service.Close()` cannot close runtime-owned databases while an active lifecycle completion callback is still executing;
+- verified partial lifecycle-start behavior: an unstarted catalog lifecycle is not completed after catalog startup failure, while successfully started balance lifecycle work is rolled back;
+- verified repeated/concurrent `Run()` and `Close()` calls preserve single-shot database ownership cleanup and stable closed-state behavior;
+- preserved the existing shutdown ordering: balance completion, catalog completion, transaction database cleanup, audit database cleanup;
+- retained worker deadline identity after a shutdown timeout instead of converting `context.DeadlineExceeded` into a false clean-success result;
+- no provider retry/failover, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, provider funding, or synthetic transaction/audit reconstruction was introduced.
+
+### CI Failure and Corrections
+
+The exact branch HEAD was checked before closure and required three correction rounds:
+
+1. CI #1787 on `355e570073086b085632ef8b87dfaa7fe73dd8d6` — **RED**.
+   - A regression fixture replaced a valid catalog service with an empty `catalog.SyncService`, causing a nil registry panic.
+2. CI #1789 on `0ecbdbe6ca891f8fe860b9e659e2c3da6f59ea5c` — **RED**.
+   - A timeout fixture expected a clean worker shutdown, but the worker correctly preserved its parent `context.DeadlineExceeded` result.
+   - The same run exposed a real balance-only shutdown race: `Close()` could observe the worker as stopped while the shutdown completion callback was still executing.
+3. CI #1793 on `4d2d05c0e6a122d6b878f7dafc20350f35eb1e00` — **RED**.
+   - The production serialization fix compiled with an obsolete unused shutdown wrapper.
+
+The corrections were:
+- regression fixture cleanup in `7e50ac031be9176d538700aa84d90aeea385ccc7`;
+- production balance-only shutdown serialization in `4d2d05c0e6a122d6b878f7dafc20350f35eb1e00`;
+- removal of the obsolete wrapper in `d121c2b16d2e32d295ee859ab56324e530949bec`.
+
+### Verification
+
+- Final exact branch HEAD: `d121c2b16d2e32d295ee859ab56324e530949bec`.
+- CI #1795 on exact final HEAD: **GREEN**.
+  - `go test ./...` — PASS
+  - `go vet ./...` — PASS
+  - PostgreSQL service-backed integration tests — PASS
+  - `go test -race ./...` — PASS
+
+### Safety Boundary
+
+This milestone is limited to runtime lifecycle serialization, partial-start rollback, shutdown reentrancy, and database ownership closure. It does not create transaction or audit recovery authority and does not alter the authoritative transaction-state/idempotency boundary or append-only audit boundary.
+
+The change does not introduce provider retry/failover, transaction resubmission, ledger mutation, treasury movement, provider funding, or cross-domain recovery behavior.
+
+### Known Limitations
+
+- production `catalogWorkerLifecycle.Shutdown()` remains void-returning; catalog completion error composition continues through the existing internal test seam;
+- PostgreSQL integration coverage requires `DESKAPROVIDER_POSTGRES_DSN` and is skipped when unavailable;
+- database close remains non-context-aware;
+- worker shutdown preserves its originating context error when the worker's parent context expires.
+
+### Next Milestone
+
+**#187 — Runtime Close-State Error Composition Across Direct and Run-Owned Shutdown**
+
+Focus next on stable closed-state error identity and cleanup-error preservation across direct `Service.Close()`, Run-owned shutdown, and repeated close attempts, without introducing new provider or transaction recovery behavior.
