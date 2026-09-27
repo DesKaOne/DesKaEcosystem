@@ -9301,3 +9301,45 @@ Transaction persistence remains authoritative for transaction state and idempote
 **#188 — Runtime Ownership Error Persistence Across Shared vs Dedicated Database Topologies**
 
 Focus next on the same closed-state and cleanup-error contract across shared transaction/audit database ownership versus independently owned dedicated database handles, preserving single-shot cleanup and no lifecycle restart.
+
+
+## 185. Milestone Update — Runtime Shutdown Completion Ordering & Error Precedence Review
+
+**Date:** 2026-09-27
+
+Completed:
+
+- reviewed the final runtime shutdown completion order across the balance worker, catalog worker, and owned transaction/audit databases;
+- confirmed the runtime shutdown sequence is balance lifecycle completion, catalog lifecycle completion, then transaction database cleanup followed by audit database cleanup;
+- added deterministic regression coverage that locks the composed shutdown error ordering to the same sequence;
+- verified the composed error preserves the primary cancellation error plus balance shutdown, catalog shutdown, transaction cleanup, and audit cleanup identities;
+- verified database ownership cleanup remains single-shot after lifecycle completion;
+- retained the existing rule that repeated Service.Close() preserves recorded database cleanup errors without replaying historical primary/lifecycle shutdown errors;
+- no provider retry/failover, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, or synthetic transaction/audit reconstruction was introduced.
+
+### Verification
+
+- Regression test commit: `f69049d8dfac7d6b876e4cb240777dcfbf98859d`.
+- CI #1839 on exact test HEAD: **GREEN**.
+  - `go test ./...` — PASS
+  - `go vet ./...` — PASS
+  - PostgreSQL service-backed integration tests — PASS
+  - `go test -race ./...` — PASS
+- The final documentation commit must receive its own CI result before this milestone is considered closed.
+
+### Safety Boundary
+
+This milestone is limited to shutdown ordering and error-composition verification. Lifecycle completion remains separate from database ownership cleanup, and database cleanup remains transaction-before-audit. No new provider or transaction recovery authority is introduced.
+
+### Known Limitations
+
+- production `catalogWorkerLifecycle.Shutdown()` remains void-returning; catalog completion error injection remains an internal test seam;
+- PostgreSQL integration coverage requires `DESKAPROVIDER_POSTGRES_DSN` and is skipped when unavailable;
+- database close remains non-context-aware;
+- the milestone validates the existing precedence/order contract and does not redesign runtime lifecycle APIs.
+
+### Next Milestone
+
+**#186 — Runtime Shutdown Partial-Completion Recovery Boundary**
+
+Focus next on a lifecycle that fails to converge during shutdown, ensuring runtime ownership remains open, re-entry remains rejected, and explicit cleanup can converge safely without replaying historical shutdown errors.
