@@ -28,6 +28,37 @@ func (p *balanceMock) GetBalance(context.Context) (int64, error) {
 	return p.balance, nil
 }
 
+
+type catalogFlakyBalanceProvider struct {
+	*balanceMock
+	mu          sync.Mutex
+	failCatalog bool
+	calls       int
+}
+
+func (p *catalogFlakyBalanceProvider) GetProducts(ctx context.Context, req provider.ProductRequest) ([]provider.Product, error) {
+	p.mu.Lock()
+	p.calls++
+	fail := p.failCatalog
+	p.mu.Unlock()
+	if fail {
+		return nil, errors.New("catalog sync temporarily unavailable")
+	}
+	return p.Provider.GetProducts(ctx, req)
+}
+
+func (p *catalogFlakyBalanceProvider) setCatalogFailure(fail bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.failCatalog = fail
+}
+
+func (p *catalogFlakyBalanceProvider) catalogCalls() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.calls
+}
+
 func TestLoadConfigDefaults(t *testing.T) {
 	t.Setenv("DESKAPROVIDER_OPERATIONAL_STORE_PATH", "")
 	t.Setenv("DESKAPROVIDER_PROVIDER_STATE_STORE_PATH", "")
@@ -5842,3 +5873,104 @@ func TestNewFromEnvironmentContextCancellationAfterAcquisitionCleansPartialGener
 	}
 }
 
+
+
+func TestServiceRunCatalogInitialSyncFailureKeepsLifecycleAliveForRetry(t *testing.T) {
+	providerImpl := &catalogFlakyBalanceProvider{
+		balanceMock: &balanceMock{
+			Provider: mock.New(mock.Config{Products: []provider.Product{{Code: "xld10", Name: "Test"}}}),
+			balance: 1800000,
+		},
+		failCatalog: true,
+	}
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", providerImpl); err != nil {
+		t.Fatal(err)
+	}
+
+	operationalStore := operational.NewMemoryStore()
+	syncService, err := operational.NewSyncService(registry, operationalStore, "IDR", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalogStore := catalog.NewMemoryStore()
+	catalogSync, err := catalog.NewSyncService(registry, catalogStore)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	service, err := New(syncService, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.catalogSync = catalogSync
+	service.catalogLifecycle = newCatalogWorkerLifecycle()
+	service.catalogInterval = 10 * time.Millisecond
+	transactionDB := &closeErrorDB{}
+	service.databaseOwnership = newRuntimeDatabaseOwnership(transactionDB, nil)
+	service.databaseOwnership.transferToService()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- service.Run(ctx) }()
+
+	deadline := time.After(time.Second)
+	for providerImpl.catalogCalls() == 0 {
+		select {
+		case err := <-done:
+			t.Fatalf("Run exited after initial catalog sync failure: %v", err)
+		case <-deadline:
+			t.Fatal("initial catalog sync attempt did not occur")
+		default:
+			time.Sleep(time.Millisecond)
+		}
+	}
+
+	select {
+	case err := <-done:
+		t.Fatalf("Run must remain active after catalog sync failure: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+	if !service.catalogLifecycle.Running() {
+		t.Fatal("expected catalog lifecycle to remain active after initial sync failure")
+	}
+	if transactionDB.closeCount != 0 {
+		t.Fatalf("database ownership closed before service shutdown: %d", transactionDB.closeCount)
+	}
+
+	providerImpl.setCatalogFailure(false)
+	deadline = time.After(time.Second)
+	for {
+		if snapshot, ok := catalogStore.Get("mock"); ok {
+			if len(snapshot.Products) != 1 || snapshot.Products[0].Code != "xld10" {
+				t.Fatalf("unexpected retried catalog snapshot: %#v", snapshot)
+			}
+			break
+		}
+		select {
+		case err := <-done:
+			t.Fatalf("Run exited before catalog retry succeeded: %v", err)
+		case <-deadline:
+			t.Fatal("catalog sync did not retry successfully")
+		default:
+			time.Sleep(time.Millisecond)
+		}
+	}
+
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("unexpected shutdown error: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Run did not converge after cancellation")
+	}
+	if service.balanceLifecycle.Running() || service.catalogLifecycle.Running() {
+		t.Fatal("expected all lifecycles to stop after shutdown")
+	}
+	if transactionDB.closeCount != 1 || !service.databaseOwnership.isClosed() {
+		t.Fatalf("expected database ownership to close exactly once, count=%d closed=%v", transactionDB.closeCount, service.databaseOwnership.isClosed())
+	}
+}
