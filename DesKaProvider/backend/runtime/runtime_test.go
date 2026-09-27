@@ -5238,3 +5238,226 @@ func TestServiceRunRepeatedReuseCyclesIsolateShutdownErrors(t *testing.T) {
 		}
 	}
 }
+
+type blockingCloseDB struct {
+	entered chan struct{}
+	release chan struct{}
+	closeCount int
+}
+
+func (db *blockingCloseDB) Close() error {
+	db.closeCount++
+	close(db.entered)
+	<-db.release
+	return nil
+}
+
+func TestServiceCloseLinearizesBeforeConcurrentOwnershipReplacement(t *testing.T) {
+	service := newRuntimeTestService(t)
+
+	oldDB := &blockingCloseDB{
+		entered: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	oldOwnership := newRuntimeDatabaseOwnership(oldDB, nil)
+	oldOwnership.transferToService()
+	service.databaseOwnership = oldOwnership
+
+	freshDB := &closeErrorDB{}
+	freshOwnership := newRuntimeDatabaseOwnership(freshDB, nil)
+	freshOwnership.transferToService()
+
+	closeDone := make(chan error, 1)
+	go func() {
+		closeDone <- service.Close()
+	}()
+
+	select {
+	case <-oldDB.entered:
+	case <-time.After(time.Second):
+		t.Fatal("Close did not reach owned database cleanup")
+	}
+
+	replacementDone := make(chan error, 1)
+	go func() {
+		replacementDone <- service.replaceDatabaseOwnership(freshOwnership)
+	}()
+
+	select {
+	case err := <-replacementDone:
+		t.Fatalf("ownership replacement bypassed Close serialization: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	if oldDB.closeCount != 1 {
+		t.Fatalf("expected Close to own the old generation cleanup, got %d closes", oldDB.closeCount)
+	}
+	if service.databaseOwnership != oldOwnership {
+		t.Fatal("replacement must remain blocked while terminal Close owns the shutdown boundary")
+	}
+	if freshDB.closeCount != 0 {
+		t.Fatalf("blocked replacement must not touch the fresh generation, got %d closes", freshDB.closeCount)
+	}
+
+	close(oldDB.release)
+
+	select {
+	case err := <-closeDone:
+		if err != nil {
+			t.Fatalf("terminal Close failed: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("terminal Close did not converge")
+	}
+
+	select {
+	case err := <-replacementDone:
+		if err != nil {
+			t.Fatalf("replacement after Close linearization failed: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("ownership replacement remained blocked after Close converged")
+	}
+
+	if service.databaseOwnership != freshOwnership {
+		t.Fatal("expected fresh ownership generation after serialized replacement")
+	}
+	if oldDB.closeCount != 1 {
+		t.Fatalf("old generation must remain single-shot after replacement: %d", oldDB.closeCount)
+	}
+	if freshDB.closeCount != 0 {
+		t.Fatalf("fresh generation must remain untouched by a replacement that linearized after Close: %d", freshDB.closeCount)
+	}
+
+	if err := service.Close(); err != nil {
+		t.Fatalf("final Close of fresh generation failed: %v", err)
+	}
+	if freshDB.closeCount != 1 {
+		t.Fatalf("fresh generation must close exactly once on its own terminal Close: %d", freshDB.closeCount)
+	}
+}
+
+func TestServiceRunShutdownSerializesCloseAndReplacementEntryPoints(t *testing.T) {
+	service := newRuntimeTestService(t)
+	service.catalogSync = nil
+
+	balanceEntered := make(chan struct{})
+	balanceRelease := make(chan struct{})
+	service.balanceShutdown = func(context.Context) error {
+		close(balanceEntered)
+		<-balanceRelease
+		service.balanceLifecycle.Shutdown(context.Background())
+		return nil
+	}
+	service.balanceStart = func(context.Context) error {
+		return service.balanceLifecycle.Start(context.Background())
+	}
+
+	oldDB := &closeErrorDB{}
+	oldOwnership := newRuntimeDatabaseOwnership(oldDB, nil)
+	oldOwnership.transferToService()
+	service.databaseOwnership = oldOwnership
+
+	freshDB := &closeErrorDB{}
+	freshOwnership := newRuntimeDatabaseOwnership(freshDB, nil)
+	freshOwnership.transferToService()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	runDone := make(chan error, 1)
+	go func() {
+		runDone <- service.Run(ctx)
+	}()
+
+	deadline := time.After(time.Second)
+	for !service.balanceLifecycle.Running() {
+		select {
+		case <-deadline:
+			t.Fatal("Run did not start the balance lifecycle")
+		default:
+			time.Sleep(time.Millisecond)
+		}
+	}
+
+	cancel()
+	select {
+	case <-balanceEntered:
+	case <-time.After(time.Second):
+		t.Fatal("Run did not enter deterministic balance shutdown")
+	}
+
+	closeDone := make(chan error, 1)
+	go func() {
+		closeDone <- service.Close()
+	}()
+	replacementDone := make(chan error, 1)
+	go func() {
+		replacementDone <- service.replaceDatabaseOwnership(freshOwnership)
+	}()
+
+	select {
+	case err := <-closeDone:
+		t.Fatalf("Close bypassed Run shutdown convergence: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	select {
+	case err := <-replacementDone:
+		t.Fatalf("replacement bypassed Run shutdown convergence: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	if oldDB.closeCount != 0 || freshDB.closeCount != 0 {
+		t.Fatalf("concurrent entry points touched database ownership before Run convergence: old=%d fresh=%d", oldDB.closeCount, freshDB.closeCount)
+	}
+	if service.databaseOwnership != oldOwnership {
+		t.Fatal("concurrent ownership replacement must not install a fresh generation before Run convergence")
+	}
+
+	close(balanceRelease)
+
+	select {
+	case runErr := <-runDone:
+		if !errors.Is(runErr, context.Canceled) {
+			t.Fatalf("Run lost context cancellation during convergence: %v", runErr)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Run did not converge after releasing deterministic shutdown gate")
+	}
+
+	select {
+	case err := <-closeDone:
+		if err != nil {
+			t.Fatalf("serialized Close failed after Run convergence: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Close remained blocked after Run convergence")
+	}
+	select {
+	case err := <-replacementDone:
+		if err != nil {
+			t.Fatalf("serialized replacement failed after Run convergence: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("replacement remained blocked after Run convergence")
+	}
+
+	if oldDB.closeCount != 1 {
+		t.Fatalf("old generation must close exactly once after Run convergence: %d", oldDB.closeCount)
+	}
+	if service.databaseOwnership != freshOwnership {
+		t.Fatal("expected the serialized replacement to install the fresh generation")
+	}
+	if freshDB.closeCount > 1 {
+		t.Fatalf("fresh generation cleanup must remain single-shot: %d", freshDB.closeCount)
+	}
+
+	if freshDB.closeCount == 0 {
+		if err := service.Close(); err != nil {
+			t.Fatalf("fresh generation terminal Close failed: %v", err)
+		}
+	}
+	if freshDB.closeCount != 1 {
+		t.Fatalf("fresh generation must end with exactly one cleanup: %d", freshDB.closeCount)
+	}
+}
