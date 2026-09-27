@@ -9618,3 +9618,57 @@ Focus next on re-entry after partial lifecycle shutdown, convergence after an in
 ### Final Gate
 
 The exact documentation HEAD must have a subsequent CI run with both test and race jobs green before this milestone is considered closed.
+
+
+## 185. Milestone Update — Runtime Shutdown Completion Ordering & Error Precedence Review
+
+**Date:** 2026-09-27
+
+Completed:
+
+- reviewed the final shutdown ordering across balance lifecycle completion, catalog lifecycle completion, and runtime-owned database cleanup;
+- locked the invariant that runtime database ownership must not be closed while any managed lifecycle remains active;
+- verified that a lifecycle completion error remains discoverable without allowing database cleanup to run prematurely;
+- verified that once all lifecycles have converged, `Service.Close()` performs the deferred transaction-before-audit cleanup exactly once and preserves cleanup error identity;
+- preserved the existing composed error ordering: primary lifecycle error, balance worker completion error, catalog completion error, then runtime database cleanup errors;
+- retained repeated `Service.Close()` idempotence and stored cleanup-error behavior;
+- no provider retry/failover, transaction resubmission, ledger mutation, treasury movement, provider funding, or synthetic transaction/audit reconstruction was introduced.
+
+### CI Corrections
+
+- CI #1877 on `7d90216851ebb028a8d7888e9639ac529cc30979` was **RED** because an existing lifecycle test fixture still expected `Start()` to return two values. The runtime lifecycle API returns only `error`; the fixture was corrected without changing production runtime behavior.
+- CI #1879 on `e15512527cb5c9567a8a787d9619f8f4767b80c1` was **RED** because the new shutdown-ordering test used a non-blocking `select` and could fail before the shutdown goroutine completed. The test was corrected to use a bounded timeout.
+- CI #1881 on exact corrected HEAD `c797c43e4d50df3640b824f9ea5b6d842fb1cf1e` is **GREEN**.
+
+### Verification
+
+- Test/fixture correction commits:
+  - `e15512527cb5c9567a8a787d9619f8f4767b80c1`
+  - `c797c43e4d50df3640b824f9ea5b6d842fb1cf1e`
+- CI #1881: **GREEN**
+  - `go test ./...` — PASS
+  - `go vet ./...` — PASS
+  - PostgreSQL service-backed integration tests — PASS
+  - `go test -race ./...` — PASS
+- The new regression coverage verifies:
+  1. lifecycle completion errors are preserved;
+  2. database close is deferred while a lifecycle remains active;
+  3. `Service.Close()` rejects premature ownership cleanup;
+  4. after lifecycle convergence, transaction and audit cleanup occurs exactly once in deterministic order.
+
+### Safety Boundary
+
+This milestone is limited to runtime shutdown ordering, lifecycle completion, error composition, and database ownership cleanup. Database cleanup remains infrastructure-only and cannot become a provider transaction result or financial authorization signal.
+
+### Known Limitations
+
+- `catalogWorkerLifecycle.Shutdown()` remains void-returning in production; completion errors remain represented through the existing internal test seam;
+- PostgreSQL integration coverage requires `DESKAPROVIDER_POSTGRES_DSN` and is skipped when unavailable;
+- database close remains non-context-aware;
+- this milestone does not add new provider recovery or treasury automation behavior.
+
+### Next Milestone
+
+**#186 — Runtime Shutdown Re-entry & Terminal-State Consistency**
+
+Focus next on repeated/re-entrant `Service.Run()` and `Service.Close()` calls after successful shutdown, failed lifecycle completion, and deferred ownership cleanup, ensuring terminal-state/error identity remains stable without introducing new recovery behavior.
