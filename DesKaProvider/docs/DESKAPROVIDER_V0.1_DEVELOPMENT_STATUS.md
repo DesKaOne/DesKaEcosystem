@@ -8563,3 +8563,45 @@ This milestone is a shutdown ordering/error-precedence review only. The authorit
 **#186 — Runtime Shutdown Idempotence Across Repeated Run/Close Interleavings**
 
 Focus next on repeated `Run()` / `Close()` interleavings after partial and completed shutdown, preserving lifecycle single-shot semantics, ownership closure, stable error identity, and the existing recovery safety boundary.
+
+
+## 185. Milestone Update — Runtime Shutdown Completion Ordering & Error Precedence Review
+
+**Date:** 2026-09-27
+
+Completed:
+
+- reviewed the final runtime shutdown ordering across the balance worker, catalog lifecycle, and owned database resources;
+- confirmed and regression-tested the shutdown completion order: balance worker, catalog lifecycle, transaction database, then audit database;
+- added regression coverage for error precedence across the first `Service.Run()` shutdown and repeated `Service.Close()`;
+- preserved all first-shutdown error identities: context cancellation, balance completion error, catalog completion error, transaction cleanup error, and audit cleanup error;
+- verified that repeated `Service.Close()` does not replay the catalog lifecycle completion error;
+- verified that repeated `Service.Close()` continues to expose persisted transaction/audit cleanup errors while underlying database handles remain single-shot;
+- no provider retry/failover, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, provider funding, or synthetic transaction/audit reconstruction was introduced.
+
+### Verification
+
+- Implementation/regression-test commit: `5706098c42342348523ffd4b0eaf48b4a2c56244`.
+- CI #1733 on exact implementation/test HEAD: **GREEN**.
+  - `go test ./...` — PASS
+  - `go vet ./...` — PASS
+  - PostgreSQL service-backed integration tests — PASS
+  - `go test -race ./...` — PASS
+- Final documentation commit is verified separately below before milestone closure.
+
+### Safety Boundary
+
+This milestone is limited to runtime shutdown ordering, error composition, and repeated-close semantics. Transaction persistence remains authoritative for transaction state/idempotency; audit persistence remains append-only observational evidence. No recovery authority or financial movement behavior was added.
+
+### Known Limitations
+
+- the production `catalogWorkerLifecycle.Shutdown()` contract remains void-returning; catalog completion error injection remains an internal test seam used only to validate runtime error composition;
+- PostgreSQL integration coverage requires `DESKAPROVIDER_POSTGRES_DSN` and is skipped when unavailable;
+- database close remains non-context-aware;
+- repeated `Service.Close()` exposes stored database cleanup errors but does not replay lifecycle completion errors, by design.
+
+### Next Milestone
+
+**#186 — Runtime Shutdown Ownership State & Re-entry Guard Review**
+
+Focus next on explicit runtime ownership state transitions around shutdown/re-entry, including repeated `Run()`, repeated `Close()`, and lifecycle completion boundaries, without expanding provider or transaction recovery authority.
