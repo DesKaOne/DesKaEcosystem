@@ -3552,3 +3552,73 @@ func TestServiceRunDeferredOwnershipCleanupPreservesFreshCloseErrors(t *testing.
 		t.Fatalf("unexpected deferred cleanup ordering: %v", order)
 	}
 }
+
+
+func TestServiceRunCloseReentryInterleavingsRemainSingleShot(t *testing.T) {
+	service := newRuntimeTestService(t)
+	db := &closeErrorDB{}
+	service.databaseOwnership = newRuntimeDatabaseOwnership(db, nil)
+	service.databaseOwnership.transferToService()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	runDone := make(chan error, 1)
+	go func() {
+		runDone <- service.Run(ctx)
+	}()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for !service.balanceLifecycle.Running() {
+		if time.Now().After(deadline) {
+			cancel()
+			t.Fatal("timed out waiting for balance lifecycle to start")
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	if err := service.Close(); err == nil {
+		t.Fatal("expected Close to reject while balance lifecycle is active")
+	}
+	if db.closeCount != 0 {
+		t.Fatalf("active lifecycle Close must not close runtime database, got %d closes", db.closeCount)
+	}
+
+	if err := service.Run(context.Background()); !errors.Is(err, operational.ErrSyncWorkerRunning) {
+		t.Fatalf("expected concurrent Run to reject active balance lifecycle, got %v", err)
+	}
+	if db.closeCount != 0 {
+		t.Fatalf("rejected concurrent Run must not close runtime database, got %d closes", db.closeCount)
+	}
+
+	cancel()
+	select {
+	case runErr := <-runDone:
+		if !errors.Is(runErr, context.Canceled) {
+			t.Fatalf("expected owned Run shutdown to preserve cancellation, got %v", runErr)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for Run shutdown")
+	}
+
+	if service.balanceLifecycle.Running() {
+		t.Fatal("expected balance lifecycle to stop before terminal Close")
+	}
+	if db.closeCount != 1 {
+		t.Fatalf("expected terminal Run shutdown to close runtime database once, got %d closes", db.closeCount)
+	}
+
+	if err := service.Close(); err != nil {
+		t.Fatalf("expected repeated Close to remain idempotent, got %v", err)
+	}
+	if db.closeCount != 1 {
+		t.Fatalf("expected repeated Close not to double-close runtime database, got %d closes", db.closeCount)
+	}
+
+	if err := service.Run(context.Background()); !errors.Is(err, ErrServiceClosed) {
+		t.Fatalf("expected terminal Run re-entry to return ErrServiceClosed, got %v", err)
+	}
+	if db.closeCount != 1 {
+		t.Fatalf("terminal Run re-entry must not reuse or close runtime database, got %d closes", db.closeCount)
+	}
+}
