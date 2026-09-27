@@ -13028,3 +13028,66 @@ A transaction reference is resolved from durable state before routing, and the d
 
 ### Next Milestone
 Harden provider-reference/webhook/reconciliation correlation across persistence interruptions and restart boundaries, ensuring normalized provider events resolve to the same durable transaction identity and terminal-state rules without creating a second provider submission.
+
+
+## Milestone #235 — Durable Provider Webhook and Reconciliation Correlation
+
+**Date:** 2026-09-28
+
+### Completed
+- Hardened normalized webhook correlation so a provider identity can be supplied and verified against the provider durably selected for the transaction.
+- Added restart coverage proving a pending transaction loaded by a fresh service instance can accept the correct provider webhook without submitting the purchase again.
+- Wrong-provider webhook events are rejected before transaction mutation.
+- Repeated terminal webhook deliveries remain idempotent when material transaction/provider result fields match, even if observational message text is normalized differently.
+- Existing reconciliation flow continues to reload durable transaction state before applying provider status and never authorizes a second purchase submission.
+
+### Implementation Details
+- `backend/routing/service.go`
+  - Added `HandleWebhookFromProvider(ctx, providerName, event)`.
+  - Provider identity is checked against the transaction's durable `ProviderName` before webhook state mutation.
+  - Existing `HandleWebhook` remains as a compatibility path for trusted internal normalized-event callers; new ingress code should use the provider-aware method.
+  - Added a webhook-specific semantic idempotency comparison that ignores only observational `Message` differences while keeping reference, customer, product, status, provider code, serial number, and price strict.
+  - The persistence-layer `samePurchaseResult` remains strict, preserving version advancement and terminal-overwrite protection.
+- `backend/routing/service_audit_test.go`
+  - Added `TestServiceWebhookCorrelationSurvivesRestartAndRejectsWrongProvider`.
+  - Test persists a pending transaction, constructs a fresh service/store from the durable file, rejects a wrong-provider webhook, accepts the correct provider webhook, verifies terminal persistence, and verifies a repeated terminal webhook converges without a second purchase.
+- Provider adapters already normalize their own webhook payloads and validate provider-specific webhook identity/signature before the routing correlation boundary.
+
+### Verification
+- Exact implementation HEAD: `32edcb26625f25543f5975cc8042a54d92e139f2`
+- CI #2339: **GREEN**
+- `go test ./...`: PASS
+- `go vet ./...`: PASS
+- `go test -race ./...`: PASS
+- PostgreSQL integration: PASS
+
+### Invariants
+- Durable transaction `ReferenceID` remains the primary transaction correlation key.
+- Durable `ProviderName` remains authoritative for provider-aware webhook correlation.
+- Original request identity must match before webhook mutation.
+- A webhook never calls provider purchase and therefore never creates automatic retry/failover.
+- Terminal state remains durable before audit success is required.
+- Persistence errors remain distinguishable from missing state and never authorize provider submission.
+- Repeated terminal webhook events converge only when material provider result fields agree.
+
+### Safety Boundary
+- No automatic provider retry was introduced.
+- No automatic failover was introduced.
+- No customer ledger, balance authority, treasury, or funding behavior changed.
+- Provider-specific signature and payload handling remains inside adapters.
+- No live provider credentials or live-provider validation were used.
+
+### Known Limitations
+- The legacy `HandleWebhook` compatibility method cannot independently authenticate the event source because it receives only a normalized event; trusted internal callers must use `HandleWebhookFromProvider` for explicit provider binding.
+- Provider-side idempotency is not assumed. If a provider accepted a request and the local process failed before durable result persistence, recovery remains reconciliation-driven.
+- Webhook transport ingress/routing is not yet a public API; this milestone hardens the internal correlation boundary.
+
+### Architecture Impact
+The provider event path is now explicitly:
+
+`Provider adapter authentication/normalization → DesKaProvider durable transaction correlation → provider identity validation → durable state transition`
+
+Restarted service instances recover the selected provider from durable state before accepting provider events, preventing a normalized event from being applied to a transaction owned by another provider.
+
+### Next Milestone
+Harden reconciliation concurrency and webhook-vs-reconciliation convergence so concurrent provider observations use durable compare-and-transition semantics consistently, with deterministic conflict resolution and no duplicate external submission.
