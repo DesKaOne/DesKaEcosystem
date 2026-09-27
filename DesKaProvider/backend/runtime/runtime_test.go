@@ -3282,8 +3282,8 @@ func TestServiceRunReentryAfterPartialShutdownConvergesToTerminalState(t *testin
 	if errors.Is(secondErr, partialCatalogErr) {
 		t.Fatalf("second Run must not replay historical catalog error: %v", secondErr)
 	}
-	if errors.Is(secondErr, cleanupErr) {
-		t.Fatalf("second Run must not replay cleanup error before terminal Close: %v", secondErr)
+	if !errors.Is(secondErr, cleanupErr) {
+		t.Fatalf("second Run must preserve the new terminal cleanup error, got %v", secondErr)
 	}
 	if db.closeCount != 1 {
 		t.Fatalf("expected terminal Run shutdown to close database ownership once, got %d", db.closeCount)
