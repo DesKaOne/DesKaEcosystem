@@ -9776,3 +9776,54 @@ This milestone is limited to runtime shutdown ordering, lifecycle completion, er
 **#186 — Runtime Shutdown Re-entry and Terminal-State Boundary**
 
 Focus next on repeated Run/Close interactions after successful shutdown, cleanup-error shutdown, and partial lifecycle shutdown, ensuring terminal-state rejection never replays historical lifecycle/primary errors and never reopens or double-closes runtime ownership.
+
+
+## 187. Milestone Update — Runtime Shutdown Cancellation/Deadline Boundary
+
+**Date:** 2026-09-27
+
+Completed:
+
+- reviewed the shutdown boundary when the Run context is canceled or reaches its deadline during auxiliary lifecycle completion;
+- added regression coverage proving a shutdown deadline is observable as part of the composed Run error when balance lifecycle completion cannot converge before the derived shutdown context deadline;
+- verified database ownership cleanup remains deferred while the balance lifecycle is still active after the deadline-bound shutdown attempt;
+- verified catalog lifecycle completion may converge independently, while transaction/audit database cleanup remains blocked by the still-active balance lifecycle;
+- verified lifecycle convergence followed by explicit Service.Close() performs transaction-before-audit cleanup exactly once and preserves both cleanup error identities;
+- preserved the existing runtime behavior that derives a shutdown context from the caller deadline without allowing cancellation/deadline failure to authorize provider retry, transaction resubmission, ledger mutation, treasury movement, funding, or synthetic recovery;
+- no production runtime behavior was changed; this milestone adds deterministic regression coverage around the existing shutdown deadline contract.
+
+### CI Failure and Correction
+
+CI #1899 on test commit `eaef3a4feae96ead74e7f524a693a5198e9f709f` was **RED** because the new regression test assumed the derived shutdown context would already report `context.DeadlineExceeded` at the exact instant the parent Run context became done. Scheduler timing made that assertion nondeterministic.
+
+The test was corrected in commit `ade1d1279aee580336b87e64cbd5624c820c702c` to wait on the derived shutdown context before asserting its deadline error.
+
+CI #1901 on exact corrected test HEAD is **GREEN**.
+
+### Verification
+
+- Initial deadline-boundary test commit: `eaef3a4feae96ead74e7f524a693a5198e9f709f`.
+- CI #1899: RED — nondeterministic timing assertion in the new test.
+- Corrected test commit: `ade1d1279aee580336b87e64cbd5624c820c702c`.
+- CI #1901: **GREEN**
+  - `go test ./...` — PASS
+  - `go vet ./...` — PASS
+  - PostgreSQL service-backed integration tests — PASS
+  - `go test -race ./...` — PASS
+
+### Safety Boundary
+
+This milestone is limited to runtime shutdown cancellation/deadline observation, lifecycle convergence, and deferred database ownership cleanup. Transaction persistence remains authoritative for transaction state/idempotency; audit persistence remains observational. Shutdown deadline/cancellation errors are infrastructure lifecycle signals only and cannot become provider transaction results or financial authorization.
+
+### Known Limitations
+
+- production `catalogWorkerLifecycle.Shutdown()` remains void-returning; catalog completion errors remain represented through the internal test seam;
+- PostgreSQL integration coverage requires `DESKAPROVIDER_POSTGRES_DSN` and is skipped when unavailable;
+- database close remains non-context-aware;
+- this milestone does not add provider retry/failover or transaction recovery behavior.
+
+### Next Milestone
+
+**#188 — Runtime Shutdown Cancellation vs Lifecycle Completion Precedence**
+
+Focus next on explicit precedence when caller cancellation/deadline, balance completion, catalog completion, and deferred database cleanup produce overlapping errors, preserving all error identities and lifecycle safety without introducing new financial recovery authority.
