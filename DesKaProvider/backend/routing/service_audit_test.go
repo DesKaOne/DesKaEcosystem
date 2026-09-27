@@ -400,3 +400,61 @@ func TestServiceAuditStoreCompatibilityReadRemainsNonAuthoritative(t *testing.T)
 		t.Fatalf("compatibility All must remain an observational empty read, got %#v", events)
 	}
 }
+
+func TestServiceWebhookCorrelationSurvivesRestartAndRejectsWrongProvider(t *testing.T) {
+	storePath := filepath.Join(t.TempDir(), "transactions", "state.json")
+	registry := provider.NewRegistry()
+	mock := Mock.New(Mock.Config{
+		Products:       []provider.Product{{Code: "pln20", Name: "PLN 20"}},
+		ProviderCode:   "00",
+		Message:        "pending",
+		PurchaseStatus: provider.StatusPending,
+		Price:          20000,
+	})
+	if err := registry.Register("mock", mock); err != nil { t.Fatal(err) }
+	ops := operational.NewMemoryStore()
+	if err := ops.Put(operational.Snapshot{ProviderName: "mock", Balance: 100000, Health: operational.HealthHealthy}); err != nil { t.Fatal(err) }
+	router, err := New(registry, ops, map[string]int{"mock": 1})
+	if err != nil { t.Fatal(err) }
+
+	store, err := NewJSONFileTransactionStore(storePath)
+	if err != nil { t.Fatal(err) }
+	first, err := NewServiceWithStoreAndAudit(router, store, NewMemoryTransactionAuditStore())
+	if err != nil { t.Fatal(err) }
+	req := PurchaseRequest{ProductCode: "pln20", CustomerNo: "08123456789", ReferenceID: "ref-webhook-restart-correlation", Amount: 20000}
+	if _, err := first.Purchase(context.Background(), req); err != nil { t.Fatal(err) }
+	if got := mock.PurchaseCount(req.ReferenceID); got != 1 { t.Fatalf("expected one provider submission, got %d", got) }
+
+	restartedStore, err := NewJSONFileTransactionStore(storePath)
+	if err != nil { t.Fatal(err) }
+	restarted, err := NewServiceWithStoreAndAudit(router, restartedStore, NewMemoryTransactionAuditStore())
+	if err != nil { t.Fatal(err) }
+
+	wrong, err := restarted.HandleWebhookFromProvider(context.Background(), "other-provider", provider.WebhookEvent{
+		ReferenceID: req.ReferenceID, ProductCode: req.ProductCode, CustomerNo: req.CustomerNo,
+		Status: provider.StatusSuccess, ProviderCode: "00", Message: "success", Price: 20000,
+	})
+	if !errors.Is(err, ErrWebhookReferenceConflict) || wrong.Result.Status != "" {
+		t.Fatalf("wrong provider must not mutate durable transaction, execution=%#v err=%v", wrong, err)
+	}
+
+	got, err := restarted.HandleWebhookFromProvider(context.Background(), "mock", provider.WebhookEvent{
+		ReferenceID: req.ReferenceID, ProductCode: req.ProductCode, CustomerNo: req.CustomerNo,
+		Status: provider.StatusSuccess, ProviderCode: "00", Message: "success", Price: 20000,
+	})
+	if err != nil { t.Fatal(err) }
+	if got.ProviderName != "mock" || got.Result.Status != provider.StatusSuccess { t.Fatalf("expected correlated terminal success, got %#v", got) }
+
+	persisted, ok := restartedStore.Get(req.ReferenceID)
+	if !ok || persisted.Execution.ProviderName != "mock" || persisted.Execution.Result.Status != provider.StatusSuccess {
+		t.Fatalf("expected correlated webhook result to persist, got %#v", persisted)
+	}
+
+	repeat, err := restarted.HandleWebhookFromProvider(context.Background(), "mock", provider.WebhookEvent{
+		ReferenceID: req.ReferenceID, ProductCode: req.ProductCode, CustomerNo: req.CustomerNo,
+		Status: provider.StatusSuccess, ProviderCode: "00", Message: "normalized duplicate message", Price: 20000,
+	})
+	if err != nil { t.Fatal(err) }
+	if repeat.Result.Status != provider.StatusSuccess { t.Fatalf("expected duplicate terminal webhook to converge, got %#v", repeat) }
+	if got := mock.PurchaseCount(req.ReferenceID); got != 1 { t.Fatalf("webhook correlation must never resubmit provider purchase, got %d", got) }
+}
