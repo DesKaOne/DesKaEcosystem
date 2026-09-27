@@ -3660,6 +3660,106 @@ func TestServiceRunCloseReentryInterleavingsRemainSingleShot(t *testing.T) {
 }
 
 
+
+func TestServiceFreshRunAfterPartialLifecycleConvergenceDoesNotReplayHistoricalErrors(t *testing.T) {
+	service := newRuntimeTestService(t)
+	service.catalogSync, _ = catalog.NewSyncService(
+		&provider.Registry{},
+		catalog.NewMemoryStore(),
+	)
+	service.catalogLifecycle = newCatalogWorkerLifecycle()
+	service.catalogInterval = time.Hour
+
+	historicalCatalogErr := errors.New("historical catalog completion failure")
+	freshTransactionErr := errors.New("fresh transaction cleanup failure")
+	freshAuditErr := errors.New("fresh audit cleanup failure")
+	order := make([]string, 0, 8)
+	catalogCalls := 0
+
+	service.balanceShutdown = func(context.Context) error {
+		service.balanceLifecycle.Shutdown(context.Background())
+		order = append(order, "balance")
+		return nil
+	}
+	service.catalogShutdown = func() error {
+		catalogCalls++
+		order = append(order, "catalog")
+		if catalogCalls == 1 {
+			return historicalCatalogErr
+		}
+		service.catalogLifecycle.Shutdown()
+		return nil
+	}
+	service.catalogStart = func(parent context.Context) (context.Context, error) {
+		return service.catalogLifecycle.Start(parent)
+	}
+
+	tx := &orderedCloseErrorDB{name: "transaction", order: &order, err: freshTransactionErr}
+	audit := &orderedCloseErrorDB{name: "audit", order: &order, err: freshAuditErr}
+	service.databaseOwnership = newRuntimeDatabaseOwnership(tx, audit)
+	service.databaseOwnership.transferToService()
+
+	firstCtx, firstCancel := context.WithCancel(context.Background())
+	firstCancel()
+	firstErr := service.Run(firstCtx)
+	if !errors.Is(firstErr, context.Canceled) || !errors.Is(firstErr, historicalCatalogErr) {
+		t.Fatalf("expected first Run to preserve cancellation and historical catalog error, got %v", firstErr)
+	}
+	if !service.catalogLifecycle.Running() {
+		t.Fatal("expected catalog lifecycle to remain active after partial first shutdown")
+	}
+	if tx.closeCount != 0 || audit.closeCount != 0 {
+		t.Fatalf("expected ownership cleanup to remain deferred after partial first shutdown: tx=%d audit=%d", tx.closeCount, audit.closeCount)
+	}
+
+	if err := service.shutdownCatalogLifecycle(); err != nil {
+		t.Fatalf("expected catalog convergence before fresh Run, got %v", err)
+	}
+	if service.catalogLifecycle.Running() {
+		t.Fatal("expected catalog lifecycle to converge before fresh Run")
+	}
+	if tx.closeCount != 0 || audit.closeCount != 0 {
+		t.Fatalf("expected database ownership to remain open before fresh Run: tx=%d audit=%d", tx.closeCount, audit.closeCount)
+	}
+
+	secondCtx, secondCancel := context.WithCancel(context.Background())
+	secondCancel()
+	secondErr := service.Run(secondCtx)
+	if !errors.Is(secondErr, context.Canceled) {
+		t.Fatalf("expected fresh Run to preserve fresh cancellation, got %v", secondErr)
+	}
+	if errors.Is(secondErr, historicalCatalogErr) {
+		t.Fatalf("fresh Run must not replay historical catalog error: %v", secondErr)
+	}
+	if !errors.Is(secondErr, freshTransactionErr) || !errors.Is(secondErr, freshAuditErr) {
+		t.Fatalf("expected fresh database cleanup errors, got %v", secondErr)
+	}
+	if tx.closeCount != 1 || audit.closeCount != 1 {
+		t.Fatalf("expected fresh Run to close each database exactly once, got tx=%d audit=%d", tx.closeCount, audit.closeCount)
+	}
+	if !reflect.DeepEqual(order, []string{
+		"balance",
+		"catalog",
+		"balance",
+		"catalog",
+		"transaction",
+		"audit",
+	}) {
+		t.Fatalf("unexpected fresh-run completion ordering: %v", order)
+	}
+
+	closeErr := service.Close()
+	if !errors.Is(closeErr, freshTransactionErr) || !errors.Is(closeErr, freshAuditErr) {
+		t.Fatalf("expected repeated Close to preserve fresh cleanup errors, got %v", closeErr)
+	}
+	if errors.Is(closeErr, historicalCatalogErr) || errors.Is(closeErr, context.Canceled) {
+		t.Fatalf("repeated Close must not replay historical or primary Run errors: %v", closeErr)
+	}
+	if tx.closeCount != 1 || audit.closeCount != 1 {
+		t.Fatalf("expected repeated Close not to double-close databases, got tx=%d audit=%d", tx.closeCount, audit.closeCount)
+	}
+}
+
 func TestServiceRunBothLifecyclesRemainActiveThenConvergeBeforeFreshCloseCleanup(t *testing.T) {
 	service := newRuntimeTestService(t)
 	service.catalogSync, _ = catalog.NewSyncService(
