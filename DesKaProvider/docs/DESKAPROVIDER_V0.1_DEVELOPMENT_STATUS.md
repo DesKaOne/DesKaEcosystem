@@ -9014,3 +9014,44 @@ Transaction persistence remains authoritative for transaction state/idempotency;
 **#189 — Runtime Shutdown Error Retention Across Repeated Close/Re-entry**
 
 Focus next on persistence of the recorded cleanup result across repeated direct close, Run-owned shutdown, and re-entry boundaries, including mixed database cleanup failures, without introducing new provider or transaction recovery behavior.
+
+
+## 185. Milestone Update — Runtime Shutdown Completion Ordering & Error Precedence Review
+
+**Date:** 2026-09-27
+
+Completed:
+
+- added deterministic regression coverage for the final runtime shutdown ordering contract;
+- verified shutdown completion order remains:
+  `balance worker → catalog lifecycle → transaction database → audit database`;
+- verified the first shutdown result preserves the primary cancellation error plus balance shutdown, catalog shutdown, transaction cleanup, and audit cleanup error identities;
+- verified repeated `Service.Close()` does not replay historical lifecycle errors or repeat lifecycle completion;
+- verified transaction and audit database handles are each closed exactly once;
+- verified a subsequent `Service.Run()` rejects closed service state with `ErrServiceClosed` rather than replaying historical shutdown errors;
+- no provider retry/failover, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, or synthetic transaction/audit reconstruction was introduced.
+
+### Verification
+
+- Regression test commit: `accdc6244823ff7913cfa3d805e57dc8ada5c916`.
+- CI #1810 on exact test HEAD: **GREEN**.
+  - `go test ./...` — PASS
+  - `go vet ./...` — PASS
+  - PostgreSQL service-backed integration tests — PASS
+  - `go test -race ./...` — PASS
+
+### Safety Boundary
+
+This milestone is limited to runtime shutdown ordering, error identity, repeated lifecycle completion, and database ownership cleanup. It does not change transaction authority, audit authority, provider routing, provider retry/failover, funding, ledger behavior, or cross-domain recovery.
+
+### Known Limitations
+
+- the production catalog lifecycle completion API remains void-returning; error composition is validated through the internal runtime test seam;
+- PostgreSQL integration coverage requires `DESKAPROVIDER_POSTGRES_DSN` and is skipped when unavailable;
+- database close remains non-context-aware.
+
+### Next Milestone
+
+**#186 — Runtime Shutdown Context/Timeout Boundary**
+
+Focus next on the boundary between shutdown context deadlines, worker completion, lifecycle completion, and database ownership closure, preserving the rule that database ownership must not be released while an owned worker remains running.
