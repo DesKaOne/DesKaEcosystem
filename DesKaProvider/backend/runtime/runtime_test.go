@@ -1410,3 +1410,97 @@ func TestServiceRunRejectsRepeatedRunAfterOwnedShutdown(t *testing.T) {
 		t.Fatal("expected runtime ownership to remain closed")
 	}
 }
+
+
+func TestServiceRunShutdownCompletionOrderingAndRepeatedClose(t *testing.T) {
+	primaryErr := errors.New("injected cancellation")
+	balanceErr := errors.New("injected balance shutdown error")
+	catalogErr := errors.New("injected catalog shutdown completion error")
+	transactionErr := errors.New("injected transaction close error")
+	auditErr := errors.New("injected audit close error")
+	order := []string{}
+
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", &balanceMock{Provider: mock.New(mock.Config{}), balance: 100000}); err != nil {
+		t.Fatal(err)
+	}
+	syncService, err := operational.NewSyncService(registry, operational.NewMemoryStore(), "IDR", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	balanceLifecycle, err := operational.NewSyncWorkerLifecycle(syncService, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	transactionDB := &runtimeCleanupErrorDB{
+		delegate: &closeErrorDB{},
+		err:      transactionErr,
+		name:     "transaction",
+		order:    &order,
+	}
+	auditDB := &runtimeCleanupErrorDB{
+		delegate: &closeErrorDB{},
+		err:      auditErr,
+		name:     "audit",
+		order:    &order,
+	}
+	ownership := newRuntimeDatabaseOwnership(transactionDB, auditDB)
+	ownership.transferToService()
+
+	service := &Service{
+		syncService:       syncService,
+		databaseOwnership: ownership,
+		balanceLifecycle:  balanceLifecycle,
+		catalogLifecycle:  newCatalogWorkerLifecycle(),
+		interval:          time.Hour,
+		catalogInterval:   time.Hour,
+		balanceShutdown: func(ctx context.Context) error {
+			order = append(order, "balance")
+			if err := balanceLifecycle.Shutdown(ctx); err != nil {
+				return errors.Join(err, balanceErr)
+			}
+			return balanceErr
+		},
+		catalogShutdown: func() error {
+			order = append(order, "catalog")
+			service.catalogLifecycle.Shutdown()
+			return catalogErr
+		},
+	}
+
+	serviceCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	runErr := service.Run(serviceCtx)
+
+	for _, want := range []error{primaryErr, balanceErr, catalogErr, transactionErr, auditErr} {
+		if !errors.Is(runErr, want) {
+			t.Fatalf("expected shutdown error to preserve %v, got %v", want, runErr)
+		}
+	}
+	wantOrder := []string{"balance", "catalog", "transaction", "audit"}
+	if len(order) != len(wantOrder) {
+		t.Fatalf("unexpected shutdown completion order: %v", order)
+	}
+	for i := range wantOrder {
+		if order[i] != wantOrder[i] {
+			t.Fatalf("unexpected shutdown completion order: %v", order)
+		}
+	}
+
+	repeatedErr := service.Close()
+	for _, want := range []error{transactionErr, auditErr} {
+		if !errors.Is(repeatedErr, want) {
+			t.Fatalf("repeated Service.Close must preserve database close error %v, got %v", want, repeatedErr)
+		}
+	}
+	if errors.Is(repeatedErr, catalogErr) {
+		t.Fatal("repeated Service.Close must not replay catalog completion error")
+	}
+	if len(order) != len(wantOrder) {
+		t.Fatalf("repeated Service.Close must not change completion order: %v", order)
+	}
+	if transactionDB.closeCount != 1 || auditDB.closeCount != 1 {
+		t.Fatalf("repeated Service.Close must not re-close databases: tx=%d audit=%d", transactionDB.closeCount, auditDB.closeCount)
+	}
+}
