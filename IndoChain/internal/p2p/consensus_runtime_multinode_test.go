@@ -230,8 +230,8 @@ func runtimeAuthorityForSigner(t *testing.T, signer *crypto.Ed25519Signer) conse
 	return authority
 }
 
-func (runtimeValidatorAuthorityResolver) PublicKeyForValidator([]byte) ([]byte, error) {
-	return []byte("validator-public-key"), nil
+func (r runtimeValidatorAuthorityResolver) PublicKeyForValidator([]byte) ([]byte, error) {
+	return append([]byte(nil), r.publicKey...), nil
 }
 
 type runtimeSenderAuthorityResolver struct{}
