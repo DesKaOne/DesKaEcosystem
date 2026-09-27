@@ -1375,6 +1375,35 @@ func (db *orderedCloseErrorDB) Close() error {
 	return db.err
 }
 
+func TestCombineRuntimeShutdownErrorPreservesDeterministicErrorOrder(t *testing.T) {
+	primary := errors.New("primary shutdown error")
+	worker := errors.New("worker shutdown error")
+	catalogErr := errors.New("catalog shutdown error")
+	transaction := errors.New("transaction close error")
+	audit := errors.New("audit close error")
+
+	err := combineRuntimeShutdownError(
+		combineRuntimeShutdownError(
+			combineRuntimeShutdownError(
+				combineRuntimeShutdownError(primary, worker),
+				catalogErr,
+			),
+			transaction,
+		),
+		audit,
+	)
+
+	want := "primary shutdown error\nworker shutdown error\ncatalog shutdown error\ntransaction close error\naudit close error"
+	if err == nil || err.Error() != want {
+		t.Fatalf("unexpected deterministic shutdown error order: got %q want %q", err, want)
+	}
+	for _, wantErr := range []error{primary, worker, catalogErr, transaction, audit} {
+		if !errors.Is(err, wantErr) {
+			t.Fatalf("composed shutdown error lost identity for %v: %v", wantErr, err)
+		}
+	}
+}
+
 func TestServiceRunShutdownPreservesCompletionOrderingAndAllErrorIdentity(t *testing.T) {
 	registry := provider.NewRegistry()
 	if err := registry.Register("mock", &balanceMock{Provider: mock.New(mock.Config{}), balance: 100000}); err != nil {
