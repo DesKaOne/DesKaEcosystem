@@ -282,8 +282,10 @@ catalogStarted := false
 
 	if s.catalogSync == nil {
 		<-ctx.Done()
+		s.shutdownMu.Lock()
+		defer s.shutdownMu.Unlock()
 		workerErr := s.shutdownBalanceWorker(workerShutdownCtx)
-		return shutdown(ctx.Err(), workerErr)
+		return shutdownLocked(ctx.Err(), workerErr)
 	}
 
 	startCatalog := s.catalogLifecycle.Start
