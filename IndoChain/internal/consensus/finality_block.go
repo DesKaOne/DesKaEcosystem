@@ -19,6 +19,29 @@ var (
 //
 // This boundary validates authority-to-block binding only. It does not execute
 // or commit canonical state.
+func ValidateFinalizedBlockWithAuthority(
+	ctx BlockProductionContext,
+	candidate block.Block,
+	certificate FinalityCertificate,
+	validators ValidatorSet,
+	votingPower VotingPowerSet,
+	resolver TimeoutAuthorityResolver,
+) (types.Hash, error) {
+	payload, err := ValidateProducedBlock(ctx, candidate)
+	if err != nil {
+		return types.Hash{}, err
+	}
+	if err := ValidateFinalityCertificateWithAuthority(
+		certificate, ctx.State, validators, votingPower, resolver,
+	); err != nil {
+		return types.Hash{}, err
+	}
+	if !bytes.Equal(payload[:], certificate.Payload) {
+		return types.Hash{}, fmt.Errorf("%w: certificate payload does not match block hash", ErrFinalizedBlockMismatch)
+	}
+	return payload, nil
+}
+
 func ValidateFinalizedBlock(
 	ctx BlockProductionContext,
 	candidate block.Block,
