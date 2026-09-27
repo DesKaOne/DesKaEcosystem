@@ -4781,17 +4781,19 @@ func TestServiceOwnershipReplacementStressPreservesGenerationIsolationAcrossRepe
 			t.Fatalf("%s: fresh generation was touched by failed replacement: tx=%d audit=%d", next.name, next.tx.closeCount, next.audit.closeCount)
 		}
 
-		var retryErrs []error
+		retryResults := make(chan error, concurrentAttempts)
+		var retryWG sync.WaitGroup
 		for i := 0; i < concurrentAttempts; i++ {
-			wg.Add(1)
+			retryWG.Add(1)
 			go func() {
-				defer wg.Done()
-				results <- service.replaceDatabaseOwnership(next.ownership)
+				defer retryWG.Done()
+				retryResults <- service.replaceDatabaseOwnership(next.ownership)
 			}()
 		}
-		wg.Wait()
-		close(results)
-		for err := range results {
+		retryWG.Wait()
+		close(retryResults)
+		var retryErrs []error
+		for err := range retryResults {
 			retryErrs = append(retryErrs, err)
 		}
 		for _, retryErr := range retryErrs {
