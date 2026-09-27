@@ -5545,3 +5545,125 @@ func TestNewFromEnvironmentInitializationFailureDoesNotPoisonSubsequentFreshGene
 		t.Fatal("fresh generation must be closed by its own terminal Close")
 	}
 }
+
+
+func TestNewFromEnvironmentInitializationFailureErrorAttributionAcrossStages(t *testing.T) {
+	stages := []string{
+		"after-database-acquisition",
+		"after-provider-state-store",
+		"after-router",
+		"after-purchase-service",
+		"before-ownership-transfer",
+	}
+	for _, stage := range stages {
+		t.Run(stage, func(t *testing.T) {
+			root := t.TempDir()
+			t.Setenv("DIGIFLAZZ_USERNAME", "test-user")
+			t.Setenv("DIGIFLAZZ_API_KEY", "test-key")
+			t.Setenv("DESKAPROVIDER_OPERATIONAL_STORE_PATH", filepath.Join(root, "operational", "snapshots.json"))
+			t.Setenv("DESKAPROVIDER_PROVIDER_STATE_STORE_PATH", filepath.Join(root, "provider-state", "state.json"))
+			t.Setenv("DESKAPROVIDER_TRANSACTION_STORE_PATH", filepath.Join(root, "transactions", "state.json"))
+
+			primary := fmt.Errorf("initialization failure at %s", stage)
+			var captured *runtimeDatabaseOwnership
+			runtimeInitializationFailureHook = func(gotStage string, ownership *runtimeDatabaseOwnership) error {
+				if gotStage != stage {
+					return nil
+				}
+				captured = ownership
+				return primary
+			}
+
+			service, err := NewFromEnvironment(nil)
+			runtimeInitializationFailureHook = nil
+
+			if service != nil {
+				t.Fatal("failed initialization must not return a service")
+			}
+			if !errors.Is(err, primary) {
+				t.Fatalf("primary initialization error was not preserved: got %v", err)
+			}
+			if captured == nil {
+				t.Fatal("expected database ownership at failure boundary")
+			}
+			if !captured.isClosed() {
+				t.Fatal("partial generation must be closed before initialization returns")
+			}
+
+			fresh, err := NewFromEnvironment(nil)
+			if err != nil {
+				t.Fatalf("fresh initialization should succeed after failed generation: %v", err)
+			}
+			if fresh.databaseOwnership == nil || fresh.databaseOwnership.isClosed() {
+				t.Fatal("fresh generation must be distinct and open")
+			}
+			if err := fresh.Close(); err != nil {
+				t.Fatalf("fresh generation Close failed: %v", err)
+			}
+		})
+	}
+}
+
+func TestNewFromEnvironmentInitializationAcquisitionFailuresHaveNoTransferredOwnership(t *testing.T) {
+	t.Run("invalid transaction store configuration", func(t *testing.T) {
+		t.Setenv("DESKAPROVIDER_TRANSACTION_STORE_DRIVER", "invalid")
+		runtimeInitializationFailureHook = func(string, *runtimeDatabaseOwnership) error {
+			t.Fatal("initialization failure hook must not run before database ownership exists")
+			return nil
+		}
+		defer func() { runtimeInitializationFailureHook = nil }()
+
+		service, err := NewFromEnvironment(nil)
+		if service != nil {
+			t.Fatal("invalid configuration must not return a service")
+		}
+		if err == nil || !strings.Contains(err.Error(), "invalid DESKAPROVIDER_TRANSACTION_STORE_DRIVER") {
+			t.Fatalf("expected configuration error, got %v", err)
+		}
+	})
+
+	t.Run("transaction acquisition failure", func(t *testing.T) {
+		t.Setenv("DESKAPROVIDER_TRANSACTION_STORE_DRIVER", "postgres")
+		t.Setenv("DESKAPROVIDER_POSTGRES_DSN", "postgres://invalid:invalid@127.0.0.1:1/invalid?sslmode=disable")
+		runtimeInitializationFailureHook = func(string, *runtimeDatabaseOwnership) error {
+			t.Fatal("initialization failure hook must not run when transaction acquisition fails")
+			return nil
+		}
+		defer func() { runtimeInitializationFailureHook = nil }()
+
+		service, err := NewFromEnvironment(nil)
+		if service != nil {
+			t.Fatal("transaction acquisition failure must not return a service")
+		}
+		if err == nil || !strings.Contains(err.Error(), "ping PostgreSQL transaction store") {
+			t.Fatalf("expected transaction acquisition error, got %v", err)
+		}
+	})
+}
+
+func TestRuntimeInitializationCleanupErrorAttributionPreservesPrimaryAndCleanupIdentity(t *testing.T) {
+	primary := errors.New("primary initialization failure")
+	transactionErr := errors.New("transaction cleanup failure")
+	auditErr := errors.New("audit cleanup failure")
+	transactionDB := &initializationCloseErrorDB{closeErr: transactionErr}
+	auditDB := &initializationCloseErrorDB{closeErr: auditErr}
+
+	err := withRuntimeInitializationCleanupError(primary, transactionDB, auditDB)
+	if !errors.Is(err, primary) {
+		t.Fatal("primary initialization error must remain discoverable")
+	}
+	if !errors.Is(err, transactionErr) {
+		t.Fatal("transaction cleanup error must remain discoverable")
+	}
+	if !errors.Is(err, auditErr) {
+		t.Fatal("audit cleanup error must remain discoverable")
+	}
+	if transactionDB.closeCount != 1 || auditDB.closeCount != 1 {
+		t.Fatalf("expected one cleanup per database, got transaction=%d audit=%d", transactionDB.closeCount, auditDB.closeCount)
+	}
+	if got := err.Error(); !strings.Contains(got, "primary initialization failure") ||
+		!strings.Contains(got, "close transaction database: transaction cleanup failure") ||
+		!strings.Contains(got, "close audit database: audit cleanup failure") {
+		t.Fatalf("combined error lost attribution: %v", err)
+	}
+}
