@@ -219,8 +219,14 @@ func (s *SyncService) Statuses() []SyncStatus {
 func (s *SyncService) SyncAll(ctx context.Context) map[string]error {
 	errorsByProvider := make(map[string]error)
 	for _, name := range s.Registry.Names() {
+		if err := ctx.Err(); err != nil {
+			break
+		}
 		if _, err := s.SyncProvider(ctx, name); err != nil {
 			errorsByProvider[name] = err
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				break
+			}
 		}
 	}
 	return errorsByProvider
