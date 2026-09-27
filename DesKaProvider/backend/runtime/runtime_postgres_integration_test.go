@@ -19,6 +19,11 @@ import (
 	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/operational"
 )
 
+func TestMain(m *testing.M) {
+	os.Setenv("DESKAPROVIDER_POSTGRES_SCHEMA_MODE", "")
+	os.Exit(m.Run())
+}
+
 func TestOpenTransactionStorePostgresIntegration(t *testing.T) {
 	dsn := os.Getenv("DESKAPROVIDER_POSTGRES_DSN")
 	if dsn == "" {
