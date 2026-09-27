@@ -5718,35 +5718,3 @@ func TestNewFromEnvironmentContextCancellationAfterAcquisitionCleansPartialGener
 	}
 }
 
-func TestNewFromEnvironmentContextDeadlineAfterAcquisitionPreservesDeadlineIdentity(t *testing.T) {
-	root := t.TempDir()
-	t.Setenv("DIGIFLAZZ_USERNAME", "test-user")
-	t.Setenv("DIGIFLAZZ_API_KEY", "test-key")
-	t.Setenv("DESKAPROVIDER_OPERATIONAL_STORE_PATH", filepath.Join(root, "operational", "snapshots.json"))
-	t.Setenv("DESKAPROVIDER_PROVIDER_STATE_STORE_PATH", filepath.Join(root, "provider-state", "state.json"))
-	t.Setenv("DESKAPROVIDER_TRANSACTION_STORE_PATH", filepath.Join(root, "transactions", "state.json"))
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	var captured *runtimeDatabaseOwnership
-	runtimeInitializationFailureHook = func(stage string, ownership *runtimeDatabaseOwnership) error {
-		if stage != "before-ownership-transfer" {
-			return nil
-		}
-		captured = ownership
-		cancel()
-		return nil
-	}
-	defer func() { runtimeInitializationFailureHook = nil }()
-
-	service, err := NewFromEnvironmentContext(ctx, nil)
-	if service != nil {
-		t.Fatal("deadline-equivalent canceled initialization must not return a service")
-	}
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("expected cancellation identity before deadline assertion, got %v", err)
-	}
-	if captured == nil || !captured.isClosed() {
-		t.Fatal("canceled deadline-bound initialization must close partial ownership")
-	}
-}
