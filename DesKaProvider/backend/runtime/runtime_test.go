@@ -3108,3 +3108,104 @@ func TestServiceRepeatedLifecycleCompletionPreservesOrderingAndSingleClose(t *te
 		t.Fatal("expected repeated completion to leave both lifecycles stopped")
 	}
 }
+
+
+func TestServiceRunShutdownDefersDatabaseCloseUntilAllLifecyclesStop(t *testing.T) {
+	primaryErr := errors.New("injected shutdown primary error")
+	workerErr := errors.New("injected shutdown worker error")
+	catalogErr := errors.New("injected shutdown catalog error")
+	transactionCleanupErr := errors.New("injected deferred transaction cleanup error")
+	auditCleanupErr := errors.New("injected deferred audit cleanup error")
+	cleanupOrder := []string{}
+
+	registry := provider.NewRegistry()
+	balanceProvider := &balanceMock{Provider: mock.New(mock.Config{}), balance: 100000}
+	if err := registry.Register("mock", balanceProvider); err != nil {
+		t.Fatal(err)
+	}
+	syncService, err := operational.NewSyncService(registry, operational.NewMemoryStore(), "IDR", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalogStore, err := catalog.NewJSONFileStore(filepath.Join(t.TempDir(), "catalog.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalogSync, err := catalog.NewSyncService(registry, catalogStore)
+	if err != nil {
+		t.Fatal(err)
+	}
+	balanceLifecycle, err := operational.NewSyncWorkerLifecycle(syncService, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transactionDB := &runtimeCleanupErrorDB{err: transactionCleanupErr, name: "transaction", order: &cleanupOrder}
+	auditDB := &runtimeCleanupErrorDB{err: auditCleanupErr, name: "audit", order: &cleanupOrder}
+	ownership := newRuntimeDatabaseOwnership(transactionDB, auditDB)
+	ownership.transferToService()
+
+	service := &Service{
+		syncService:       syncService,
+		catalogSync:       catalogSync,
+		databaseOwnership: ownership,
+		balanceLifecycle:  balanceLifecycle,
+		catalogLifecycle:  newCatalogWorkerLifecycle(),
+		interval:          time.Hour,
+		catalogInterval:   time.Hour,
+		balanceShutdown: func(context.Context) error {
+			if err := balanceLifecycle.Shutdown(context.Background()); err != nil {
+				return errors.Join(workerErr, err)
+			}
+			return workerErr
+		},
+		catalogShutdown: func() error {
+			return catalogErr
+		},
+	}
+
+	runCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	service.catalogStart = func(context.Context) (context.Context, error) {
+		return context.Background(), nil
+	}
+	_ = primaryErr
+
+	result := make(chan error, 1)
+	go func() {
+		result <- service.Run(runCtx)
+	}()
+
+	select {
+	case runErr := <-result:
+		if !errors.Is(runErr, context.Canceled) {
+			t.Fatalf("expected context cancellation as primary error, got %v", runErr)
+		}
+		if !errors.Is(runErr, workerErr) {
+			t.Fatalf("expected worker shutdown error, got %v", runErr)
+		}
+		if !errors.Is(runErr, catalogErr) {
+			t.Fatalf("expected catalog shutdown error, got %v", runErr)
+		}
+		if !errors.Is(runErr, transactionCleanupErr) {
+			t.Fatalf("database cleanup must not be omitted from composed shutdown result, got %v", runErr)
+		}
+		if !errors.Is(runErr, auditCleanupErr) {
+			t.Fatalf("database cleanup must not be omitted from composed shutdown result, got %v", runErr)
+		}
+	default:
+		t.Fatal("expected shutdown to complete synchronously")
+	}
+
+	if transactionDB.closeCount != 1 || auditDB.closeCount != 1 {
+		t.Fatalf("expected database cleanup after shutdown, got tx=%d audit=%d", transactionDB.closeCount, auditDB.closeCount)
+	}
+	if len(cleanupOrder) != 2 || cleanupOrder[0] != "transaction" || cleanupOrder[1] != "audit" {
+		t.Fatalf("expected transaction-before-audit cleanup order, got %v", cleanupOrder)
+	}
+	if service.catalogLifecycle.Running() {
+		t.Fatal("expected catalog lifecycle to be stopped before database cleanup")
+	}
+	if balanceLifecycle.Running() {
+		t.Fatal("expected balance lifecycle to be stopped before database cleanup")
+	}
+}
