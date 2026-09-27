@@ -13,9 +13,9 @@ import (
 var ErrSnapshotOlder = errors.New("catalog snapshot is older than stored snapshot")
 
 type Snapshot struct {
-	ProviderName string            `json:"provider_name"`
+	ProviderName string             `json:"provider_name"`
 	Products     []provider.Product `json:"products"`
-	SyncedAt     time.Time         `json:"synced_at"`
+	SyncedAt     time.Time          `json:"synced_at"`
 }
 
 type Store interface {
@@ -224,9 +224,9 @@ func (s *SyncService) SyncAll(ctx context.Context) map[string]error {
 		}
 		if _, err := s.SyncProvider(ctx, name); err != nil {
 			errorsByProvider[name] = err
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				break
-			}
+		}
+		if err := ctx.Err(); err != nil {
+			break
 		}
 	}
 	return errorsByProvider
