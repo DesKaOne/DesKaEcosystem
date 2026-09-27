@@ -8929,3 +8929,45 @@ This milestone only formalizes runtime shutdown ordering and error-precedence ob
 **#186 — Runtime Shutdown Failure Ordering Under Partial Worker Completion**
 
 Focus next on partial completion/timeout boundaries where one lifecycle stops successfully while another remains running, preserving database ownership until all started lifecycles are safely stopped and keeping all primary/cleanup error identities observable.
+
+
+## 187. Milestone Update — Runtime Close-State Error Composition Across Direct and Run-Owned Shutdown
+
+**Date:** 2026-09-27
+
+Completed:
+
+- added regression coverage for the closed-state contract across both direct `Service.Close()` and Run-owned shutdown;
+- verified a direct `Service.Close()` records and preserves the underlying database cleanup error across repeated `Close()` calls;
+- verified a Run-owned shutdown preserves both the primary cancellation error and the recorded database cleanup error;
+- verified repeated `Close()` after Run-owned shutdown preserves the recorded cleanup error without replaying lifecycle completion errors;
+- verified any subsequent `Run()` after runtime ownership is already closed returns the stable `ErrServiceClosed` state error rather than replaying the historical cleanup error;
+- no production runtime refactor was required; this milestone locks the existing closed-state/error-identity contract with regression coverage;
+- no provider retry/failover, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, provider funding, or synthetic transaction/audit reconstruction was introduced.
+
+### Verification
+
+- Regression test commit: `30a55b46e0d355a899c45bb60a09766e5538866e`.
+- CI #1803 on exact test HEAD: **GREEN**.
+  - `go test ./...` — PASS
+  - `go vet ./...` — PASS
+  - PostgreSQL service-backed integration tests — PASS
+  - `go test -race ./...` — PASS
+
+### Safety Boundary
+
+This milestone only verifies runtime closed-state identity and preservation of recorded infrastructure cleanup errors. `ErrServiceClosed` is a lifecycle state signal and is not a provider result, transaction authorization signal, ledger instruction, or recovery authority.
+
+Transaction persistence remains authoritative for transaction state/idempotency, while audit persistence remains observational evidence. Database cleanup remains an infrastructure lifecycle operation.
+
+### Known Limitations
+
+- the production `catalogWorkerLifecycle.Shutdown()` contract remains void-returning; catalog completion errors continue through the existing internal test seam;
+- PostgreSQL integration coverage requires `DESKAPROVIDER_POSTGRES_DSN` and is skipped when unavailable;
+- database close remains non-context-aware.
+
+### Next Milestone
+
+**#188 — Runtime Close-State Error Precedence Across Mixed Lifecycle and Database Failures**
+
+Focus next on mixed shutdown outcomes where lifecycle completion, cancellation, and database cleanup failures coexist, preserving stable `errors.Is` identity and closed-state behavior without introducing new provider or transaction recovery behavior.
