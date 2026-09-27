@@ -10615,3 +10615,62 @@ No architecture document update is required. Milestone #200 adds repeated lifecy
 **#201 — Runtime Lifecycle Convergence Stress / Long-Sequence Reuse**
 
 Focus next on longer repeated lifecycle/convergence sequences under concurrent Run/Close/replacement pressure, preserving the same generation isolation, single-shot cleanup, and error-attribution invariants without introducing new recovery authority.
+
+## 201. Milestone Update — Runtime Lifecycle Convergence Stress / Long-Sequence Reuse
+
+**Date:** 2026-09-27
+
+Completed:
+
+- added a 48-generation sequential runtime reuse stress sequence;
+- each cycle starts both balance and catalog lifecycle owners, rejects concurrent ownership replacement while lifecycle activity is present, then requires explicit lifecycle convergence before replacement;
+- after convergence, the current generation is intentionally closed with transaction/audit cleanup errors, and the failed replacement retains the current generation without touching the fresh generation;
+- concurrent retry replacement is exercised after current-generation cleanup failure and must install the fresh generation exactly once without closing it during installation;
+- repeated cycles verify previous generations are not double-closed and fresh generations remain untouched until they become current;
+- final terminal Close reports only the final generation's cleanup errors and repeated Close preserves those final-generation errors without reopening or double-closing resources;
+- race coverage confirms the long sequence remains free of detected data races;
+- no production runtime implementation change was required;
+- no provider retry/failover, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, provider funding, or synthetic transaction/audit reconstruction was introduced.
+
+### CI
+
+- Final #201 test commit: `f4edc24598bbdefb21b6de1cd30984084a42c1d7`.
+- CI #2006 on the exact test HEAD: **GREEN**.
+  - `go test ./...` — PASS
+  - `go vet ./...` — PASS
+  - PostgreSQL service-backed integration tests — PASS
+  - `go test -race ./...` — PASS
+
+### Boundary / Stress Invariants
+
+- lifecycle convergence remains a prerequisite for ownership replacement;
+- concurrent replacement attempts cannot install a fresh generation while lifecycle owners remain active;
+- failed cleanup remains attributed to the generation that owns the resources;
+- fresh generations are not touched by failed replacement attempts;
+- retry after terminal old-generation cleanup installs the fresh generation without double-closing the old generation;
+- long repeated reuse does not accumulate or replay historical generation cleanup errors into the final generation;
+- terminal Close remains single-shot per ownership resource while preserving final-generation error identity;
+- ownership-generation state remains infrastructure lifecycle bookkeeping and cannot authorize financial state mutation.
+
+### Safety Boundary
+
+This milestone remains limited to lifecycle convergence stress, repeated ownership replacement, cleanup single-shot behavior, concurrent replacement gating, error attribution, and long-sequence reuse. It adds no provider retry/failover, transaction recovery, ledger mutation, customer-balance mutation, treasury movement, provider funding, or financial authorization.
+
+### Known Limitations
+
+- ownership replacement remains an internal runtime composition/testing boundary;
+- production `catalogWorkerLifecycle.Shutdown()` remains void-returning and does not expose an independent completion error;
+- database close remains non-context-aware;
+- direct manipulation of internal lifecycle test seams is not a production API;
+- PostgreSQL integration coverage requires `DESKAPROVIDER_POSTGRES_DSN` and is skipped when unavailable;
+- ownership-generation state remains lifecycle bookkeeping, not a recovery journal or transaction authority.
+
+### Architecture Impact
+
+No architecture document update is required. Milestone #201 extends regression coverage to a long repeated convergence/reuse sequence without changing the documented provider, financial, or lifecycle authority model.
+
+### Next Milestone
+
+**#202 — Runtime Close / Run Concurrency Boundary Matrix**
+
+Focus next on deterministic interleavings between terminal `Service.Close()`, `Service.Run()` shutdown convergence, and ownership replacement, preserving single-shot cleanup and generation isolation under concurrent entry points.
