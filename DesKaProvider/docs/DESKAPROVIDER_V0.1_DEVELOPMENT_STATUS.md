@@ -9565,3 +9565,45 @@ This milestone is limited to shutdown completion ordering, repeated lifecycle co
 **#186 — Runtime Shutdown Cancellation/Deadline Boundary**
 
 Focus next on cancellation/deadline behavior during the shutdown phase itself, including preservation of the original lifecycle error composition and ownership cleanup boundary without allowing shutdown-time cancellation to create provider resubmission or financial-state mutation.
+
+
+## 185. Milestone Update — Runtime Shutdown Completion Ordering & Error Precedence Review
+
+**Date:** 2026-09-27
+
+Completed:
+
+- reviewed the final runtime shutdown ordering across auxiliary lifecycle completion and database ownership cleanup;
+- confirmed the intended successful shutdown ordering is balance lifecycle completion, catalog lifecycle completion, transaction database cleanup, then audit database cleanup;
+- added regression coverage for the partial-failure boundary where balance shutdown returns an error while the balance lifecycle remains active;
+- verified that catalog completion is still attempted after the balance completion error, while database ownership cleanup is deferred because the balance lifecycle remains active;
+- verified that `Service.Close()` refuses to close database ownership while an auxiliary lifecycle remains active;
+- verified that cleanup resumes after lifecycle convergence and preserves transaction-before-audit database close ordering;
+- preserved stable primary/lifecycle/database error identity and repeated `Service.Close()` behavior;
+- no provider retry/failover, transaction resubmission, ledger mutation, treasury movement, provider funding, or synthetic transaction/audit reconstruction was introduced.
+
+### Verification
+
+- Regression test commit: `8b934925dbe4717f17d5d01fdc20c047afa8e788`.
+- CI #1865 on exact test HEAD: **GREEN**.
+  - `go test ./...` — PASS
+  - `go vet ./...` — PASS
+  - PostgreSQL service-backed integration tests — PASS
+  - `go test -race ./...` — PASS
+
+### Safety Boundary
+
+This milestone validates shutdown ordering and ownership gating only. A database close is permitted only after the runtime confirms that the relevant auxiliary lifecycles have stopped. The change does not grant shutdown/recovery authority to provider adapters, transaction state, audit state, treasury, or customer balances.
+
+### Known Limitations
+
+- balance and catalog lifecycle completion error seams remain internal test seams;
+- production catalog shutdown remains void-returning;
+- PostgreSQL integration coverage requires `DESKAPROVIDER_POSTGRES_DSN` and is skipped when unavailable;
+- database close remains non-context-aware.
+
+### Next Milestone
+
+**#186 — Runtime Shutdown Re-entry & Lifecycle Convergence Matrix**
+
+Focus next on re-entry after partial lifecycle shutdown, convergence after an initially active lifecycle becomes stoppable, and ensuring no historical lifecycle error is replayed as a new Run result, without introducing new provider or transaction recovery behavior.
