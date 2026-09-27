@@ -2050,3 +2050,72 @@ func TestServiceRunShutdownSerializesConcurrentCloseDuringBalanceCompletion(t *t
 		t.Fatalf("expected database close exactly once, got %d", tx.closeCount)
 	}
 }
+
+
+func TestServiceRunShutdownCompletionOrderingAcrossWorkersAndDatabaseOwnership(t *testing.T) {
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", &balanceMock{Provider: mock.New(mock.Config{}), balance: 100000}); err != nil {
+		t.Fatal(err)
+	}
+	syncService, err := operational.NewSyncService(registry, operational.NewMemoryStore(), "IDR", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := New(syncService, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.catalogSync, err = catalog.NewSyncService(registry, catalog.NewMemoryStore())
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.catalogLifecycle = newCatalogWorkerLifecycle()
+	service.catalogInterval = time.Hour
+
+	var mu sync.Mutex
+	order := make([]string, 0, 4)
+	record := func(name string) {
+		mu.Lock()
+		defer mu.Unlock()
+		order = append(order, name)
+	}
+
+	service.balanceShutdown = func(context.Context) error {
+		err := service.balanceLifecycle.Shutdown(context.Background())
+		record("balance")
+		return err
+	}
+	service.catalogShutdown = func() error {
+		service.catalogLifecycle.Shutdown()
+		record("catalog")
+		return nil
+	}
+	tx := &orderedCloseErrorDB{name: "transaction", order: &order}
+	audit := &orderedCloseErrorDB{name: "audit", order: &order}
+	service.databaseOwnership = newRuntimeDatabaseOwnership(tx, audit)
+	service.databaseOwnership.transferToService()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := service.Run(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected cancellation, got %v", err)
+	}
+
+	want := []string{"balance", "catalog", "transaction", "audit"}
+	if !reflect.DeepEqual(order, want) {
+		t.Fatalf("unexpected shutdown completion ordering: got %v want %v", order, want)
+	}
+	if tx.closeCount != 1 || audit.closeCount != 1 {
+		t.Fatalf("expected one database close each, got tx=%d audit=%d", tx.closeCount, audit.closeCount)
+	}
+
+	if err := service.Close(); err != nil {
+		t.Fatalf("expected repeated Close to preserve successful cleanup, got %v", err)
+	}
+	if !reflect.DeepEqual(order, want) {
+		t.Fatalf("repeated Close must not replay lifecycle/database completion: got %v want %v", order, want)
+	}
+	if tx.closeCount != 1 || audit.closeCount != 1 {
+		t.Fatalf("repeated Close must not double-close databases, got tx=%d audit=%d", tx.closeCount, audit.closeCount)
+	}
+}
