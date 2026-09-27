@@ -456,7 +456,9 @@ func combineRuntimeShutdownError(primary,closeErr error) error{if primary==nil{r
 
 func withRuntimeInitializationCleanupError(primary error,transactionDB,auditDB databaseCloser) error{if primary==nil{return closeRuntimeDatabases(transactionDB,auditDB,nil)};return combineRuntimeShutdownError(primary,closeRuntimeDatabases(transactionDB,auditDB,nil))}
 
-func closeRuntimeDatabases(transactionDB,auditDB,operationalDB databaseCloser) error{
+func closeRuntimeDatabases(transactionDB, auditDB databaseCloser, operationalDBs ...databaseCloser) error{
+	var operationalDB databaseCloser
+	if len(operationalDBs) > 0 { operationalDB = operationalDBs[0] }
 	var errs []error
 	if databaseCloserIsNil(transactionDB)==false {
 		if err:=transactionDB.Close();err!=nil{errs=append(errs,fmt.Errorf("close transaction database: %w",err))}
