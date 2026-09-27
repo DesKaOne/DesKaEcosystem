@@ -9922,3 +9922,45 @@ This milestone is limited to shutdown error precedence, deferred lifecycle compl
 **#190 — Runtime Shutdown Ownership Convergence Matrix**
 
 Focus next on the remaining lifecycle/ownership combinations where one or both auxiliary lifecycles fail to converge on the first shutdown attempt, verifying that a later convergence and explicit `Service.Close()` remain single-shot and preserve only fresh cleanup errors.
+
+
+## 186. Milestone Update — Runtime Shutdown Reentrancy & Ownership Guard Matrix
+
+**Date:** 2026-09-27
+
+Completed:
+
+- added deterministic regression coverage for the runtime `Run()` / `Close()` re-entry boundary while the balance lifecycle is active and after owned shutdown completes;
+- verified direct `Service.Close()` rejects active lifecycle ownership and does not close transferred runtime database ownership prematurely;
+- verified a concurrent/re-entry `Service.Run()` while the balance lifecycle is already active returns the existing `operational.ErrSyncWorkerRunning` boundary without closing or reusing database ownership;
+- verified cancellation-driven `Service.Run()` shutdown completes the balance lifecycle and closes transferred runtime database ownership exactly once;
+- verified repeated `Service.Close()` remains idempotent after completed shutdown;
+- verified repeated `Service.Run()` after owned database shutdown returns `ErrServiceClosed` and cannot restart lifecycle workers or reuse closed database ownership;
+- no production runtime behavior required modification because the existing shutdown mutex, lifecycle-running guards, ownership state, and `ErrServiceClosed` boundary already enforce the intended contract;
+- no provider retry/failover, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, provider funding, or synthetic transaction/audit reconstruction was introduced.
+
+### Verification
+
+- Regression test commit: `2a41f3f916e8d81084e44bf0f19bc87e1bc767b4`.
+- CI #1915 on exact test HEAD: **GREEN**.
+  - `go test ./...` — PASS
+  - `go vet ./...` — PASS
+  - PostgreSQL service-backed integration tests — PASS
+  - `go test -race ./...` — PASS
+
+### Safety Boundary
+
+This milestone is limited to runtime re-entry protection, lifecycle ownership, shutdown idempotence, and database cleanup single-shot semantics. The existing transaction persistence authority, append-only audit boundary, provider execution boundary, and no-retry/no-failover safety boundary remain unchanged.
+
+### Known Limitations
+
+- the production `catalogWorkerLifecycle.Shutdown()` contract remains void-returning; catalog completion error composition continues to be validated through the internal test seam;
+- PostgreSQL integration coverage requires `DESKAPROVIDER_POSTGRES_DSN` and is skipped when unavailable;
+- database close remains non-context-aware;
+- this milestone validates concurrent/re-entry behavior around the existing lifecycle guards; it does not introduce a new general-purpose shutdown orchestration subsystem.
+
+### Next Milestone
+
+**#187 — Runtime Close-State Error Composition Across Direct and Run-Owned Shutdown**
+
+Focus next on the exact error identity and cleanup semantics when direct `Close()`, Run-owned shutdown, and repeated close attempts encounter stored database cleanup errors, without introducing new provider or transaction recovery behavior.
