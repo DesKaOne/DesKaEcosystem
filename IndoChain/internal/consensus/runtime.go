@@ -417,16 +417,22 @@ func (r *ValidatorRuntime) FinalizeProposal(resolver TimeoutAuthorityResolver) (
 	if err != nil {
 		return FinalityCertificate{}, err
 	}
-	if err := ValidateFinalityCertificateWithAuthority(
+	if err := ValidateFinalityCertificate(
 		certificate,
 		r.state,
 		r.validators,
 		r.votingPower,
-		resolver,
 	); err != nil {
 		return FinalityCertificate{}, err
 	}
+	if !sameConsensusEvidence(certificate.Votes, precommitCertificate.Votes) {
+		return FinalityCertificate{}, ErrInvalidFinalityCertificate
+	}
 
+	// The finality certificate is derived directly from the authenticated
+	// precommit certificate above. Requiring exact vote/sender/payload/signature
+	// equality prevents a second, unauthenticated evidence set from being
+	// substituted between authenticated precommit validation and finalization.
 	// All authenticated evidence has passed. Only now mutate finalized state.
 	r.lockedProof = &proof
 	r.certificate = &certificate
@@ -445,6 +451,19 @@ func (r *ValidatorRuntime) FinalizedCertificate() (FinalityCertificate, error) {
 	certificate.Payload = append([]byte(nil), r.certificate.Payload...)
 	certificate.Votes = cloneVotes(r.certificate.Votes)
 	return certificate, nil
+}
+
+func sameConsensusEvidence(a, b []Message) bool {
+	if len(a) != len(b) { return false }
+	for i := range a {
+		if !bytes.Equal(a[i].Sender, b[i].Sender) ||
+			a[i].Type != b[i].Type ||
+			!bytes.Equal(a[i].Payload, b[i].Payload) ||
+			!bytes.Equal(a[i].Signature, b[i].Signature) {
+			return false
+		}
+	}
+	return true
 }
 
 func cloneValidatorSet(set ValidatorSet) ValidatorSet {
