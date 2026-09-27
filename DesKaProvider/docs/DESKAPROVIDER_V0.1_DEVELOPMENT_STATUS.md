@@ -8890,3 +8890,42 @@ The change does not introduce provider retry/failover, transaction resubmission,
 **#187 — Runtime Close-State Error Composition Across Direct and Run-Owned Shutdown**
 
 Focus next on stable closed-state error identity and cleanup-error preservation across direct `Service.Close()`, Run-owned shutdown, and repeated close attempts, without introducing new provider or transaction recovery behavior.
+
+
+## 185. Milestone Update — Runtime Shutdown Completion Ordering & Error Precedence Review
+
+**Date:** 2026-09-27
+
+Completed:
+
+- reviewed the final shutdown ordering across the balance worker, catalog lifecycle, and runtime-owned transaction/audit databases;
+- added regression coverage that locks the successful shutdown completion order to `balance → catalog → transaction database → audit database`;
+- verified repeated `Service.Close()` does not replay lifecycle completion callbacks or double-close runtime-owned databases;
+- preserved shutdown error composition and `errors.Is` identity for primary lifecycle and database cleanup errors;
+- confirmed database closure remains conditional on both started lifecycles being stopped;
+- no provider retry/failover, transaction resubmission, ledger mutation, treasury movement, provider funding, or synthetic transaction/audit reconstruction was introduced.
+
+### Verification
+
+- Implementation/test commit: `1c07cda6a594badb28a38e5493896d0533247036`.
+- CI #1799 on exact test HEAD: **GREEN**.
+  - `go test ./...` — PASS
+  - `go vet ./...` — PASS
+  - PostgreSQL service-backed integration tests — PASS
+  - `go test -race ./...` — PASS
+
+### Safety Boundary
+
+This milestone only formalizes runtime shutdown ordering and error-precedence observability. Transaction persistence remains authoritative; audit persistence remains observational. Database cleanup remains an infrastructure lifecycle operation and cannot authorize provider retry/failover/resubmission, ledger mutation, treasury movement, or provider funding.
+
+### Known Limitations
+
+- the production `catalogWorkerLifecycle.Shutdown()` contract remains void-returning; completion error injection remains an internal test seam;
+- PostgreSQL integration coverage requires `DESKAPROVIDER_POSTGRES_DSN` and is skipped when unavailable;
+- database close remains non-context-aware.
+
+### Next Milestone
+
+**#186 — Runtime Shutdown Failure Ordering Under Partial Worker Completion**
+
+Focus next on partial completion/timeout boundaries where one lifecycle stops successfully while another remains running, preserving database ownership until all started lifecycles are safely stopped and keeping all primary/cleanup error identities observable.
