@@ -1416,7 +1416,6 @@ func TestServiceRunShutdownPreservesCompletionOrderingAndAllErrorIdentity(t *tes
 		t.Fatal(err)
 	}
 	service.catalogLifecycle = newCatalogWorkerLifecycle()
-	service.catalogSync = &catalog.SyncService{}
 
 	balanceErr := errors.New("balance shutdown failed")
 	catalogErr := errors.New("catalog shutdown failed")
