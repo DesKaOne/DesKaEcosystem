@@ -3,7 +3,8 @@ package routing
 import (
 	"context"
 	"errors"
-	"path/filepath"\n\t"sync"
+	"path/filepath"
+	"sync"
 	"testing"
 
 	provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
