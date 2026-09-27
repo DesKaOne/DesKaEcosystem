@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
 	Mock "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/Mock"
@@ -461,14 +462,14 @@ func TestServiceWebhookCorrelationSurvivesRestartAndRejectsWrongProvider(t *test
 }
 
 
-type blockingStatusProvider struct {
+type convergingStatusProvider struct {
 	*Mock.Provider
 	entered chan struct{}
 	release chan struct{}
 	once sync.Once
 }
 
-func (p *blockingStatusProvider) GetStatus(ctx context.Context, req provider.StatusRequest) (provider.PurchaseStatus, error) {
+func (p *convergingStatusProvider) GetStatus(ctx context.Context, req provider.StatusRequest) (provider.PurchaseStatus, error) {
 	p.once.Do(func() { close(p.entered) })
 	select {
 	case <-p.release:
@@ -487,7 +488,7 @@ func TestServiceWebhookAndReconciliationConvergeAcrossServiceInstances(t *testin
 		PurchaseStatus: provider.StatusPending,
 		Price: 20000,
 	})
-	blocking := &blockingStatusProvider{Provider: base, entered: make(chan struct{}), release: make(chan struct{})}
+	blocking := &convergingStatusProvider{Provider: base, entered: make(chan struct{}), release: make(chan struct{})}
 
 	newService := func(store TransactionStore) *Service {
 		registry := provider.NewRegistry()
