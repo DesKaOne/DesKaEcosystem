@@ -362,7 +362,7 @@ func (r *ValidatorRuntime) AddVote(msg Message) error {
 	return nil
 }
 
-func (r *ValidatorRuntime) FinalizeProposal() (FinalityCertificate, error) {
+func (r *ValidatorRuntime) FinalizeProposal(resolver TimeoutAuthorityResolver) (FinalityCertificate, error) {
 	if r == nil {
 		return FinalityCertificate{}, ErrInvalidConsensusRuntime
 	}
@@ -384,16 +384,26 @@ func (r *ValidatorRuntime) FinalizeProposal() (FinalityCertificate, error) {
 	if err != nil {
 		return FinalityCertificate{}, err
 	}
-	if err := ValidatePrecommitCertificate(
+	if err := ValidatePrecommitCertificateWithAuthority(
 		precommitCertificate,
 		r.state,
 		r.validators,
 		r.votingPower,
+		resolver,
 	); err != nil {
 		return FinalityCertificate{}, err
 	}
 	proof, err := NewLockProof(r.state.Round, r.proposal, precommitCertificate)
 	if err != nil { return FinalityCertificate{}, err }
+	if err := ValidateLockProofWithAuthority(
+		proof,
+		r.state,
+		r.validators,
+		r.votingPower,
+		resolver,
+	); err != nil {
+		return FinalityCertificate{}, err
+	}
 
 	certificate, err := NewFinalityCertificate(
 		r.state,
@@ -406,6 +416,17 @@ func (r *ValidatorRuntime) FinalizeProposal() (FinalityCertificate, error) {
 	if err != nil {
 		return FinalityCertificate{}, err
 	}
+	if err := ValidateFinalityCertificateWithAuthority(
+		certificate,
+		r.state,
+		r.validators,
+		r.votingPower,
+		resolver,
+	); err != nil {
+		return FinalityCertificate{}, err
+	}
+
+	// All authenticated evidence has passed. Only now mutate finalized state.
 	r.lockedProof = &proof
 	r.certificate = &certificate
 	r.state.Phase = PhaseFinalized
