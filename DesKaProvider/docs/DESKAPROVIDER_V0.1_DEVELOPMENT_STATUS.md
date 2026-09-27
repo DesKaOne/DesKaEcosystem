@@ -8418,3 +8418,56 @@ This milestone is limited to shutdown ordering and runtime ownership protection.
 **#186 — Runtime Shutdown Error Identity Across Direct Close Guards**
 
 Focus next on stable error identity and cleanup-error preservation when direct `Service.Close()` is attempted during active auxiliary lifecycle shutdown, including repeated calls after the lifecycle transitions to stopped, without introducing new provider or transaction recovery behavior.
+
+
+## 185. Milestone Update — Runtime Shutdown Completion Ordering & Error Precedence Review
+
+**Date:** 2026-09-27
+
+Completed:
+
+- reviewed the final runtime shutdown ordering across balance-worker completion, catalog completion, and owned database cleanup;
+- added deterministic regression coverage proving the shutdown sequence remains:
+  1. balance worker completion;
+  2. catalog lifecycle completion;
+  3. transaction database close;
+  4. dedicated audit database close;
+- verified that primary context cancellation remains discoverable together with independent balance shutdown, catalog shutdown-completion, transaction close, and audit close errors;
+- verified repeated `Service.Close()` preserves database cleanup error identity without re-closing owned resources;
+- kept the production shutdown implementation unchanged because the existing composition already satisfied the reviewed ordering and precedence contract;
+- corrected the regression fixture after CI exposed an invalid test setup that attempted catalog sync with a nil registry; the final fixture isolates the shutdown path directly;
+- no provider retry/failover, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, provider funding, or synthetic transaction/audit reconstruction was introduced.
+
+### CI Failure and Correction
+
+CI #1709 on test commit `9ff26451301cd8fde98881d889ca41bfac089d34` was **RED** because the regression fixture populated `catalogSync` with a service whose registry was nil, causing the test to panic during the initial catalog sync instead of reaching shutdown.
+
+The fixture was corrected in commit `3809c3b280cc48bd0669f81f2e2cbc6a3a5f135a` by leaving catalog sync unset so `Service.Run()` enters the cancellation/shutdown path directly.
+
+### Verification
+
+- Initial regression/test fixture commit: `9ff26451301cd8fde98881d889ca41bfac089d34`.
+- CI #1709: RED — invalid catalog-sync test fixture.
+- Corrected runtime/test HEAD: `3809c3b280cc48bd0669f81f2e2cbc6a3a5f135a`.
+- CI #1711 on exact corrected HEAD: **GREEN**.
+  - `go test ./...` — PASS
+  - `go vet ./...` — PASS
+  - PostgreSQL service-backed integration tests — PASS
+  - `go test -race ./...` — PASS
+
+### Safety Boundary
+
+This milestone is limited to runtime shutdown ordering, lifecycle completion, error composition, and owned database cleanup. It does not change transaction authorization or persistence authority. Transaction state remains authoritative and audit remains observational.
+
+### Known Limitations
+
+- the production `catalogWorkerLifecycle.Shutdown()` contract remains void-returning; catalog completion error composition remains exercised through the internal test seam;
+- PostgreSQL integration coverage requires `DESKAPROVIDER_POSTGRES_DSN` and is skipped when unavailable;
+- database close remains non-context-aware;
+- this milestone does not introduce a new production error source.
+
+### Next Milestone
+
+**#186 — Runtime Shutdown Idempotence Under Repeated Run/Close Boundaries**
+
+Focus next on repeated shutdown entry points after `Service.Run()` completion, ensuring lifecycle state, owned database cleanup, and stable error identity remain single-shot across repeated `Run()`/`Close()` boundaries without introducing new provider or transaction recovery behavior.
