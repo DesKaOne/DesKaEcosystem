@@ -36,11 +36,12 @@ const (
  defaultCatalogSyncInterval=15*time.Minute
  defaultCatalogMaxAge=30*time.Minute
  defaultOperationalSnapshotMaxAge=2*time.Minute
+ defaultOperationalStoreDriver="json"
  defaultTransactionStoreDriver="json"
 	defaultAuditStoreDriver="memory"
 )
 
-type Config struct{StorePath,TransactionStorePath,ProviderStateStorePath,TransactionStoreDriver,AuditStoreDriver,PostgresDSN string;SyncInterval time.Duration;FailureThreshold int;Currency,CatalogStorePath,CatalogSyncStatusStorePath string;CatalogSyncInterval,CatalogMaxAge,OperationalSnapshotMaxAge time.Duration}
+type Config struct{StorePath,OperationalStoreDriver,TransactionStorePath,ProviderStateStorePath,TransactionStoreDriver,AuditStoreDriver,PostgresDSN string;SyncInterval time.Duration;FailureThreshold int;Currency,CatalogStorePath,CatalogSyncStatusStorePath string;CatalogSyncInterval,CatalogMaxAge,OperationalSnapshotMaxAge time.Duration}
 type databaseCloser interface { Close() error }
 
 var ErrServiceClosed = errors.New("service is closed")
@@ -59,13 +60,14 @@ type runtimeDatabaseOwnership struct {
 	mu sync.Mutex
 	transactionDB databaseCloser
 	auditDB databaseCloser
+	operationalDB databaseCloser
 	transferredToService bool
 	closed bool
 	closeErr error
 }
 
-func newRuntimeDatabaseOwnership(transactionDB, auditDB databaseCloser) *runtimeDatabaseOwnership {
-	return &runtimeDatabaseOwnership{transactionDB: transactionDB, auditDB: auditDB}
+func newRuntimeDatabaseOwnership(transactionDB, auditDB, operationalDB databaseCloser) *runtimeDatabaseOwnership {
+	return &runtimeDatabaseOwnership{transactionDB: transactionDB, auditDB: auditDB, operationalDB: operationalDB}
 }
 
 func (o *runtimeDatabaseOwnership) transferToService() {
@@ -89,7 +91,7 @@ func (o *runtimeDatabaseOwnership) cleanupBeforeTransfer() error {
 	defer o.mu.Unlock()
 	if o.transferredToService || o.closed { return o.closeErr }
 	o.closed = true
-	o.closeErr = closeRuntimeDatabases(o.transactionDB, o.auditDB)
+	o.closeErr = closeRuntimeDatabases(o.transactionDB, o.auditDB, o.operationalDB)
 	return o.closeErr
 }
 
@@ -171,8 +173,9 @@ func (s *Service) CatalogSyncStatuses() []catalog.SyncStatus {
 }
 
 func LoadConfig()(Config,error){
- cfg:=Config{StorePath:os.Getenv("DESKAPROVIDER_OPERATIONAL_STORE_PATH"),TransactionStoreDriver:os.Getenv("DESKAPROVIDER_TRANSACTION_STORE_DRIVER"),AuditStoreDriver:os.Getenv("DESKAPROVIDER_AUDIT_STORE_DRIVER"),PostgresDSN:os.Getenv("DESKAPROVIDER_POSTGRES_DSN"),ProviderStateStorePath:os.Getenv("DESKAPROVIDER_PROVIDER_STATE_STORE_PATH"),TransactionStorePath:os.Getenv("DESKAPROVIDER_TRANSACTION_STORE_PATH"),SyncInterval:defaultSyncInterval,FailureThreshold:defaultFailureThreshold,Currency:os.Getenv("DESKAPROVIDER_OPERATIONAL_CURRENCY"),CatalogStorePath:os.Getenv("DESKAPROVIDER_CATALOG_STORE_PATH"),CatalogSyncStatusStorePath:os.Getenv("DESKAPROVIDER_CATALOG_SYNC_STATUS_STORE_PATH"),CatalogSyncInterval:defaultCatalogSyncInterval,CatalogMaxAge:defaultCatalogMaxAge,OperationalSnapshotMaxAge:defaultOperationalSnapshotMaxAge}
- if cfg.StorePath==""{cfg.StorePath=defaultStorePath};if cfg.CatalogSyncStatusStorePath==""{cfg.CatalogSyncStatusStorePath=defaultCatalogSyncStatusStorePath};if cfg.TransactionStoreDriver==""{cfg.TransactionStoreDriver=defaultTransactionStoreDriver};if cfg.AuditStoreDriver==""{cfg.AuditStoreDriver=defaultAuditStoreDriver};if cfg.AuditStoreDriver!="memory"&&cfg.AuditStoreDriver!="postgres"{return Config{},fmt.Errorf("invalid DESKAPROVIDER_AUDIT_STORE_DRIVER: %q",cfg.AuditStoreDriver)};if cfg.TransactionStoreDriver!="json"&&cfg.TransactionStoreDriver!="postgres"{return Config{},fmt.Errorf("invalid DESKAPROVIDER_TRANSACTION_STORE_DRIVER: %q",cfg.TransactionStoreDriver)};if cfg.PostgresDSN=="" {
+ cfg:=Config{StorePath:os.Getenv("DESKAPROVIDER_OPERATIONAL_STORE_PATH"),OperationalStoreDriver:os.Getenv("DESKAPROVIDER_OPERATIONAL_STORE_DRIVER"),TransactionStoreDriver:os.Getenv("DESKAPROVIDER_TRANSACTION_STORE_DRIVER"),AuditStoreDriver:os.Getenv("DESKAPROVIDER_AUDIT_STORE_DRIVER"),PostgresDSN:os.Getenv("DESKAPROVIDER_POSTGRES_DSN"),ProviderStateStorePath:os.Getenv("DESKAPROVIDER_PROVIDER_STATE_STORE_PATH"),TransactionStorePath:os.Getenv("DESKAPROVIDER_TRANSACTION_STORE_PATH"),SyncInterval:defaultSyncInterval,FailureThreshold:defaultFailureThreshold,Currency:os.Getenv("DESKAPROVIDER_OPERATIONAL_CURRENCY"),CatalogStorePath:os.Getenv("DESKAPROVIDER_CATALOG_STORE_PATH"),CatalogSyncStatusStorePath:os.Getenv("DESKAPROVIDER_CATALOG_SYNC_STATUS_STORE_PATH"),CatalogSyncInterval:defaultCatalogSyncInterval,CatalogMaxAge:defaultCatalogMaxAge,OperationalSnapshotMaxAge:defaultOperationalSnapshotMaxAge}
+ if cfg.StorePath==""{cfg.StorePath=defaultStorePath};if cfg.OperationalStoreDriver==""{cfg.OperationalStoreDriver=defaultOperationalStoreDriver};if cfg.OperationalStoreDriver!="json"&&cfg.OperationalStoreDriver!="postgres"{return Config{},fmt.Errorf("invalid DESKAPROVIDER_OPERATIONAL_STORE_DRIVER: %q",cfg.OperationalStoreDriver)};if cfg.CatalogSyncStatusStorePath==""{cfg.CatalogSyncStatusStorePath=defaultCatalogSyncStatusStorePath};if cfg.TransactionStoreDriver==""{cfg.TransactionStoreDriver=defaultTransactionStoreDriver};if cfg.AuditStoreDriver==""{cfg.AuditStoreDriver=defaultAuditStoreDriver};if cfg.AuditStoreDriver!="memory"&&cfg.AuditStoreDriver!="postgres"{return Config{},fmt.Errorf("invalid DESKAPROVIDER_AUDIT_STORE_DRIVER: %q",cfg.AuditStoreDriver)};if cfg.TransactionStoreDriver!="json"&&cfg.TransactionStoreDriver!="postgres"{return Config{},fmt.Errorf("invalid DESKAPROVIDER_TRANSACTION_STORE_DRIVER: %q",cfg.TransactionStoreDriver)};if cfg.PostgresDSN=="" {
+  if cfg.OperationalStoreDriver=="postgres" { return Config{},errors.New("DESKAPROVIDER_POSTGRES_DSN is required when DESKAPROVIDER_OPERATIONAL_STORE_DRIVER=postgres") }
   if cfg.TransactionStoreDriver=="postgres" { return Config{},errors.New("DESKAPROVIDER_POSTGRES_DSN is required when DESKAPROVIDER_TRANSACTION_STORE_DRIVER=postgres") }
   if cfg.AuditStoreDriver=="postgres" { return Config{},errors.New("DESKAPROVIDER_POSTGRES_DSN is required when DESKAPROVIDER_AUDIT_STORE_DRIVER=postgres") }
  };if cfg.ProviderStateStorePath==""{cfg.ProviderStateStorePath=defaultProviderStateStorePath};if cfg.TransactionStorePath==""{cfg.TransactionStorePath=defaultTransactionStorePath};if cfg.Currency==""{cfg.Currency=defaultCurrency};if cfg.CatalogStorePath==""{cfg.CatalogStorePath=defaultCatalogStorePath}
@@ -197,14 +200,13 @@ func NewFromEnvironmentContext(ctx context.Context,httpClient *http.Client)(serv
  cached,e:=digiflazz.NewCachedClient(client,defaultPriceListCacheTTL);if e!=nil{return nil,e}
  registry:=provider.NewRegistry()
  if e=registerConfiguredProviders(registry,cached,httpClient);e!=nil{return nil,e}
- store,e:=operational.NewJSONFileStore(cfg.StorePath);if e!=nil{return nil,e}
- syncService,e:=operational.NewSyncService(registry,store,cfg.Currency,cfg.FailureThreshold);if e!=nil{return nil,e}
+ var store operational.Store
  catalogStore,e:=catalog.NewJSONFileStore(cfg.CatalogStorePath);if e!=nil{return nil,e}
  statusPersistence,e:=catalog.NewJSONFileStatusPersistence(cfg.CatalogSyncStatusStorePath);if e!=nil{return nil,e}
  catalogSync,e:=catalog.NewSyncServiceWithStatusPersistence(registry,catalogStore,statusPersistence);if e!=nil{return nil,e}
  transactionStore,transactionDB,e:=openTransactionStore(ctx,cfg);if e!=nil{return nil,e}
 auditStore,auditDB,e:=openAuditStore(ctx,cfg,transactionDB);if e!=nil{return nil,withRuntimeInitializationCleanupError(e,transactionDB,auditDB)}
-ownership:=newRuntimeDatabaseOwnership(transactionDB,auditDB)
+ownership:=newRuntimeDatabaseOwnership(transactionDB,auditDB,nil)
 defer func(){
 	if ownership == nil || ownership.transferred() { return }
 	if cleanupErr:=ownership.cleanupBeforeTransfer();cleanupErr!=nil {
@@ -213,6 +215,11 @@ defer func(){
 	}
 }()
 if e:=runRuntimeInitializationFailureHook("after-database-acquisition", ownership); e!=nil { return nil,e }
+store, operationalDB, e = openOperationalStore(ctx, cfg, transactionDB)
+if e != nil { return nil, e }
+ownership.operationalDB = operationalDB
+syncService, e := operational.NewSyncService(registry, store, cfg.Currency, cfg.FailureThreshold)
+if e != nil { return nil, e }
 statePersistence,e:=operational.NewJSONFileProviderStateStore(cfg.ProviderStateStorePath);if e!=nil{return nil,e}
 stateStore,e:=operational.NewPersistentProviderStateStore(statePersistence);if e!=nil{return nil,e}
 if e:=runRuntimeInitializationFailureHook("after-provider-state-store", ownership); e!=nil { return nil,e }
@@ -446,15 +453,18 @@ func checkRuntimeInitializationContext(ctx context.Context) error {
 
 func combineRuntimeShutdownError(primary,closeErr error) error{if primary==nil{return closeErr};if closeErr==nil{return primary};return errors.Join(primary,closeErr)}
 
-func withRuntimeInitializationCleanupError(primary error,transactionDB,auditDB databaseCloser) error{if primary==nil{return closeRuntimeDatabases(transactionDB,auditDB)};return combineRuntimeShutdownError(primary,closeRuntimeDatabases(transactionDB,auditDB))}
+func withRuntimeInitializationCleanupError(primary error,transactionDB,auditDB databaseCloser) error{if primary==nil{return closeRuntimeDatabases(transactionDB,auditDB,nil)};return combineRuntimeShutdownError(primary,closeRuntimeDatabases(transactionDB,auditDB,nil))}
 
-func closeRuntimeDatabases(transactionDB,auditDB databaseCloser) error{
+func closeRuntimeDatabases(transactionDB,auditDB,operationalDB databaseCloser) error{
 	var errs []error
 	if databaseCloserIsNil(transactionDB)==false {
 		if err:=transactionDB.Close();err!=nil{errs=append(errs,fmt.Errorf("close transaction database: %w",err))}
 	}
-	if databaseCloserIsNil(auditDB)==false && auditDB!=transactionDB {
+	if databaseCloserIsNil(auditDB)==false && auditDB!=transactionDB && auditDB!=operationalDB {
 		if err:=auditDB.Close();err!=nil{errs=append(errs,fmt.Errorf("close audit database: %w",err))}
+	}
+	if databaseCloserIsNil(operationalDB)==false && operationalDB!=transactionDB && operationalDB!=auditDB {
+		if err:=operationalDB.Close();err!=nil{errs=append(errs,fmt.Errorf("close operational database: %w",err))}
 	}
 	return errors.Join(errs...)
 }
@@ -468,6 +478,47 @@ func databaseCloserIsNil(value databaseCloser) bool {
 	default:
 		return false
 	}
+}
+
+func openOperationalStore(ctx context.Context, cfg Config, transactionDB *sql.DB) (operational.Store, *sql.DB, error) {
+	if err := ctx.Err(); err != nil { return nil, nil, err }
+	if cfg.OperationalStoreDriver != "postgres" {
+		store, err := operational.NewJSONFileStore(cfg.StorePath)
+		if err != nil { return nil, nil, err }
+		return store, nil, nil
+	}
+	db := transactionDB
+	owned := false
+	if db == nil {
+		var err error
+		db, err = sql.Open("pgx", cfg.PostgresDSN)
+		if err != nil { return nil, nil, fmt.Errorf("open PostgreSQL operational store: %w", err) }
+		owned = true
+		if err := db.PingContext(ctx); err != nil {
+			_ = db.Close()
+			return nil, nil, fmt.Errorf("ping PostgreSQL operational store: %w", err)
+		}
+	}
+	if err := checkOperationalSchema(ctx, db); err != nil {
+		if owned { _ = db.Close() }
+		return nil, nil, err
+	}
+	store, err := operational.NewPostgresStore(db)
+	if err != nil {
+		if owned { _ = db.Close() }
+		return nil, nil, err
+	}
+	if owned { return store, db, nil }
+	return store, nil, nil
+}
+
+func checkOperationalSchema(ctx context.Context, db *sql.DB) error {
+	if db == nil { return errors.New("operational PostgreSQL database is required") }
+	var columns int
+	err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'provider_operational_snapshots' AND column_name IN ('provider_name','balance','currency','health','last_checked_at','last_success_at','last_error','consecutive_failures')`).Scan(&columns)
+	if err != nil { return fmt.Errorf("check provider operational schema: %w", err) }
+	if columns != 8 { return errors.New("provider operational schema is not ready: apply DesKaProvider/backend/migrations/002_provider_operational_snapshots.sql") }
+	return nil
 }
 
 func openAuditStore(ctx context.Context, cfg Config, transactionDB *sql.DB) (routing.TransactionAuditStore, *sql.DB, error) {
