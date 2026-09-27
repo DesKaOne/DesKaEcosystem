@@ -12951,3 +12951,80 @@ The PostgreSQL runtime boundary now has executable coverage for both successful 
 ### Next Milestone
 
 Harden transaction correlation/idempotency against persistence interruptions and restart boundaries, ensuring an existing provider transaction reference is resolved from durable state before any provider submission can occur again, without introducing automatic retry or failover.
+
+
+## Milestone #234 — Durable Transaction Correlation and Atomic Submission Claim
+
+**Date:** 2026-09-28
+
+### Completed
+- Hardened transaction correlation so a purchase reference is resolved from durable transaction state before provider routing or external submission.
+- Added an explicit atomic create-if-absent transaction-store capability as the submission authorization boundary.
+- Ensured only the service instance that durably creates the pending transaction state is authorized to submit to the external provider.
+- Existing durable references, including pending state recovered after restart, are returned without a second provider submission.
+- Persistence read/claim failures fail closed and do not authorize provider submission.
+- Added deterministic coverage for two service instances sharing one transaction store and PostgreSQL concurrent durable claims.
+
+### Implementation Details
+- backend/routing/service.go
+  - Purchase now performs an error-aware durable lookup by ReferenceID before provider selection.
+  - Existing durable state is returned directly after request-identity validation.
+  - New submissions require CreateIfAbsentContext; a successful durable create is the only path that continues to provider submission.
+  - A store without the atomic capability is rejected at the submission boundary instead of falling back to a non-atomic read-then-write sequence.
+- backend/routing/transaction_store.go
+  - Added CreateIfAbsentTransactionStore.
+  - MemoryTransactionStore implements an atomic in-process claim under its existing mutex.
+- backend/routing/json_transaction_store.go
+  - Added create-if-absent semantics under the existing store mutex.
+  - Persistence failure rolls back the in-memory insertion so a failed write is never treated as submission authorization.
+- backend/routing/postgres_transaction_store.go
+  - Added PostgreSQL INSERT ... ON CONFLICT DO NOTHING RETURNING claim semantics.
+  - Conflict reloads the durable state and validates request/provider identity.
+  - Database errors remain explicit errors; they are not interpreted as “reference absent”.
+- Tests
+  - Added TestServicePurchaseDurableClaimPreventsCrossInstanceSubmission.
+  - Added TestPostgresTransactionStoreAtomicCreateIfAbsent with two concurrent store instances.
+  - Preserved existing restart/reconciliation tests and provider-submission invariants.
+
+### Verification
+- Exact implementation HEAD: 7ce309233dadb700bc51573eecf4290742b5f5cb
+- Push CI #2330: GREEN
+- Pull-request CI #2331: GREEN
+- go test ./...: PASS
+- go vet ./...: PASS
+- go test -race ./...: PASS
+- PostgreSQL integration: PASS
+- CI verification includes the PostgreSQL service container and the new atomic-claim integration test.
+
+### Invariants
+- A transaction reference remains immutable and is the durable correlation key.
+- Original request identity must match an existing reference before reuse.
+- Selected provider identity is persisted before external submission.
+- Only the successful durable create-if-absent claimant may submit externally.
+- Duplicate callers do not trigger automatic retry or provider failover.
+- Persistence read errors and claim errors do not authorize submission.
+- Existing terminal or pending durable state is not replaced merely because a new service instance received the same reference.
+- Provider submission remains outside the customer ledger and balance authority.
+
+### Safety Boundary
+- No automatic provider retry was introduced.
+- No automatic failover was introduced.
+- No customer balance, ledger, treasury, or funding behavior changed.
+- Provider-specific APIs remain isolated behind provider adapters.
+- No live provider credentials or live-provider validation were used.
+- PostgreSQL remains the production-direction durable transaction boundary; JSON remains interim v0.1 storage.
+
+### Known Limitations
+- JSON file-store atomicity is scoped to the store instance and does not establish a cross-process filesystem locking protocol.
+- Provider-side idempotency is still not assumed; if an external provider accepted a request but the local process failed before durable result persistence, recovery remains reconciliation-driven rather than automatic resubmission.
+- This milestone hardens local durable transaction ownership; webhook/provider-reference reconciliation remains the next correlation boundary.
+
+### Architecture Impact
+The transaction path now has an explicit authorization sequence:
+
+DesKaCash → DesKaProvider transaction correlation → durable create-if-absent claim → provider submission
+
+A transaction reference is resolved from durable state before routing, and the durable claim separates “reference exists” from “this runtime owns the first external submission.” This closes the duplicate-submission window across restart and concurrent service-instance boundaries without adding retry or failover behavior.
+
+### Next Milestone
+Harden provider-reference/webhook/reconciliation correlation across persistence interruptions and restart boundaries, ensuring normalized provider events resolve to the same durable transaction identity and terminal-state rules without creating a second provider submission.
