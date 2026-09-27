@@ -12881,3 +12881,73 @@ Harden runtime PostgreSQL failure/recovery semantics around restart and partial 
 - exact implementation CI #2305: **GREEN** — test and race completed successfully.
 
 The milestone remains limited to deterministic PostgreSQL integration coverage; no production provider call or financial-ledger behavior was introduced.
+
+## 233. Milestone Update — PostgreSQL Runtime Failure/Recovery Semantics
+
+**Date:** 2026-09-28
+
+### Completed
+
+- added deterministic PostgreSQL integration coverage for schema-readiness failure;
+- verified that a transaction-store startup failure caused by missing PostgreSQL schema objects is attributed as a persistence/readiness error rather than silently falling back to JSON;
+- verified failed PostgreSQL transaction initialization returns no usable store or database handle;
+- added deterministic PostgreSQL integration coverage for migration-ledger conflict;
+- verified explicit `migrate` mode rejects an existing migration record whose version/name does not match the embedded migration definition;
+- verified migration conflict preserves the migration version and recorded-name context in the returned error;
+- verified failed migration initialization does not return a usable store or database handle;
+- retained the existing single-shot runtime ownership and cleanup behavior from the previous milestones.
+
+### Implementation Details
+
+Added:
+
+- `DesKaProvider/backend/runtime/runtime_postgres_failure_integration_test.go`
+
+The tests use isolated PostgreSQL schemas so failure scenarios cannot contaminate the shared CI database. They exercise the existing runtime PostgreSQL construction path rather than introducing a second failure-handling implementation.
+
+Two failure boundaries are now executable:
+
+1. **Readiness mode** — an empty isolated schema is opened with `PostgresSchemaMode: "check"`; startup fails because the required transaction schema is absent.
+2. **Migration mode** — the migration ledger contains a conflicting version/name record; explicit migration startup fails rather than accepting an inconsistent schema state.
+
+### Verification
+
+- implementation commit: `4960aa71a1f36cfed0b1ebd3a5c8ab1698e527dd`;
+- exact implementation CI #2309: **GREEN**;
+- `test` and `race` jobs completed successfully;
+- no production provider API call was introduced;
+- no customer financial ledger or balance authority was changed.
+
+### Invariants
+
+- PostgreSQL readiness failure remains visible and never silently falls back to JSON;
+- migration metadata conflicts are fatal initialization errors;
+- failed initialization does not transfer database ownership to the Service;
+- resources acquired before initialization failure remain subject to single-shot cleanup;
+- a persistence initialization failure is never interpreted as authorization to retry or resubmit a provider transaction;
+- operational provider balance remains an operational snapshot, not customer financial authority.
+
+### Safety Boundary
+
+This milestone does not:
+
+- retry a provider transaction after persistence failure;
+- perform provider failover;
+- mutate DesKaCash customer balances;
+- move treasury funds;
+- auto-fund providers;
+- claim live provider or production deployment validation.
+
+### Known Limitations
+
+- PostgreSQL failure/recovery integration requires `DESKAPROVIDER_POSTGRES_DSN`;
+- tests use schema-isolated PostgreSQL URLs and therefore expect a PostgreSQL URL DSN;
+- this milestone validates initialization failure attribution; it does not simulate PostgreSQL network partitions or server restarts during an in-flight provider purchase.
+
+### Architecture Impact
+
+The PostgreSQL runtime boundary now has executable coverage for both successful migration/reopen behavior and explicit initialization failure modes. Runtime startup can distinguish a missing schema from a valid persistent store without silently degrading persistence, while ownership cleanup remains outside provider transaction retry semantics.
+
+### Next Milestone
+
+Harden transaction correlation/idempotency against persistence interruptions and restart boundaries, ensuring an existing provider transaction reference is resolved from durable state before any provider submission can occur again, without introducing automatic retry or failover.
