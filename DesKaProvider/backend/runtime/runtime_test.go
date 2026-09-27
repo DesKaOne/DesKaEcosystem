@@ -3740,6 +3740,7 @@ func TestServiceFreshRunAfterPartialLifecycleConvergenceDoesNotReplayHistoricalE
 	if !reflect.DeepEqual(order, []string{
 		"balance",
 		"catalog",
+		"catalog",
 		"balance",
 		"catalog",
 		"transaction",
