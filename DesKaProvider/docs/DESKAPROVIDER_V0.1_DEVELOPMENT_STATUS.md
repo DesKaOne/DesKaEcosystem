@@ -8971,3 +8971,46 @@ Transaction persistence remains authoritative for transaction state/idempotency,
 **#188 — Runtime Close-State Error Precedence Across Mixed Lifecycle and Database Failures**
 
 Focus next on mixed shutdown outcomes where lifecycle completion, cancellation, and database cleanup failures coexist, preserving stable `errors.Is` identity and closed-state behavior without introducing new provider or transaction recovery behavior.
+
+
+## 188. Milestone Update — Runtime Close-State Error Precedence Across Mixed Lifecycle and Database Failures
+
+**Date:** 2026-09-27
+
+Completed:
+
+- added regression coverage for a Run-owned shutdown where cancellation, balance-worker completion failure, catalog completion failure, transaction database cleanup failure, and audit database cleanup failure coexist;
+- verified all five error identities remain discoverable through `errors.Is` from the composed Run error;
+- verified repeated `Service.Close()` preserves recorded database cleanup errors without replaying historical lifecycle/cancellation errors;
+- verified repeated `Service.Close()` remains single-shot for transaction and audit database cleanup;
+- verified subsequent `Run()` after runtime ownership is closed returns stable `ErrServiceClosed` without replaying historical shutdown or cleanup errors;
+- confirmed no production runtime refactor was required because the existing shutdown composition already provides the intended mixed-error boundary;
+- no provider retry/failover, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, provider funding, or synthetic transaction/audit reconstruction was introduced.
+
+### Verification
+
+- Regression test commit: `590512e781478bea115284c433bbdb15c39e0c6a`.
+- CI #1807 on exact test HEAD: **GREEN**.
+  - `go test ./...` — PASS
+  - `go vet ./...` — PASS
+  - PostgreSQL service-backed integration tests — PASS
+  - `go test -race ./...` — PASS
+
+### Safety Boundary
+
+This milestone is limited to runtime error composition and closed-state identity. Error joining preserves observable infrastructure/lifecycle failures but does not assign financial or provider authority to any of them.
+
+Transaction persistence remains authoritative for transaction state/idempotency; audit persistence remains observational evidence. Database cleanup remains an infrastructure lifecycle operation.
+
+### Known Limitations
+
+- the production `catalogWorkerLifecycle.Shutdown()` contract remains void-returning; catalog completion errors continue through the existing internal test seam;
+- PostgreSQL integration coverage requires `DESKAPROVIDER_POSTGRES_DSN` and is skipped when unavailable;
+- database close remains non-context-aware;
+- error composition uses Go error joining rather than a single exclusive precedence winner, so callers should use error identity checks rather than parse a combined error string.
+
+### Next Milestone
+
+**#189 — Runtime Shutdown Error Retention Across Repeated Close/Re-entry**
+
+Focus next on persistence of the recorded cleanup result across repeated direct close, Run-owned shutdown, and re-entry boundaries, including mixed database cleanup failures, without introducing new provider or transaction recovery behavior.
