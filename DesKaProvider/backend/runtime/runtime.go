@@ -573,7 +573,7 @@ func openAuditStore(ctx context.Context, cfg Config, transactionDB *sql.DB) (rou
 		_ = db.Close()
 		return nil, nil, fmt.Errorf("ping PostgreSQL audit store: %w", err)
 	}
-	if cfg.PostgresSchemaMode != "" { if err := preparePostgresSchema(ctx, db, cfg.PostgresSchemaMode, 1); err != nil { _ = db.Close(); return nil, nil, err } }
+	if cfg.PostgresSchemaMode != "" { if cfg.PostgresSchemaMode != "" { if err := preparePostgresSchema(ctx, db, cfg.PostgresSchemaMode, 1); err != nil { _ = db.Close(); return nil, nil, err } } }
 	store, err := routing.NewPostgresTransactionAuditStore(db)
 	if err != nil {
 		_ = db.Close()
