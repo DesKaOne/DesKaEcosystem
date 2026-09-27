@@ -5623,6 +5623,8 @@ func TestNewFromEnvironmentInitializationAcquisitionFailuresHaveNoTransferredOwn
 	})
 
 	t.Run("transaction acquisition failure", func(t *testing.T) {
+		t.Setenv("DIGIFLAZZ_USERNAME", "test-user")
+		t.Setenv("DIGIFLAZZ_API_KEY", "test-key")
 		t.Setenv("DESKAPROVIDER_TRANSACTION_STORE_DRIVER", "postgres")
 		t.Setenv("DESKAPROVIDER_POSTGRES_DSN", "postgres://invalid:invalid@127.0.0.1:1/invalid?sslmode=disable")
 		runtimeInitializationFailureHook = func(string, *runtimeDatabaseOwnership) error {
