@@ -10415,3 +10415,73 @@ No architecture document update is required. Milestone #197 verifies the existin
 **#198 — Runtime Ownership Replacement Stress / Repeated Convergence**
 
 Focus next on repeated concurrent replacement and convergence cycles, including repeated failed convergence, successful convergence, replacement, and terminal Close across multiple ownership generations, with race coverage proving no generation crosses another generation's cleanup/error state.
+
+
+## 198. Milestone Update — Runtime Ownership Replacement Stress / Repeated Convergence
+
+**Date:** 2026-09-27
+
+Completed:
+
+- added deterministic stress coverage across repeated ownership generations;
+- exercised 24 sequential ownership-generation transitions with concurrent replacement pressure on every cycle;
+- verified active balance/catalog lifecycle state rejects all concurrent replacement attempts before convergence;
+- verified failed replacement closes the previous generation exactly once and reports only that generation's transaction/audit cleanup errors;
+- verified the fresh generation remains completely untouched when old-generation cleanup fails;
+- verified retry after terminal old-generation cleanup installs the fresh generation without replaying historical cleanup errors;
+- verified concurrent retry callers cannot double-close the previous generation or close the newly installed generation during replacement;
+- repeated the same convergence → failed replacement → retry → fresh generation sequence across multiple generations;
+- verified transaction cleanup remains ordered before audit cleanup for every generation;
+- verified the final generation reports only its own cleanup errors on terminal Service.Close();
+- verified repeated terminal Service.Close() does not double-close the final generation or replay errors from historical generations;
+- no production runtime implementation change was required;
+- no provider retry/failover, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, provider funding, or synthetic transaction/audit reconstruction was introduced.
+
+### CI Failure Analysis and Correction
+
+- CI #1982 on initial stress-test commit 44fb143eff62d3794c2fcc3a542acd072ba1e8a2 was RED in both test and race.
+- Failure was isolated to the new test fixture's cleanup-order assertion: the fixture stored a copy of a slice header while orderedCloseErrorDB appended through a pointer to the original slice, so the assertion observed an empty slice even though the cleanup calls occurred.
+- The failure was therefore a test-fixture bookkeeping defect, not a production runtime or ownership-generation defect.
+- The PostgreSQL service-backed test environment initialized successfully; unrelated pre-existing PostgreSQL log noise did not cause the failure.
+- Corrected the fixture to retain a pointer to the generation's cleanup-order slice.
+- Final stress-test commit: f1c80ab0b019b01cf22fbe4c927db6013777fdc8.
+- CI #1984 on the exact stress-test HEAD: **GREEN**.
+  - go test ./... — PASS
+  - go vet ./... — PASS
+  - PostgreSQL service-backed integration tests — PASS
+  - go test -race ./... — PASS
+
+### Stress / Ownership Invariants
+
+- lifecycle convergence must complete before ownership replacement can proceed;
+- concurrent replacement attempts cannot bypass the lifecycle gate;
+- failed old-generation cleanup prevents installation of the fresh generation;
+- old-generation transaction/audit cleanup remains single-shot and ordered;
+- fresh-generation resources remain untouched until successful installation;
+- retry after terminal old-generation cleanup installs the fresh generation without stale error state;
+- each ownership generation carries only its own cleanup/error state;
+- repeated replacement and terminal Close do not cross generation boundaries or double-close resources;
+- ownership generation remains infrastructure lifecycle bookkeeping and cannot authorize financial state mutation.
+
+### Safety Boundary
+
+This milestone remains limited to runtime ownership generation isolation, repeated lifecycle convergence, concurrent replacement pressure, cleanup ordering, error attribution, and single-shot database cleanup. It adds no provider retry/failover, transaction recovery, ledger mutation, customer-balance mutation, treasury movement, provider funding, or financial authorization.
+
+### Known Limitations
+
+- ownership replacement remains an internal runtime composition/testing boundary;
+- production catalogWorkerLifecycle.Shutdown() remains void-returning and does not expose an independent completion error;
+- database close remains non-context-aware;
+- direct manipulation of internal lifecycle test seams is not a production API;
+- PostgreSQL integration coverage requires DESKAPROVIDER_POSTGRES_DSN and is skipped when unavailable;
+- ownership-generation state remains lifecycle bookkeeping, not a recovery journal or transaction authority.
+
+### Architecture Impact
+
+No architecture document update is required. Milestone #198 adds repeated-convergence and stress regression guarantees around the existing shutdown/ownership boundary without changing the documented provider, financial, or lifecycle authority model.
+
+### Next Milestone
+
+**#199 — Runtime Shutdown Error / Ownership Generation Boundary Matrix**
+
+Focus next on a compact matrix of shutdown outcomes across lifecycle errors, database cleanup errors, replacement attempts, repeated Close, and subsequent lifecycle reuse, proving each error remains attributable to the correct runtime boundary without creating recovery authority.
