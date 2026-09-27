@@ -352,25 +352,22 @@ func (s *Service) Reconcile(ctx context.Context, referenceID string) (PurchaseEx
 		return PurchaseExecution{}, err
 	}
 
-	s.mu.Lock()
-	call, ok := s.transactions[referenceID]
+	latest, ok, readErr := getTransactionContextE(ctx, s.Store, referenceID)
+	if readErr != nil {
+		return PurchaseExecution{}, fmt.Errorf("reload transaction for reconciliation: %w", readErr)
+	}
 	if !ok {
-		s.mu.Unlock()
 		return PurchaseExecution{}, ErrWebhookTransactionNotFound
 	}
-	request := call.request
-	providerName := call.result.ProviderName
+	request := latest.Request
+	providerName := latest.Execution.ProviderName
 	if providerName == "" {
-		s.mu.Unlock()
 		return PurchaseExecution{}, ErrWebhookReferenceConflict
 	}
-	select {
-	case <-call.done:
-	default:
-		s.mu.Unlock()
-		return PurchaseExecution{}, ErrWebhookReferenceConflict
+	if latest.Execution.Result.Status != provider.StatusPending {
+		s.syncLocalTransaction(latest)
+		return latest.Execution, nil
 	}
-	s.mu.Unlock()
 
 	p, err := s.Router.Registry.Get(providerName)
 	if err != nil {
@@ -406,9 +403,9 @@ func (s *Service) Reconcile(ctx context.Context, referenceID string) (PurchaseEx
 		Price:        status.Price,
 	}
 
-	latest, ok, readErr := getTransactionContextE(ctx, s.Store, referenceID)
+	latest, ok, readErr = getTransactionContextE(ctx, s.Store, referenceID)
 	if readErr != nil {
-		return PurchaseExecution{}, fmt.Errorf("reload transaction for reconciliation: %w", readErr)
+		return PurchaseExecution{}, fmt.Errorf("reload transaction before reconciliation transition: %w", readErr)
 	}
 	if !ok || latest.Request != request || latest.Execution.ProviderName != providerName {
 		return PurchaseExecution{}, ErrWebhookReferenceConflict
@@ -416,9 +413,7 @@ func (s *Service) Reconcile(ctx context.Context, referenceID string) (PurchaseEx
 	latestResult := latest.Execution.Result
 	if latestResult.Status == provider.StatusSuccess || latestResult.Status == provider.StatusFailed {
 		if sameObservedProviderResult(latestResult, incoming) {
-			s.mu.Lock()
-			call.result = latest.Execution
-			s.mu.Unlock()
+			s.syncLocalTransaction(latest)
 			return latest.Execution, nil
 		}
 		return PurchaseExecution{}, ErrWebhookReferenceConflict
@@ -427,50 +422,49 @@ func (s *Service) Reconcile(ctx context.Context, referenceID string) (PurchaseEx
 		return PurchaseExecution{}, ErrWebhookReferenceConflict
 	}
 
-	s.mu.Lock()
-	call.result = latest.Execution
-	current := call.result.Result
-	defer s.mu.Unlock()
-
-	next := PurchaseExecution{ProviderName: providerName, Result: incoming}
-	expected := latest
-	if err := s.persistTransition(ctx, referenceID, expected, TransactionState{Request: request, Execution: next}); err != nil {
-		if errors.Is(err, ErrTransactionStateConflict) {
-			latestAfterConflict, ok, readErr := getTransactionContextE(ctx, s.Store, referenceID)
-			if readErr != nil {
-				return PurchaseExecution{}, fmt.Errorf("reload transaction after conflict: %w", readErr)
-			}
-			if !ok || latestAfterConflict.Request != request || latestAfterConflict.Execution.ProviderName != providerName {
-				return PurchaseExecution{}, ErrWebhookReferenceConflict
-			}
-			latestResult = latestAfterConflict.Execution.Result
-			if latestResult.Status == provider.StatusSuccess || latestResult.Status == provider.StatusFailed {
-				if sameObservedProviderResult(latestResult, incoming) {
-					call.result = latestAfterConflict.Execution
-					return latestAfterConflict.Execution, nil
-				}
-				return PurchaseExecution{}, ErrWebhookReferenceConflict
-			}
-			if latestResult.Status == provider.StatusPending {
-				call.result = latestAfterConflict.Execution
+	next := TransactionState{
+		Request: request,
+		Execution: PurchaseExecution{ProviderName: providerName, Result: incoming},
+		Version: latest.Version,
+	}
+	if err := s.persistTransition(ctx, referenceID, latest, next); err != nil {
+		if !errors.Is(err, ErrTransactionStateConflict) {
+			return PurchaseExecution{}, err
+		}
+		latestAfterConflict, ok, readErr := getTransactionContextE(ctx, s.Store, referenceID)
+		if readErr != nil {
+			return PurchaseExecution{}, fmt.Errorf("reload transaction after reconciliation conflict: %w", readErr)
+		}
+		if !ok || latestAfterConflict.Request != request || latestAfterConflict.Execution.ProviderName != providerName {
+			return PurchaseExecution{}, ErrWebhookReferenceConflict
+		}
+		latestResult = latestAfterConflict.Execution.Result
+		if latestResult.Status == provider.StatusSuccess || latestResult.Status == provider.StatusFailed {
+			if sameObservedProviderResult(latestResult, incoming) {
+				s.syncLocalTransaction(latestAfterConflict)
 				return latestAfterConflict.Execution, nil
 			}
 			return PurchaseExecution{}, ErrWebhookReferenceConflict
 		}
-		return PurchaseExecution{}, err
+		if latestResult.Status == provider.StatusPending {
+			s.syncLocalTransaction(latestAfterConflict)
+			return latestAfterConflict.Execution, nil
+		}
+		return PurchaseExecution{}, ErrWebhookReferenceConflict
 	}
-	call.result = next
+
+	s.syncLocalTransaction(next)
 	if auditErr := s.appendAudit(TransactionAuditEvent{
 		ReferenceID: referenceID,
 		Action: "RECONCILIATION",
-		Previous: string(current.Status),
+		Previous: string(latestResult.Status),
 		Next: string(incoming.Status),
 		ProviderName: providerName,
 		Message: incoming.Message,
 	}); auditErr != nil {
-		return call.result, fmt.Errorf("audit reconciliation event: %w", auditErr)
+		return next.Execution, fmt.Errorf("audit reconciliation event: %w", auditErr)
 	}
-	return call.result, nil
+	return next.Execution, nil
 }
 
 func (s *Service) persistLocked(ctx context.Context, request PurchaseRequest, execution PurchaseExecution) error {
