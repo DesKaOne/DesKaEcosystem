@@ -753,11 +753,14 @@ func TestCommitRuntimeFinalizedBlockConvergesAcrossTwoNodes(t *testing.T) {
 	vote := consensus.Message{
 		ProtocolVersion: ctx.State.ProtocolVersion, ChainID: ctx.State.ChainID,
 		Epoch: ctx.State.Epoch, Height: ctx.State.Height, Round: ctx.State.Round,
-		Sender: validatorID, Type: consensus.MessageTypeVote, Payload: proposal.Payload[:],
+		Sender: validatorID, Type: consensus.MessageTypePrevote, Payload: proposal.Payload[:],
 	}
-	if err := runtime.AddVote(vote); err != nil {
-		t.Fatal(err)
-	}
+	if err := runtime.AddVote(vote); err != nil { t.Fatal(err) }
+	precommit := vote
+	precommit.Type = consensus.MessageTypePrecommit
+	precommit, err = precommit.Sign(mustTestSigner(t, 23))
+	if err != nil { t.Fatal(err) }
+	if err := runtime.AddVote(precommit); err != nil { t.Fatal(err) }
 	certificate, err := runtime.FinalizeProposal(validatorResolver)
 	if err != nil {
 		t.Fatal(err)
