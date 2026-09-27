@@ -229,7 +229,7 @@ ownership.transferToService()
 return service,nil
 }
 
-func registerConfiguredProviders(registry *provider.Registry, digi provider.Provider, httpClient *http.Client) error {
+func registerConfiguredProviders(registry *provider.Registry, digi provider.PPOBProvider, httpClient *http.Client) error {
  if registry == nil { return errors.New("provider registry is required") }
  if digi == nil { return errors.New("DigiFlazz provider is required") }
  digiCapabilities := provider.CapabilityDescriptor{Capabilities: map[provider.Capability]provider.CapabilityStatus{
