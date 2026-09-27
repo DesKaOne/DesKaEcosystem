@@ -3331,6 +3331,7 @@ func TestServiceRunShutdownDeadlineDefersDatabaseCleanupWhileBalanceLifecycleRem
 		if ctx == nil {
 			t.Fatal("shutdown context must not be nil")
 		}
+		<-ctx.Done()
 		if err := ctx.Err(); !errors.Is(err, context.DeadlineExceeded) {
 			t.Fatalf("expected shutdown deadline, got %v", err)
 		}
