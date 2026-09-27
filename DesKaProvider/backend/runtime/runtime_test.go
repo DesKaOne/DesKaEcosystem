@@ -1106,6 +1106,51 @@ func TestRuntimeInitializationCleanupPreservesWrappedPrimaryAndCleanupIdentity(t
 
 
 
+
+func TestServiceCloseRejectsRunningCatalogLifecycleBeforeDatabaseCleanup(t *testing.T) {
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", &balanceMock{Provider: mock.New(mock.Config{}), balance: 100000}); err != nil {
+		t.Fatal(err)
+	}
+	syncService, err := operational.NewSyncService(registry, operational.NewMemoryStore(), "IDR", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := New(syncService, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.catalogLifecycle = newCatalogWorkerLifecycle()
+	if _, err := service.catalogLifecycle.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	db := &closeErrorDB{}
+	service.databaseOwnership = newRuntimeDatabaseOwnership(db, nil)
+	service.databaseOwnership.transferToService()
+
+	err = service.Close()
+	if err == nil || err.Error() != "service close requires catalog worker shutdown" {
+		t.Fatalf("expected catalog worker shutdown guard, got %v", err)
+	}
+	if db.closeCount != 0 {
+		t.Fatalf("expected database to remain open while catalog worker is running, got %d closes", db.closeCount)
+	}
+
+	service.catalogLifecycle.Shutdown()
+	if err := service.Close(); err != nil {
+		t.Fatalf("expected close after catalog shutdown to succeed, got %v", err)
+	}
+	if db.closeCount != 1 {
+		t.Fatalf("expected one database close after lifecycle completion, got %d", db.closeCount)
+	}
+	if err := service.Close(); err != nil {
+		t.Fatalf("expected repeated close to remain idempotent, got %v", err)
+	}
+	if db.closeCount != 1 {
+		t.Fatalf("expected repeated close not to double-close database, got %d", db.closeCount)
+	}
+}
+
 func TestServiceRunShutdownCompletionOrderingAndRepeatedClose(t *testing.T) {
 	registry := provider.NewRegistry()
 	if err := registry.Register("mock", &balanceMock{Provider: mock.New(mock.Config{}), balance: 100000}); err != nil {
