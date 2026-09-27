@@ -11422,3 +11422,68 @@ No architecture document update is required. Milestone #214 strengthens the exis
 ### Next Milestone
 
 Continue with the next concrete persistence/recovery or routing-safety gap from the actual implementation, prioritizing recovery/error observability and convergence before introducing new provider or business integration.
+
+
+## 215. Milestone Update — Catalog Directory Durability Sync
+
+**Date:** 2026-09-28
+
+Completed:
+
+- identified a remaining durability boundary after Milestone #214: atomic file replacement completed the file-level commit, but the containing directory metadata was not explicitly synchronized after the rename;
+- added a directory `fsync` after successful catalog-file rename so the directory entry update is flushed as part of the durable JSON persistence sequence;
+- retained the existing sequence: serialize candidate state, write temporary file, `fsync` temporary file, close it, atomically rename it into place, then `fsync` the containing directory;
+- added deterministic coverage for the directory synchronization helper;
+- no changes to catalog semantic validation, timestamp monotonicity, runtime publication ordering, provider execution, routing priority, retry/failover, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, provider funding, or synthetic transaction/audit reconstruction.
+
+### Verification
+
+- implementation commit: `4fe3519fdca815c630df86e26f6ff77b3a5e6d2e`;
+- regression-test commit / exact implementation-test HEAD: `fb1d06aec6c4a92b5a6f7f75c0113987f239e66c`;
+- CI #2085 / run `36337906546`: **GREEN** for exact implementation/test HEAD `fb1d06aec6c4a92b5a6f7f75c0113987f239e66c`;
+- test job: **success**;
+- race test itself: **success**; workflow completed successfully after runner cleanup;
+- CI execution passed the repository's `go test ./...`, `go vet ./...`, PostgreSQL-backed test path, and `go test -race ./...` gates.
+
+### Persistence / Recovery Invariants
+
+- missing catalog file remains an empty initial store;
+- readable zero-byte catalog file remains an empty initial store;
+- non-ENOENT read failures remain startup/recovery errors;
+- corrupt JSON remains a startup/recovery error;
+- semantically invalid persisted snapshots cannot enter the runtime catalog store;
+- persisted provider identity must match the catalog map identity;
+- persisted snapshots must contain a non-zero synchronization timestamp;
+- a store cannot regress an existing provider snapshot to an older synchronization timestamp;
+- rejected older snapshots do not mutate current state;
+- a failed durable persistence operation does not mutate the active in-memory snapshot;
+- successful persistence is completed before the new catalog snapshot becomes active in memory;
+- temporary file contents are synchronized before rename;
+- the containing directory is synchronized after rename;
+- recovered product data remains operational catalog cache data and is never financial authority;
+- catalog freshness gates remain independent routing-safety boundaries;
+- persistence recovery does not authorize routing, provider failover, transaction retry, or transaction resubmission.
+
+### Safety Boundary
+
+This milestone is limited to filesystem durability of the operational catalog JSON store. It closes the file-and-directory durability sequence after atomic replacement. It does not establish transaction ordering, financial ordering, provider-side transaction authority, or ledger authority.
+
+### Known Limitations
+
+- durability remains filesystem/process-local and is not a distributed transaction;
+- directory `fsync` behavior is platform/filesystem dependent;
+- monotonicity remains timestamp-based and does not introduce a globally ordered sequence number;
+- clock skew can still affect synchronization timestamp meaning;
+- catalog synchronization errors are still not exposed through a dedicated runtime health/error channel;
+- retry cadence remains the configured CatalogSyncInterval and is not backoff-aware;
+- database close remains non-context-aware;
+- PostgreSQL integration coverage requires `DESKAPROVIDER_POSTGRES_DSN` and is skipped when unavailable;
+- ownership-generation state remains lifecycle bookkeeping, not a recovery journal or transaction authority.
+
+### Architecture Impact
+
+No architecture document update is required. Milestone #215 strengthens the existing operational JSON persistence boundary by completing the file-and-directory durability sequence without changing runtime, provider, routing, or financial authority.
+
+### Next Milestone
+
+Continue with the next concrete persistence/recovery or routing-safety gap from the actual implementation, prioritizing stale-state/error observability and recovery convergence before introducing new provider or business integration.
