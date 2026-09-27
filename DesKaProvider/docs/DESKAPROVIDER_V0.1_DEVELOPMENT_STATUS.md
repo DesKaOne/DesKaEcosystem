@@ -12570,3 +12570,111 @@ DesKaProvider now has a provider-neutral operational persistence seam that can e
 ### Next Milestone
 
 Wire PostgreSQL operational snapshot selection into the runtime configuration and lifecycle, including migration/schema readiness checks and deterministic fallback rules. JSON must remain an explicit interim mode rather than an implicit fallback when PostgreSQL is requested.
+
+
+## 230. Milestone Update — Runtime PostgreSQL Operational Store Selection + Schema Readiness
+
+**Date:** 2026-09-28
+
+### Completed
+
+- added explicit DESKAPROVIDER_OPERATIONAL_STORE_DRIVER runtime configuration with json as the existing interim default and postgres as the explicit PostgreSQL mode;
+- added configuration validation so unsupported operational-store drivers fail startup;
+- added explicit PostgreSQL DSN validation when operational PostgreSQL mode is requested;
+- wired runtime.Service to construct the operational snapshot store from the selected driver;
+- reused the existing PostgreSQL transaction database handle when both transaction and operational stores use PostgreSQL, avoiding a duplicate database handle;
+- added separate operational database ownership when PostgreSQL operational storage is selected without a reusable transaction handle;
+- extended runtime database ownership cleanup so the operational database is closed exactly once and shared handles are not double-closed;
+- added PostgreSQL schema readiness verification before constructing PostgresStore;
+- schema readiness is check-only: runtime startup does not silently create or migrate the operational schema;
+- missing/incomplete operational PostgreSQL schema fails initialization with an explicit instruction to apply DesKaProvider/backend/migrations/002_provider_operational_snapshots.sql;
+- added deterministic tests covering JSON selection, missing PostgreSQL DSN, PostgreSQL initialization failure without JSON fallback, and PostgreSQL schema readiness failure;
+- documented the operational store driver in DesKaProvider/backend/.env.example.
+
+### Implementation Details
+
+Runtime selection is now:
+
+DESKAPROVIDER_OPERATIONAL_STORE_DRIVER
+             |
+       +-----+------+
+       |            |
+      json       postgres
+       |            |
+   JSONStore   PostgreSQL Store
+                    |
+          schema readiness check
+                    |
+             ready -> startup
+             not ready -> fail
+
+The explicit PostgreSQL path never falls back to JSON after a PostgreSQL connection or schema-readiness failure.
+
+Database ownership remains centralized:
+
+runtime.Service
+      |
+      v
+runtimeDatabaseOwnership
+      |
+      +--> transaction DB
+      +--> audit DB
+      +--> operational DB (only when separately owned)
+
+When transaction and operational PostgreSQL storage share the same *sql.DB, the runtime records one ownership handle and closes it once.
+
+### Verification
+
+- CI #2257: RED; GitHub Actions log identified compile failures introduced by the initial ownership integration (closeRuntimeDatabases arity and operational DB scope);
+- root cause was fixed without weakening the lifecycle invariant;
+- CI #2259: RED; GitHub Actions log identified remaining runtime test compilation failures from the changed cleanup function signature plus an unused test import;
+- compatibility was restored with a variadic optional operational database argument while retaining the new ownership behavior;
+- exact final implementation HEAD: 1b44213885474ec0a2e185100475b2e32205e8b5;
+- exact final implementation CI #2263: GREEN;
+- CI test job: PASS;
+- CI vet job: PASS;
+- CI race job: PASS;
+- PostgreSQL-backed CI service: PASS.
+
+The PostgreSQL integration test suite also continued to report the expected database CHECK-constraint log from its dedicated constraint-propagation test; this was not a CI failure.
+
+### Invariants
+
+- explicit PostgreSQL operational mode never silently falls back to JSON;
+- schema unavailability is an initialization failure, not an operational cache miss;
+- operational persistence remains separate from customer financial authority;
+- operational database cleanup is lifecycle-owned and single-shot;
+- shared PostgreSQL handles are not double-closed;
+- runtime selection does not alter provider transaction submission, retry, failover, ledger, treasury, or funding behavior;
+- operational persistence failures remain non-authorizing for transaction retry or provider failover.
+
+### Safety Boundary
+
+This milestone changes only runtime selection and initialization of the provider operational snapshot store. It does not make provider balance snapshots authoritative for customer balances, transaction authorization, treasury movement, or provider funding.
+
+### Known Limitations
+
+- JSON remains the default v0.1 operational store for backward-compatible interim deployments;
+- PostgreSQL schema migration execution is still outside runtime ownership and must be applied before selecting PostgreSQL operational storage;
+- the runtime currently verifies required operational columns rather than executing migrations automatically;
+- no live external provider balance request was executed.
+
+### Architecture Impact
+
+The runtime persistence boundary is now explicit:
+
+DesKaProvider Runtime
+        |
+        +--> JSON operational store (explicit/default v0.1)
+        |
+        +--> PostgreSQL operational store (explicit production direction)
+                    |
+                    +--> schema readiness gate
+                    +--> shared DB ownership where possible
+                    +--> isolated DB ownership otherwise
+
+This closes the remaining runtime-selection gap from milestone #229 while preserving the provider-neutral Store abstraction.
+
+### Next Milestone
+
+Harden PostgreSQL migration/schema lifecycle integration around the existing migration set without moving migration authority into provider adapters. The next step should preserve explicit startup failure for unavailable or incompatible persistence and add end-to-end runtime integration coverage for a fully PostgreSQL-backed operational path.
