@@ -758,7 +758,7 @@ func TestCommitRuntimeFinalizedBlockConvergesAcrossTwoNodes(t *testing.T) {
 	if err := runtime.AddVote(vote); err != nil {
 		t.Fatal(err)
 	}
-	certificate, err := runtime.FinalizeProposal()
+	certificate, err := runtime.FinalizeProposal(validatorResolver)
 	if err != nil {
 		t.Fatal(err)
 	}
