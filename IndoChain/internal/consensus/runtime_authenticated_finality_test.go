@@ -92,7 +92,7 @@ func TestValidatorRuntimeUnauthorizedValidatorLeavesStateUnchanged(t *testing.T)
 	f := newAuthenticatedRuntimeFixture(t)
 	unauthorized := runtimeMessage(f.state, "validator-c", MessageTypePrecommit, "authenticated-block")
 	before := f.runtime.State()
-	if err := f.runtime.AddVote(unauthorized); !errors.Is(err, ErrSenderNotInValidatorSet) {
+	if err := f.runtime.AddVote(unauthorized); !errors.Is(err, ErrConsensusMessageUnauthorized) {
 		t.Fatalf("error = %v, want unauthorized validator", err)
 	}
 	if got := f.runtime.State(); got != before { t.Fatalf("state mutated after unauthorized validator: before=%+v after=%+v", before, got) }
