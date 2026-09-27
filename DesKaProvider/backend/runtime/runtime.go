@@ -503,16 +503,17 @@ func openOperationalStore(ctx context.Context, cfg Config, transactionDB *sql.DB
 			return nil, nil, fmt.Errorf("ping PostgreSQL operational store: %w", err)
 		}
 	}
-	if cfg.PostgresSchemaMode != "" { if err := preparePostgresSchema(ctx, db, cfg.PostgresSchemaMode, 2); err != nil {
-		if owned { _ = db.Close() }
-		return nil, nil, err
+	if cfg.PostgresSchemaMode != "" {
+		if err := preparePostgresSchema(ctx, db, cfg.PostgresSchemaMode, 2); err != nil {
+			if owned { _ = db.Close() }
+			return nil, nil, err
+		}
 	}
 	store, err := operational.NewPostgresStore(db)
 	if err != nil {
 		if owned { _ = db.Close() }
 		return nil, nil, err
 	}
-	if cfg.PostgresSchemaMode != "" { /* schema lifecycle was explicitly requested */ }
 	if owned { return store, db, nil }
 	return store, nil, nil
 }
