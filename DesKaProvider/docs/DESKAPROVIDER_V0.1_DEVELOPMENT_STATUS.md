@@ -8792,3 +8792,41 @@ This milestone is limited to shutdown ordering, error identity, and ownership cl
 **#186 — Runtime Shutdown Completion Under Partial Lifecycle Start**
 
 Focus next on partial-start combinations where balance or catalog startup fails at different lifecycle boundaries, ensuring only successfully started lifecycle components are completed and database ownership cleanup remains single-shot.
+
+
+### 185. Milestone Update — Runtime Shutdown Completion Ordering & Error Precedence Review
+
+**Date:** 2026-09-27
+
+Completed:
+
+- reviewed the complete Service shutdown composition after the repeated lifecycle-completion hardening in milestone #184;
+- verified the shutdown boundary remains deterministic: primary lifecycle error first, balance-worker completion error second, catalog completion error third, transaction database cleanup fourth, and audit database cleanup fifth;
+- added a focused regression test locking the deterministic composed error order while also verifying every underlying error remains discoverable through `errors.Is`;
+- retained the existing lifecycle ordering coverage proving balance shutdown completes before catalog shutdown and both complete before transaction/audit database cleanup;
+- retained the existing repeated `Service.Close()` coverage proving lifecycle completion errors are not replayed while recorded database cleanup errors remain observable and database resources remain single-shot;
+- no production runtime behavior change was required beyond the #184 single-shot catalog completion fix;
+- no provider retry/failover, transaction resubmission, ledger mutation, treasury movement, provider funding, or cross-domain recovery authority was introduced.
+
+### Verification
+
+- regression test commit: `1d4947c1ccccf42e5921f2db28490a371dd3fd7a`;
+- CI #1759 on exact test HEAD: **GREEN**;
+  - `go test ./...` — PASS
+  - `go vet ./...` — PASS
+  - PostgreSQL integration — PASS
+  - `go test -race ./...` — PASS
+
+### Safety Boundary
+
+The shutdown ordering is an infrastructure lifecycle contract only. Error precedence/composition does not authorize provider execution, transaction retry, failover, resubmission, ledger mutation, treasury movement, or provider funding. Transaction persistence remains authoritative for transaction state; audit remains observational evidence.
+
+### Known Limitations
+
+- deterministic error ordering is an application-level `errors.Join` composition contract and does not imply any additional financial or provider semantics;
+- `databaseCloser.Close()` remains non-context-aware;
+- PostgreSQL integration remains environment-gated by `DESKAPROVIDER_POSTGRES_DSN`.
+
+### Next Milestone
+
+**#186 — Runtime Shutdown Re-entry & Post-Completion State Review:** verify repeated/concurrent `Run()` and `Close()` calls after completed shutdown remain stable, single-shot, and preserve the recorded cleanup result without reopening lifecycle resources.
