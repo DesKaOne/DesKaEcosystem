@@ -1411,14 +1411,6 @@ func TestServiceRunRejectsRepeatedRunAfterOwnedShutdown(t *testing.T) {
 	}
 }
 
-
-func TestServiceRunShutdownCompletionOrderingAndRepeatedClose(t *testing.T) {
-	balanceErr := errors.New("injected balance shutdown error")
-	catalogErr := errors.New("injected catalog shutdown completion error")
-	transactionErr := errors.New("injected transaction close error")
-	auditErr := errors.New("injected audit close error")
-	order := []string{}
-
 	registry := provider.NewRegistry()
 	if err := registry.Register("mock", &balanceMock{Provider: mock.New(mock.Config{}), balance: 100000}); err != nil {
 		t.Fatal(err)
