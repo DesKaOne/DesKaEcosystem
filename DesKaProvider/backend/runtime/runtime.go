@@ -196,22 +196,7 @@ func NewFromEnvironmentContext(ctx context.Context,httpClient *http.Client)(serv
  client,e:=digiflazz.New(digiCfg,httpClient);if e!=nil{return nil,e}
  cached,e:=digiflazz.NewCachedClient(client,defaultPriceListCacheTTL);if e!=nil{return nil,e}
  registry:=provider.NewRegistry()
- digiCapabilities:=provider.CapabilityDescriptor{Capabilities: map[provider.Capability]provider.CapabilityStatus{
-  provider.CapabilityPPOB:{Verified:true,Configured:true,AdapterImplemented:true,Enabled:false,LiveTested:false},
-  provider.CapabilityBalance:{Verified:true,Configured:true,AdapterImplemented:true,Enabled:false,LiveTested:false},
-  provider.CapabilityWebhook:{Verified:true,Configured:true,AdapterImplemented:true,Enabled:false,LiveTested:false},
- }}
- if e=registry.RegisterWithCapabilities("digiflazz",cached,digiCapabilities);e!=nil{return nil,e}
- if os.Getenv("IAK_USERNAME")!=""||os.Getenv("IAK_API_KEY")!="" {
-  iakCfg,e:=config.LoadIAKConfig();if e!=nil{return nil,e}
-  iakClient,e:=iak.New(iakCfg,httpClient);if e!=nil{return nil,e}
-  iakCapabilities:=provider.CapabilityDescriptor{Capabilities: map[provider.Capability]provider.CapabilityStatus{
-   provider.CapabilityPPOB:{Verified:false,Configured:true,AdapterImplemented:true,Enabled:false,LiveTested:false},
-   provider.CapabilityBalance:{Verified:false,Configured:true,AdapterImplemented:true,Enabled:false,LiveTested:false},
-   provider.CapabilityWebhook:{Verified:false,Configured:true,AdapterImplemented:true,Enabled:false,LiveTested:false},
-  }}
-  if e=registry.RegisterWithCapabilities("iak",iakClient,iakCapabilities);e!=nil{return nil,e}
- }
+ if e=registerConfiguredProviders(registry,cached,httpClient);e!=nil{return nil,e}
  store,e:=operational.NewJSONFileStore(cfg.StorePath);if e!=nil{return nil,e}
  syncService,e:=operational.NewSyncService(registry,store,cfg.Currency,cfg.FailureThreshold);if e!=nil{return nil,e}
  catalogStore,e:=catalog.NewJSONFileStore(cfg.CatalogStorePath);if e!=nil{return nil,e}
@@ -242,6 +227,26 @@ if e:=runRuntimeInitializationFailureHook("before-ownership-transfer", ownership
 if err := checkRuntimeInitializationContext(ctx); err != nil { return nil, err }
 ownership.transferToService()
 return service,nil
+}
+
+func registerConfiguredProviders(registry *provider.Registry, digi provider.Provider, httpClient *http.Client) error {
+ if registry == nil { return errors.New("provider registry is required") }
+ if digi == nil { return errors.New("DigiFlazz provider is required") }
+ digiCapabilities := provider.CapabilityDescriptor{Capabilities: map[provider.Capability]provider.CapabilityStatus{
+  provider.CapabilityPPOB: {Verified:true, Configured:true, AdapterImplemented:true, Enabled:false, LiveTested:false},
+  provider.CapabilityBalance: {Verified:true, Configured:true, AdapterImplemented:true, Enabled:false, LiveTested:false},
+  provider.CapabilityWebhook: {Verified:true, Configured:true, AdapterImplemented:true, Enabled:false, LiveTested:false},
+ }}
+ if err := registry.RegisterWithCapabilities("digiflazz", digi, digiCapabilities); err != nil { return err }
+ if os.Getenv("IAK_USERNAME") == "" && os.Getenv("IAK_API_KEY") == "" { return nil }
+ iakCfg, err := config.LoadIAKConfig(); if err != nil { return err }
+ iakClient, err := iak.New(iakCfg, httpClient); if err != nil { return err }
+ iakCapabilities := provider.CapabilityDescriptor{Capabilities: map[provider.Capability]provider.CapabilityStatus{
+  provider.CapabilityPPOB: {Verified:false, Configured:true, AdapterImplemented:true, Enabled:false, LiveTested:false},
+  provider.CapabilityBalance: {Verified:false, Configured:true, AdapterImplemented:true, Enabled:false, LiveTested:false},
+  provider.CapabilityWebhook: {Verified:false, Configured:true, AdapterImplemented:true, Enabled:false, LiveTested:false},
+ }}
+ return registry.RegisterWithCapabilities("iak", iakClient, iakCapabilities)
 }
 
 func New(syncService *operational.SyncService,interval time.Duration)(*Service,error){if syncService==nil{return nil,errors.New("sync service is required")};if interval<=0{return nil,errors.New("sync interval must be greater than zero")};balanceLifecycle,err:=operational.NewSyncWorkerLifecycle(syncService,interval);if err!=nil{return nil,err};return &Service{syncService:syncService,balanceLifecycle:balanceLifecycle,catalogLifecycle:newCatalogWorkerLifecycle(),interval:interval},nil}
