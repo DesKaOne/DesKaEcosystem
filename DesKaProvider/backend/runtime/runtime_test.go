@@ -2260,3 +2260,87 @@ func TestServiceRunMixedShutdownErrorsPreserveIdentityAndClosedState(t *testing.
 		}
 	}
 }
+
+
+func TestServiceRunShutdownErrorPrecedenceRemainsStableAcrossRepeatedClose(t *testing.T) {
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", &balanceMock{Provider: mock.New(mock.Config{}), balance: 100000}); err != nil {
+		t.Fatal(err)
+	}
+	syncService, err := operational.NewSyncService(registry, operational.NewMemoryStore(), "IDR", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := New(syncService, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.catalogSync, err = catalog.NewSyncService(registry, catalog.NewMemoryStore())
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.catalogLifecycle = newCatalogWorkerLifecycle()
+	service.catalogInterval = time.Hour
+
+	primaryErr := context.Canceled
+	balanceErr := errors.New("precedence balance shutdown failure")
+	catalogErr := errors.New("precedence catalog shutdown failure")
+	transactionErr := errors.New("precedence transaction close failure")
+	auditErr := errors.New("precedence audit close failure")
+	order := make([]string, 0, 4)
+	record := func(name string) { order = append(order, name) }
+
+	service.balanceShutdown = func(context.Context) error {
+		service.balanceLifecycle.Shutdown(context.Background())
+		record("balance")
+		return balanceErr
+	}
+	service.catalogShutdown = func() error {
+		service.catalogLifecycle.Shutdown()
+		record("catalog")
+		return catalogErr
+	}
+	tx := &orderedCloseErrorDB{name: "transaction", order: &order, err: transactionErr}
+	audit := &orderedCloseErrorDB{name: "audit", order: &order, err: auditErr}
+	service.databaseOwnership = newRuntimeDatabaseOwnership(tx, audit)
+	service.databaseOwnership.transferToService()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	runErr := service.Run(ctx)
+
+	for _, want := range []error{primaryErr, balanceErr, catalogErr, transactionErr, auditErr} {
+		if !errors.Is(runErr, want) {
+			t.Fatalf("expected first shutdown to preserve %v, got %v", want, runErr)
+		}
+	}
+	wantOrder := []string{"balance", "catalog", "transaction", "audit"}
+	if !reflect.DeepEqual(order, wantOrder) {
+		t.Fatalf("unexpected first shutdown ordering: got %v want %v", order, wantOrder)
+	}
+	if tx.closeCount != 1 || audit.closeCount != 1 {
+		t.Fatalf("expected one database close each, got tx=%d audit=%d", tx.closeCount, audit.closeCount)
+	}
+
+	closeErr := service.Close()
+	for _, want := range []error{transactionErr, auditErr} {
+		if !errors.Is(closeErr, want) {
+			t.Fatalf("expected repeated Close to preserve %v, got %v", want, closeErr)
+		}
+	}
+	for _, want := range []error{primaryErr, balanceErr, catalogErr} {
+		if errors.Is(closeErr, want) {
+			t.Fatalf("repeated Close must not replay lifecycle error %v: %v", want, closeErr)
+		}
+	}
+	if !reflect.DeepEqual(order, wantOrder) {
+		t.Fatalf("repeated Close must not replay shutdown completion: got %v want %v", order, wantOrder)
+	}
+	if tx.closeCount != 1 || audit.closeCount != 1 {
+		t.Fatalf("repeated Close must not double-close databases, got tx=%d audit=%d", tx.closeCount, audit.closeCount)
+	}
+
+	if err := service.Run(context.Background()); !errors.Is(err, ErrServiceClosed) {
+		t.Fatalf("expected closed-state rejection after completed shutdown, got %v", err)
+	}
+}
