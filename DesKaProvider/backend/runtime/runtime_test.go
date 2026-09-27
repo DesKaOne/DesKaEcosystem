@@ -4682,3 +4682,154 @@ func TestServiceFreshOwnershipReplacementDoesNotReplayStaleCleanupErrors(t *test
 		t.Fatal("ownership generations must remain single-shot after repeated Close")
 	}
 }
+
+
+func TestServiceOwnershipReplacementStressPreservesGenerationIsolationAcrossRepeatedConvergence(t *testing.T) {
+	service := newRuntimeTestService(t)
+	service.catalogLifecycle = newCatalogWorkerLifecycle()
+
+	const cycles = 24
+	const concurrentAttempts = 32
+
+	type generation struct {
+		name string
+		tx   *orderedCloseErrorDB
+		audit *orderedCloseErrorDB
+		txErr error
+		auditErr error
+		order []string
+		ownership *runtimeDatabaseOwnership
+	}
+
+	newGeneration := func(index int) *generation {
+		name := fmt.Sprintf("generation-%02d", index)
+		order := make([]string, 0, 2)
+		txErr := fmt.Errorf("%s transaction cleanup error", name)
+		auditErr := fmt.Errorf("%s audit cleanup error", name)
+		tx := &orderedCloseErrorDB{name: name + "-transaction", order: &order, err: txErr}
+		audit := &orderedCloseErrorDB{name: name + "-audit", order: &order, err: auditErr}
+		ownership := newRuntimeDatabaseOwnership(tx, audit)
+		ownership.transferToService()
+		return &generation{name: name, tx: tx, audit: audit, txErr: txErr, auditErr: auditErr, order: order, ownership: ownership}
+	}
+
+	current := newGeneration(0)
+	service.databaseOwnership = current.ownership
+
+	for cycle := 1; cycle <= cycles; cycle++ {
+		next := newGeneration(cycle)
+
+		if err := service.balanceLifecycle.Start(context.Background()); err != nil {
+			t.Fatalf("%s: start balance lifecycle: %v", next.name, err)
+		}
+		if _, err := service.catalogLifecycle.Start(context.Background()); err != nil {
+			t.Fatalf("%s: start catalog lifecycle: %v", next.name, err)
+		}
+
+		results := make(chan error, concurrentAttempts)
+		var wg sync.WaitGroup
+		for i := 0; i < concurrentAttempts; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				results <- service.replaceDatabaseOwnership(next.ownership)
+			}()
+		}
+		wg.Wait()
+		close(results)
+
+		for err := range results {
+			if !errors.Is(err, ErrServiceLifecycleActive) {
+				t.Fatalf("%s: concurrent replacement bypassed active lifecycle gate: %v", next.name, err)
+			}
+		}
+		if service.databaseOwnership != current.ownership {
+			t.Fatalf("%s: fresh generation installed before convergence", next.name)
+		}
+		if current.tx.closeCount != 0 || current.audit.closeCount != 0 {
+			t.Fatalf("%s: current generation was touched before convergence: tx=%d audit=%d", next.name, current.tx.closeCount, current.audit.closeCount)
+		}
+		if next.tx.closeCount != 0 || next.audit.closeCount != 0 {
+			t.Fatalf("%s: fresh generation was touched while replacement was rejected: tx=%d audit=%d", next.name, next.tx.closeCount, next.audit.closeCount)
+		}
+
+		service.catalogLifecycle.Shutdown()
+		if err := service.balanceLifecycle.Shutdown(context.Background()); err != nil {
+			t.Fatalf("%s: converge balance lifecycle: %v", next.name, err)
+		}
+		if service.balanceLifecycle.Running() || service.catalogLifecycle.Running() {
+			t.Fatalf("%s: lifecycle convergence incomplete", next.name)
+		}
+
+		err := service.replaceDatabaseOwnership(next.ownership)
+		if !errors.Is(err, current.txErr) || !errors.Is(err, current.auditErr) {
+			t.Fatalf("%s: expected current-generation cleanup errors on first replacement, got %v", next.name, err)
+		}
+		if service.databaseOwnership != current.ownership {
+			t.Fatalf("%s: failed replacement must retain current generation", next.name)
+		}
+		if current.tx.closeCount != 1 || current.audit.closeCount != 1 {
+			t.Fatalf("%s: current generation must close exactly once after failed replacement: tx=%d audit=%d", next.name, current.tx.closeCount, current.audit.closeCount)
+		}
+		if !reflect.DeepEqual(current.order, []string{current.name + "-transaction", current.name + "-audit"}) {
+			t.Fatalf("%s: current cleanup order changed: %v", next.name, current.order)
+		}
+		if errors.Is(err, next.txErr) || errors.Is(err, next.auditErr) {
+			t.Fatalf("%s: fresh generation cleanup errors leaked into failed replacement: %v", next.name, err)
+		}
+		if next.tx.closeCount != 0 || next.audit.closeCount != 0 {
+			t.Fatalf("%s: fresh generation was touched by failed replacement: tx=%d audit=%d", next.name, next.tx.closeCount, next.audit.closeCount)
+		}
+
+		var retryErrs []error
+		for i := 0; i < concurrentAttempts; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				results <- service.replaceDatabaseOwnership(next.ownership)
+			}()
+		}
+		wg.Wait()
+		close(results)
+		for err := range results {
+			retryErrs = append(retryErrs, err)
+		}
+		for _, retryErr := range retryErrs {
+			if retryErr != nil {
+				t.Fatalf("%s: retry replacement after terminal current cleanup failed: %v", next.name, retryErr)
+			}
+		}
+		if service.databaseOwnership != next.ownership {
+			t.Fatalf("%s: expected fresh generation after retry", next.name)
+		}
+		if current.tx.closeCount != 1 || current.audit.closeCount != 1 {
+			t.Fatalf("%s: retry double-closed previous generation: tx=%d audit=%d", next.name, current.tx.closeCount, current.audit.closeCount)
+		}
+		if next.tx.closeCount != 0 || next.audit.closeCount != 0 {
+			t.Fatalf("%s: fresh generation was closed during installation: tx=%d audit=%d", next.name, next.tx.closeCount, next.audit.closeCount)
+		}
+
+		current = next
+	}
+
+	// The final generation must remain isolated until its own terminal Close.
+	if err := service.Close(); !errors.Is(err, current.txErr) || !errors.Is(err, current.auditErr) {
+		t.Fatalf("final generation Close must report only its own cleanup errors, got %v", err)
+	}
+	if current.tx.closeCount != 1 || current.audit.closeCount != 1 {
+		t.Fatalf("final generation must close exactly once: tx=%d audit=%d", current.tx.closeCount, current.audit.closeCount)
+	}
+	if !reflect.DeepEqual(current.order, []string{current.name + "-transaction", current.name + "-audit"}) {
+		t.Fatalf("final generation cleanup order changed: %v", current.order)
+	}
+
+	// Repeated Close must preserve the final generation's terminal errors without replaying
+	// any historical generation's cleanup errors.
+	repeatedCloseErr := service.Close()
+	if !errors.Is(repeatedCloseErr, current.txErr) || !errors.Is(repeatedCloseErr, current.auditErr) {
+		t.Fatalf("repeated final Close lost current-generation cleanup errors: %v", repeatedCloseErr)
+	}
+	if current.tx.closeCount != 1 || current.audit.closeCount != 1 {
+		t.Fatalf("repeated final Close double-closed final generation: tx=%d audit=%d", current.tx.closeCount, current.audit.closeCount)
+	}
+}
