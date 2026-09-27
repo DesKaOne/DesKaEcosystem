@@ -312,7 +312,7 @@ func (s *Service) handleWebhook(ctx context.Context, providerName string, event 
 
 	current := call.result.Result
 	if current.Status == provider.StatusSuccess || current.Status == provider.StatusFailed {
-		if samePurchaseResult(current, incoming) {
+		if sameWebhookResult(current, incoming) {
 			return call.result, nil
 		}
 		_ = s.appendAudit(TransactionAuditEvent{
@@ -589,10 +589,20 @@ func validateWebhookEvent(event provider.WebhookEvent) error {
 }
 
 func samePurchaseResult(a, b provider.PurchaseResult) bool {
-	// Message is observational text and may be normalized differently across
-	// repeated provider deliveries. Transaction identity and provider result
-	// fields remain strict so a materially different terminal observation is
-	// still rejected.
+	return a.ReferenceID == b.ReferenceID &&
+		a.CustomerNo == b.CustomerNo &&
+		a.ProductCode == b.ProductCode &&
+		a.Status == b.Status &&
+		a.ProviderCode == b.ProviderCode &&
+		a.Message == b.Message &&
+		a.SerialNumber == b.SerialNumber &&
+		a.Price == b.Price
+}
+
+func sameWebhookResult(a, b provider.PurchaseResult) bool {
+	// Webhook delivery text is observational and may be normalized differently
+	// by repeated deliveries. Transaction identity and material provider result
+	// fields remain strict so a different terminal observation is still rejected.
 	return a.ReferenceID == b.ReferenceID &&
 		a.CustomerNo == b.CustomerNo &&
 		a.ProductCode == b.ProductCode &&
