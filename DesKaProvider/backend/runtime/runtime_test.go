@@ -4835,3 +4835,188 @@ func TestServiceOwnershipReplacementStressPreservesGenerationIsolationAcrossRepe
 		t.Fatalf("repeated final Close double-closed final generation: tx=%d audit=%d", current.tx.closeCount, current.audit.closeCount)
 	}
 }
+
+
+func TestServiceRunShutdownErrorOwnershipBoundaryMatrixAndFreshGenerationReuse(t *testing.T) {
+	type shutdownCase struct {
+		name          string
+		balanceErr    error
+		catalogErr    error
+		transactionErr error
+		auditErr      error
+	}
+
+	cases := []shutdownCase{
+		{name: "balance", balanceErr: errors.New("balance shutdown error")},
+		{name: "catalog", catalogErr: errors.New("catalog shutdown error")},
+		{name: "transaction", transactionErr: errors.New("transaction close error")},
+		{name: "audit", auditErr: errors.New("audit close error")},
+		{
+			name:           "all",
+			balanceErr:     errors.New("balance shutdown error"),
+			catalogErr:     errors.New("catalog shutdown error"),
+			transactionErr: errors.New("transaction close error"),
+			auditErr:       errors.New("audit close error"),
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			service := newRuntimeTestService(t)
+			service.catalogSync, _ = catalog.NewSyncService(&provider.Registry{}, catalog.NewMemoryStore())
+			service.catalogLifecycle = newCatalogWorkerLifecycle()
+			service.catalogInterval = time.Hour
+
+			order := make([]string, 0, 4)
+			tx := &orderedCloseErrorDB{name: "transaction", order: &order, err: tc.transactionErr}
+			audit := &orderedCloseErrorDB{name: "audit", order: &order, err: tc.auditErr}
+			ownership := newRuntimeDatabaseOwnership(tx, audit)
+			ownership.transferToService()
+			service.databaseOwnership = ownership
+
+			service.balanceStart = func(context.Context) error {
+				return service.balanceLifecycle.Start(context.Background())
+			}
+			service.balanceShutdown = func(context.Context) error {
+				service.balanceLifecycle.Shutdown(context.Background())
+				if tc.balanceErr != nil {
+					order = append(order, "balance")
+				}
+				return tc.balanceErr
+			}
+			service.catalogStart = func(context.Context) (context.Context, error) {
+				return service.catalogLifecycle.Start(context.Background())
+			}
+			service.catalogShutdown = func() error {
+				service.catalogLifecycle.Shutdown()
+				if tc.catalogErr != nil {
+					order = append(order, "catalog")
+				}
+				return tc.catalogErr
+			}
+
+			ctx, cancel := context.WithCancel(context.Background())
+			runDone := make(chan error, 1)
+			go func() { runDone <- service.Run(ctx) }()
+
+			deadline := time.After(time.Second)
+			for !service.balanceLifecycle.Running() || !service.catalogLifecycle.Running() {
+				select {
+				case <-deadline:
+					t.Fatal("Run did not start both lifecycle owners")
+				default:
+					time.Sleep(time.Millisecond)
+				}
+			}
+			cancel()
+
+			var runErr error
+			select {
+			case runErr = <-runDone:
+			case <-time.After(time.Second):
+				t.Fatal("Run did not converge after cancellation")
+			}
+
+			if !errors.Is(runErr, context.Canceled) {
+				t.Fatalf("expected context cancellation in shutdown error, got %v", runErr)
+			}
+			for _, want := range []error{tc.balanceErr, tc.catalogErr, tc.transactionErr, tc.auditErr} {
+				if want == nil {
+					continue
+				}
+				if !errors.Is(runErr, want) {
+					t.Fatalf("shutdown error lost boundary identity for %v: %v", want, runErr)
+				}
+			}
+			for _, historical := range []error{tc.balanceErr, tc.catalogErr, tc.transactionErr, tc.auditErr} {
+				if historical == nil {
+					continue
+				}
+				var typed *runtimeTypedShutdownError
+				if errors.As(historical, &typed) {
+					t.Fatalf("test case unexpectedly supplied typed sentinel")
+				}
+			}
+
+			if service.balanceLifecycle.Running() || service.catalogLifecycle.Running() {
+				t.Fatal("shutdown error matrix must leave both lifecycle owners converged")
+			}
+			if tx.closeCount != 1 || audit.closeCount != 1 {
+				t.Fatalf("database ownership must close exactly once after converged shutdown: tx=%d audit=%d", tx.closeCount, audit.closeCount)
+			}
+			if !reflect.DeepEqual(order, expectedShutdownMatrixOrder(tc.balanceErr, tc.catalogErr)) {
+				t.Fatalf("unexpected shutdown/cleanup ordering: got %v", order)
+			}
+
+			// Install a clean generation and prove a later Run does not replay any
+			// historical shutdown or cleanup errors.
+			freshOrder := make([]string, 0, 2)
+			freshTx := &orderedCloseErrorDB{name: "fresh-transaction", order: &freshOrder}
+			freshAudit := &orderedCloseErrorDB{name: "fresh-audit", order: &freshOrder}
+			freshOwnership := newRuntimeDatabaseOwnership(freshTx, freshAudit)
+			freshOwnership.transferToService()
+
+			if err := service.replaceDatabaseOwnership(freshOwnership); err != nil {
+				t.Fatalf("expected clean generation replacement after converged shutdown, got %v", err)
+			}
+
+			service.balanceShutdown = func(context.Context) error {
+				service.balanceLifecycle.Shutdown(context.Background())
+				return nil
+			}
+			service.catalogShutdown = func() error {
+				service.catalogLifecycle.Shutdown()
+				return nil
+			}
+
+			ctx2, cancel2 := context.WithCancel(context.Background())
+			runDone2 := make(chan error, 1)
+			go func() { runDone2 <- service.Run(ctx2) }()
+
+			deadline2 := time.After(time.Second)
+			for !service.balanceLifecycle.Running() || !service.catalogLifecycle.Running() {
+				select {
+				case <-deadline2:
+					t.Fatal("fresh generation Run did not start both lifecycle owners")
+				default:
+					time.Sleep(time.Millisecond)
+				}
+			}
+			cancel2()
+
+			select {
+			case freshRunErr := <-runDone2:
+				if freshRunErr != nil {
+					t.Fatalf("fresh generation Run replayed historical shutdown errors: %v", freshRunErr)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("fresh generation Run did not converge")
+			}
+
+			if freshTx.closeCount != 1 || freshAudit.closeCount != 1 {
+				t.Fatalf("fresh generation must close exactly once: tx=%d audit=%d", freshTx.closeCount, freshAudit.closeCount)
+			}
+			if !reflect.DeepEqual(freshOrder, []string{"fresh-transaction", "fresh-audit"}) {
+				t.Fatalf("fresh generation cleanup order changed: %v", freshOrder)
+			}
+			if tx.closeCount != 1 || audit.closeCount != 1 {
+				t.Fatal("historical generation was touched again after replacement")
+			}
+			if err := service.Close(); err != nil {
+				t.Fatalf("repeated terminal Close after fresh convergence must be clean, got %v", err)
+			}
+		})
+	}
+}
+
+func expectedShutdownMatrixOrder(balanceErr, catalogErr error) []string {
+	order := make([]string, 0, 4)
+	if balanceErr != nil {
+		order = append(order, "balance")
+	}
+	if catalogErr != nil {
+		order = append(order, "catalog")
+	}
+	order = append(order, "transaction", "audit")
+	return order
+}
