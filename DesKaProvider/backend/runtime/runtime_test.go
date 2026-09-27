@@ -1608,7 +1608,7 @@ func TestServiceRunShutdownErrorPrecedenceDoesNotReplayLifecycleCompletionOnRepe
 		t.Fatal(err)
 	}
 	service.catalogLifecycle = newCatalogWorkerLifecycle()
-	service.catalogSync = &catalog.SyncService{}
+	service.catalogInterval = time.Hour
 
 	balanceErr := errors.New("balance completion failed")
 	catalogErr := errors.New("catalog completion failed")
