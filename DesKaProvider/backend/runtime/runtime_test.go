@@ -1465,6 +1465,10 @@ func TestServiceRunShutdownPreservesCompletionOrderingAndAllErrorIdentity(t *tes
 	if !errors.Is(runErr, auditErr) {
 		t.Fatalf("expected audit close error identity, got %v", runErr)
 	}
+	wantErr := "context canceled\nbalance shutdown failed\ncatalog shutdown failed\nclose transaction database: transaction close failed\nclose audit database: audit close failed"
+	if runErr == nil || runErr.Error() != wantErr {
+		t.Fatalf("unexpected shutdown error precedence: got %q want %q", runErr, wantErr)
+	}
 	if !reflect.DeepEqual(order, []string{"balance", "catalog", "transaction", "audit"}) {
 		t.Fatalf("unexpected shutdown ordering: got %v", order)
 	}
