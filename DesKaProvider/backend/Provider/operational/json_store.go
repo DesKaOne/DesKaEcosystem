@@ -52,6 +52,10 @@ func (s *JSONFileStore) Get(name string) (Snapshot, bool) {
 	return v, ok
 }
 
+func (s *JSONFileStore) GetWithError(name string) (Snapshot, bool, error) {
+	return s.Get(name)
+}
+
 func (s *JSONFileStore) All() []Snapshot {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
