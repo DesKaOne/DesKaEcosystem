@@ -480,7 +480,6 @@ func (p *convergingStatusProvider) GetStatus(ctx context.Context, req provider.S
 }
 
 func TestServiceWebhookAndReconciliationConvergeAcrossServiceInstances(t *testing.T) {
-	storePath := filepath.Join(t.TempDir(), "transactions", "state.json")
 	base := Mock.New(Mock.Config{
 		Products: []provider.Product{{Code: "pln20", Name: "PLN 20"}},
 		ProviderCode: "00",
