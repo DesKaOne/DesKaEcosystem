@@ -76,9 +76,10 @@ type SyncStatus struct {
 }
 
 type SyncService struct {
-	Registry *provider.Registry
-	Store    Store
-	Now      func() time.Time
+	Registry          *provider.Registry
+	Store             Store
+	StatusPersistence StatusPersistence
+	Now               func() time.Time
 
 	statusMu sync.RWMutex
 	statuses map[string]SyncStatus
@@ -97,6 +98,28 @@ func NewSyncService(registry *provider.Registry, store Store) (*SyncService, err
 		Now:      time.Now,
 		statuses: make(map[string]SyncStatus),
 	}, nil
+}
+
+func NewSyncServiceWithStatusPersistence(registry *provider.Registry, store Store, persistence StatusPersistence) (*SyncService, error) {
+	svc, err := NewSyncService(registry, store)
+	if err != nil {
+		return nil, err
+	}
+	if persistence == nil {
+		return nil, errors.New("catalog sync status persistence is required")
+	}
+	statuses, err := persistence.Load()
+	if err != nil {
+		return nil, err
+	}
+	for _, status := range statuses {
+		if status.ProviderName == "" || status.ConsecutiveFailures < 0 {
+			return nil, errors.New("invalid catalog sync status")
+		}
+		svc.statuses[status.ProviderName] = status
+	}
+	svc.StatusPersistence = persistence
+	return svc, nil
 }
 
 func (s *SyncService) SyncProvider(ctx context.Context, name string) (Snapshot, error) {
@@ -134,6 +157,7 @@ func (s *SyncService) recordAttempt(name string, at time.Time) {
 	status.ProviderName = name
 	status.LastAttemptAt = at
 	s.statuses[name] = status
+	s.persistStatusesLocked()
 }
 
 func (s *SyncService) recordFailure(name string, attemptAt time.Time, err error) {
@@ -145,6 +169,7 @@ func (s *SyncService) recordFailure(name string, attemptAt time.Time, err error)
 	status.LastError = err.Error()
 	status.ConsecutiveFailures++
 	s.statuses[name] = status
+	s.persistStatusesLocked()
 }
 
 func (s *SyncService) recordSuccess(name string, attemptAt, successAt time.Time) {
@@ -157,6 +182,18 @@ func (s *SyncService) recordSuccess(name string, attemptAt, successAt time.Time)
 	status.LastError = ""
 	status.ConsecutiveFailures = 0
 	s.statuses[name] = status
+	s.persistStatusesLocked()
+}
+
+func (s *SyncService) persistStatusesLocked() {
+	if s.StatusPersistence == nil {
+		return
+	}
+	statuses := make([]SyncStatus, 0, len(s.statuses))
+	for _, status := range s.statuses {
+		statuses = append(statuses, status)
+	}
+	_ = s.StatusPersistence.Save(statuses)
 }
 
 func (s *SyncService) Status(name string) (SyncStatus, bool) {
