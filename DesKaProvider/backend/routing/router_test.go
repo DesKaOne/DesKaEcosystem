@@ -188,8 +188,8 @@ func TestRouterRejectsStaleCatalogSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err = router.Select(context.Background(), Request{ProductCode: "xld10", Amount: 50000})
-	if !errors.Is(err, ErrNoProviderAvailable) {
-		t.Fatalf("expected stale catalog to remove provider from candidates, got %v", err)
+	if !errors.Is(err, ErrNoProviderAvailable) || !errors.Is(err, ErrCatalogStale) {
+		t.Fatalf("expected stale catalog reason with no-provider error, got %v", err)
 	}
 }
 
@@ -369,8 +369,8 @@ func TestRouterRestartRecoveryDoesNotTreatExpiredOperationalSnapshotAsRouteable(
 	if _, ok := store.Get("mock"); !ok {
 		t.Fatal("expected expired operational snapshot to remain available as persisted recovery data")
 	}
-	if _, err := router.Select(context.Background(), Request{ProductCode: "xld10", Amount: 50000}); !errors.Is(err, ErrNoProviderAvailable) {
-		t.Fatalf("expired recovery snapshot must not be routeable, got %v", err)
+	if _, err := router.Select(context.Background(), Request{ProductCode: "xld10", Amount: 50000}); !errors.Is(err, ErrNoProviderAvailable) || !errors.Is(err, ErrOperationalSnapshotStale) {
+		t.Fatalf("expired recovery snapshot must expose stale operational reason, got %v", err)
 	}
 
 	if err := store.Put(operational.Snapshot{
@@ -401,7 +401,7 @@ func TestRouterRejectsStaleOperationalSnapshot(t *testing.T) {
 	if err := catalogs.Put(catalog.Snapshot{ProviderName: "mock", Products: []provider.Product{{Code: "xld10", Name: "Test"}}, SyncedAt: time.Now()}); err != nil { t.Fatal(err) }
 	router, err := NewWithCatalogAndStateAndOperationalMaxAge(registry, store, nil, catalogs, states, time.Minute)
 	if err != nil { t.Fatal(err) }
-	if _, err := router.Select(context.Background(), Request{ProductCode: "xld10", Amount: 50000}); !errors.Is(err, ErrNoProviderAvailable) { t.Fatalf("expected stale operational snapshot rejection, got %v", err) }
+	if _, err := router.Select(context.Background(), Request{ProductCode: "xld10", Amount: 50000}); !errors.Is(err, ErrNoProviderAvailable) || !errors.Is(err, ErrOperationalSnapshotStale) { t.Fatalf("expected stale operational snapshot reason, got %v", err) }
 }
 
 func TestRouterSelectsFreshOperationalSnapshot(t *testing.T) {
@@ -549,5 +549,35 @@ func TestRouterRejectsFutureCatalogSnapshot(t *testing.T) {
 	router.Now = func() time.Time { return now }
 	if _, err := router.Select(context.Background(), Request{ProductCode: "xld10", Amount: 50000}); !errors.Is(err, ErrNoProviderAvailable) {
 		t.Fatalf("expected future catalog snapshot rejection, got %v", err)
+	}
+}
+
+
+func TestRouterExposesBothStaleReasonsWithoutChangingNoProviderAvailability(t *testing.T) {
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", mock.New(mock.Config{Products: []provider.Product{{Code: "xld10", Name: "Test"}}})); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
+	store := operational.NewMemoryStore()
+	if err := store.Put(operational.Snapshot{ProviderName: "mock", Balance: 100000, Health: operational.HealthHealthy, LastCheckedAt: now.Add(-2 * time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	catalogs := catalog.NewMemoryStore()
+	if err := catalogs.Put(catalog.Snapshot{ProviderName: "mock", Products: []provider.Product{{Code: "xld10", Name: "Test"}}, SyncedAt: now.Add(-2 * time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	states := operational.NewProviderStateStore()
+	if err := states.Put(operational.ProviderState{ProviderName: "mock", Lifecycle: operational.LifecycleEnabled, Capabilities: []operational.Capability{operational.CapabilityPPOB}}); err != nil {
+		t.Fatal(err)
+	}
+	router, err := NewWithCatalogAndStateAndOperationalMaxAge(registry, store, nil, catalogs, states, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	router.Now = func() time.Time { return now }
+	_, err = router.Select(context.Background(), Request{ProductCode: "xld10", Amount: 50000})
+	if !errors.Is(err, ErrNoProviderAvailable) || !errors.Is(err, ErrOperationalSnapshotStale) || !errors.Is(err, ErrCatalogStale) {
+		t.Fatalf("expected no-provider plus both stale reasons, got %v", err)
 	}
 }
