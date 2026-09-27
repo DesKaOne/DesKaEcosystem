@@ -11,6 +11,7 @@ import (
 )
 
 var ErrSnapshotOlder = errors.New("catalog snapshot is older than stored snapshot")
+var ErrStatusPersistence = errors.New("catalog sync status persistence failed")
 
 type Snapshot struct {
 	ProviderName string             `json:"provider_name"`
@@ -81,8 +82,10 @@ type SyncService struct {
 	StatusPersistence StatusPersistence
 	Now               func() time.Time
 
-	statusMu sync.RWMutex
-	statuses map[string]SyncStatus
+	statusMu                    sync.RWMutex
+	statuses                    map[string]SyncStatus
+	statusPersistenceErr        error
+	statusPersistenceFailures   int
 }
 
 func NewSyncService(registry *provider.Registry, store Store) (*SyncService, error) {
@@ -193,7 +196,25 @@ func (s *SyncService) persistStatusesLocked() {
 	for _, status := range s.statuses {
 		statuses = append(statuses, status)
 	}
-	_ = s.StatusPersistence.Save(statuses)
+	if err := s.StatusPersistence.Save(statuses); err != nil {
+		s.statusPersistenceErr = fmt.Errorf("%w: %v", ErrStatusPersistence, err)
+		s.statusPersistenceFailures++
+		return
+	}
+	s.statusPersistenceErr = nil
+	s.statusPersistenceFailures = 0
+}
+
+func (s *SyncService) StatusPersistenceError() error {
+	s.statusMu.RLock()
+	defer s.statusMu.RUnlock()
+	return s.statusPersistenceErr
+}
+
+func (s *SyncService) StatusPersistenceFailures() int {
+	s.statusMu.RLock()
+	defer s.statusMu.RUnlock()
+	return s.statusPersistenceFailures
 }
 
 func (s *SyncService) Status(name string) (SyncStatus, bool) {
