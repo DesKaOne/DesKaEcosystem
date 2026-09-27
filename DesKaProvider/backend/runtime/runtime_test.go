@@ -2422,3 +2422,59 @@ func TestServiceRunShutdownErrorPrecedenceRemainsStableAcrossRepeatedClose(t *te
 		t.Fatalf("expected closed-state rejection after completed shutdown, got %v", err)
 	}
 }
+
+
+func TestServiceRunDoesNotCloseDatabasesWhileCatalogCompletionLeavesLifecycleRunning(t *testing.T) {
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", &balanceMock{Provider: mock.New(mock.Config{}), balance: 100000}); err != nil {
+		t.Fatal(err)
+	}
+	syncService, err := operational.NewSyncService(registry, operational.NewMemoryStore(), "IDR", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := New(syncService, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.catalogSync, err = catalog.NewSyncService(registry, catalog.NewMemoryStore())
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.catalogLifecycle = newCatalogWorkerLifecycle()
+	service.catalogInterval = time.Hour
+
+	catalogErr := errors.New("catalog completion failed while lifecycle remains active")
+	tx := &closeErrorDB{}
+	service.databaseOwnership = newRuntimeDatabaseOwnership(tx, nil)
+	service.databaseOwnership.transferToService()
+
+	service.catalogShutdown = func() error {
+		return catalogErr
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	runErr := service.Run(ctx)
+
+	if !errors.Is(runErr, context.Canceled) {
+		t.Fatalf("expected cancellation error, got %v", runErr)
+	}
+	if !errors.Is(runErr, catalogErr) {
+		t.Fatalf("expected catalog completion error, got %v", runErr)
+	}
+	if !service.catalogLifecycle.Running() {
+		t.Fatal("expected catalog lifecycle to remain running in this injected failure scenario")
+	}
+	if tx.closeCount != 0 {
+		t.Fatalf("database must not close while catalog lifecycle remains active, got %d closes", tx.closeCount)
+	}
+
+	closeErr := service.Close()
+	if closeErr == nil {
+		t.Fatal("expected explicit Close to reject an active catalog lifecycle")
+	}
+	if tx.closeCount != 0 {
+		t.Fatalf("explicit Close must not close database while catalog lifecycle remains active, got %d closes", tx.closeCount)
+	}
+}
