@@ -5107,7 +5107,24 @@ func TestServiceRunRepeatedReuseCyclesIsolateShutdownErrors(t *testing.T) {
 		})
 	}
 
-	if err := service.Close(); err != nil {
-		t.Fatalf("repeated terminal Close after reuse cycles must be clean, got %v", err)
+	last := generations[len(generations)-1]
+	firstCloseErr := service.Close()
+	for _, want := range []error{last.transactionErr, last.auditErr} {
+		if want != nil && !errors.Is(firstCloseErr, want) {
+			t.Fatalf("terminal Close lost final-generation cleanup error %v: %v", want, firstCloseErr)
+		}
+	}
+	for _, previous := range generations[:len(generations)-1] {
+		for _, historicalErr := range []error{previous.balanceErr, previous.catalogErr, previous.transactionErr, previous.auditErr} {
+			if historicalErr != nil && errors.Is(firstCloseErr, historicalErr) {
+				t.Fatalf("terminal Close replayed historical cleanup error %v: %v", historicalErr, firstCloseErr)
+			}
+		}
+	}
+	secondCloseErr := service.Close()
+	for _, want := range []error{last.transactionErr, last.auditErr} {
+		if want != nil && !errors.Is(secondCloseErr, want) {
+			t.Fatalf("repeated terminal Close lost final-generation cleanup error %v: %v", want, secondCloseErr)
+		}
 	}
 }
