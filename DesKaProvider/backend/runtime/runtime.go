@@ -146,7 +146,7 @@ func (l *catalogWorkerLifecycle) Shutdown() {
 	cancel()
 }
 
-type Service struct{syncService *operational.SyncService;purchaseService *routing.Service;catalogSync *catalog.SyncService;providerState *operational.ProviderStateStore;databaseOwnership *runtimeDatabaseOwnership;balanceLifecycle *operational.SyncWorkerLifecycle;catalogLifecycle *catalogWorkerLifecycle;interval,catalogInterval time.Duration;catalogStart func(context.Context) (context.Context,error);balanceStart func(context.Context) error;balanceShutdown func(context.Context) error;catalogShutdown func() error;shutdownMu sync.Mutex}
+type Service struct{syncService *operational.SyncService;purchaseService *routing.Service;catalogSync *catalog.SyncService;providerState *operational.ProviderStateStore;databaseOwnership *runtimeDatabaseOwnership;balanceLifecycle *operational.SyncWorkerLifecycle;catalogLifecycle *catalogWorkerLifecycle;interval,catalogInterval time.Duration;catalogStart func(context.Context) (context.Context,error);balanceStart func(context.Context) error;balanceShutdown func(context.Context) error;catalogShutdown func() error;balanceShutdownCompleted bool;catalogShutdownCompleted bool;shutdownMu sync.Mutex}
 
 func LoadConfig()(Config,error){
  cfg:=Config{StorePath:os.Getenv("DESKAPROVIDER_OPERATIONAL_STORE_PATH"),TransactionStoreDriver:os.Getenv("DESKAPROVIDER_TRANSACTION_STORE_DRIVER"),AuditStoreDriver:os.Getenv("DESKAPROVIDER_AUDIT_STORE_DRIVER"),PostgresDSN:os.Getenv("DESKAPROVIDER_POSTGRES_DSN"),ProviderStateStorePath:os.Getenv("DESKAPROVIDER_PROVIDER_STATE_STORE_PATH"),TransactionStorePath:os.Getenv("DESKAPROVIDER_TRANSACTION_STORE_PATH"),SyncInterval:defaultSyncInterval,FailureThreshold:defaultFailureThreshold,Currency:os.Getenv("DESKAPROVIDER_OPERATIONAL_CURRENCY"),CatalogStorePath:os.Getenv("DESKAPROVIDER_CATALOG_STORE_PATH"),CatalogSyncInterval:defaultCatalogSyncInterval,CatalogMaxAge:defaultCatalogMaxAge,OperationalSnapshotMaxAge:defaultOperationalSnapshotMaxAge}
@@ -273,6 +273,7 @@ catalogStarted := false
 	if s.balanceStart != nil {
 		startBalance = s.balanceStart
 	}
+	s.balanceShutdownCompleted = false
 	if err := startBalance(ctx); err != nil {
 		s.shutdownMu.Unlock()
 		if errors.Is(err, operational.ErrSyncWorkerRunning) {
@@ -304,6 +305,7 @@ catalogStarted := false
 		return shutdownLocked(catalogStartErr, workerErr)
 	}
 	catalogStarted = true
+	s.catalogShutdownCompleted = false
 	_ = s.catalogSync.SyncAll(catalogCtx)
 	ticker := time.NewTicker(s.catalogInterval)
 	defer ticker.Stop()
@@ -340,9 +342,17 @@ func (s *Service) Close() error {
 func (s *Service) closeOwnedDatabases() error { if s==nil || s.databaseOwnership==nil { return nil }; return s.databaseOwnership.closeOwned() }
 
 func (s *Service) shutdownBalanceWorker(ctx context.Context) error {
-	if s == nil || s.balanceLifecycle == nil || !s.balanceLifecycle.Running() { return nil }
-	if s.balanceShutdown != nil { return s.balanceShutdown(ctx) }
-	return s.balanceLifecycle.Shutdown(ctx)
+	if s == nil || s.balanceLifecycle == nil || s.balanceShutdownCompleted { return nil }
+	var err error
+	if s.balanceShutdown != nil {
+		err = s.balanceShutdown(ctx)
+	} else {
+		err = s.balanceLifecycle.Shutdown(ctx)
+	}
+	if !s.balanceLifecycle.Running() {
+		s.balanceShutdownCompleted = true
+	}
+	return err
 }
 
 func (s *Service) rollbackStartedLifecycles(ctx context.Context) error {
@@ -355,10 +365,17 @@ func (s *Service) rollbackStartedLifecycles(ctx context.Context) error {
 }
 
 func (s *Service) shutdownCatalogLifecycle() error {
-	if s == nil || s.catalogLifecycle == nil || !s.catalogLifecycle.Running() { return nil }
-	if s.catalogShutdown != nil { return s.catalogShutdown() }
-	s.catalogLifecycle.Shutdown()
-	return nil
+	if s == nil || s.catalogLifecycle == nil || s.catalogShutdownCompleted { return nil }
+	var err error
+	if s.catalogShutdown != nil {
+		err = s.catalogShutdown()
+	} else {
+		s.catalogLifecycle.Shutdown()
+	}
+	if !s.catalogLifecycle.Running() {
+		s.catalogShutdownCompleted = true
+	}
+	return err
 }
 
 func checkRuntimeInitializationContext(ctx context.Context) error {
