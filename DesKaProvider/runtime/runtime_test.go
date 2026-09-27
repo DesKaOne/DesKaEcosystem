@@ -29,6 +29,7 @@ func TestLoadConfigDefaults(t *testing.T) {
 	t.Setenv("DESKAPROVIDER_BALANCE_SYNC_INTERVAL", "")
 	t.Setenv("DESKAPROVIDER_BALANCE_FAILURE_THRESHOLD", "")
 	t.Setenv("DESKAPROVIDER_CATALOG_SYNC_INTERVAL", "")
+	t.Setenv("DESKAPROVIDER_CATALOG_SYNC_STATUS_STORE_PATH", "")
 	t.Setenv("DESKAPROVIDER_CATALOG_MAX_AGE", "")
 
 	cfg, err := LoadConfig()
@@ -36,7 +37,7 @@ func TestLoadConfigDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	if cfg.StorePath != defaultStorePath || cfg.TransactionStorePath != defaultTransactionStorePath || cfg.SyncInterval != defaultSyncInterval ||
-		cfg.FailureThreshold != defaultFailureThreshold || cfg.Currency != defaultCurrency || cfg.CatalogSyncInterval != defaultCatalogSyncInterval || cfg.CatalogMaxAge != defaultCatalogMaxAge {
+		cfg.FailureThreshold != defaultFailureThreshold || cfg.Currency != defaultCurrency || cfg.CatalogSyncStatusStorePath != defaultCatalogSyncStatusStorePath || cfg.CatalogSyncInterval != defaultCatalogSyncInterval || cfg.CatalogMaxAge != defaultCatalogMaxAge {
 		t.Fatalf("unexpected defaults: %#v", cfg)
 	}
 }
@@ -123,6 +124,7 @@ func TestNewFromEnvironmentBuildsDurableService(t *testing.T) {
 	t.Setenv("DESKAPROVIDER_BALANCE_SYNC_INTERVAL", "45s")
 	t.Setenv("DESKAPROVIDER_BALANCE_FAILURE_THRESHOLD", "4")
 	t.Setenv("DESKAPROVIDER_OPERATIONAL_CURRENCY", "IDR")
+	t.Setenv("DESKAPROVIDER_CATALOG_SYNC_STATUS_STORE_PATH", filepath.Join(t.TempDir(), "catalog", "status.json"))
 
 	service, err := NewFromEnvironment(nil)
 	if err != nil {
