@@ -66,8 +66,8 @@ type runtimeDatabaseOwnership struct {
 	closeErr error
 }
 
-func newRuntimeDatabaseOwnership(transactionDB, auditDB, operationalDB databaseCloser) *runtimeDatabaseOwnership {
-	return &runtimeDatabaseOwnership{transactionDB: transactionDB, auditDB: auditDB, operationalDB: operationalDB}
+func newRuntimeDatabaseOwnership(transactionDB, auditDB databaseCloser) *runtimeDatabaseOwnership {
+	return &runtimeDatabaseOwnership{transactionDB: transactionDB, auditDB: auditDB}
 }
 
 func (o *runtimeDatabaseOwnership) transferToService() {
@@ -206,7 +206,7 @@ func NewFromEnvironmentContext(ctx context.Context,httpClient *http.Client)(serv
  catalogSync,e:=catalog.NewSyncServiceWithStatusPersistence(registry,catalogStore,statusPersistence);if e!=nil{return nil,e}
  transactionStore,transactionDB,e:=openTransactionStore(ctx,cfg);if e!=nil{return nil,e}
 auditStore,auditDB,e:=openAuditStore(ctx,cfg,transactionDB);if e!=nil{return nil,withRuntimeInitializationCleanupError(e,transactionDB,auditDB)}
-ownership:=newRuntimeDatabaseOwnership(transactionDB,auditDB,nil)
+ownership:=newRuntimeDatabaseOwnership(transactionDB,auditDB)
 defer func(){
 	if ownership == nil || ownership.transferred() { return }
 	if cleanupErr:=ownership.cleanupBeforeTransfer();cleanupErr!=nil {
