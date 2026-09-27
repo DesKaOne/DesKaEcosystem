@@ -35,3 +35,10 @@ func TestJSONFileStoreRejectsReadErrorInsteadOfTreatingPathAsMissing(t *testing.
 	if err := os.Mkdir(path, 0750); err != nil { t.Fatal(err) }
 	if _, err := NewJSONFileStore(path); err == nil { t.Fatal("expected read error for directory path") }
 }
+
+func TestJSONFileStoreRejectsSemanticallyInvalidSnapshot(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	payload := []byte(`{"snapshots":{"mock":{"provider_name":"","products":[],"synced_at":"0001-01-01T00:00:00Z"}}}`)
+	if err := os.WriteFile(path, payload, 0600); err != nil { t.Fatal(err) }
+	if _, err := NewJSONFileStore(path); err == nil { t.Fatal("expected semantically invalid snapshot error") }
+}
