@@ -10192,3 +10192,57 @@ This milestone is limited to runtime lifecycle re-entry, per-run completion book
 **#194 — Runtime Shutdown Convergence With Fresh Ownership Replacement**
 
 Focus next on replacing runtime-owned database resources after a partial lifecycle shutdown has converged, verifying stale cleanup errors and ownership state do not leak into the fresh ownership generation and each generation remains single-shot.
+
+
+## 194. Milestone Update — Runtime Shutdown Convergence With Fresh Ownership Replacement
+
+**Date:** 2026-09-27
+
+Completed:
+
+- added regression coverage for replacing a previously closed runtime database-ownership generation with a fresh ownership generation on the same Service instance;
+- verified cleanup errors from the previous ownership generation are returned only for that generation and are not replayed by a later Run using fresh ownership;
+- verified the fresh ownership generation receives its own transaction/audit cleanup errors;
+- verified transaction cleanup remains before audit cleanup for the fresh generation;
+- verified each ownership generation closes its database handles exactly once;
+- verified repeated Service.Close() after fresh terminal shutdown preserves only the fresh generation's cleanup errors and does not double-close either generation;
+- verified lifecycle completion bookkeeping is reused per fresh Run generation without leaking historical lifecycle errors;
+- no production runtime behavior was changed by this milestone; the change is regression coverage for the existing ownership replacement contract;
+- no provider retry/failover, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, provider funding, or synthetic transaction/audit reconstruction was introduced.
+
+### CI Failure and Correction
+
+CI #1955 on initial test commit ad19f0114598a38057afe6b1e29a468ff7eff4ea was **RED** because the regression fixture created an incomplete operational service and left the catalog interval at zero. The test exposed fixture construction errors rather than a production ownership defect.
+
+A fixture correction was applied and the runtime test file was restored without retaining the accidental truncation from the intermediate edit. Final test commit: 57a68f7cf45ccc6d2ef9d574a8fb811bea8bfebd.
+
+CI #1958 on exact corrected test HEAD: **GREEN**.
+
+### Verification
+
+- Initial regression test commit: ad19f0114598a38057afe6b1e29a468ff7eff4ea.
+- CI #1955: RED — invalid test fixture caused ticker and nil-registry panics.
+- Corrected test/restore commit: 57a68f7cf45ccc6d2ef9d574a8fb811bea8bfebd.
+- CI #1958 on exact corrected HEAD: **GREEN**.
+  - go test ./... — PASS
+  - go vet ./... — PASS
+  - PostgreSQL service-backed integration tests — PASS
+  - go test -race ./... — PASS
+
+### Safety Boundary
+
+This milestone is limited to runtime ownership-generation replacement, lifecycle re-entry bookkeeping, error identity, ordering, and single-shot database cleanup. Previous-generation cleanup errors remain historical operational errors and cannot become transaction state, provider state, ledger state, treasury state, or financial authorization.
+
+### Known Limitations
+
+- production catalogWorkerLifecycle.Shutdown() remains void-returning; catalog completion errors continue to be represented through the existing internal test seam;
+- PostgreSQL integration coverage requires DESKAPROVIDER_POSTGRES_DSN and is skipped when unavailable;
+- database close remains non-context-aware;
+- ownership generation replacement is an internal runtime composition/testing boundary and is not a general-purpose recovery journal;
+- this milestone adds no provider retry/failover or transaction recovery behavior.
+
+### Next Milestone
+
+**#195 — Runtime Ownership Generation Isolation Under Partial Shutdown**
+
+Focus next on replacing ownership only after a partial lifecycle convergence, verifying the old generation remains deferred/isolated until its lifecycle boundary is terminal and the fresh generation cannot trigger or inherit cleanup from an active old generation.
