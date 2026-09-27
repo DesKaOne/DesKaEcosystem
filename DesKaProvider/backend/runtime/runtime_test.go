@@ -3464,3 +3464,91 @@ func TestServiceRunShutdownCancellationVsLifecycleCompletionPrecedence(t *testin
 		t.Fatalf("expected repeated Close not to double-close databases, got tx=%d audit=%d", tx.closeCount, audit.closeCount)
 	}
 }
+
+
+
+func TestServiceRunDeferredOwnershipCleanupPreservesFreshCloseErrors(t *testing.T) {
+	service := newRuntimeTestService(t)
+	service.catalogSync, _ = catalog.NewSyncService(
+		&provider.Registry{},
+		catalog.NewMemoryStore(),
+	)
+	service.catalogLifecycle = newCatalogWorkerLifecycle()
+	service.catalogInterval = time.Hour
+
+	historicalPrimaryErr := errors.New("historical cancellation")
+	historicalCatalogErr := errors.New("historical catalog completion")
+	transactionErr := errors.New("fresh transaction cleanup")
+	auditErr := errors.New("fresh audit cleanup")
+	order := make([]string, 0, 4)
+
+	service.balanceShutdown = func(context.Context) error {
+		service.balanceLifecycle.Shutdown(context.Background())
+		order = append(order, "balance")
+		return nil
+	}
+	service.catalogShutdown = func() error {
+		order = append(order, "catalog")
+		return historicalCatalogErr
+	}
+
+	tx := &orderedCloseErrorDB{name: "transaction", order: &order, err: transactionErr}
+	audit := &orderedCloseErrorDB{name: "audit", order: &order, err: auditErr}
+	service.databaseOwnership = newRuntimeDatabaseOwnership(tx, audit)
+	service.databaseOwnership.transferToService()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	// Preserve a distinct primary error through a canceled Run while the
+	// catalog lifecycle remains active, forcing database ownership cleanup
+	// to remain deferred.
+	service.balanceStart = func(context.Context) error {
+		return service.balanceLifecycle.Start(context.Background())
+	}
+	service.catalogStart = func(parent context.Context) (context.Context, error) {
+		return service.catalogLifecycle.Start(parent)
+	}
+
+	runErr := service.Run(ctx)
+	if !errors.Is(runErr, context.Canceled) {
+		t.Fatalf("expected historical primary cancellation, got %v", runErr)
+	}
+	if !errors.Is(runErr, historicalCatalogErr) {
+		t.Fatalf("expected historical catalog completion error, got %v", runErr)
+	}
+	if tx.closeCount != 0 || audit.closeCount != 0 {
+		t.Fatalf("expected database cleanup to remain deferred, got tx=%d audit=%d", tx.closeCount, audit.closeCount)
+	}
+	if !service.catalogLifecycle.Running() {
+		t.Fatal("expected catalog lifecycle to remain active after partial shutdown")
+	}
+
+	service.catalogShutdown = func() error {
+		service.catalogLifecycle.Shutdown()
+		order = append(order, "catalog-converged")
+		return nil
+	}
+	if err := service.shutdownCatalogLifecycle(); err != nil {
+		t.Fatalf("expected catalog convergence without error, got %v", err)
+	}
+	if service.catalogLifecycle.Running() {
+		t.Fatal("expected catalog lifecycle to converge to stopped state")
+	}
+
+	closeErr := service.Close()
+	if !errors.Is(closeErr, transactionErr) || !errors.Is(closeErr, auditErr) {
+		t.Fatalf("expected fresh database cleanup errors, got %v", closeErr)
+	}
+	if errors.Is(closeErr, historicalPrimaryErr) ||
+		errors.Is(closeErr, historicalCatalogErr) ||
+		errors.Is(closeErr, context.Canceled) {
+		t.Fatalf("explicit Close must not replay historical Run errors: %v", closeErr)
+	}
+	if tx.closeCount != 1 || audit.closeCount != 1 {
+		t.Fatalf("expected exactly one close per database, got tx=%d audit=%d", tx.closeCount, audit.closeCount)
+	}
+	if !reflect.DeepEqual(order, []string{"balance", "catalog", "catalog-converged", "transaction", "audit"}) {
+		t.Fatalf("unexpected deferred cleanup ordering: %v", order)
+	}
+}
