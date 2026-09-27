@@ -12,7 +12,7 @@ import (
 
 func TestSyncServiceStoresProviderCatalogSnapshot(t *testing.T) {
 	registry := provider.NewRegistry()
-	if err := registry.Register("mock", mock.New(mock.Config{Products: []provider.Product{{Code:"xld10", Name:"XL 10K"}}})); err != nil { t.Fatal(err) }
+	if err := registry.Register("mock", mock.New(mock.Config{Products: []provider.Product{{Code: "xld10", Name: "XL 10K"}}})); err != nil { t.Fatal(err) }
 	store := NewMemoryStore()
 	svc, err := NewSyncService(registry, store)
 	if err != nil { t.Fatal(err) }
@@ -26,13 +26,12 @@ func TestSyncServiceStoresProviderCatalogSnapshot(t *testing.T) {
 
 func TestMemoryStoreCopiesProducts(t *testing.T) {
 	store := NewMemoryStore()
-	products := []provider.Product{{Code:"xld10", Name:"XL 10K"}}
-	if err := store.Put(Snapshot{ProviderName:"mock", Products:products, SyncedAt:time.Now()}); err != nil { t.Fatal(err) }
+	products := []provider.Product{{Code: "xld10", Name: "XL 10K"}}
+	if err := store.Put(Snapshot{ProviderName: "mock", Products: products, SyncedAt: time.Now()}); err != nil { t.Fatal(err) }
 	products[0].Name = "mutated"
 	got, _ := store.Get("mock")
 	if got.Products[0].Name != "XL 10K" { t.Fatalf("store leaked mutable product data: %#v", got.Products) }
 }
-
 
 func TestMemoryStoreRejectsOlderSnapshot(t *testing.T) {
 	store := NewMemoryStore()
@@ -49,7 +48,6 @@ func TestMemoryStoreRejectsOlderSnapshot(t *testing.T) {
 		t.Fatalf("older snapshot replaced current state: %#v", got)
 	}
 }
-
 
 func TestSyncServiceRecordsFailureAndRecoveryStatus(t *testing.T) {
 	registry := provider.NewRegistry()
@@ -92,14 +90,17 @@ func TestSyncServiceRecordsFailureAndRecoveryStatus(t *testing.T) {
 	}
 }
 
-
 type cancellationAwareProvider struct {
 	*mock.Provider
-	calls int
+	calls  int
+	cancel context.CancelFunc
 }
 
 func (p *cancellationAwareProvider) GetProducts(ctx context.Context, req provider.ProductRequest) ([]provider.Product, error) {
 	p.calls++
+	if p.cancel != nil {
+		p.cancel()
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -107,7 +108,8 @@ func (p *cancellationAwareProvider) GetProducts(ctx context.Context, req provide
 }
 
 func TestSyncAllStopsAfterContextCancellation(t *testing.T) {
-	first := &cancellationAwareProvider{Provider: mock.New(mock.Config{})}
+	ctx, cancel := context.WithCancel(context.Background())
+	first := &cancellationAwareProvider{Provider: mock.New(mock.Config{}), cancel: cancel}
 	second := &cancellationAwareProvider{Provider: mock.New(mock.Config{})}
 	registry := provider.NewRegistry()
 	if err := registry.Register("first", first); err != nil { t.Fatal(err) }
@@ -115,8 +117,6 @@ func TestSyncAllStopsAfterContextCancellation(t *testing.T) {
 
 	svc, err := NewSyncService(registry, NewMemoryStore())
 	if err != nil { t.Fatal(err) }
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
 
 	errs := svc.SyncAll(ctx)
 	if !errors.Is(errs["first"], context.Canceled) {
