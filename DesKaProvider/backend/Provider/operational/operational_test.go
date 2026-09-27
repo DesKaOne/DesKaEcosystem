@@ -58,6 +58,29 @@ func TestSyncProviderSuccess(t *testing.T) {
 	}
 }
 
+
+func TestSyncProviderUsesExplicitBalanceCapabilityWithoutPPOBProvider(t *testing.T) {
+	registry := provider.NewRegistry()
+	balance := balanceStub{balance: 3300000}
+	status := provider.CapabilityStatus{AdapterImplemented: true, Enabled: true}
+	if err := registry.RegisterCapabilityProvider("balance-only", provider.CapabilityBalance, balance, status); err != nil {
+		t.Fatal(err)
+	}
+	store := NewMemoryStore()
+	svc, err := NewSyncService(registry, store, "IDR", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	snapshot, err := svc.SyncProvider(context.Background(), "balance-only")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.Balance != 3300000 || snapshot.Health != HealthHealthy {
+		t.Fatalf("unexpected snapshot: %#v", snapshot)
+	}
+}
+
 func TestSyncProviderFailureEscalatesHealth(t *testing.T) {
 	registry := provider.NewRegistry()
 	if err := registry.Register("mock", balanceStub{err: errors.New("provider unavailable")}); err != nil {
