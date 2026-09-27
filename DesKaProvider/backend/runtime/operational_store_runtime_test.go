@@ -60,3 +60,32 @@ func TestOpenOperationalStorePostgresRequiresSchema(t *testing.T) {
  if err == nil { t.Fatal("expected schema readiness failure") }
  if operationalDB != nil { t.Fatal("schema readiness failure must not return an owned database handle") }
 }
+
+
+func TestLoadConfigRejectsInvalidPostgresSchemaMode(t *testing.T) {
+ t.Setenv("DESKAPROVIDER_OPERATIONAL_STORE_DRIVER", "json")
+ t.Setenv("DESKAPROVIDER_TRANSACTION_STORE_DRIVER", "json")
+ t.Setenv("DESKAPROVIDER_AUDIT_STORE_DRIVER", "memory")
+ t.Setenv("DESKAPROVIDER_POSTGRES_DSN", "")
+ t.Setenv("DESKAPROVIDER_POSTGRES_SCHEMA_MODE", "unsafe")
+ if _, err := LoadConfig(); err == nil { t.Fatal("expected invalid PostgreSQL schema mode error") }
+}
+
+func TestOpenOperationalStorePostgresMigrateModeAppliesSchema(t *testing.T) {
+ dsn := os.Getenv("DESKAPROVIDER_POSTGRES_DSN")
+ if dsn == "" { t.Skip("DESKAPROVIDER_POSTGRES_DSN is not configured") }
+ db, err := sql.Open("pgx", dsn); if err != nil { t.Fatal(err) }
+ defer db.Close()
+ ctx := context.Background()
+ if err := db.PingContext(ctx); err != nil { t.Fatal(err) }
+ schema := "runtime_operational_migrate_" + time.Now().UTC().Format("20060102150405.000000000")
+ schema = strings.ReplaceAll(schema, ".", "_")
+ if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil { t.Fatal(err) }
+ defer func(){ _, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE") }()
+ if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil { t.Fatal(err) }
+ store, owned, err := openOperationalStore(ctx, Config{OperationalStoreDriver:"postgres",PostgresDSN:dsn,PostgresSchemaMode:"migrate"}, nil)
+ if err != nil { t.Fatal(err) }
+ if store == nil || owned == nil { t.Fatal("expected PostgreSQL operational store and owned DB") }
+ if err := checkOperationalSchema(ctx, owned); err != nil { t.Fatal(err) }
+ _ = owned.Close()
+}
