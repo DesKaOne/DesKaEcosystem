@@ -11292,3 +11292,69 @@ No architecture document update is required. Milestone #212 strengthens the exis
 ### Next Milestone
 
 Continue with the next concrete persistence/recovery or routing-safety gap from the actual implementation, with particular attention to recovery freshness/monotonicity and stale-state handling before introducing new provider or business integration.
+
+
+## 213. Milestone Update — Catalog Snapshot Monotonic Recovery Boundary
+
+**Date:** 2026-09-28
+
+Completed:
+
+- identified a concrete persistence/recovery gap after Milestone #212: catalog stores validated snapshot semantics but still allowed a later Put() call with an older SyncedAt to replace newer runtime/persisted state;
+- added a provider-neutral ErrSnapshotOlder store error for rejected timestamp regressions;
+- changed MemoryStore.Put to preserve the current snapshot when an incoming snapshot has an older synchronization timestamp;
+- changed JSONFileStore.Put to apply the same monotonicity guard before persistence, so rejected older state cannot rewrite the durable catalog file;
+- added deterministic regression coverage for in-memory monotonicity and durable JSON persistence/reload behavior;
+- equal timestamps remain accepted, while only strictly older timestamps are rejected;
+- no routing priority, provider execution, retry/failover, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, provider funding, or synthetic transaction/audit reconstruction was introduced.
+
+### Verification
+
+- implementation commits:
+  - a45788e3f0c8e206e3f441bbacb83573aca83099 — MemoryStore monotonicity guard;
+  - 2c6e47ea1b9ccb5afcc8345f890407544df38567 — JSONFileStore monotonicity guard;
+- regression-test commits:
+  - 0e78a71e2de3ae9ddad5022fab2f2f23ada58e79 — MemoryStore regression;
+  - c09ccf469ad6731060d421d14be5185e01a5d6a6 — JSON persistence/reload regression and exact implementation/test HEAD;
+- CI #2073 / run 36336531480: GREEN for exact implementation/test HEAD c09ccf469ad6731060d421d14be5185e01a5d6a6;
+- CI #2074 / run 36336534800: GREEN for the same exact HEAD through pull-request validation;
+- exact CI execution passed: go test ./..., go vet ./..., PostgreSQL service-backed integration, and go test -race ./...;
+- the race job completed successfully after the full race suite; no race failure was reported.
+
+### Persistence / Recovery Invariants
+
+- missing catalog file remains an empty initial store;
+- readable zero-byte catalog file remains an empty initial store;
+- non-ENOENT read failures remain startup/recovery errors;
+- corrupt JSON remains a startup/recovery error;
+- semantically invalid persisted snapshots cannot enter the runtime catalog store;
+- persisted provider identity must match the catalog map identity;
+- persisted snapshots must contain a non-zero synchronization timestamp;
+- a store cannot regress an existing provider snapshot to an older synchronization timestamp;
+- rejecting an older snapshot does not mutate the current in-memory snapshot;
+- rejecting an older JSON snapshot does not rewrite the durable file;
+- recovered product data remains operational catalog cache data and is never financial authority;
+- catalog freshness gates remain independent routing-safety boundaries;
+- persistence recovery does not authorize routing, provider failover, transaction retry, or transaction resubmission.
+
+### Safety Boundary
+
+This milestone is limited to monotonic synchronization ordering at the catalog persistence boundary. It prevents an older operational catalog observation from replacing a newer one in memory or on disk. It does not establish transaction ordering, financial ordering, provider-side transaction authority, or ledger authority.
+
+### Known Limitations
+
+- monotonicity is based on the persisted SyncedAt timestamp and does not introduce a globally ordered sequence number;
+- clock skew between producers can still produce timestamps that are technically ordered but not representative of provider-side event order;
+- catalog synchronization errors are still not exposed through a dedicated runtime health/error channel;
+- retry cadence remains the configured CatalogSyncInterval and is not backoff-aware;
+- database close remains non-context-aware;
+- PostgreSQL integration coverage requires DESKAPROVIDER_POSTGRES_DSN and is skipped when unavailable;
+- ownership-generation state remains lifecycle bookkeeping, not a recovery journal or transaction authority.
+
+### Architecture Impact
+
+No architecture document update is required. Milestone #213 strengthens the existing catalog persistence/recovery boundary by preventing timestamp regression without changing provider, transaction, financial, routing, or runtime lifecycle authority.
+
+### Next Milestone
+
+Continue with the next concrete persistence/recovery or routing-safety gap from the actual implementation, prioritizing stale-state/error observability and recovery convergence before introducing new provider or business integration.
