@@ -12493,3 +12493,80 @@ This verifies that the operational worker cannot silently escape the runtime own
 ### Next Milestone
 
 Harden operational snapshot persistence behind the existing `Store` interface, beginning with the smallest provider-neutral persistence contract needed for runtime restart/recovery. Keep persistence failures operational, never transaction-authorizing.
+
+## 229. Milestone Update — PostgreSQL Operational Snapshot Store Boundary
+
+**Date:** 2026-09-28
+
+### Completed
+
+- added PostgreSQL schema migration `002_provider_operational_snapshots.sql`;
+- added provider-neutral `PostgresStore` implementing the existing operational `Store` boundary;
+- persisted provider balance, currency, health, synchronization timestamps, last error, and consecutive failure count;
+- used provider name as the operational snapshot primary key and PostgreSQL upsert semantics for idempotent synchronization writes;
+- added PostgreSQL integration coverage using the CI-provided PostgreSQL service;
+- preserved JSON persistence as the interim v0.1 runtime path;
+- added an error-aware read path so PostgreSQL read failures are not silently interpreted as a missing operational snapshot.
+
+### Implementation Details
+
+The operational persistence boundary is now:
+
+```text
+BalanceProvider
+      |
+      v
+SyncService
+      |
+      v
+Store interface
+   /       \
+JSON       PostgreSQL
+v0.1       production direction
+```
+
+The public `Store` compatibility contract remains unchanged. Implementations that support the internal error-aware extension expose `GetWithError`, allowing synchronization to distinguish a real cache miss from persistence failure.
+
+PostgreSQL storage remains operational state only. It does not become the customer balance authority, transaction ledger, treasury, or provider funding mechanism.
+
+### Verification
+
+- initial implementation CI #2227 exposed the first compile boundary after the three-file addition;
+- CI #2236: **RED**, compile failure in compatibility getter implementations;
+- root cause was verified from GitHub Actions logs: the new `GetWithError` methods returned the old two-value `Get` result directly, and `PostgresStore` temporarily lacked the legacy `Get` method;
+- fix preserved both the existing `Store.Get` API and the new error-aware path;
+- CI #2240: **RED**, same verified compatibility-method regression before the final duplicate-method cleanup;
+- final fix commit: `aeb3f328124a3f6ebfe094567f9d3227f7c4bd8a`;
+- exact final CI #2247: **GREEN**;
+- `go test ./...`: PASS;
+- `go vet ./...`: PASS;
+- `go test -race ./...`: PASS;
+- PostgreSQL-backed integration path: PASS.
+
+### Invariants
+
+- operational snapshots remain provider state, not customer financial state;
+- writes use provider-keyed upsert semantics;
+- persistence errors remain observable to synchronization;
+- a persistence read failure does not authorize transaction retry or provider failover;
+- JSON and PostgreSQL stores share the same provider-neutral `Store` contract;
+- no provider credential or live external-provider dependency was introduced.
+
+### Safety Boundary
+
+This milestone adds durable PostgreSQL persistence for operational provider snapshots only. It does not change transaction submission, transaction correlation, customer ledger behavior, treasury movement, provider funding, or routing authorization.
+
+### Known Limitations
+
+- runtime default configuration still constructs the existing JSON operational store;
+- migration execution is not yet owned by the runtime startup path;
+- PostgreSQL operational storage is therefore an available production persistence implementation, not yet the default runtime backend;
+- no live provider balance endpoint was invoked as part of this milestone.
+
+### Architecture Impact
+
+DesKaProvider now has a provider-neutral operational persistence seam that can evolve from the interim JSON runtime store toward PostgreSQL without leaking persistence details into provider adapters or DesKaCash.
+
+### Next Milestone
+
+Wire PostgreSQL operational snapshot selection into the runtime configuration and lifecycle, including migration/schema readiness checks and deterministic fallback rules. JSON must remain an explicit interim mode rather than an implicit fallback when PostgreSQL is requested.
