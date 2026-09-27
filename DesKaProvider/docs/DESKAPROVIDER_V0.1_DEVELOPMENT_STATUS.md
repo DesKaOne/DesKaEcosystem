@@ -9726,3 +9726,53 @@ This milestone only validates runtime lifecycle re-entry, convergence, terminal-
 **#187 — Runtime Shutdown Cancellation/Deadline Boundary**
 
 Focus next on shutdown behavior when the caller context is canceled or reaches its deadline during lifecycle completion, preserving the original primary/lifecycle error composition and ownership cleanup boundary without allowing shutdown cancellation to authorize provider resubmission or financial-state mutation.
+
+
+## 185. Milestone Update — Runtime Shutdown Completion Ordering & Error Precedence Review
+
+**Date:** 2026-09-27
+
+Completed:
+
+- reviewed the final shutdown ordering contract across the balance worker, catalog lifecycle, and runtime database ownership;
+- confirmed the runtime shutdown path preserves deterministic error precedence: primary Run error, balance lifecycle completion error, catalog lifecycle completion error, then transaction and audit database cleanup errors;
+- confirmed database ownership closure is deferred until both active lifecycles have stopped;
+- added PostgreSQL-backed integration coverage for a successful cancellation shutdown with dedicated transaction and audit PostgreSQL handles;
+- the new integration test verifies completion ordering is exactly `balance -> catalog -> transaction -> audit`;
+- the new integration test verifies repeated `Service.Close()` does not replay lifecycle completion, does not double-close either PostgreSQL handle, and both PostgreSQL handles are actually closed;
+- preserved the existing partial-lifecycle safety boundary: if catalog completion leaves the catalog lifecycle active, database ownership remains open and explicit Close cannot bypass the active lifecycle;
+- no provider retry/failover, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, or synthetic transaction/audit reconstruction was introduced.
+
+### CI Failure and Correction
+
+CI #1893 on test commit `620e58f5e8c9b78a2566730a02df8851e617665b` was **RED** because the new PostgreSQL integration test used `reflect.DeepEqual` without importing the `reflect` package. The PostgreSQL service itself initialized successfully and the failure was a test compilation error.
+
+The correction was committed as `78d43d16a9059edb9f0588b0e09155f3b9cf55d6` by adding the missing import.
+
+### Verification
+
+- PostgreSQL shutdown-ordering test commit: `620e58f5e8c9b78a2566730a02df8851e617665b`.
+- CI #1893: RED — missing `reflect` import in the new integration test.
+- Correction commit: `78d43d16a9059edb9f0588b0e09155f3b9cf55d6`.
+- CI #1895 on exact corrected test HEAD: **GREEN**.
+  - `go test ./...` — PASS
+  - `go vet ./...` — PASS
+  - PostgreSQL service-backed integration tests — PASS
+  - `go test -race ./...` — PASS
+
+### Safety Boundary
+
+This milestone is limited to runtime shutdown ordering, lifecycle completion, error precedence, and database ownership cleanup. Transaction persistence remains authoritative for transaction state/idempotency, audit persistence remains observational, and lifecycle completion does not become a recovery authority. No provider retry/failover or financial movement behavior was introduced.
+
+### Known Limitations
+
+- the production `catalogWorkerLifecycle.Shutdown()` contract remains void-returning; catalog completion errors remain represented through the internal test seam used for deterministic error-composition coverage;
+- PostgreSQL integration coverage requires `DESKAPROVIDER_POSTGRES_DSN` and is skipped when unavailable;
+- database close remains non-context-aware;
+- the milestone does not introduce a new production catalog error source.
+
+### Next Milestone
+
+**#186 — Runtime Shutdown Re-entry and Terminal-State Boundary**
+
+Focus next on repeated Run/Close interactions after successful shutdown, cleanup-error shutdown, and partial lifecycle shutdown, ensuring terminal-state rejection never replays historical lifecycle/primary errors and never reopens or double-closes runtime ownership.
