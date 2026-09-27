@@ -3435,7 +3435,7 @@ func TestServiceRunShutdownCancellationVsLifecycleCompletionPrecedence(t *testin
 			t.Fatalf("expected composed shutdown error identity %v, got %v", want, runErr)
 		}
 	}
-	wantErr := "context canceled\nbalance completion deadline\ncatalog completion cancellation\ntransaction cleanup after cancellation\naudit cleanup after cancellation"
+	wantErr := "context canceled\nbalance completion deadline\ncatalog completion cancellation\nclose transaction database: transaction cleanup after cancellation\nclose audit database: audit cleanup after cancellation"
 	if runErr == nil || runErr.Error() != wantErr {
 		t.Fatalf("unexpected shutdown error precedence: got %q want %q", runErr, wantErr)
 	}
