@@ -9427,3 +9427,50 @@ Transaction persistence remains authoritative for transaction state/idempotency;
 **#190 — Runtime Shutdown Error Retention Across Mixed Shared/Dedicated Ownership**
 
 Focus next on the same retained-error contract across shared transaction/audit database handles and independently owned dedicated handles, including single-close behavior and closed-state re-entry, without introducing provider or transaction recovery behavior.
+
+
+## 190. Milestone Update — Runtime Shutdown Error Retention Across Mixed Shared/Dedicated Ownership
+
+**Date:** 2026-09-27
+
+Completed:
+
+- added a topology matrix covering shared transaction/audit ownership and independently owned dedicated transaction/audit handles;
+- verified direct `Service.Close()` retains the recorded cleanup result across repeated close calls for both ownership topologies;
+- verified Run-owned shutdown preserves the primary cancellation error together with the applicable transaction/audit cleanup errors;
+- verified shared ownership closes the single shared database handle exactly once and does not replay a second independent audit cleanup error;
+- verified dedicated ownership closes transaction and audit handles exactly once each and preserves both independent cleanup error identities;
+- verified repeated `Service.Close()` returns the same recorded ownership cleanup result object after the first cleanup attempt;
+- verified subsequent `Run()` after ownership closure returns `ErrServiceClosed` without replaying historical cleanup errors;
+- no production runtime ownership refactor was required; the existing shared-handle guard and stored `closeErr` semantics are now covered by the mixed-topology regression matrix;
+- no provider retry/failover, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, provider funding, or synthetic transaction/audit reconstruction was introduced.
+
+### Verification
+
+- Regression test/fix commits:
+  - `7d1c8b5856fa1847ef08a7662afaa6d3d92b5e4e` — initial topology matrix;
+  - `42c455404a1a76bfd693ccf591a62ac4a7c3fe18` — corrected shared-topology assertion.
+- CI #1853 on exact corrected HEAD: **GREEN**.
+  - `go test ./...` — PASS
+  - `go vet ./...` — PASS
+  - PostgreSQL service-backed integration tests — PASS
+  - `go test -race ./...` — PASS
+
+### Safety Boundary
+
+This milestone is limited to runtime database ownership topology, cleanup-error retention, single-shot close semantics, and closed-state re-entry. Shared versus dedicated database cleanup does not create transaction/audit recovery authority.
+
+Transaction persistence remains authoritative for transaction state/idempotency; audit persistence remains observational evidence. No provider retry/failover, transaction resubmission, ledger mutation, treasury movement, provider funding, or cross-domain recovery behavior is introduced.
+
+### Known Limitations
+
+- database close remains non-context-aware;
+- PostgreSQL integration coverage requires `DESKAPROVIDER_POSTGRES_DSN` and is skipped when unavailable;
+- production `catalogWorkerLifecycle.Shutdown()` remains void-returning; catalog completion error composition continues through the existing internal test seam;
+- this milestone validates shared/dedicated ownership retention but does not add database reconnection or cleanup retry behavior.
+
+### Next Milestone
+
+**#191 — Runtime Shutdown Error Retention Across Mixed Lifecycle + Ownership Failures**
+
+Focus next on combined lifecycle completion failures and shared/dedicated database cleanup failures, preserving independent error identity, single-shot ownership cleanup, and closed-state separation without introducing provider or transaction recovery behavior.
