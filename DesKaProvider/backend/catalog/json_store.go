@@ -24,8 +24,9 @@ func NewJSONFileStore(path string) (*JSONFileStore, error) {
 	if path == "" { return nil, errors.New("catalog store path is required") }
 	s := &JSONFileStore{path:path, data:make(map[string]Snapshot)}
 	raw, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) || len(raw) == 0 { return s, nil }
-	if err != nil { return nil, err }
+	if errors.Is(err, os.ErrNotExist) { return s, nil }
+	if err != nil { return nil, fmt.Errorf("read catalog store: %w", err) }
+	if len(raw) == 0 { return s, nil }
 	var payload fileData
 	if err := json.Unmarshal(raw, &payload); err != nil { return nil, fmt.Errorf("decode catalog store: %w", err) }
 	if payload.Snapshots != nil { s.data = payload.Snapshots }
@@ -53,8 +54,8 @@ func (s *JSONFileStore) All() []Snapshot {
 	names := make([]string,0,len(s.data))
 	for name := range s.data { names = append(names,name) }
 	sort.Strings(names)
-	result := make([]Snapshot,0,len(names))
-	for _, name := range names { v:=s.data[name]; v.Products=append([]provider.Product(nil),v.Products...); result=append(result,v) }
+	result := make([]Snapshot,0,len(s.data))
+	for name := range names { v:=s.data[name]; v.Products=append([]provider.Product(nil),v.Products...); result=append(result,v) }
 	return result
 }
 
