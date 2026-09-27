@@ -149,6 +149,20 @@ func (l *catalogWorkerLifecycle) Shutdown() {
 
 type Service struct{syncService *operational.SyncService;purchaseService *routing.Service;catalogSync *catalog.SyncService;providerState *operational.ProviderStateStore;databaseOwnership *runtimeDatabaseOwnership;balanceLifecycle *operational.SyncWorkerLifecycle;catalogLifecycle *catalogWorkerLifecycle;interval,catalogInterval time.Duration;catalogStart func(context.Context) (context.Context,error);balanceStart func(context.Context) error;balanceShutdown func(context.Context) error;catalogShutdown func() error;balanceShutdownCompleted bool;catalogShutdownCompleted bool;shutdownMu sync.Mutex}
 
+func (s *Service) CatalogSyncStatusPersistenceError() error {
+	if s == nil || s.catalogSync == nil {
+		return nil
+	}
+	return s.catalogSync.StatusPersistenceError()
+}
+
+func (s *Service) CatalogSyncStatusPersistenceFailures() int {
+	if s == nil || s.catalogSync == nil {
+		return 0
+	}
+	return s.catalogSync.StatusPersistenceFailures()
+}
+
 func (s *Service) CatalogSyncStatuses() []catalog.SyncStatus {
 	if s == nil || s.catalogSync == nil {
 		return nil
