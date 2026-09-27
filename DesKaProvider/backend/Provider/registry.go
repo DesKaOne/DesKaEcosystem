@@ -48,7 +48,7 @@ func (r *Registry) Get(name string) (PPOBProvider, error) {
 	r.mu.RLock()
 	entry, ok := r.providers[key]
 	r.mu.RUnlock()
-	if !ok {
+	if !ok || entry.provider == nil {
 		return nil, fmt.Errorf("%w: %s", ErrProviderNotFound, key)
 	}
 	return entry.provider, nil
