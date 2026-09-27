@@ -412,7 +412,7 @@ func (s *Service) Reconcile(ctx context.Context, referenceID string) (PurchaseEx
 	}
 	latestResult := latest.Execution.Result
 	if latestResult.Status == provider.StatusSuccess || latestResult.Status == provider.StatusFailed {
-		if sameObservedProviderResult(latestResult, incoming) {
+		if samePurchaseResult(latestResult, incoming) {
 			s.syncLocalTransaction(latest)
 			return latest.Execution, nil
 		}
@@ -440,7 +440,7 @@ func (s *Service) Reconcile(ctx context.Context, referenceID string) (PurchaseEx
 		}
 		latestResult = latestAfterConflict.Execution.Result
 		if latestResult.Status == provider.StatusSuccess || latestResult.Status == provider.StatusFailed {
-			if sameObservedProviderResult(latestResult, incoming) {
+			if samePurchaseResult(latestResult, incoming) {
 				s.syncLocalTransaction(latestAfterConflict)
 				return latestAfterConflict.Execution, nil
 			}
