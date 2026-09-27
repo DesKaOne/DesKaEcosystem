@@ -990,7 +990,6 @@ func TestServiceRollbackStartedLifecyclesBeforeDatabaseClose(t *testing.T) {
 	service, err := New(syncService, time.Hour)
 	if err != nil { t.Fatal(err) }
 	service.catalogLifecycle = newCatalogWorkerLifecycle()
-	service.catalogSync = &catalog.SyncService{}
 	service.catalogInterval = time.Hour
 	catalogStartErr := errors.New("injected catalog lifecycle start failure")
 	service.catalogStart = func(context.Context) (context.Context, error) {
@@ -1411,6 +1410,10 @@ func TestServiceRunShutdownPreservesCompletionOrderingAndAllErrorIdentity(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
+	service.catalogSync, err = catalog.NewSyncService(registry, catalog.NewMemoryStore())
+	if err != nil {
+		t.Fatal(err)
+	}
 	service.catalogLifecycle = newCatalogWorkerLifecycle()
 	service.catalogSync = &catalog.SyncService{}
 
@@ -1596,6 +1599,10 @@ func TestServiceRunShutdownErrorPrecedenceDoesNotReplayLifecycleCompletionOnRepe
 		t.Fatal(err)
 	}
 	service, err := New(syncService, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.catalogSync, err = catalog.NewSyncService(registry, catalog.NewMemoryStore())
 	if err != nil {
 		t.Fatal(err)
 	}
