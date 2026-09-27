@@ -242,11 +242,6 @@ catalogStarted := false
 		}
 		return combineRuntimeShutdownError(combineRuntimeShutdownError(combineRuntimeShutdownError(primary, workerErr), catalogErr), closeErr)
 	}
-	shutdown := func(primary, workerErr error) error {
-		s.shutdownMu.Lock()
-		defer s.shutdownMu.Unlock()
-		return shutdownLocked(primary, workerErr)
-	}
 	if s.balanceLifecycle == nil {
 		if s.catalogSync == nil {
 			runErr := s.syncService.Run(ctx, s.interval)
