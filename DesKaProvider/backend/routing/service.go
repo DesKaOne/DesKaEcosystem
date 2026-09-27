@@ -272,98 +272,65 @@ func (s *Service) HandleWebhookFromProvider(ctx context.Context, providerName st
 }
 
 func (s *Service) handleWebhook(ctx context.Context, providerName string, event provider.WebhookEvent) (PurchaseExecution, error) {
-	if err := validateWebhookEvent(event); err != nil {
-		return PurchaseExecution{}, err
-	}
-	if err := ctx.Err(); err != nil {
-		return PurchaseExecution{}, err
-	}
+	if err := validateWebhookEvent(event); err != nil { return PurchaseExecution{}, err }
+	if err := ctx.Err(); err != nil { return PurchaseExecution{}, err }
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	latest, found, readErr := getTransactionContextE(ctx, s.Store, event.ReferenceID)
+	if readErr != nil { return PurchaseExecution{}, fmt.Errorf("reload transaction for webhook: %w", readErr) }
+	if !found { return PurchaseExecution{}, ErrWebhookTransactionNotFound }
+	if latest.Request.ProductCode != event.ProductCode || latest.Request.CustomerNo != event.CustomerNo { return PurchaseExecution{}, ErrWebhookReferenceConflict }
+	if providerName != "" && latest.Execution.ProviderName != providerName { return PurchaseExecution{}, ErrWebhookReferenceConflict }
 
-	call, ok := s.transactions[event.ReferenceID]
-	if !ok {
-		return PurchaseExecution{}, ErrWebhookTransactionNotFound
-	}
-	if call.request.ProductCode != event.ProductCode || call.request.CustomerNo != event.CustomerNo {
+	incoming := provider.PurchaseResult{ReferenceID:event.ReferenceID, CustomerNo:event.CustomerNo, ProductCode:event.ProductCode, Status:event.Status, ProviderCode:event.ProviderCode, Message:event.Message, SerialNumber:event.SerialNumber, Price:event.Price}
+	latestResult := latest.Execution.Result
+	if latestResult.Status == provider.StatusSuccess || latestResult.Status == provider.StatusFailed {
+		if sameObservedProviderResult(latestResult, incoming) { s.syncLocalTransaction(latest); return latest.Execution, nil }
+		_ = s.appendAudit(TransactionAuditEvent{ReferenceID:event.ReferenceID, Action:"WEBHOOK_TERMINAL_CONFLICT", Previous:string(latestResult.Status), Next:string(incoming.Status), ProviderName:latest.Execution.ProviderName, Message:incoming.Message})
 		return PurchaseExecution{}, ErrWebhookReferenceConflict
 	}
-	if providerName != "" && call.result.ProviderName != providerName {
-		return PurchaseExecution{}, ErrWebhookReferenceConflict
-	}
+	if latestResult.Status != provider.StatusPending { return PurchaseExecution{}, ErrWebhookReferenceConflict }
+	if incoming.Status != provider.StatusPending && incoming.Status != provider.StatusSuccess && incoming.Status != provider.StatusFailed { return PurchaseExecution{}, ErrInvalidWebhookEvent }
 
-	select {
-	case <-call.done:
-	default:
-		return PurchaseExecution{}, ErrWebhookReferenceConflict
-	}
-
-	incoming := provider.PurchaseResult{
-		ReferenceID:  event.ReferenceID,
-		CustomerNo:   event.CustomerNo,
-		ProductCode:  event.ProductCode,
-		Status:       event.Status,
-		ProviderCode: event.ProviderCode,
-		Message:      event.Message,
-		SerialNumber: event.SerialNumber,
-		Price:        event.Price,
-	}
-
-	current := call.result.Result
-	if current.Status == provider.StatusSuccess || current.Status == provider.StatusFailed {
-		if sameWebhookResult(current, incoming) {
-			return call.result, nil
+	previous := latest
+	next := TransactionState{Request:latest.Request, Execution:PurchaseExecution{ProviderName:latest.Execution.ProviderName, Result:incoming}, Version:latest.Version}
+	if err := s.persistTransition(ctx, event.ReferenceID, previous, next); err != nil {
+		if !errors.Is(err, ErrTransactionStateConflict) { return PurchaseExecution{}, err }
+		latestAfterConflict, ok, readErr := getTransactionContextE(ctx, s.Store, event.ReferenceID)
+		if readErr != nil { return PurchaseExecution{}, fmt.Errorf("reload transaction after webhook conflict: %w", readErr) }
+		if !ok || latestAfterConflict.Request != latest.Request || latestAfterConflict.Execution.ProviderName != latest.Execution.ProviderName { return PurchaseExecution{}, ErrWebhookReferenceConflict }
+		latest = latestAfterConflict
+		latestResult = latest.Execution.Result
+		if latestResult.Status == provider.StatusSuccess || latestResult.Status == provider.StatusFailed {
+			if sameObservedProviderResult(latestResult, incoming) { s.syncLocalTransaction(latest); return latest.Execution, nil }
+			return PurchaseExecution{}, ErrWebhookReferenceConflict
 		}
-		_ = s.appendAudit(TransactionAuditEvent{
-			ReferenceID: event.ReferenceID,
-			Action: "WEBHOOK_TERMINAL_CONFLICT",
-			Previous: string(current.Status),
-			Next: string(incoming.Status),
-			ProviderName: call.result.ProviderName,
-			Message: incoming.Message,
-		})
-		return PurchaseExecution{}, ErrWebhookReferenceConflict
-	}
-	if current.Status != provider.StatusPending {
-		return PurchaseExecution{}, ErrWebhookReferenceConflict
-	}
-	if incoming.Status == provider.StatusPending {
-		if err := s.persistLocked(ctx, call.request, PurchaseExecution{ProviderName: call.result.ProviderName, Result: incoming}); err != nil {
+		if latestResult.Status != provider.StatusPending { return PurchaseExecution{}, ErrWebhookReferenceConflict }
+		previous = latest
+		next.Request, next.Execution.ProviderName, next.Version = latest.Request, latest.Execution.ProviderName, latest.Version
+		if err := s.persistTransition(ctx, event.ReferenceID, previous, next); err != nil {
+			if errors.Is(err, ErrTransactionStateConflict) { return PurchaseExecution{}, ErrTransactionStateConflict }
 			return PurchaseExecution{}, err
 		}
-		previous := call.result.Result.Status
-		call.result.Result = incoming
-		_ = s.appendAudit(TransactionAuditEvent{
-			ReferenceID: event.ReferenceID,
-			Action: "WEBHOOK_PENDING",
-			Previous: string(previous),
-			Next: string(incoming.Status),
-			ProviderName: call.result.ProviderName,
-			Message: incoming.Message,
-		})
-		return call.result, nil
 	}
-	if incoming.Status != provider.StatusSuccess && incoming.Status != provider.StatusFailed {
-		return PurchaseExecution{}, ErrInvalidWebhookEvent
+	s.syncLocalTransaction(next)
+	action := "WEBHOOK_PENDING"
+	if incoming.Status != provider.StatusPending { action = "WEBHOOK_TERMINAL" }
+	if auditErr := s.appendAudit(TransactionAuditEvent{ReferenceID:event.ReferenceID, Action:action, Previous:string(previous.Execution.Result.Status), Next:string(incoming.Status), ProviderName:next.Execution.ProviderName, Message:incoming.Message}); auditErr != nil {
+		return next.Execution, fmt.Errorf("audit webhook event: %w", auditErr)
 	}
+	return next.Execution, nil
+}
 
-	next := PurchaseExecution{ProviderName: call.result.ProviderName, Result: incoming}
-	if err := s.persistLocked(ctx, call.request, next); err != nil {
-		return PurchaseExecution{}, err
+func (s *Service) syncLocalTransaction(state TransactionState) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	call, ok := s.transactions[state.Request.ReferenceID]
+	if !ok {
+		call = &purchaseCall{request:state.Request, done:make(chan struct{})}
+		close(call.done)
+		s.transactions[state.Request.ReferenceID] = call
 	}
-	call.result = next
-	if auditErr := s.appendAudit(TransactionAuditEvent{
-		ReferenceID: event.ReferenceID,
-		Action: "WEBHOOK_TERMINAL",
-		Previous: string(provider.StatusPending),
-		Next: string(incoming.Status),
-		ProviderName: call.result.ProviderName,
-		Message: incoming.Message,
-	}); auditErr != nil {
-		return call.result, fmt.Errorf("audit webhook event: %w", auditErr)
-	}
-	return call.result, nil
+	call.request, call.result, call.err = state.Request, state.Execution, nil
 }
 
 func (s *Service) Reconcile(ctx context.Context, referenceID string) (PurchaseExecution, error) {
@@ -437,7 +404,7 @@ func (s *Service) Reconcile(ctx context.Context, referenceID string) (PurchaseEx
 	}
 	latestResult := latest.Execution.Result
 	if latestResult.Status == provider.StatusSuccess || latestResult.Status == provider.StatusFailed {
-		if samePurchaseResult(latestResult, incoming) {
+		if sameObservedProviderResult(latestResult, incoming) {
 			s.mu.Lock()
 			call.result = latest.Execution
 			s.mu.Unlock()
@@ -467,7 +434,7 @@ func (s *Service) Reconcile(ctx context.Context, referenceID string) (PurchaseEx
 			}
 			latestResult = latestAfterConflict.Execution.Result
 			if latestResult.Status == provider.StatusSuccess || latestResult.Status == provider.StatusFailed {
-				if samePurchaseResult(latestResult, incoming) {
+				if sameObservedProviderResult(latestResult, incoming) {
 					call.result = latestAfterConflict.Execution
 					return latestAfterConflict.Execution, nil
 				}
@@ -599,10 +566,9 @@ func samePurchaseResult(a, b provider.PurchaseResult) bool {
 		a.Price == b.Price
 }
 
-func sameWebhookResult(a, b provider.PurchaseResult) bool {
-	// Webhook delivery text is observational and may be normalized differently
-	// by repeated deliveries. Transaction identity and material provider result
-	// fields remain strict so a different terminal observation is still rejected.
+func sameWebhookResult(a, b provider.PurchaseResult) bool { return sameObservedProviderResult(a, b) }
+
+func sameObservedProviderResult(a, b provider.PurchaseResult) bool {
 	return a.ReferenceID == b.ReferenceID &&
 		a.CustomerNo == b.CustomerNo &&
 		a.ProductCode == b.ProductCode &&
@@ -611,7 +577,6 @@ func sameWebhookResult(a, b provider.PurchaseResult) bool {
 		a.SerialNumber == b.SerialNumber &&
 		a.Price == b.Price
 }
-
 
 func getTransactionContext(ctx context.Context, store TransactionStore, referenceID string) (TransactionState, bool) {
 	state, ok, _ := getTransactionContextE(ctx, store, referenceID)
