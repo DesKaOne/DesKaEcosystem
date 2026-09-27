@@ -11945,6 +11945,7 @@ No architecture document update is required. The change closes a concrete implem
 Continue with the next concrete shutdown/recovery-convergence or persistence-safety gap found in the actual implementation, prioritizing durable state correctness and stale-state safety before introducing new provider or business integration.
 
 
+
 ## 223. Milestone Update — Provider-Neutral Capability Matrix Boundary
 
 **Date:** 2026-09-28
@@ -12035,3 +12036,85 @@ No public API is introduced. No transaction failover semantics are changed. No a
 ### Next Milestone
 
 Build the first capability-aware routing predicate over the existing catalog/health/operational state, with deterministic tests proving that only explicitly enabled and adapter-implemented capabilities are eligible. Keep product availability, freshness, provider health, and idempotency safety as separate gates; do not introduce automatic financial failover.
+## 224. Milestone Update — Capability-Aware Routing Eligibility Boundary
+
+**Date:** 2026-09-28
+
+### Completed
+
+- changed DesKaProvider/backend/routing/router.go so routing with a configured ProviderStateStore requires both:
+  - operational provider lifecycle/capability enablement; and
+  - registry CapabilityDescriptor.Supports(provider.CapabilityPPOB);
+- kept catalog availability, catalog freshness, operational health, operational snapshot freshness, and cached balance as independent routing gates;
+- did not add automatic provider failover, retry, resubmission, treasury movement, or customer-ledger behavior;
+- added deterministic routing tests covering:
+  - capability metadata present but Enabled=false;
+  - capability metadata present but AdapterImplemented=false;
+  - capability metadata with both Enabled=true and AdapterImplemented=true;
+  - operational health/balance gates remaining authoritative even when capability metadata is eligible.
+
+### Implementation Details
+
+The provider registry is now the source of truth for capability implementation/enablement metadata at the routing boundary. The operational provider-state store remains responsible for provider lifecycle and operational capability state.
+
+The routing predicate is intentionally conjunctive:
+
+    ProviderState
+      ├── lifecycle enabled
+      ├── operational PPOB capability enabled
+      │
+      └── Registry CapabilityDescriptor
+           ├── PPOB adapter implemented
+           └── PPOB capability enabled
+                  |
+                  v
+           catalog/product gate
+                  |
+                  v
+           operational health/balance/freshness gates
+                  |
+                  v
+           route candidate
+
+A provider adapter existing in source is therefore insufficient to make it route-eligible.
+
+### Verification
+
+- router implementation commit: 759107451d1eaeae968ccca2ca3265206fa0eb45;
+- deterministic capability routing tests added in DesKaProvider/backend/routing/router_capability_test.go;
+- test-file commit: 811938f14883b3a40af711d40b54b7dbcecc4e54;
+- exact-HEAD CI verification is required before this milestone can be marked GREEN;
+- no live provider credentials or external provider calls were introduced.
+
+### Invariants
+
+- capability eligibility is not transaction authorization;
+- transaction reference, original request identity, selected provider identity, and terminal state invariants remain unchanged;
+- catalog staleness remains a routing rejection, not a provider failure;
+- operational balance remains a provider-liquidity snapshot, not customer balance authority;
+- persistence/audit/runtime cleanup errors cannot authorize retry, failover, or provider resubmission;
+- restart remains a reconstruction boundary, not a submission boundary;
+- provider-specific protocol and credentials remain inside adapters/configuration.
+
+### Safety Boundary
+
+This milestone only narrows the set of providers eligible for an existing route selection. It does not execute provider operations differently and does not add a second-submission path.
+
+No automatic failover is introduced. If no provider satisfies all gates, routing returns ErrNoProviderAvailable rather than trying another provider after an external submission.
+
+### Known Limitations
+
+- routing currently targets the PPOB capability only;
+- capability evidence (Verified, Configured, LiveTested) is metadata and is not yet a durable evidence/audit store;
+- runtime capability descriptors for DigiFlazz/IAK remain disabled by default, so they are not route-eligible merely because credentials or adapters exist;
+- XP SINDONESIA remains unregistered by the current runtime composition;
+- RCB and Midtrans still lack production adapter implementations in the current source;
+- no payment/payout-specific routing contract exists yet.
+
+### Architecture Impact
+
+The routing layer now consumes the provider-neutral capability matrix without exposing provider-specific APIs to DesKaCash. This is an internal eligibility boundary only; no public API or financial authority is introduced.
+
+### Next Milestone
+
+Verify exact-HEAD CI for this routing boundary. If GREEN, continue with the next smallest capability-matrix integration gap: provider registration/composition for the verified adapter pool, beginning only where the provider capability contract and deterministic adapter tests are actually established.
