@@ -1413,7 +1413,6 @@ func TestServiceRunRejectsRepeatedRunAfterOwnedShutdown(t *testing.T) {
 
 
 func TestServiceRunShutdownCompletionOrderingAndRepeatedClose(t *testing.T) {
-	primaryErr := errors.New("injected cancellation")
 	balanceErr := errors.New("injected balance shutdown error")
 	catalogErr := errors.New("injected catalog shutdown completion error")
 	transactionErr := errors.New("injected transaction close error")
@@ -1473,7 +1472,7 @@ func TestServiceRunShutdownCompletionOrderingAndRepeatedClose(t *testing.T) {
 	cancel()
 	runErr := service.Run(serviceCtx)
 
-	for _, want := range []error{primaryErr, balanceErr, catalogErr, transactionErr, auditErr} {
+	for _, want := range []error{context.Canceled, balanceErr, catalogErr, transactionErr, auditErr} {
 		if !errors.Is(runErr, want) {
 			t.Fatalf("expected shutdown error to preserve %v, got %v", want, runErr)
 		}
