@@ -1477,82 +1477,72 @@ func TestServiceRunRejectsRepeatedRunAfterOwnedShutdown(t *testing.T) {
 }
 
 
-func TestServiceRunShutdownTimeoutPreservesWorkerOwnershipBeforeDatabaseClose(t *testing.T) {
+type blockingBalanceMock struct {
+	*mock.Provider
+	balance int64
+	entered chan struct{}
+	release chan struct{}
+	once sync.Once
+}
+
+func (p *blockingBalanceMock) GetBalance(context.Context) (int64, error) {
+	p.once.Do(func() { close(p.entered) })
+	<-p.release
+	return p.balance, nil
+}
+
+func TestServiceShutdownTimeoutPreservesWorkerOwnershipBeforeDatabaseClose(t *testing.T) {
+	mockProvider := &blockingBalanceMock{
+		Provider: mock.New(mock.Config{}),
+		balance: 100000,
+		entered: make(chan struct{}),
+		release: make(chan struct{}),
+	}
 	registry := provider.NewRegistry()
-	if err := registry.Register("mock", &balanceMock{Provider: mock.New(mock.Config{}), balance: 100000}); err != nil {
+	if err := registry.Register("mock", mockProvider); err != nil {
 		t.Fatal(err)
 	}
 	syncService, err := operational.NewSyncService(registry, operational.NewMemoryStore(), "IDR", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	catalogStore := catalog.NewMemoryStore()
-	catalogSync, err := catalog.NewSyncService(registry, catalogStore)
+	service, err := New(syncService, time.Millisecond)
 	if err != nil {
 		t.Fatal(err)
-	}
-	service, err := New(syncService, time.Hour)
-	if err != nil {
-		t.Fatal(err)
-	}
-	service.catalogSync = catalogSync
-	service.catalogLifecycle = newCatalogWorkerLifecycle()
-	service.catalogInterval = time.Hour
-
-	workerShutdownErr := errors.New("balance shutdown timed out")
-	catalogCalls := 0
-	service.balanceShutdown = func(context.Context) error {
-		return workerShutdownErr
-	}
-	service.catalogShutdown = func() error {
-		catalogCalls++
-		service.catalogLifecycle.Shutdown()
-		return nil
 	}
 
 	db := &closeErrorDB{}
 	service.databaseOwnership = newRuntimeDatabaseOwnership(db, nil)
 	service.databaseOwnership.transferToService()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() { done <- service.Run(ctx) }()
-
-	deadline := time.After(time.Second)
-	for !service.balanceLifecycle.Running() {
-		select {
-		case <-deadline:
-			t.Fatal("balance worker did not start")
-		default:
-			time.Sleep(time.Millisecond)
-		}
+	if err := service.balanceLifecycle.Start(context.Background()); err != nil {
+		t.Fatal(err)
 	}
-
-	cancel()
 	select {
-	case runErr := <-done:
-		if !errors.Is(runErr, context.Canceled) {
-			t.Fatalf("expected context cancellation identity, got %v", runErr)
-		}
-		if !errors.Is(runErr, workerShutdownErr) {
-			t.Fatalf("expected worker shutdown error identity, got %v", runErr)
-		}
+	case <-mockProvider.entered:
 	case <-time.After(time.Second):
-		t.Fatal("service did not return after shutdown failure")
+		t.Fatal("balance worker did not enter the blocking provider call")
 	}
 
-	if catalogCalls != 1 {
-		t.Fatalf("expected catalog completion exactly once, got %d", catalogCalls)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	err = service.shutdownBalanceWorker(shutdownCtx)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected worker shutdown deadline error, got %v", err)
 	}
 	if !service.balanceLifecycle.Running() {
 		t.Fatal("expected balance worker to remain owned after shutdown timeout")
 	}
+	if closeErr := service.Close(); closeErr == nil || closeErr.Error() != "service close requires worker shutdown" {
+		t.Fatalf("expected database close guard while worker remains running, got %v", closeErr)
+	}
 	if db.closeCount != 0 {
-		t.Fatalf("expected database to remain open while balance worker is still running, got %d closes", db.closeCount)
+		t.Fatalf("expected database to remain open while worker is still running, got %d closes", db.closeCount)
 	}
 
+	close(mockProvider.release)
 	if err := service.balanceLifecycle.Shutdown(context.Background()); err != nil {
-		t.Fatalf("expected explicit worker cleanup to succeed, got %v", err)
+		t.Fatalf("expected worker to stop after release, got %v", err)
 	}
 	if err := service.Close(); err != nil {
 		t.Fatalf("expected database close after worker completion, got %v", err)
