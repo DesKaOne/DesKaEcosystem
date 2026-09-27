@@ -183,7 +183,7 @@ func TestInMemoryTransportConsensusRuntimeIntegration(t *testing.T) {
 }
 
 
-type runtimeValidatorAuthorityResolver struct{}
+type runtimeValidatorAuthorityResolver struct{ publicKey []byte }
 func finalizeRuntimeForTest(t *testing.T, runtime *consensus.ValidatorRuntime, signer *crypto.Ed25519Signer) (consensus.FinalityCertificate, error) {
 	t.Helper()
 	state := runtime.State()
@@ -382,7 +382,7 @@ func TestInMemoryTransportRuntimeFinalizedBlockHandoff(t *testing.T) {
 		t.Fatal("runtime A did not reach finalized phase")
 	}
 
-	validatorResolver := runtimeValidatorAuthorityResolver{}
+	validatorResolver := runtimeValidatorAuthorityResolver{publicKey: signer.PublicKey()}
 	senderResolver := runtimeSenderAuthorityResolver{}
 	if err := n.CommitFinalizedBlock(ctx, candidate, certificate, validators, power, validatorResolver, senderResolver); err != nil {
 		t.Fatal(err)
@@ -1749,5 +1749,5 @@ func finalizedHandoffFixture(t *testing.T) (*node.Node, block.Block, consensus.F
 	if err != nil {
 		t.Fatal(err)
 	}
-	return n, candidate, certificate, validators, power, ctx, runtimeValidatorAuthorityResolver{}, runtimeSenderAuthorityResolver{}
+	return n, candidate, certificate, validators, power, ctx, runtimeValidatorAuthorityResolver{publicKey: signer.PublicKey()}, runtimeSenderAuthorityResolver{}
 }
