@@ -6202,3 +6202,48 @@ func TestLoadConfigReadsCatalogSyncStatusStorePath(t *testing.T) {
 		t.Fatalf("expected configured catalog sync status store path %q, got %q", path, cfg.CatalogSyncStatusStorePath)
 	}
 }
+
+
+func TestServiceCatalogSyncStatusPersistenceErrorExposure(t *testing.T) {
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", mock.New(mock.Config{Products: []provider.Product{{Code: "xld10", Name: "Test"}}})); err != nil {
+		t.Fatal(err)
+	}
+	persistence := &runtimeStatusPersistenceFailureStub{fail: true}
+	catalogSync, err := catalog.NewSyncServiceWithStatusPersistence(registry, catalog.NewMemoryStore(), persistence)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := New(operationalMustSyncServiceForRuntimeTest(t, registry), time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.catalogSync = catalogSync
+
+	if _, err := catalogSync.SyncProvider(context.Background(), "mock"); err != nil {
+		t.Fatalf("catalog sync should remain successful when status persistence fails: %v", err)
+	}
+	if !errors.Is(service.CatalogSyncStatusPersistenceError(), catalog.ErrStatusPersistence) {
+		t.Fatalf("expected runtime-exposed persistence error, got %v", service.CatalogSyncStatusPersistenceError())
+	}
+	if service.CatalogSyncStatusPersistenceFailures() == 0 {
+		t.Fatal("expected runtime-exposed persistence failure count")
+	}
+}
+
+type runtimeStatusPersistenceFailureStub struct {
+	fail bool
+}
+
+func (p *runtimeStatusPersistenceFailureStub) Load() ([]catalog.SyncStatus, error) { return nil, nil }
+func (p *runtimeStatusPersistenceFailureStub) Save([]catalog.SyncStatus) error {
+	if p.fail { return errors.New("status store unavailable") }
+	return nil
+}
+
+func operationalMustSyncServiceForRuntimeTest(t *testing.T, registry *provider.Registry) *operational.SyncService {
+	t.Helper()
+	svc, err := operational.NewSyncService(registry, operational.NewMemoryStore(), "IDR", 3)
+	if err != nil { t.Fatal(err) }
+	return svc
+}
