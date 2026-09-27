@@ -11619,3 +11619,72 @@ No architecture document update is required. Milestone #217 strengthens stale-st
 ### Next Milestone
 
 Continue with the next concrete recovery-convergence or routing-safety gap from the actual implementation, prioritizing durable operational-state observability and recovery convergence before introducing new provider or business integration.
+
+
+## 218. Milestone Update — Durable Catalog Sync Status Observability
+
+**Date:** 2026-09-28
+
+Completed:
+
+- identified the remaining observability/recovery gap from Milestone #216/#217: provider-scoped catalog synchronization status was process-local and disappeared after runtime restart even though the catalog snapshot itself was durable;
+- added a provider-neutral StatusPersistence boundary for current catalog synchronization status;
+- added JSONFileStatusPersistence with:
+  - startup recovery of persisted LastAttemptAt, LastSuccessAt, LastError, and ConsecutiveFailures;
+  - semantic validation of provider identity and non-negative failure counts;
+  - restrictive 0600 file permissions;
+  - temporary-file write, file fsync, atomic rename, and containing-directory fsync;
+- SyncService can now restore status state during construction and persist status after synchronization attempts, failures, and successful recovery;
+- status persistence is intentionally best-effort after runtime state is updated: a status-store write failure is not promoted into a catalog synchronization failure, so operational observability cannot become routing or financial authority;
+- wired the durable status store into runtime.NewFromEnvironment;
+- added DESKAPROVIDER_CATALOG_SYNC_STATUS_STORE_PATH with default data/catalog-sync-status.json;
+- exposed the current recovered/current catalog sync statuses through runtime.Service.CatalogSyncStatuses;
+- added deterministic tests for status persistence round-trip, invalid-state rejection, restart recovery, and runtime configuration;
+- documented the new status-store path in .env.example;
+- no provider execution, transaction retry, failover, resubmission, ledger mutation, customer-balance mutation, treasury movement, provider funding, or financial authority was introduced.
+
+### Verification
+
+- implementation/test exact HEAD before the status-document commit: 5f3f8757e4b0581a14385732e2d16765f52239f2;
+- CI #2122 / run 36342787083: GREEN for exact implementation/test HEAD 5f3f8757e4b0581a14385732e2d16765f52239f2;
+- CI #2123 / run 36342789829: GREEN pull-request validation for that implementation/test HEAD;
+- environment/documentation exact HEAD before this status update: 83abce57e9624433203c5eede2420ae85f0326c4;
+- CI #2124 / run 36342902218: GREEN for exact HEAD 83abce57e9624433203c5eede2420ae85f0326c4;
+- test gate: success;
+- vet gate: success;
+- PostgreSQL-backed integration path: success;
+- race gate: success.
+
+### Persistence / Recovery / Observability Invariants
+
+- catalog synchronization status survives a normal runtime restart when the durable status store is available;
+- missing status file remains an empty initial status state;
+- corrupt or semantically invalid status state is rejected during startup recovery;
+- status persistence uses a durable temp-write/file-sync/atomic-rename/directory-sync sequence;
+- status-store persistence failure does not erase catalog snapshots or convert operational observability into synchronization authority;
+- successful synchronization clears the persisted provider error and consecutive-failure count;
+- stale catalog data remains non-routeable regardless of recovered synchronization status;
+- catalog synchronization status remains operational observability only and cannot authorize provider routing, failover, transaction retry, transaction resubmission, or ledger mutation;
+- runtime lifecycle shutdown behavior remains unchanged and still waits for active catalog work before owned database cleanup.
+
+### Safety Boundary
+
+This milestone makes current catalog synchronization observability recoverable across runtime restarts without creating a financial or transaction journal. The persisted status explains recent synchronization state; it does not establish provider-side transaction authority, transaction ordering, ledger ordering, or permission to retry/resubmit financial operations.
+
+### Known Limitations
+
+- synchronization status remains current-state only; no historical event/timeline stream is persisted;
+- status persistence is best-effort after the in-memory operational state is updated; a persistence failure is deliberately not surfaced as a catalog synchronization failure;
+- there is no persisted per-selection routing rejection matrix;
+- catalog retry cadence remains the configured CatalogSyncInterval and is not backoff-aware;
+- database close remains non-context-aware;
+- PostgreSQL integration coverage requires DESKAPROVIDER_POSTGRES_DSN and is skipped when unavailable;
+- ownership-generation state remains lifecycle bookkeeping, not a recovery journal or transaction authority.
+
+### Architecture Impact
+
+No architecture document update is required. Milestone #218 closes the documented process-local catalog synchronization status gap by making current operational status recoverable across restarts while preserving the existing stale-state, routing, runtime lifecycle, and financial authority boundaries.
+
+### Next Milestone
+
+Continue with the next concrete recovery-convergence or routing-safety gap from the actual implementation, prioritizing shutdown/convergence behavior and stale-state handling before introducing new provider or business integration.
