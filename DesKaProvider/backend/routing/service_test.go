@@ -21,6 +21,11 @@ type errorAwareTransactionStore struct {
 	allErr  error
 }
 
+func (s *errorAwareTransactionStore) CreateIfAbsentContext(ctx context.Context, state TransactionState) (TransactionState, bool, error) {
+	if err := ctx.Err(); err != nil { return TransactionState{}, false, err }
+	return s.base.CreateIfAbsentContext(ctx, state)
+}
+
 func (s *errorAwareTransactionStore) Get(referenceID string) (TransactionState, bool) {
 	return s.base.Get(referenceID)
 }
@@ -127,6 +132,18 @@ type failPutTransactionStore struct {
 	puts      int
 }
 
+func (s *failPutTransactionStore) CreateIfAbsentContext(ctx context.Context, state TransactionState) (TransactionState, bool, error) {
+	if err := ctx.Err(); err != nil { return TransactionState{}, false, err }
+	if current, ok := s.base.Get(state.Request.ReferenceID); ok {
+		if current.Request != state.Request || current.Execution.ProviderName != state.Execution.ProviderName { return TransactionState{}, false, ErrReferenceConflict }
+		return current, false, nil
+	}
+	if err := s.Put(state); err != nil { return TransactionState{}, false, err }
+	current, ok := s.base.Get(state.Request.ReferenceID)
+	if !ok { return TransactionState{}, false, ErrTransactionStateConflict }
+	return current, true, nil
+}
+
 func (s *failPutTransactionStore) Get(referenceID string) (TransactionState, bool) {
 	return s.base.Get(referenceID)
 }
@@ -210,6 +227,17 @@ func TestServiceReconcilePropagatesDatabaseReadErrorWithoutResubmission(t *testi
 type contextPutErrorStore struct {
 	base   *MemoryTransactionStore
 	putErr error
+}
+
+func (s *contextPutErrorStore) CreateIfAbsentContext(ctx context.Context, state TransactionState) (TransactionState, bool, error) {
+	if err := ctx.Err(); err != nil { return TransactionState{}, false, err }
+	if current, ok := s.base.Get(state.Request.ReferenceID); ok {
+		if current.Request != state.Request || current.Execution.ProviderName != state.Execution.ProviderName { return TransactionState{}, false, ErrReferenceConflict }
+		return current, false, nil
+	}
+	if s.putErr != nil { return TransactionState{}, false, s.putErr }
+	if err := s.base.Put(state); err != nil { return TransactionState{}, false, err }
+	return state, true, nil
 }
 
 func (s *contextPutErrorStore) Get(referenceID string) (TransactionState, bool) {
@@ -1238,4 +1266,52 @@ type startupReadErrorStore struct {
 
 func (s *startupReadErrorStore) AllContextE(context.Context) ([]TransactionState, error) {
 	return nil, s.err
+}
+
+func TestServicePurchaseDurableClaimPreventsCrossInstanceSubmission(t *testing.T) {
+	registry := provider.NewRegistry()
+	mock := Mock.New(Mock.Config{
+		Products: []provider.Product{{Code: "pln20", Name: "PLN 20"}},
+		ProviderCode: "00", PurchaseStatus: provider.StatusPending, Price: 20000,
+	})
+	if err := registry.Register("mock", mock); err != nil { t.Fatal(err) }
+	ops := operational.NewMemoryStore()
+	if err := ops.Put(operational.Snapshot{ProviderName: "mock", Balance: 100000, Health: operational.HealthHealthy}); err != nil { t.Fatal(err) }
+	router, err := New(registry, ops, map[string]int{"mock": 1})
+	if err != nil { t.Fatal(err) }
+	store := NewMemoryTransactionStore()
+	first, err := NewServiceWithStore(router, store)
+	if err != nil { t.Fatal(err) }
+	second, err := NewServiceWithStore(router, store)
+	if err != nil { t.Fatal(err) }
+
+	req := PurchaseRequest{ProductCode: "pln20", CustomerNo: "08123456789", ReferenceID: "ref-durable-claim", Amount: 20000}
+	results := make(chan PurchaseExecution, 2)
+	errs := make(chan error, 2)
+	start := make(chan struct{})
+	for _, service := range []*Service{first, second} {
+		go func(svc *Service) {
+			<-start
+			result, err := svc.Purchase(context.Background(), req)
+			results <- result
+			errs <- err
+		}(service)
+	}
+	close(start)
+	for i := 0; i < 2; i++ {
+		if err := <-errs; err != nil { t.Fatal(err) }
+	}
+	var firstResult PurchaseExecution
+	for i := 0; i < 2; i++ {
+		result := <-results
+		if i == 0 { firstResult = result; continue }
+		if result != firstResult { t.Fatalf("cross-instance result mismatch: %#v != %#v", result, firstResult) }
+	}
+	if got := mock.PurchaseCount(req.ReferenceID); got != 1 {
+		t.Fatalf("durable create-if-absent claim must authorize exactly one provider submission, got %d", got)
+	}
+	state, ok := store.Get(req.ReferenceID)
+	if !ok || state.Execution.ProviderName != "mock" || state.Execution.Result.Status != provider.StatusPending {
+		t.Fatalf("expected durable pending state after single claim, got %#v found=%v", state, ok)
+	}
 }
