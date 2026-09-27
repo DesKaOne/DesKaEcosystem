@@ -9,6 +9,8 @@ import (
 	provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
 )
 
+var ErrSnapshotOlder = errors.New("catalog snapshot is older than stored snapshot")
+
 type Snapshot struct {
 	ProviderName string          `json:"provider_name"`
 	Products     []provider.Product `json:"products"`
@@ -39,7 +41,11 @@ func (s *MemoryStore) Put(snapshot Snapshot) error {
 	if snapshot.ProviderName == "" { return errors.New("provider name is required") }
 	if snapshot.SyncedAt.IsZero() { return errors.New("catalog sync time is required") }
 	snapshot.Products = append([]provider.Product(nil), snapshot.Products...)
-	s.mu.Lock(); defer s.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if current, ok := s.snapshots[snapshot.ProviderName]; ok && snapshot.SyncedAt.Before(current.SyncedAt) {
+		return ErrSnapshotOlder
+	}
 	s.snapshots[snapshot.ProviderName] = snapshot
 	return nil
 }
