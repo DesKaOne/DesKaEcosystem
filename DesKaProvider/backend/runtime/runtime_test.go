@@ -2266,6 +2266,79 @@ func TestServiceRunMixedShutdownErrorsPreserveIdentityAndClosedState(t *testing.
 }
 
 
+
+func TestServiceRunCatalogCompletionErrorDoesNotSuppressDatabaseCleanup(t *testing.T) {
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", &balanceMock{Provider: mock.New(mock.Config{}), balance: 100000}); err != nil {
+		t.Fatal(err)
+	}
+	syncService, err := operational.NewSyncService(registry, operational.NewMemoryStore(), "IDR", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := New(syncService, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.catalogSync, err = catalog.NewSyncService(registry, catalog.NewMemoryStore())
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.catalogLifecycle = newCatalogWorkerLifecycle()
+
+	catalogErr := errors.New("catalog completion failed")
+	transactionErr := errors.New("transaction cleanup failed")
+	auditErr := errors.New("audit cleanup failed")
+	order := make([]string, 0, 4)
+
+	service.balanceShutdown = func(context.Context) error {
+		if err := service.balanceLifecycle.Shutdown(context.Background()); err != nil {
+			return err
+		}
+		order = append(order, "balance")
+		return nil
+	}
+	service.catalogShutdown = func() error {
+		service.catalogLifecycle.Shutdown()
+		order = append(order, "catalog")
+		return catalogErr
+	}
+	tx := &orderedCloseErrorDB{name: "transaction", order: &order, err: transactionErr}
+	audit := &orderedCloseErrorDB{name: "audit", order: &order, err: auditErr}
+	service.databaseOwnership = newRuntimeDatabaseOwnership(tx, audit)
+	service.databaseOwnership.transferToService()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	runErr := service.Run(ctx)
+
+	for _, want := range []error{context.Canceled, catalogErr, transactionErr, auditErr} {
+		if !errors.Is(runErr, want) {
+			t.Fatalf("expected shutdown error identity for %v, got %v", want, runErr)
+		}
+	}
+	if want := []string{"balance", "catalog", "transaction", "audit"}; !reflect.DeepEqual(order, want) {
+		t.Fatalf("unexpected shutdown ordering: got %v want %v", order, want)
+	}
+	if tx.closeCount != 1 || audit.closeCount != 1 {
+		t.Fatalf("expected one database cleanup each, got tx=%d audit=%d", tx.closeCount, audit.closeCount)
+	}
+
+	closeErr := service.Close()
+	if !errors.Is(closeErr, transactionErr) || !errors.Is(closeErr, auditErr) {
+		t.Fatalf("expected repeated Close to preserve database cleanup errors, got %v", closeErr)
+	}
+	if errors.Is(closeErr, catalogErr) || errors.Is(closeErr, context.Canceled) {
+		t.Fatalf("repeated Close must not replay historical lifecycle/primary errors: %v", closeErr)
+	}
+	if !reflect.DeepEqual(order, []string{"balance", "catalog", "transaction", "audit"}) {
+		t.Fatalf("repeated Close must not replay shutdown completion: got %v", order)
+	}
+	if tx.closeCount != 1 || audit.closeCount != 1 {
+		t.Fatalf("repeated Close must not double-close databases, got tx=%d audit=%d", tx.closeCount, audit.closeCount)
+	}
+}
+
 func TestServiceRunShutdownErrorPrecedenceRemainsStableAcrossRepeatedClose(t *testing.T) {
 	registry := provider.NewRegistry()
 	if err := registry.Register("mock", &balanceMock{Provider: mock.New(mock.Config{}), balance: 100000}); err != nil {
