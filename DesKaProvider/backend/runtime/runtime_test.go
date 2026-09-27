@@ -1887,3 +1887,92 @@ func TestServiceBalanceStartFailureDoesNotCompleteUnstartedLifecycles(t *testing
 		t.Fatalf("expected no catalog shutdown after balance start failure, got %d", catalogShutdownCalls)
 	}
 }
+
+
+func TestServiceRunShutdownSerializesConcurrentCloseDuringBalanceCompletion(t *testing.T) {
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", &balanceMock{Provider: mock.New(mock.Config{}), balance: 100000}); err != nil {
+		t.Fatal(err)
+	}
+	syncService, err := operational.NewSyncService(registry, operational.NewMemoryStore(), "IDR", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := New(syncService, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.catalogSync = &catalog.SyncService{}
+	service.catalogLifecycle = newCatalogWorkerLifecycle()
+
+	tx := &closeErrorDB{}
+	service.databaseOwnership = newRuntimeDatabaseOwnership(tx, nil)
+	service.databaseOwnership.transferToService()
+
+	balanceEntered := make(chan struct{})
+	releaseBalance := make(chan struct{})
+	service.balanceShutdown = func(context.Context) error {
+		service.balanceLifecycle.Shutdown(context.Background())
+		close(balanceEntered)
+		<-releaseBalance
+		return nil
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	runDone := make(chan error, 1)
+	go func() { runDone <- service.Run(ctx) }()
+
+	for !service.balanceLifecycle.Running() {
+		select {
+		case <-time.After(time.Second):
+			t.Fatal("balance lifecycle did not start")
+		default:
+			time.Sleep(time.Millisecond)
+		}
+	}
+
+	cancel()
+	select {
+	case <-balanceEntered:
+	case <-time.After(time.Second):
+		t.Fatal("balance shutdown did not enter")
+	}
+
+	closeDone := make(chan error, 1)
+	go func() { closeDone <- service.Close() }()
+
+	select {
+	case err := <-closeDone:
+		t.Fatalf("Close returned before balance shutdown completion: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	if tx.closeCount != 0 {
+		t.Fatalf("database closed before balance shutdown completion: %d", tx.closeCount)
+	}
+
+	close(releaseBalance)
+
+	select {
+	case err := <-runDone:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("expected Run cancellation, got %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Run did not finish")
+	}
+
+	select {
+	case err := <-closeDone:
+		if err != nil {
+			t.Fatalf("expected serialized Close to complete cleanly, got %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Close did not complete after shutdown")
+	}
+
+	if tx.closeCount != 1 {
+		t.Fatalf("expected database close exactly once, got %d", tx.closeCount)
+	}
+}
