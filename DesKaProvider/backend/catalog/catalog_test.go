@@ -31,3 +31,20 @@ func TestMemoryStoreCopiesProducts(t *testing.T) {
 	got, _ := store.Get("mock")
 	if got.Products[0].Name != "XL 10K" { t.Fatalf("store leaked mutable product data: %#v", got.Products) }
 }
+
+
+func TestMemoryStoreRejectsOlderSnapshot(t *testing.T) {
+	store := NewMemoryStore()
+	newer := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
+	older := newer.Add(-time.Minute)
+	if err := store.Put(Snapshot{ProviderName: "mock", SyncedAt: newer}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Put(Snapshot{ProviderName: "mock", SyncedAt: older}); err != ErrSnapshotOlder {
+		t.Fatalf("expected older snapshot rejection, got %v", err)
+	}
+	got, ok := store.Get("mock")
+	if !ok || !got.SyncedAt.Equal(newer) {
+		t.Fatalf("older snapshot replaced current state: %#v", got)
+	}
+}
