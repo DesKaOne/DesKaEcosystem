@@ -8471,3 +8471,46 @@ This milestone is limited to runtime shutdown ordering, lifecycle completion, er
 **#186 — Runtime Shutdown Idempotence Under Repeated Run/Close Boundaries**
 
 Focus next on repeated shutdown entry points after `Service.Run()` completion, ensuring lifecycle state, owned database cleanup, and stable error identity remain single-shot across repeated `Run()`/`Close()` boundaries without introducing new provider or transaction recovery behavior.
+
+
+## 186. Milestone Update — Runtime Shutdown Idempotence Under Repeated Run/Close Boundaries
+
+**Date:** 2026-09-27
+
+Completed:
+
+- identified that a completed Service.Run() could previously be entered again after transferred runtime database ownership had already been closed;
+- added a stable ErrServiceClosed sentinel for the closed-runtime boundary;
+- added a lock-protected runtime ownership state check before Service.Run() starts worker lifecycle execution;
+- repeated Service.Run() after owned shutdown now returns ErrServiceClosed without restarting the balance lifecycle or attempting to reuse closed database ownership;
+- repeated Service.Close() remains single-shot and preserves the original database cleanup error identity;
+- added regression coverage for the complete run → shutdown → repeated run → repeated close sequence;
+- preserved the existing shutdown ordering and independent error composition from milestone #185;
+- no provider retry/failover, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, provider funding, or synthetic transaction/audit reconstruction was introduced.
+
+### Verification
+
+- Runtime implementation commit: 3afad2d229e432dd0dddf255e0ea3067b5bb0120.
+- Regression test commit: 03b6e43484d0d8b20d656b66de8ed9cf47e98b2d.
+- CI #1717 on exact implementation/test HEAD: **GREEN**.
+  - go test ./... — PASS
+  - go vet ./... — PASS
+  - PostgreSQL service-backed integration tests — PASS
+  - go test -race ./... — PASS
+
+### Safety Boundary
+
+This milestone is limited to runtime lifecycle reuse prevention after owned database shutdown. The closed-state check does not alter transaction persistence authority, audit authority, provider execution, routing, retry/failover, treasury, or funding behavior.
+
+### Known Limitations
+
+- the single-use guard is tied to transferred runtime database ownership; services constructed without database ownership can still be run according to their existing lifecycle semantics;
+- catalogWorkerLifecycle.Shutdown() remains void-returning in production; catalog completion error composition remains an internal test seam;
+- PostgreSQL integration coverage requires DESKAPROVIDER_POSTGRES_DSN and is skipped when unavailable;
+- database close remains non-context-aware.
+
+### Next Milestone
+
+**#187 — Runtime Close-State Error Composition Across Direct and Run-Owned Shutdown**
+
+Focus next on stable closed-state error identity and cleanup-error preservation across direct Service.Close(), Run-owned shutdown, and repeated close attempts, without introducing new provider or transaction recovery behavior.
