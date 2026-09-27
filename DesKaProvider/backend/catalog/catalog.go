@@ -69,7 +69,7 @@ type SyncService struct {
 func NewSyncService(registry *provider.Registry, store Store) (*SyncService, error) {
 	if registry == nil { return nil, errors.New("provider registry is required") }
 	if store == nil { return nil, errors.New("catalog store is required") }
-	return &SyncService{Registry: registry, Store: store, Now: time.Now}, nil
+	return &SyncService{Registry: registry, Store: store, Now: time.Now, statuses: make(map[string]SyncStatus)}, nil
 }
 
 func (s *SyncService) SyncProvider(ctx context.Context, name string) (Snapshot, error) {
