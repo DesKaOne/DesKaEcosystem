@@ -10550,3 +10550,68 @@ No architecture document update is required. Milestone #199 adds a regression ma
 **#200 — Runtime Lifecycle Error Aggregation / Reuse Boundary Hardening**
 
 Focus next on the remaining runtime lifecycle/error boundary cases that are not covered by the #199 matrix, especially repeated lifecycle reuse and aggregation semantics across multiple shutdown/re-entry cycles, while preserving generation isolation and the existing financial/provider authority boundaries.
+
+## 200. Milestone Update — Runtime Lifecycle Error Aggregation / Reuse Boundary Hardening
+
+**Date:** 2026-09-27
+
+Completed:
+
+- added deterministic multi-cycle runtime reuse coverage across three shutdown/re-entry cycles;
+- assigned distinct lifecycle and database cleanup errors to each ownership generation so cross-cycle leakage is directly observable;
+- verified every canceled `Service.Run()` retains its own `context.Canceled` control-flow signal;
+- verified each cycle reports all and only the shutdown/cleanup errors belonging to its current generation;
+- verified historical errors from prior generations are rejected from later `Service.Run()` results;
+- verified lifecycle owners converge before each generation's database cleanup completes;
+- verified transaction cleanup remains ordered before audit cleanup and each generation closes both resources exactly once;
+- exercised ownership replacement between reuse cycles rather than merely replacing the test seam by assignment;
+- verified terminal `Service.Close()` reports only the final generation's cleanup errors and repeated `Service.Close()` preserves those final-generation errors without replaying historical generations;
+- no production runtime implementation change was required;
+- no provider retry/failover, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, provider funding, or synthetic transaction/audit reconstruction was introduced.
+
+### CI Failure Analysis and Correction
+
+- CI #1998 on the initial repeated-reuse test commit `7b5dd2f48cb42a429371a66784ed1cc7f67f3d66` was **RED** because an ownership-replacement edit was accidentally applied to the preceding #199 test block, producing an undefined loop index in that fixture.
+- Corrected the fixture targeting and routed later reuse cycles through the actual ownership replacement boundary.
+- CI #2000 on the corrected fixture commit `8fd961984f766a1381703fecaaeb1b49bbdfb9de` was **RED** because the test incorrectly expected terminal `Service.Close()` to be clean even though cycle #3 intentionally injected transaction and audit cleanup errors.
+- Corrected the assertion to require the final generation's cleanup errors, reject historical-generation errors, and preserve the same final-generation errors across repeated terminal Close.
+- Final #200 test commit: `2a85ce50940fdbb2aed64f39548fe03048bd2046`.
+- CI #2002 on the exact final #200 test HEAD: **GREEN**.
+  - `go test ./...` — PASS
+  - `go vet ./...` — PASS
+  - PostgreSQL service-backed integration tests — PASS
+  - `go test -race ./...` — PASS
+
+### Reuse / Error Invariants
+
+- each shutdown/re-entry cycle owns its own lifecycle and cleanup error set;
+- current-generation errors remain attributable through the complete `Service.Run()` result;
+- historical generation errors cannot leak into a later run;
+- ownership replacement remains gated by lifecycle convergence and operates generation-by-generation;
+- final terminal Close exposes only the final generation's cleanup errors;
+- repeated terminal Close does not introduce new historical errors or double-close resources;
+- context cancellation remains a control-flow boundary distinct from runtime cleanup error attribution;
+- ownership-generation state remains infrastructure lifecycle bookkeeping and cannot authorize financial state mutation.
+
+### Safety Boundary
+
+This milestone remains limited to repeated lifecycle reuse, shutdown error aggregation, ownership-generation replacement, cleanup ordering, error attribution, and repeated terminal Close behavior. It adds no provider retry/failover, transaction recovery, ledger mutation, customer-balance mutation, treasury movement, provider funding, or financial authorization.
+
+### Known Limitations
+
+- ownership replacement remains an internal runtime composition/testing boundary;
+- production `catalogWorkerLifecycle.Shutdown()` remains void-returning and does not expose an independent completion error;
+- database close remains non-context-aware;
+- direct manipulation of internal lifecycle test seams is not a production API;
+- PostgreSQL integration coverage requires `DESKAPROVIDER_POSTGRES_DSN` and is skipped when unavailable;
+- ownership-generation state remains lifecycle bookkeeping, not a recovery journal or transaction authority.
+
+### Architecture Impact
+
+No architecture document update is required. Milestone #200 adds repeated lifecycle reuse and multi-generation error-isolation regression guarantees without changing the documented provider, financial, or lifecycle authority model.
+
+### Next Milestone
+
+**#201 — Runtime Lifecycle Convergence Stress / Long-Sequence Reuse**
+
+Focus next on longer repeated lifecycle/convergence sequences under concurrent Run/Close/replacement pressure, preserving the same generation isolation, single-shot cleanup, and error-attribution invariants without introducing new recovery authority.
