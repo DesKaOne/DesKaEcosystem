@@ -340,7 +340,7 @@ func (s *Service) Close() error {
 func (s *Service) closeOwnedDatabases() error { if s==nil || s.databaseOwnership==nil { return nil }; return s.databaseOwnership.closeOwned() }
 
 func (s *Service) shutdownBalanceWorker(ctx context.Context) error {
-	if s == nil || s.balanceLifecycle == nil { return nil }
+	if s == nil || s.balanceLifecycle == nil || !s.balanceLifecycle.Running() { return nil }
 	if s.balanceShutdown != nil { return s.balanceShutdown(ctx) }
 	return s.balanceLifecycle.Shutdown(ctx)
 }
@@ -355,7 +355,7 @@ func (s *Service) rollbackStartedLifecycles(ctx context.Context) error {
 }
 
 func (s *Service) shutdownCatalogLifecycle() error {
-	if s == nil || s.catalogLifecycle == nil { return nil }
+	if s == nil || s.catalogLifecycle == nil || !s.catalogLifecycle.Running() { return nil }
 	if s.catalogShutdown != nil { return s.catalogShutdown() }
 	s.catalogLifecycle.Shutdown()
 	return nil
