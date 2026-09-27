@@ -13091,3 +13091,85 @@ Restarted service instances recover the selected provider from durable state bef
 
 ### Next Milestone
 Harden reconciliation concurrency and webhook-vs-reconciliation convergence so concurrent provider observations use durable compare-and-transition semantics consistently, with deterministic conflict resolution and no duplicate external submission.
+
+## Milestone #236 — Durable Reconciliation Concurrency and Webhook/Reconciliation Convergence
+
+**Date:** 2026-09-28
+
+### Completed
+
+- Hardened webhook state mutation so normalized provider observations reload the durable transaction state before applying any transition.
+- Replaced the webhook persistence path's unconditional transaction write with the existing durable compare-and-transition boundary.
+- Added conflict reload/convergence handling so a webhook that races with another durable observer does not overwrite a newer terminal state.
+- Unified webhook and reconciliation terminal-observation semantics so differing observational Message text does not make the final state depend on which observer wins the race.
+- Preserved strict samePurchaseResult semantics for transaction-store persistence/versioning and terminal overwrite protection.
+- Preserved the existing in-flight purchase boundary: a webhook does not mutate local execution while the original Purchase call is still active.
+- Added deterministic cross-service coverage for a reconciliation status lookup racing with a webhook transition; the durable terminal state remains deterministic and provider purchase count remains exactly one.
+- No provider retry, failover, customer ledger mutation, or treasury behavior was introduced.
+
+### Implementation Details
+
+- backend/routing/service.go
+  - handleWebhook now performs an error-aware durable reload using getTransactionContextE.
+  - Provider identity and original product/customer identity are validated against durable transaction state before mutation.
+  - Terminal webhook observations converge using sameObservedProviderResult, which keeps reference, customer, product, status, provider code, serial number, and price strict while treating message text as observational.
+  - Pending/terminal webhook transitions use persistTransition and therefore the store's compare-and-transition capability instead of an unconditional Put.
+  - On a durable transition conflict, the latest state is reloaded and either the same terminal observation is accepted idempotently or the conflict remains explicit.
+  - Local in-flight purchase calls remain protected from concurrent webhook mutation.
+  - Reconciliation terminal convergence uses the same observation-level comparison, while samePurchaseResult remains strict at the persistence boundary.
+- backend/routing/service_audit_test.go
+  - Added TestServiceWebhookAndReconciliationConvergeAcrossServiceInstances.
+  - The test uses two service instances sharing one transaction backend, blocks provider status lookup, commits a webhook terminal observation first, then releases reconciliation with a different message.
+  - The test verifies deterministic durable terminal state and exactly one provider purchase submission.
+  - Existing restart/webhook correlation coverage remains intact.
+- The concurrency test intentionally uses a shared in-memory backend to model multiple service instances observing one durable store; JSON restart/reopen durability remains covered by existing restart tests, while PostgreSQL compare-and-transition behavior remains covered by the PostgreSQL transaction-store integration suite.
+
+### Verification
+
+- Baseline before this milestone: 3602318ffc334d88211180356c9d8252ff2cf417, CI #2341 GREEN.
+- Intermediate implementation CI #2345: RED due a malformed test import introduced during test construction; corrected before proceeding.
+- Intermediate CI #2350: RED due a test helper name collision with an existing reconciliation test helper and an initially incorrect cross-instance JSON-cache test assumption; root causes were fixed.
+- Exact pre-final implementation CI #2354: GREEN — go test ./..., go vet ./..., and go test -race ./... all PASS, including PostgreSQL-backed integration coverage.
+- Final implementation HEAD: 63b793f1e30302f4e9412b1bbc9da429c56e2487.
+- Exact final implementation CI #2356: GREEN — test and race jobs PASS; test job includes go test ./... and go vet ./....
+
+### Invariants
+
+- Durable ReferenceID remains the primary transaction correlation key.
+- Durable ProviderName remains authoritative for provider-aware webhook correlation.
+- Original request identity must match before webhook or reconciliation state mutation.
+- Durable compare-and-transition is the authorization boundary for concurrent state transitions.
+- A stale observer cannot overwrite a newer durable terminal state.
+- Webhook and reconciliation terminal observations converge when all material provider result fields agree, regardless of observational message text.
+- Persistence conflicts remain explicit and are never interpreted as permission to resubmit a provider transaction.
+- A webhook or reconciliation path never calls provider purchase.
+- Provider purchase count remains independent from webhook/reconciliation observation count.
+- Customer balances, the customer ledger, treasury, and provider funding remain outside this persistence boundary.
+
+### Safety Boundary
+
+- No automatic provider retry was introduced.
+- No automatic provider failover was introduced.
+- No second external purchase is authorized by webhook/reconciliation conflict handling.
+- No customer financial ledger or balance authority changed.
+- No provider-specific protocol was moved into the routing layer.
+- No live provider credentials or live-provider validation were used.
+
+### Known Limitations
+
+- JSON transaction storage remains an interim v0.1 persistence implementation and does not provide a cross-process filesystem locking protocol.
+- The concurrency test models shared durable state with a shared in-memory backend; PostgreSQL remains the production-direction persistence boundary for cross-process compare-and-transition.
+- Provider-side idempotency is not assumed. If a provider accepted a purchase while local result persistence failed, recovery remains reconciliation-driven rather than automatic resubmission.
+- The legacy HandleWebhook compatibility path still does not independently authenticate its normalized event source; provider-aware ingress should use HandleWebhookFromProvider.
+
+### Architecture Impact
+
+The provider observation path is now:
+
+Provider adapter authentication/normalization → durable transaction reload → provider/request identity validation → compare-and-transition → local convergence
+
+Both webhook and reconciliation observations now pass through the same durable transition boundary. The persistence layer retains strict material-state equality, while the service-level observation layer explicitly tolerates only non-material message normalization differences. This removes observer-order dependence without introducing retry or failover behavior.
+
+### Next Milestone
+
+Harden PostgreSQL transaction transition semantics and restart behavior under concurrent webhook/reconciliation observations, including explicit integration coverage for cross-process compare-and-transition conflicts and deterministic terminal convergence, while preserving single-shot provider submission and audit/operational boundaries.
