@@ -10246,3 +10246,48 @@ This milestone is limited to runtime ownership-generation replacement, lifecycle
 **#195 — Runtime Ownership Generation Isolation Under Partial Shutdown**
 
 Focus next on replacing ownership only after a partial lifecycle convergence, verifying the old generation remains deferred/isolated until its lifecycle boundary is terminal and the fresh generation cannot trigger or inherit cleanup from an active old generation.
+
+
+## 195. Milestone Update — Runtime Ownership Generation Isolation Under Partial Shutdown
+
+**Date:** 2026-09-27
+
+Completed:
+
+- added an explicit internal runtime ownership-replacement boundary for database ownership generations;
+- ownership replacement is rejected while either the balance or catalog lifecycle remains active, preventing a fresh generation from being installed while the previous generation is still responsible for an active lifecycle;
+- after lifecycle convergence, replacement closes the previous ownership generation before installing the fresh generation;
+- a previously closed ownership generation is not closed again when replaced;
+- added regression coverage proving a rejected replacement leaves the old generation untouched and does not touch the fresh generation;
+- verified after convergence that the old generation closes exactly once in transaction-before-audit order before the fresh generation becomes active;
+- verified the fresh generation remains open until its own terminal Close and closes exactly once;
+- verified replacement from an already-closed generation does not replay or double-close historical resources;
+- no provider retry/failover, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, provider funding, or synthetic transaction/audit reconstruction was introduced.
+
+### Verification
+
+- Runtime implementation commit: `505e8ecbe1966948991c94b8e3161d41641141d6`.
+- Regression test commit: `dc1d72f319c5892edb16fd87e57a356586b67186`.
+- CI #1964 on exact test HEAD: **GREEN**.
+  - `go test ./...` — PASS
+  - `go vet ./...` — PASS
+  - PostgreSQL service-backed integration tests — PASS
+  - `go test -race ./...` — PASS
+
+### Safety Boundary
+
+This milestone is limited to runtime ownership-generation replacement, lifecycle convergence gating, error/close isolation, ordering, and single-shot database cleanup. Ownership replacement remains infrastructure lifecycle behavior and cannot authorize transaction changes, provider operations, ledger mutation, treasury movement, or financial authorization.
+
+### Known Limitations
+
+- ownership replacement is an internal runtime composition boundary; normal production initialization still establishes ownership once and transfers it to Service;
+- production `catalogWorkerLifecycle.Shutdown()` remains void-returning; catalog completion errors continue to be represented through the existing internal test seam;
+- PostgreSQL integration coverage requires `DESKAPROVIDER_POSTGRES_DSN` and is skipped when unavailable;
+- database close remains non-context-aware;
+- this milestone adds no provider retry/failover or transaction recovery behavior.
+
+### Next Milestone
+
+**#196 — Runtime Ownership Replacement Error Isolation**
+
+Focus next on replacement when the previous ownership generation itself returns cleanup errors: verify the fresh generation is not installed on partial/failed old-generation cleanup, old cleanup errors remain attributable to the old generation, and a later retry after convergence can install the fresh generation without cross-generation error leakage.
