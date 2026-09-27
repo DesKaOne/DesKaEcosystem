@@ -11943,3 +11943,95 @@ No architecture document update is required. The change closes a concrete implem
 ### Next Milestone
 
 Continue with the next concrete shutdown/recovery-convergence or persistence-safety gap found in the actual implementation, prioritizing durable state correctness and stale-state safety before introducing new provider or business integration.
+
+
+## 223. Milestone Update — Provider-Neutral Capability Matrix Boundary
+
+**Date:** 2026-09-28
+
+### Completed
+
+- audited the current provider registry/runtime and found that provider capability information was previously represented only as coarse operational capability flags;
+- introduced a provider-neutral `Capability` model in `DesKaProvider/backend/Provider/capability.go`;
+- introduced `CapabilityStatus` with independent fields for:
+  - `Verified`;
+  - `Configured`;
+  - `AdapterImplemented`;
+  - `Enabled`;
+  - `LiveTested`;
+- introduced `CapabilityDescriptor` with explicit capability lookup and a conservative `Supports` predicate that requires both adapter implementation and capability enablement;
+- extended the provider registry with `RegisterWithCapabilities` and `Capabilities`, including defensive copying so callers cannot mutate registry metadata through returned maps;
+- changed the operational provider-state capability type to alias the provider-neutral capability model, preserving the existing operational-state API while removing duplicate capability definitions;
+- connected runtime registration metadata for DigiFlazz and conditionally configured IAK;
+- deliberately left capability enablement and live-tested state false because runtime configuration or adapter implementation alone is not evidence that a capability is enabled or live-tested;
+- deliberately did not infer payment, payout, or other business capabilities merely from the generic PPOB adapter interface.
+
+### Source Audit Findings
+
+The current source shows production adapter implementations for DigiFlazz, IAK, and XP SINDONESIA with PPOB-oriented product/inquiry/purchase/status flows and provider balance/webhook methods. XP SINDONESIA has an adapter implementation in source but is not yet registered by the current runtime environment wiring.
+
+RCB and Midtrans directories exist in the provider tree, but this milestone does not claim production-ready RCB or Midtrans adapters because the current source does not establish such an implementation.
+
+This distinction is intentional: a provider being commercially verified or configured is not treated as proof that every capability has a production adapter, is enabled, or has been live-tested.
+
+### Verification
+
+- implementation/test HEAD before status-document commit: `eedd806e1c8d19e751c23e2099275b6215050a83`;
+- exact implementation push CI run 36350370522: **GREEN**;
+- exact implementation PR CI run 36350373538: **GREEN**;
+- `go test ./...`: PASS;
+- `go vet ./...`: PASS;
+- `go test -race ./...`: PASS;
+- PostgreSQL-backed workflow service: PASS;
+- an intermediate exact HEAD `8d03a58fb5d4b4107cc95dcf0cc1fabd801c351e` was rejected by CI because of a missing provider import and an invalid test double; both failures were fixed before the final implementation HEAD above.
+
+### Capability Matrix State
+
+| Provider | Adapter implemented in current source | Runtime registered | Capability metadata | Enabled | Live-tested |
+|---|---|---|---|---|---|
+| DigiFlazz | PPOB + balance + webhook flows | Yes | PPOB/balance/webhook explicitly modeled | No | No |
+| IAK | PPOB + balance + webhook flows | Conditional on environment configuration | PPOB/balance/webhook explicitly modeled | No | No |
+| XP SINDONESIA | PPOB + balance + webhook flows | No | Not yet runtime-registered | No | No |
+| RCB | No production adapter established by this milestone | No | Not claimed | No | No |
+| Midtrans | No production adapter established by this milestone | No | Not claimed | No | No |
+
+No row above is a claim of live provider connectivity. `LiveTested=false` remains the safe default until an actual credential-backed runtime test is performed.
+
+### Invariants
+
+- DesKaProvider remains internal infrastructure.
+- Capability metadata is provider-neutral; provider-specific protocol remains inside adapters.
+- Capability presence is not transaction authorization.
+- Provider balance remains operational provider liquidity/snapshot information, not customer balance.
+- Operational configuration or provider verification does not automatically authorize a financial retry or failover.
+- Restart cannot cause transaction resubmission through this milestone.
+- Missing or stale catalog data remains subject to existing catalog-safety gates.
+- No ledger mutation, customer database, treasury authority, or provider-funding authority was introduced.
+- DesKaCash does not gain access to provider-specific APIs, status codes, payloads, or credentials.
+
+### Safety Boundary
+
+This milestone establishes **capability description**, not capability execution.
+
+A capability is not considered routable merely because an adapter exists. The registry now has enough metadata to distinguish implementation from enablement and live validation, but the router has not yet been changed to perform automatic transaction failover or to treat capability metadata as financial authority.
+
+No real provider credentials were added to source or tests.
+
+### Known Limitations
+
+- capability verification evidence is not yet persisted as a first-class audit record;
+- capability enablement is not yet dynamically managed through a dedicated control path;
+- live-test evidence is not yet represented by a durable test result store;
+- XP SINDONESIA adapter exists in source but runtime registration/configuration is still a separate boundary;
+- RCB and Midtrans production adapter implementation remains future work;
+- payment and payout contracts remain distinct from the existing PPOB contract and are not inferred from it.
+
+### Architecture Impact
+
+The provider registry now has a provider-neutral capability metadata boundary that can be consumed by a future capability-aware router without exposing provider-specific protocols to DesKaCash.
+
+No public API is introduced. No transaction failover semantics are changed. No architecture document change is required yet because the milestone establishes metadata and registry boundaries rather than a new external interface.
+
+### Next Milestone
+
+Build the first capability-aware routing predicate over the existing catalog/health/operational state, with deterministic tests proving that only explicitly enabled and adapter-implemented capabilities are eligible. Keep product availability, freshness, provider health, and idempotency safety as separate gates; do not introduce automatic financial failover.
