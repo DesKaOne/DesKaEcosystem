@@ -11358,3 +11358,67 @@ No architecture document update is required. Milestone #213 strengthens the exis
 ### Next Milestone
 
 Continue with the next concrete persistence/recovery or routing-safety gap from the actual implementation, prioritizing stale-state/error observability and recovery convergence before introducing new provider or business integration.
+
+
+## 214. Milestone Update — Catalog Persistence Publish Atomicity
+
+**Date:** 2026-09-28
+
+Completed:
+
+- identified a persistence consistency gap after Milestone #213: JSON catalog Put previously replaced the in-memory snapshot before durable persistence completed;
+- changed JSON catalog writes to build an isolated candidate snapshot map first;
+- durable persistence now completes before the candidate map is published as the active in-memory state;
+- if directory creation, serialization, temporary-file creation/write/sync/close, or final rename fails, the existing in-memory snapshot remains unchanged;
+- added deterministic regression coverage that forces the catalog path to become a directory after an initial successful write and verifies a subsequent persistence failure cannot replace runtime memory state;
+- retained the existing older-snapshot rejection and semantic recovery validation boundaries;
+- no provider execution, routing priority, retry/failover, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, provider funding, or synthetic transaction/audit reconstruction was introduced.
+
+### Verification
+
+- implementation commit: `2a90a977455d423b5f66d56b43a5fafa7f45f228`;
+- regression-test commit / exact implementation-test HEAD: `102ce3b7cd5fe3a6e9ce73414993ff1594279c93`;
+- CI #2079 / run `36337325463`: **GREEN** for exact HEAD `102ce3b7cd5fe3a6e9ce73414993ff1594279c93`;
+- exact CI execution passed: `go test ./...`, `go vet ./...`, PostgreSQL service-backed integration, and `go test -race ./...`;
+- race job completed successfully;
+- the PostgreSQL service-backed suite remained successful; an expected constraint-rejection log from an existing transaction-store test was observed in PostgreSQL output without causing the test job to fail.
+
+### Persistence / Recovery Invariants
+
+- missing catalog file remains an empty initial store;
+- readable zero-byte catalog file remains an empty initial store;
+- non-ENOENT read failures remain startup/recovery errors;
+- corrupt JSON remains a startup/recovery error;
+- semantically invalid persisted snapshots cannot enter the runtime catalog store;
+- persisted provider identity must match the catalog map identity;
+- persisted snapshots must contain a non-zero synchronization timestamp;
+- a store cannot regress an existing provider snapshot to an older synchronization timestamp;
+- rejected older snapshots do not mutate current state;
+- a failed durable persistence operation does not mutate the active in-memory snapshot;
+- successful persistence is completed before the new catalog snapshot becomes active in memory;
+- recovered product data remains operational catalog cache data and is never financial authority;
+- catalog freshness gates remain independent routing-safety boundaries;
+- persistence recovery does not authorize routing, provider failover, transaction retry, or transaction resubmission.
+
+### Safety Boundary
+
+This milestone is limited to write atomicity between the durable JSON catalog and its active in-memory representation. It ensures the runtime does not expose a snapshot that the durable store failed to commit. It does not establish transaction ordering, financial ordering, provider-side transaction authority, or ledger authority.
+
+### Known Limitations
+
+- atomicity is process-local between the JSON store's in-memory map and its durable file; it is not a distributed transaction;
+- monotonicity remains timestamp-based and does not introduce a globally ordered sequence number;
+- clock skew can still affect the meaning of synchronization timestamps;
+- catalog synchronization errors are still not exposed through a dedicated runtime health/error channel;
+- retry cadence remains the configured CatalogSyncInterval and is not backoff-aware;
+- database close remains non-context-aware;
+- PostgreSQL integration coverage requires DESKAPROVIDER_POSTGRES_DSN and is skipped when unavailable;
+- ownership-generation state remains lifecycle bookkeeping, not a recovery journal or transaction authority.
+
+### Architecture Impact
+
+No architecture document update is required. Milestone #214 strengthens the existing catalog persistence boundary by making failed durable writes unable to leak new state into the active memory cache.
+
+### Next Milestone
+
+Continue with the next concrete persistence/recovery or routing-safety gap from the actual implementation, prioritizing recovery/error observability and convergence before introducing new provider or business integration.
