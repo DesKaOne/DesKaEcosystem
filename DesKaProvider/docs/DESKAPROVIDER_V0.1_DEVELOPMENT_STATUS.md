@@ -8605,3 +8605,55 @@ This milestone is limited to runtime shutdown ordering, error composition, and r
 **#186 — Runtime Shutdown Ownership State & Re-entry Guard Review**
 
 Focus next on explicit runtime ownership state transitions around shutdown/re-entry, including repeated `Run()`, repeated `Close()`, and lifecycle completion boundaries, without expanding provider or transaction recovery authority.
+
+
+## 185. Milestone Update — Runtime Shutdown Completion Ordering & Error Precedence Review
+
+**Date:** 2026-09-27
+
+Completed:
+
+- reviewed the final shutdown ordering contract across balance-worker completion, catalog completion, and runtime database ownership closure;
+- added deterministic coverage for a balance-worker shutdown timeout while the worker is still owned/running;
+- verified that a shutdown timeout preserves the worker ownership boundary and prevents `Service.Close()` from closing runtime databases while the worker remains active;
+- verified that database cleanup becomes available only after the worker has completed and lifecycle ownership has been released;
+- preserved existing ordering: balance completion first, catalog completion second, transaction database cleanup third, audit database cleanup fourth;
+- preserved error identity composition for cancellation, balance shutdown, catalog completion, transaction cleanup, and audit cleanup;
+- preserved single-shot database cleanup and non-replay of catalog completion errors on repeated `Service.Close()`;
+- no provider retry/failover, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, provider funding, or synthetic transaction/audit reconstruction was introduced.
+
+### CI Failure and Correction
+
+CI #1737 on test commit `87359e2a03ec3a69c1904ec86f00bdcd566190c0` was **RED** because the first fixture assumed that a shutdown seam returning an error would leave the worker running. In the real runtime path, cancellation of the parent context also allowed the worker to exit normally, so that fixture did not model a genuine shutdown-timeout condition.
+
+The regression test was corrected at `cb537ff0a7b41efa5721e0e239c45578a9c68d6b` using a deterministic blocking balance provider. CI #1739 on that exact corrected HEAD is **GREEN**.
+
+### Verification
+
+- Initial test commit: `87359e2a03ec3a69c1904ec86f00bdcd566190c0`.
+- CI #1737: RED — fixture did not model a worker that remains running after shutdown timeout.
+- Corrected test commit: `cb537ff0a7b41efa5721e0e239c45578a9c68d6b`.
+- CI #1739 on exact corrected HEAD: **GREEN**.
+  - `go test ./...` — PASS
+  - `go vet ./...` — PASS
+  - PostgreSQL service-backed integration tests — PASS
+  - `go test -race ./...` — PASS
+
+### Safety Boundary
+
+This milestone is limited to runtime lifecycle ownership, shutdown ordering, error composition, and database-close guards. A worker that has not completed shutdown retains ownership of the runtime process boundary, so database cleanup is deferred until lifecycle completion.
+
+The change does not introduce provider retry/failover, transaction resubmission, ledger mutation, treasury movement, provider funding, or cross-domain recovery authority.
+
+### Known Limitations
+
+- the production `catalogWorkerLifecycle.Shutdown()` contract remains void-returning; the catalog completion error channel remains an internal test seam;
+- PostgreSQL integration coverage requires `DESKAPROVIDER_POSTGRES_DSN` and is skipped when unavailable;
+- database close remains non-context-aware;
+- shutdown-timeout behavior remains bounded by the caller-provided shutdown context.
+
+### Next Milestone
+
+**#186 — Runtime Shutdown Failure Isolation Across Auxiliary Lifecycle Boundaries**
+
+Focus next on isolating independent balance/catalog lifecycle failures so one auxiliary completion failure cannot suppress another completion attempt or runtime ownership cleanup, while preserving the existing transaction/audit persistence boundary and single-shot cleanup.
