@@ -339,6 +339,28 @@ func (s *Service) Close() error {
 	return s.closeOwnedDatabases()
 }
 
+func (s *Service) replaceDatabaseOwnership(next *runtimeDatabaseOwnership) error {
+	if s == nil {
+		return nil
+	}
+	s.shutdownMu.Lock()
+	defer s.shutdownMu.Unlock()
+
+	if (s.balanceLifecycle != nil && s.balanceLifecycle.Running()) ||
+		(s.catalogLifecycle != nil && s.catalogLifecycle.Running()) {
+		return ErrServiceLifecycleActive
+	}
+
+	current := s.databaseOwnership
+	if current != nil && current != next && !current.isClosed() {
+		if err := current.closeOwned(); err != nil {
+			return err
+		}
+	}
+	s.databaseOwnership = next
+	return nil
+}
+
 func (s *Service) closeOwnedDatabases() error { if s==nil || s.databaseOwnership==nil { return nil }; return s.databaseOwnership.closeOwned() }
 
 func (s *Service) shutdownBalanceWorker(ctx context.Context) error {
