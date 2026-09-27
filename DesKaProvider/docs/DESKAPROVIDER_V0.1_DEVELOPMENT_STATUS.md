@@ -10349,8 +10349,69 @@ This milestone is limited to runtime ownership replacement, lifecycle/error isol
 
 No architecture document update is required. Milestone #196 verifies and hardens the existing ownership-generation boundary; it does not change the documented financial/provider/lifecycle authority model.
 
+
+
+## 197. Milestone Update — Runtime Ownership Replacement Under Concurrent Convergence
+
+**Date:** 2026-09-27
+
+Completed:
+
+- added deterministic regression coverage for ownership replacement racing with Service.Run() shutdown convergence;
+- verified replacement cannot acquire the service ownership boundary while Run() still holds the shutdown convergence lock;
+- verified a lifecycle may report its worker as converged before database cleanup is permitted, while the old ownership generation remains active until the enclosing Service.Run() convergence sequence completes;
+- verified a concurrent replacement request remains blocked during the in-progress convergence window and only proceeds after old-generation cleanup has completed;
+- verified the old transaction database is closed before the old audit database;
+- verified the fresh ownership generation is not touched before successful replacement;
+- added concurrent replacement coverage against partially converged balance/catalog lifecycle state;
+- verified partial lifecycle convergence continues to reject ownership replacement until all lifecycle owners are terminal;
+- corrected an existing runtime regression fixture that used a canceled context for the balance worker, making the race assertion scheduler-dependent; the fixture now starts the lifecycle with an independent test context so the intended partial-shutdown state is deterministic;
+- no production runtime implementation change was required;
+- no provider retry/failover, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, provider funding, or synthetic transaction/audit reconstruction was introduced.
+
+### CI Failure Analysis and Correction
+
+- CI #1972 on initial concurrent-convergence test commit b29ba8fb13cb2106d542ebee7d409b6de62da04f was RED in the race job.
+- Failure was in the pre-existing TestServiceRepeatedPartialShutdownAttemptsConvergeBeforeDatabaseCleanup; the fixture started its balance worker using the already-canceled Run context, allowing scheduler-dependent early worker termination. This was a regression fixture defect, not a production ownership/lifecycle defect.
+- CI #1974 on fixture-correction commit 91094ffadfa0c9af1bf59728d76cc3fd5b4d2c56 remained RED because the first edit matched a different test occurrence and did not modify the intended fixture.
+- Final targeted fixture correction commit: 4618e59c3b7784b36d00c002418a3a20814f493f.
+- CI #1976 on exact final HEAD: GREEN.
+  - go test ./... — PASS
+  - go vet ./... — PASS
+  - PostgreSQL service-backed integration tests — PASS
+  - go test -race ./... — PASS
+
+### Concurrency / Ownership Invariants
+
+- lifecycle convergence and ownership replacement are serialized by the Service shutdown boundary;
+- observing a lifecycle as stopped is not, by itself, authority to install a new ownership generation;
+- old ownership remains active until the enclosing convergence path has completed its cleanup boundary;
+- fresh ownership cannot be touched by a replacement that is blocked by active lifecycle state;
+- old generation cleanup remains transaction-before-audit and single-shot;
+- a fresh generation starts with independent lifecycle/error state;
+- concurrent replacement callers cannot bypass lifecycle gating by racing each other;
+- ownership replacement remains infrastructure lifecycle behavior and cannot authorize financial state mutation.
+
+### Safety Boundary
+
+This milestone is limited to runtime shutdown serialization, lifecycle convergence, ownership replacement ordering, concurrency gating, and database cleanup isolation. Runtime lifecycle state remains separate from transaction execution authority, provider retry authority, ledger state, customer-balance state, treasury movement, provider funding, and financial authorization.
+
+### Known Limitations
+
+- ownership replacement remains an internal runtime composition/testing boundary;
+- production catalogWorkerLifecycle.Shutdown() remains void-returning and does not expose an independent completion error;
+- database close remains non-context-aware;
+- direct manipulation of internal lifecycle test seams is not a production API;
+- PostgreSQL integration coverage requires DESKAPROVIDER_POSTGRES_DSN and is skipped when unavailable;
+- ownership-generation state remains lifecycle bookkeeping, not a recovery journal or transaction authority;
+- this milestone adds no provider retry/failover or transaction recovery behavior.
+
+### Architecture Impact
+
+No architecture document update is required. Milestone #197 verifies the existing shutdown/ownership serialization contract and adds regression guarantees; it does not alter the financial/provider/lifecycle authority model.
+
 ### Next Milestone
 
-**#197 — Runtime Ownership Replacement Under Concurrent Convergence**
+**#198 — Runtime Ownership Replacement Stress / Repeated Convergence**
 
-Focus next on the remaining concurrent replacement/convergence boundary: coordinate lifecycle convergence and ownership replacement without allowing a replacement caller to observe a transiently converged state, install ownership prematurely, or cross generation error/cleanup boundaries.
+Focus next on repeated concurrent replacement and convergence cycles, including repeated failed convergence, successful convergence, replacement, and terminal Close across multiple ownership generations, with race coverage proving no generation crosses another generation's cleanup/error state.
