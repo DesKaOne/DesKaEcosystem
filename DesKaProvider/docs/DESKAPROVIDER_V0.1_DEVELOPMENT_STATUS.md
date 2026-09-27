@@ -11551,3 +11551,71 @@ No architecture document update is required. Milestone #216 closes the previousl
 ### Next Milestone
 
 Continue with the next concrete recovery-convergence or routing-safety gap from the actual implementation, prioritizing operational-state durability/observability and stale-state handling before introducing new provider or business integration.
+
+
+## 217. Milestone Update — Stale-State Routing Rejection Observability
+
+**Date:** 2026-09-28
+
+Completed:
+
+- identified a concrete stale-state observability gap in the provider router: stale operational and catalog snapshots were correctly excluded from routing, but all such exclusions collapsed into the generic ErrNoProviderAvailable result;
+- added ErrOperationalSnapshotStale as a provider-neutral routing diagnostic sentinel;
+- retained the existing ErrCatalogStale sentinel and now expose it through errors.Is when stale catalog state contributed to the final no-provider result;
+- router selection continues to reject stale operational snapshots, stale catalog snapshots, future-dated snapshots, missing snapshots, unhealthy state, insufficient balance, and unavailable provider capabilities exactly as before;
+- when no eligible candidate remains, the router now returns ErrNoProviderAvailable together with applicable stale-state diagnostics using errors.Join;
+- added deterministic regression coverage for:
+  - stale operational snapshots;
+  - future operational snapshots;
+  - stale catalog snapshots;
+  - future catalog snapshots;
+  - multiple candidates where one is operationally stale and another has a stale catalog;
+- preserved deterministic provider ordering and existing routing eligibility gates;
+- no provider execution, transaction retry, failover, resubmission, ledger mutation, customer-balance mutation, treasury movement, provider funding, or financial authority was introduced.
+
+### Verification
+
+- implementation commit: `363903d68702a666b55b11a890efd1fa2b413ade`;
+- regression-test / exact implementation-test HEAD: `3e64345867f079d37c2b690353beaf466a606659`;
+- CI #2110 / run `36342275630`: **GREEN** for exact HEAD `3e64345867f079d37c2b690353beaf466a606659`;
+- CI #2111 / run `36342277943`: **GREEN** for exact HEAD `3e64345867f079d37c2b690353beaf466a606659`;
+- test gate: **success**;
+- vet gate: **success**;
+- PostgreSQL-backed integration path: **success**;
+- race gate: **success**.
+
+An intermediate exact implementation/test run failed because one regression test expected both stale reasons from a single provider, while the router intentionally short-circuits the per-provider freshness gates. The test was corrected to exercise two separate candidates, one stale in operational state and one stale in catalog state. The final exact HEAD passed both push and pull-request CI.
+
+### Persistence / Recovery / Routing Invariants
+
+- persisted/recovered operational snapshots remain available as recovery data but stale snapshots cannot become routeable;
+- persisted/recovered catalog snapshots remain operational cache data but stale/future snapshots cannot become routeable;
+- stale-state diagnostics do not relax freshness gates;
+- ErrNoProviderAvailable remains present for callers that depend on the generic no-provider condition;
+- stale diagnostics are additive observability and do not authorize provider selection;
+- catalog and operational freshness remain independent safety boundaries;
+- catalog synchronization status remains operational observability only;
+- routing remains dependent on current eligible operational state and fresh catalog data;
+- persistence recovery does not authorize routing, provider failover, transaction retry, or transaction resubmission.
+
+### Safety Boundary
+
+This milestone improves routing observability only. The router remains conservative: stale or future operational/catalog observations are rejected rather than used as authority. The additional sentinel errors explain why no candidate survived; they do not select a provider, trigger failover, retry a transaction, or alter financial state.
+
+### Known Limitations
+
+- routing diagnostics are returned only when no candidate remains; there is no persisted per-selection rejection history;
+- diagnostics do not yet expose a full per-provider rejection matrix;
+- synchronization status remains process-local current-state data;
+- catalog retry cadence remains the configured CatalogSyncInterval and is not backoff-aware;
+- database close remains non-context-aware;
+- PostgreSQL integration coverage requires DESKAPROVIDER_POSTGRES_DSN and is skipped when unavailable;
+- ownership-generation state remains lifecycle bookkeeping, not a recovery journal or transaction authority.
+
+### Architecture Impact
+
+No architecture document update is required. Milestone #217 strengthens stale-state routing observability while preserving the existing provider, persistence, runtime, transaction, and financial authority boundaries.
+
+### Next Milestone
+
+Continue with the next concrete recovery-convergence or routing-safety gap from the actual implementation, prioritizing durable operational-state observability and recovery convergence before introducing new provider or business integration.
