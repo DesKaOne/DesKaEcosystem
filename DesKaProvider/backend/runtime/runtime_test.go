@@ -6156,3 +6156,37 @@ func TestServiceRunCatalogFetchCancellationDefersOwnershipCleanupUntilFetchRetur
 		t.Fatalf("expected database ownership to close exactly once after fetch returned, count=%d closed=%v", transactionDB.closeCount, service.databaseOwnership.isClosed())
 	}
 }
+
+
+func TestServiceCatalogSyncStatusesExposeProviderFailure(t *testing.T) {
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", mock.New(mock.Config{Products: []provider.Product{{Code: "xld10", Name: "Test"}}})); err != nil {
+		t.Fatal(err)
+	}
+	operationalStore := operational.NewMemoryStore()
+	syncService, err := operational.NewSyncService(registry, operationalStore, "IDR", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalogSync, err := catalog.NewSyncService(registry, catalog.NewMemoryStore())
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := New(syncService, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.catalogSync = catalogSync
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, _ = catalogSync.SyncProvider(ctx, "mock")
+
+	statuses := service.CatalogSyncStatuses()
+	if len(statuses) != 1 {
+		t.Fatalf("expected one catalog sync status, got %d", len(statuses))
+	}
+	if statuses[0].ProviderName != "mock" || statuses[0].ConsecutiveFailures != 1 || statuses[0].LastError != context.Canceled.Error() {
+		t.Fatalf("unexpected catalog sync status: %#v", statuses[0])
+	}
+}
