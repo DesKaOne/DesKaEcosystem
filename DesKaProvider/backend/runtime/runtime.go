@@ -41,7 +41,7 @@ const (
 	defaultAuditStoreDriver="memory"
 )
 
-type Config struct{StorePath,OperationalStoreDriver,TransactionStorePath,ProviderStateStorePath,TransactionStoreDriver,AuditStoreDriver,PostgresDSN string;SyncInterval time.Duration;FailureThreshold int;Currency,CatalogStorePath,CatalogSyncStatusStorePath string;CatalogSyncInterval,CatalogMaxAge,OperationalSnapshotMaxAge time.Duration}
+type Config struct{StorePath,OperationalStoreDriver,TransactionStorePath,ProviderStateStorePath,TransactionStoreDriver,AuditStoreDriver,PostgresDSN,PostgresSchemaMode string;SyncInterval time.Duration;FailureThreshold int;Currency,CatalogStorePath,CatalogSyncStatusStorePath string;CatalogSyncInterval,CatalogMaxAge,OperationalSnapshotMaxAge time.Duration}
 type databaseCloser interface { Close() error }
 
 var ErrServiceClosed = errors.New("service is closed")
@@ -173,8 +173,8 @@ func (s *Service) CatalogSyncStatuses() []catalog.SyncStatus {
 }
 
 func LoadConfig()(Config,error){
- cfg:=Config{StorePath:os.Getenv("DESKAPROVIDER_OPERATIONAL_STORE_PATH"),OperationalStoreDriver:os.Getenv("DESKAPROVIDER_OPERATIONAL_STORE_DRIVER"),TransactionStoreDriver:os.Getenv("DESKAPROVIDER_TRANSACTION_STORE_DRIVER"),AuditStoreDriver:os.Getenv("DESKAPROVIDER_AUDIT_STORE_DRIVER"),PostgresDSN:os.Getenv("DESKAPROVIDER_POSTGRES_DSN"),ProviderStateStorePath:os.Getenv("DESKAPROVIDER_PROVIDER_STATE_STORE_PATH"),TransactionStorePath:os.Getenv("DESKAPROVIDER_TRANSACTION_STORE_PATH"),SyncInterval:defaultSyncInterval,FailureThreshold:defaultFailureThreshold,Currency:os.Getenv("DESKAPROVIDER_OPERATIONAL_CURRENCY"),CatalogStorePath:os.Getenv("DESKAPROVIDER_CATALOG_STORE_PATH"),CatalogSyncStatusStorePath:os.Getenv("DESKAPROVIDER_CATALOG_SYNC_STATUS_STORE_PATH"),CatalogSyncInterval:defaultCatalogSyncInterval,CatalogMaxAge:defaultCatalogMaxAge,OperationalSnapshotMaxAge:defaultOperationalSnapshotMaxAge}
- if cfg.StorePath==""{cfg.StorePath=defaultStorePath};if cfg.OperationalStoreDriver==""{cfg.OperationalStoreDriver=defaultOperationalStoreDriver};if cfg.OperationalStoreDriver!="json"&&cfg.OperationalStoreDriver!="postgres"{return Config{},fmt.Errorf("invalid DESKAPROVIDER_OPERATIONAL_STORE_DRIVER: %q",cfg.OperationalStoreDriver)};if cfg.CatalogSyncStatusStorePath==""{cfg.CatalogSyncStatusStorePath=defaultCatalogSyncStatusStorePath};if cfg.TransactionStoreDriver==""{cfg.TransactionStoreDriver=defaultTransactionStoreDriver};if cfg.AuditStoreDriver==""{cfg.AuditStoreDriver=defaultAuditStoreDriver};if cfg.AuditStoreDriver!="memory"&&cfg.AuditStoreDriver!="postgres"{return Config{},fmt.Errorf("invalid DESKAPROVIDER_AUDIT_STORE_DRIVER: %q",cfg.AuditStoreDriver)};if cfg.TransactionStoreDriver!="json"&&cfg.TransactionStoreDriver!="postgres"{return Config{},fmt.Errorf("invalid DESKAPROVIDER_TRANSACTION_STORE_DRIVER: %q",cfg.TransactionStoreDriver)};if cfg.PostgresDSN=="" {
+ cfg:=Config{StorePath:os.Getenv("DESKAPROVIDER_OPERATIONAL_STORE_PATH"),OperationalStoreDriver:os.Getenv("DESKAPROVIDER_OPERATIONAL_STORE_DRIVER"),TransactionStoreDriver:os.Getenv("DESKAPROVIDER_TRANSACTION_STORE_DRIVER"),AuditStoreDriver:os.Getenv("DESKAPROVIDER_AUDIT_STORE_DRIVER"),PostgresDSN:os.Getenv("DESKAPROVIDER_POSTGRES_DSN"),PostgresSchemaMode:os.Getenv("DESKAPROVIDER_POSTGRES_SCHEMA_MODE"),ProviderStateStorePath:os.Getenv("DESKAPROVIDER_PROVIDER_STATE_STORE_PATH"),TransactionStorePath:os.Getenv("DESKAPROVIDER_TRANSACTION_STORE_PATH"),SyncInterval:defaultSyncInterval,FailureThreshold:defaultFailureThreshold,Currency:os.Getenv("DESKAPROVIDER_OPERATIONAL_CURRENCY"),CatalogStorePath:os.Getenv("DESKAPROVIDER_CATALOG_STORE_PATH"),CatalogSyncStatusStorePath:os.Getenv("DESKAPROVIDER_CATALOG_SYNC_STATUS_STORE_PATH"),CatalogSyncInterval:defaultCatalogSyncInterval,CatalogMaxAge:defaultCatalogMaxAge,OperationalSnapshotMaxAge:defaultOperationalSnapshotMaxAge}
+ if cfg.StorePath==""{cfg.StorePath=defaultStorePath};if cfg.OperationalStoreDriver==""{cfg.OperationalStoreDriver=defaultOperationalStoreDriver};if cfg.OperationalStoreDriver!="json"&&cfg.OperationalStoreDriver!="postgres"{return Config{},fmt.Errorf("invalid DESKAPROVIDER_OPERATIONAL_STORE_DRIVER: %q",cfg.OperationalStoreDriver)};if cfg.CatalogSyncStatusStorePath==""{cfg.CatalogSyncStatusStorePath=defaultCatalogSyncStatusStorePath};if cfg.TransactionStoreDriver==""{cfg.TransactionStoreDriver=defaultTransactionStoreDriver};if cfg.AuditStoreDriver==""{cfg.AuditStoreDriver=defaultAuditStoreDriver};if cfg.AuditStoreDriver!="memory"&&cfg.AuditStoreDriver!="postgres"{return Config{},fmt.Errorf("invalid DESKAPROVIDER_AUDIT_STORE_DRIVER: %q",cfg.AuditStoreDriver)};if cfg.TransactionStoreDriver!="json"&&cfg.TransactionStoreDriver!="postgres"{return Config{},fmt.Errorf("invalid DESKAPROVIDER_TRANSACTION_STORE_DRIVER: %q",cfg.TransactionStoreDriver)};if cfg.PostgresSchemaMode==""{cfg.PostgresSchemaMode="check"};if cfg.PostgresSchemaMode!="check"&&cfg.PostgresSchemaMode!="migrate"{return Config{},fmt.Errorf("invalid DESKAPROVIDER_POSTGRES_SCHEMA_MODE: %q",cfg.PostgresSchemaMode)};if cfg.PostgresDSN=="" {
   if cfg.OperationalStoreDriver=="postgres" { return Config{},errors.New("DESKAPROVIDER_POSTGRES_DSN is required when DESKAPROVIDER_OPERATIONAL_STORE_DRIVER=postgres") }
   if cfg.TransactionStoreDriver=="postgres" { return Config{},errors.New("DESKAPROVIDER_POSTGRES_DSN is required when DESKAPROVIDER_TRANSACTION_STORE_DRIVER=postgres") }
   if cfg.AuditStoreDriver=="postgres" { return Config{},errors.New("DESKAPROVIDER_POSTGRES_DSN is required when DESKAPROVIDER_AUDIT_STORE_DRIVER=postgres") }
@@ -502,7 +502,7 @@ func openOperationalStore(ctx context.Context, cfg Config, transactionDB *sql.DB
 			return nil, nil, fmt.Errorf("ping PostgreSQL operational store: %w", err)
 		}
 	}
-	if err := checkOperationalSchema(ctx, db); err != nil {
+	if err := preparePostgresSchema(ctx, db, cfg.PostgresSchemaMode, 2); err != nil {
 		if owned { _ = db.Close() }
 		return nil, nil, err
 	}
@@ -533,6 +533,7 @@ func openAuditStore(ctx context.Context, cfg Config, transactionDB *sql.DB) (rou
 		return store, nil, nil
 	}
 	if transactionDB != nil {
+		if err := preparePostgresSchema(ctx, transactionDB, cfg.PostgresSchemaMode, 1); err != nil { return nil, nil, err }
 		store, err := routing.NewPostgresTransactionAuditStore(transactionDB)
 		if err != nil {
 			return nil, nil, err
@@ -547,6 +548,7 @@ func openAuditStore(ctx context.Context, cfg Config, transactionDB *sql.DB) (rou
 		_ = db.Close()
 		return nil, nil, fmt.Errorf("ping PostgreSQL audit store: %w", err)
 	}
+	if err := preparePostgresSchema(ctx, db, cfg.PostgresSchemaMode, 1); err != nil { _ = db.Close(); return nil, nil, err }
 	store, err := routing.NewPostgresTransactionAuditStore(db)
 	if err != nil {
 		_ = db.Close()
@@ -568,6 +570,7 @@ func openTransactionStore(ctx context.Context, cfg Config) (routing.TransactionS
 			_ = db.Close()
 			return nil, nil, fmt.Errorf("ping PostgreSQL transaction store: %w", err)
 		}
+		if err := preparePostgresSchema(ctx, db, cfg.PostgresSchemaMode, 1); err != nil { _ = db.Close(); return nil, nil, err }
 		store, err := routing.NewPostgresTransactionStore(db)
 		if err != nil {
 			_ = db.Close()
