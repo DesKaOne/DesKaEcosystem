@@ -12399,3 +12399,97 @@ This keeps provider-specific balance protocols inside adapters while allowing pa
 ### Next Milestone
 
 Wire the balance synchronization worker into the runtime service lifecycle, with explicit startup/shutdown ownership and cancellation propagation. Keep the worker operational-only and ensure lifecycle errors do not become provider transaction failures.
+
+## 228. Milestone Update — Runtime Balance Worker Ownership Verification
+
+**Date:** 2026-09-28
+
+### Completed
+
+- added runtime-level integration coverage for the already-composed `SyncWorkerLifecycle`;
+- verified that `runtime.Service.Run` starts the balance worker exactly once through its owned lifecycle;
+- verified immediate operational balance synchronization reaches the runtime-owned worker;
+- verified a duplicate `Service.Run` is rejected while the balance worker is active;
+- verified context cancellation causes `Service.Run` to return and the owned balance worker to stop;
+- kept the runtime lifecycle boundary separate from transaction submission and financial state.
+
+### Implementation Details
+
+The runtime ownership path is now covered end-to-end in deterministic tests:
+
+```text
+runtime.Service
+      |
+      v
+SyncWorkerLifecycle
+      |
+      v
+SyncService
+      |
+      v
+BalanceProvider
+```
+
+The test intentionally uses an in-process provider stub and `MemoryStore`; no live credentials, external provider calls, or financial persistence are involved.
+
+The runtime test also exercises the duplicate-start guard while the worker is active. This ensures that a second runtime invocation cannot accidentally create a second balance synchronization loop.
+
+### Verification
+
+- runtime integration test finalized at `2f0d29bd8140c8d6ba46a1b238b40a028df3cda3`;
+- exact implementation CI run #2221: **GREEN**;
+- `go test ./...`: PASS;
+- `go vet ./...`: PASS;
+- `go test -race ./...`: PASS;
+- PostgreSQL-backed workflow service: PASS;
+- no live provider credentials or external provider calls were introduced.
+
+### Invariants
+
+- one runtime service owns one balance synchronization worker;
+- duplicate worker startup is rejected;
+- cancellation propagates through the runtime-owned lifecycle;
+- worker shutdown completes before runtime lifecycle ownership is considered stopped;
+- balance snapshots remain operational-only;
+- worker lifecycle failures do not authorize provider transaction retry, failover, or resubmission.
+
+### Safety Boundary
+
+This milestone is verification-only at the runtime integration layer. It does not alter provider transaction eligibility, customer balance authority, ledger behavior, treasury movement, or provider funding.
+
+### Known Limitations
+
+- operational snapshots still use the existing JSON store in the current default v0.1 runtime path;
+- durable PostgreSQL operational snapshot persistence remains a future infrastructure boundary;
+- XP SINDONESIA remains not fully PPOB-ready;
+- no live provider balance validation was executed without runtime credentials.
+
+### Architecture Impact
+
+The runtime lifecycle now has explicit test coverage for the operational balance path:
+
+```text
+Provider Adapter
+      |
+      v
+Balance Capability
+      |
+      v
+Operational SyncService
+      |
+      v
+SyncWorkerLifecycle
+      |
+      v
+runtime.Service
+      |
+      +--> startup ownership
+      +--> cancellation
+      +--> shutdown convergence
+```
+
+This verifies that the operational worker cannot silently escape the runtime ownership boundary.
+
+### Next Milestone
+
+Harden operational snapshot persistence behind the existing `Store` interface, beginning with the smallest provider-neutral persistence contract needed for runtime restart/recovery. Keep persistence failures operational, never transaction-authorizing.
