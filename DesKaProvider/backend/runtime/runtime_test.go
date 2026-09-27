@@ -4872,11 +4872,7 @@ func TestServiceRunShutdownErrorOwnershipBoundaryMatrixAndFreshGenerationReuse(t
 			audit := &orderedCloseErrorDB{name: "audit", order: &order, err: tc.auditErr}
 			ownership := newRuntimeDatabaseOwnership(tx, audit)
 			ownership.transferToService()
-			if i == 0 {
-				service.databaseOwnership = ownership
-			} else if err := service.replaceDatabaseOwnership(ownership); err != nil {
-				t.Fatalf("cycle %d ownership replacement failed: %v", i+1, err)
-			}
+			service.databaseOwnership = ownership
 
 			service.balanceStart = func(context.Context) error {
 				return service.balanceLifecycle.Start(context.Background())
@@ -5045,7 +5041,11 @@ func TestServiceRunRepeatedReuseCyclesIsolateShutdownErrors(t *testing.T) {
 			audit := &orderedCloseErrorDB{name: fmt.Sprintf("cycle-%d-audit", i+1), order: &order, err: tc.auditErr}
 			ownership := newRuntimeDatabaseOwnership(tx, audit)
 			ownership.transferToService()
-			service.databaseOwnership = ownership
+			if i == 0 {
+				service.databaseOwnership = ownership
+			} else if err := service.replaceDatabaseOwnership(ownership); err != nil {
+				t.Fatalf("cycle %d ownership replacement failed: %v", i+1, err)
+			}
 
 			service.balanceShutdown = func(context.Context) error {
 				service.balanceLifecycle.Shutdown(context.Background())
