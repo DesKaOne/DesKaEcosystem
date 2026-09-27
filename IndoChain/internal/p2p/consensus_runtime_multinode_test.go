@@ -1638,8 +1638,8 @@ func TestConsensusRuntimeNegativeMissingValidatorAuthority(t *testing.T) {
 	canonicalHead := n.HeadHash
 
 	missingAuthorityResolver := runtimeMissingValidatorAuthorityResolver{}
-	if err := n.CommitFinalizedBlock(ctx, candidate, certificate, validators, power, missingAuthorityResolver, senderResolver); !errors.Is(err, consensus.ErrExecutionAuthorityMissing) {
-		t.Fatalf("missing validator authority error = %v, want %v", err, consensus.ErrExecutionAuthorityMissing)
+	if err := n.CommitFinalizedBlock(ctx, candidate, certificate, validators, power, missingAuthorityResolver, senderResolver); !errors.Is(err, consensus.ErrConsensusAuthorityMissing) {
+		t.Fatalf("missing validator authority error = %v, want %v", err, consensus.ErrConsensusAuthorityMissing)
 	}
 	if n.Head.Header.Height != 0 || n.HeadHash != canonicalHead {
 		t.Fatal("canonical head changed after missing validator authority rejection")
