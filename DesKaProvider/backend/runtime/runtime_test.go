@@ -1455,6 +1455,112 @@ func TestServiceRunShutdownPreservesCompletionOrderingAndAllErrorIdentity(t *tes
 
 
 
+
+func TestServiceRunShutdownSerializesConcurrentCloseAndReentry(t *testing.T) {
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", &balanceMock{Provider: mock.New(mock.Config{}), balance: 100000}); err != nil {
+		t.Fatal(err)
+	}
+	syncService, err := operational.NewSyncService(registry, operational.NewMemoryStore(), "IDR", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := New(syncService, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.catalogSync, err = catalog.NewSyncService(registry, catalog.NewMemoryStore())
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.catalogLifecycle = newCatalogWorkerLifecycle()
+
+	tx := &closeErrorDB{}
+	service.databaseOwnership = newRuntimeDatabaseOwnership(tx, nil)
+	service.databaseOwnership.transferToService()
+
+	catalogEntered := make(chan struct{})
+	releaseCatalog := make(chan struct{})
+	service.catalogShutdown = func() error {
+		service.catalogLifecycle.Shutdown()
+		close(catalogEntered)
+		<-releaseCatalog
+		return nil
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	firstDone := make(chan error, 1)
+	go func() { firstDone <- service.Run(ctx) }()
+
+	deadline := time.After(time.Second)
+	for !service.catalogLifecycle.Running() {
+		select {
+		case <-deadline:
+			t.Fatal("catalog lifecycle did not start")
+		default:
+			time.Sleep(time.Millisecond)
+		}
+	}
+
+	cancel()
+	select {
+	case <-catalogEntered:
+	case <-time.After(time.Second):
+		t.Fatal("catalog shutdown did not enter")
+	}
+
+	closeDone := make(chan error, 1)
+	go func() { closeDone <- service.Close() }()
+	reentryDone := make(chan error, 1)
+	go func() { reentryDone <- service.Run(context.Background()) }()
+
+	select {
+	case err := <-closeDone:
+		t.Fatalf("Close returned before shutdown completion: %v", err)
+	case err := <-reentryDone:
+		t.Fatalf("Run re-entry returned before shutdown completion: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	if tx.closeCount != 0 {
+		t.Fatalf("concurrent Close/re-entry must not close runtime database before shutdown completion, got %d", tx.closeCount)
+	}
+
+	close(releaseCatalog)
+
+	select {
+	case err := <-firstDone:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("expected first Run cancellation, got %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("first Run did not finish")
+	}
+
+	select {
+	case err := <-closeDone:
+		if err != nil {
+			t.Fatalf("expected serialized Close to complete after shutdown, got %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("serialized Close did not finish")
+	}
+
+	select {
+	case err := <-reentryDone:
+		if !errors.Is(err, ErrServiceClosed) {
+			t.Fatalf("expected serialized Run re-entry to observe closed runtime, got %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("serialized Run re-entry did not finish")
+	}
+
+	if tx.closeCount != 1 {
+		t.Fatalf("expected runtime database close exactly once, got %d", tx.closeCount)
+	}
+}
+
 func TestServiceRunShutdownErrorPrecedenceDoesNotReplayLifecycleCompletionOnRepeatedClose(t *testing.T) {
 	registry := provider.NewRegistry()
 	if err := registry.Register("mock", &balanceMock{Provider: mock.New(mock.Config{}), balance: 100000}); err != nil {
