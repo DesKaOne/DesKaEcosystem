@@ -11688,3 +11688,62 @@ No architecture document update is required. Milestone #218 closes the documente
 ### Next Milestone
 
 Continue with the next concrete recovery-convergence or routing-safety gap from the actual implementation, prioritizing shutdown/convergence behavior and stale-state handling before introducing new provider or business integration.
+
+
+## 219. Milestone Update — Catalog Sync Cancellation Convergence + Deterministic Provider Ordering
+
+**Date:** 2026-09-28
+
+Completed:
+
+- closed a concrete cancellation-convergence gap in catalog synchronization: SyncAll now checks the context before each provider attempt and again immediately after each provider synchronization returns;
+- when cancellation or deadline is observed after a provider call, SyncAll stops advancing to subsequent providers instead of continuing the synchronization loop;
+- added deterministic regression coverage proving that a cancellation raised during the first provider attempt prevents the next provider from being attempted;
+- identified and closed the test/operational ordering gap behind that regression: Provider.Registry.Names() previously iterated a Go map directly and therefore returned nondeterministic provider order;
+- Provider.Registry.Names() now sorts normalized provider names before returning them, making provider iteration deterministic for catalog synchronization and other consumers that rely on registry enumeration;
+- no provider-specific API behavior, transaction retry, financial retry, failover, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, provider funding, or financial authority was introduced.
+
+### Verification
+
+- implementation/test exact HEAD: a94f116fdb3182105067faed36c1fa6740f0c398;
+- push CI run 36346970677: **GREEN** for exact HEAD a94f116fdb3182105067faed36c1fa6740f0c398;
+- pull-request CI run 36346972226: **GREEN** for exact HEAD a94f116fdb3182105067faed36c1fa6740f0c398;
+- final test gate: **success**;
+- final race gate: **success**;
+- both push and pull-request validation completed successfully after the deterministic ordering fix.
+
+An intermediate exact HEAD 58f1fc3abe596a29c7f924a72be4e0595e30aafc exposed the underlying nondeterministic provider-order issue: the cancellation regression passed in one workflow but failed in another because registry map iteration could attempt the second provider before the cancellation-producing first provider. The fix makes registry enumeration deterministic rather than weakening the cancellation assertion.
+
+### Persistence / Recovery / Routing Invariants
+
+- catalog synchronization observes cancellation/deadline state before starting each provider attempt;
+- cancellation observed after a provider attempt prevents advancement to later providers;
+- deterministic provider ordering removes map-iteration nondeterminism from catalog synchronization;
+- cancellation stops synchronization progression but does not turn an operational cancellation into a financial transaction failure;
+- synchronization cancellation does not authorize transaction retry, financial retry, failover, or resubmission;
+- catalog snapshots remain operational cache data and are not financial authority;
+- stale and future catalog/operational snapshots remain rejected by existing routing freshness gates;
+- durable catalog sync status remains current operational observability only;
+- runtime shutdown still waits for active catalog work before owned cleanup.
+
+### Safety Boundary
+
+This milestone is limited to operational catalog synchronization convergence and deterministic provider enumeration. It does not introduce transaction orchestration, financial retry semantics, provider-side resubmission, ledger authority, customer-balance mutation, treasury movement, or automatic provider funding.
+
+### Known Limitations
+
+- cancellation is cooperative and still depends on the active provider implementation honoring the supplied context;
+- catalog retry cadence remains the configured CatalogSyncInterval and is not backoff-aware;
+- synchronization status remains current-state data rather than a historical event stream;
+- status persistence remains best-effort after in-memory operational state is updated;
+- database close remains non-context-aware;
+- PostgreSQL integration coverage requires DESKAPROVIDER_POSTGRES_DSN and is skipped when unavailable;
+- ownership-generation state remains lifecycle bookkeeping, not a recovery journal or transaction authority.
+
+### Architecture Impact
+
+No architecture document update is required. This milestone strengthens the existing runtime/catalog reliability boundary by making cancellation convergence explicit and registry enumeration deterministic without changing provider, routing, persistence, or financial authority boundaries.
+
+### Next Milestone
+
+Continue with the next concrete recovery-convergence or routing-safety gap from the actual implementation, prioritizing durable operational-state error handling and shutdown/recovery convergence before introducing new provider or business integration.
