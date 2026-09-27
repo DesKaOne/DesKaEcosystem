@@ -1732,6 +1732,25 @@ func TestServiceRunCancellationPreservesCatalogShutdownCompletionAndDedicatedPos
 		if !strings.Contains(runErr.Error(), "close transaction database") {
 			t.Fatalf("expected transaction cleanup context, got %v", runErr)
 		}
+		message := runErr.Error()
+		orderedNeedles := []string{
+			"context canceled",
+			"injected catalog shutdown balance worker rollback failure",
+			"injected catalog shutdown completion failure",
+			"close transaction database: injected catalog shutdown transaction cleanup failure",
+			"close audit database: injected catalog shutdown audit cleanup failure",
+		}
+		last := -1
+		for _, needle := range orderedNeedles {
+			index := strings.Index(message, needle)
+			if index < 0 {
+				t.Fatalf("expected composed error to contain %q: %v", needle, runErr)
+			}
+			if index <= last {
+				t.Fatalf("expected PostgreSQL shutdown error precedence order to remain stable, got %q", message)
+			}
+			last = index
+		}
 		if !strings.Contains(runErr.Error(), "close audit database") {
 			t.Fatalf("expected audit cleanup context, got %v", runErr)
 		}
