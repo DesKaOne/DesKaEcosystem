@@ -54,6 +54,18 @@ func (s *failOnceCatalogStore) All() []catalog.Snapshot {
 	return s.delegate.All()
 }
 
+type blockingCatalogProvider struct {
+	*balanceMock
+	started chan struct{}
+	once    sync.Once
+}
+
+func (p *blockingCatalogProvider) GetProducts(ctx context.Context, req provider.ProductRequest) ([]provider.Product, error) {
+	p.once.Do(func() { close(p.started) })
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
 type catalogFlakyBalanceProvider struct {
 	*balanceMock
 	mu          sync.Mutex
@@ -6080,3 +6092,67 @@ func TestServiceRunCatalogPersistenceFailureKeepsLifecycleAliveForRetry(t *testi
 	}
 }
 
+
+func TestServiceRunCatalogFetchCancellationDefersOwnershipCleanupUntilFetchReturns(t *testing.T) {
+	providerImpl := &blockingCatalogProvider{
+		balanceMock: &balanceMock{
+			Provider: mock.New(mock.Config{}),
+			balance:  1800000,
+		},
+		started: make(chan struct{}),
+	}
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", providerImpl); err != nil {
+		t.Fatal(err)
+	}
+	operationalStore := operational.NewMemoryStore()
+	syncService, err := operational.NewSyncService(registry, operationalStore, "IDR", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalogSync, err := catalog.NewSyncService(registry, catalog.NewMemoryStore())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	service, err := New(syncService, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.catalogSync = catalogSync
+	service.catalogLifecycle = newCatalogWorkerLifecycle()
+	service.catalogInterval = time.Hour
+	transactionDB := &closeErrorDB{}
+	service.databaseOwnership = newRuntimeDatabaseOwnership(transactionDB, nil)
+	service.databaseOwnership.transferToService()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- service.Run(ctx) }()
+
+	select {
+	case <-providerImpl.started:
+	case <-time.After(time.Second):
+		t.Fatal("catalog fetch did not start")
+	}
+	if transactionDB.closeCount != 0 {
+		t.Fatalf("database ownership closed while catalog fetch was still in flight: %d", transactionDB.closeCount)
+	}
+
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("unexpected shutdown error: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Run did not converge after in-flight catalog fetch cancellation")
+	}
+
+	if service.balanceLifecycle.Running() || service.catalogLifecycle.Running() {
+		t.Fatal("expected all lifecycles to stop after cancellation")
+	}
+	if transactionDB.closeCount != 1 || !service.databaseOwnership.isClosed() {
+		t.Fatalf("expected database ownership to close exactly once after fetch returned, count=%d closed=%v", transactionDB.closeCount, service.databaseOwnership.isClosed())
+	}
+}
