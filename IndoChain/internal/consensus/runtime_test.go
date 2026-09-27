@@ -234,8 +234,8 @@ func TestValidatorRuntimeRejectsRoundChangeAfterFinalization(t *testing.T) {
 	if err := runtime.AddVote(runtimeMessage(state, "validator-b", MessageTypePrevote, "block-8")); err != nil {
 		t.Fatal(err)
 	}
-	if err := runtime.AddVote(runtimeMessage(runtime.State(), "validator-a", MessageTypePrecommit, "block-8")); err != nil { t.Fatal(err) }
-	if err := runtime.AddVote(runtimeMessage(runtime.State(), "validator-b", MessageTypePrecommit, "block-8")); err != nil { t.Fatal(err) }
+	if err := runtime.AddVote(runtimeSignedMessage(t, runtime.State(), "validator-a", MessageTypePrecommit, "block-8")); err != nil { t.Fatal(err) }
+	if err := runtime.AddVote(runtimeSignedMessage(t, runtime.State(), "validator-b", MessageTypePrecommit, "block-8")); err != nil { t.Fatal(err) }
 	if _, err := runtime.FinalizeProposal(runtimeTestAuthority(t)); err != nil {
 		t.Fatal(err)
 	}
