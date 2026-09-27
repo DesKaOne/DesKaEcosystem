@@ -17,6 +17,7 @@ var (
 	ErrNoProviderAvailable = errors.New("no provider available")
 	ErrInvalidRouteRequest = errors.New("invalid provider route request")
 	ErrCatalogStale = errors.New("provider catalog is stale")
+	ErrOperationalSnapshotStale = errors.New("provider operational snapshot is stale")
 )
 
 const (
@@ -99,6 +100,7 @@ func (r *Router) Select(ctx context.Context, req Request) (string, error) {
 	}
 
 	candidates := make([]candidate, 0)
+	var staleCatalog, staleOperational bool
 	for _, name := range r.Registry.Names() {
 		if r.ProviderState != nil {
 			state, ok := r.ProviderState.Get(name)
@@ -111,6 +113,7 @@ func (r *Router) Select(ctx context.Context, req Request) (string, error) {
 			continue
 		}
 		if r.OperationalMaxAge > 0 && !isFresh(snapshot.LastCheckedAt, now, r.OperationalMaxAge) {
+			staleOperational = true
 			continue
 		}
 
@@ -120,6 +123,7 @@ func (r *Router) Select(ctx context.Context, req Request) (string, error) {
 				continue
 			}
 			if r.CatalogMaxAge > 0 && !isFresh(snapshot.SyncedAt, now, r.CatalogMaxAge) {
+				staleCatalog = true
 				continue
 			}
 			if !hasProduct(snapshot.Products, req.ProductCode) {
@@ -144,7 +148,14 @@ func (r *Router) Select(ctx context.Context, req Request) (string, error) {
 	}
 
 	if len(candidates) == 0 {
-		return "", ErrNoProviderAvailable
+		errs := []error{ErrNoProviderAvailable}
+		if staleOperational {
+			errs = append(errs, ErrOperationalSnapshotStale)
+		}
+		if staleCatalog {
+			errs = append(errs, ErrCatalogStale)
+		}
+		return "", errors.Join(errs...)
 	}
 	sort.Slice(candidates, func(i, j int) bool {
 		if candidates[i].priority != candidates[j].priority {
