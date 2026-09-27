@@ -9102,3 +9102,56 @@ This milestone only hardens lifecycle shutdown ordering, error composition, and 
 **#186 — Runtime Shutdown Partial-Completion Safety**
 
 Focus next on shutdown paths where one lifecycle reports an error or remains running, verifying that database ownership is not released prematurely and that repeated shutdown attempts preserve stable lifecycle and cleanup state, without introducing new provider or transaction recovery behavior.
+
+
+## 185. Milestone Update — Runtime Shutdown Completion Ordering & Error Precedence Review
+
+**Date:** 2026-09-27
+
+Completed:
+
+- reviewed the final runtime shutdown ordering across the balance worker, catalog lifecycle, transaction database ownership, and audit database ownership;
+- confirmed the composed shutdown boundary preserves the deterministic completion order:
+  `balance -> catalog -> transaction database -> audit database`;
+- added regression coverage proving a catalog shutdown-completion error does not suppress transaction/audit database cleanup errors;
+- verified all shutdown errors remain discoverable through `errors.Is`, including the primary cancellation error, catalog completion error, and independent database cleanup errors;
+- verified repeated `Service.Close()` preserves recorded database cleanup errors without replaying historical lifecycle/primary errors and without double-closing databases;
+- kept runtime ownership closure conditional on both lifecycle boundaries being stopped, preventing database ownership from being released while an active worker remains;
+- no provider retry/failover, transaction resubmission, ledger mutation, treasury movement, provider funding, or synthetic transaction/audit reconstruction was introduced.
+
+### CI Failure and Correction
+
+CI #1819 on test commit `3ce6ffe73f7caef40cb2810f2874e38bd0782c06` was **RED** because the new test fixture left `catalogInterval` at its zero value while entering the catalog worker loop, causing `time.NewTicker` to panic with a non-positive interval.
+
+Fix applied:
+
+- initialized the test fixture's catalog interval to `time.Hour`;
+- production runtime behavior was not changed.
+
+### Verification
+
+- Initial regression test commit: `3ce6ffe73f7caef40cb2810f2874e38bd0782c06`.
+- CI #1819: RED — test fixture used a zero catalog interval.
+- Corrected test commit: `1202889788ba8dbebe995519a1e2effdae561dfa`.
+- CI #1821 on exact corrected HEAD: **GREEN**.
+  - `go test ./...` — PASS
+  - `go vet ./...` — PASS
+  - PostgreSQL service-backed integration tests — PASS
+  - `go test -race ./...` — PASS
+
+### Safety Boundary
+
+This milestone is limited to lifecycle shutdown ordering, error identity/composition, and runtime database ownership closure. Transaction persistence remains authoritative for transaction state and idempotency; audit persistence remains observational. The change does not create any new recovery authority or provider-side transaction retry/failover behavior.
+
+### Known Limitations
+
+- the production `catalogWorkerLifecycle.Shutdown()` contract remains void-returning; catalog completion error composition is still exercised through the internal test seam;
+- PostgreSQL integration coverage requires `DESKAPROVIDER_POSTGRES_DSN` and is skipped when unavailable;
+- database close remains non-context-aware;
+- this milestone does not add a new production catalog error source.
+
+### Next Milestone
+
+**#186 — Runtime Shutdown Ownership Boundary Under Repeated Run/Close Attempts**
+
+Focus next on repeated `Run()`/`Close()` attempts after partial and completed shutdown states, preserving `ErrServiceClosed`, single-shot database ownership cleanup, lifecycle idempotence, and historical error separation without introducing provider or transaction recovery behavior.
