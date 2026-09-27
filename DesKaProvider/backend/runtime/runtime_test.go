@@ -4122,6 +4122,80 @@ func TestServiceMixedShutdownConvergenceDoesNotReplaySuccessfulLifecycle(t *test
 }
 
 
+
+func TestServiceOwnershipReplacementIsDeferredUntilLifecycleConvergence(t *testing.T) {
+	service := newRuntimeTestService(t)
+
+	oldOrder := make([]string, 0, 2)
+	oldTx := &orderedCloseErrorDB{name: "old-transaction", order: &oldOrder}
+	oldAudit := &orderedCloseErrorDB{name: "old-audit", order: &oldOrder}
+	oldOwnership := newRuntimeDatabaseOwnership(oldTx, oldAudit)
+	oldOwnership.transferToService()
+	service.databaseOwnership = oldOwnership
+
+	newOrder := make([]string, 0, 2)
+	newTx := &orderedCloseErrorDB{name: "new-transaction", order: &newOrder}
+	newAudit := &orderedCloseErrorDB{name: "new-audit", order: &newOrder}
+	newOwnership := newRuntimeDatabaseOwnership(newTx, newAudit)
+	newOwnership.transferToService()
+
+	if err := service.balanceLifecycle.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.replaceDatabaseOwnership(newOwnership); !errors.Is(err, ErrServiceLifecycleActive) {
+		t.Fatalf("expected active lifecycle replacement rejection, got %v", err)
+	}
+	if service.databaseOwnership != oldOwnership {
+		t.Fatal("active lifecycle replacement must retain the old ownership generation")
+	}
+	if oldTx.closeCount != 0 || oldAudit.closeCount != 0 {
+		t.Fatalf("old ownership must remain deferred while lifecycle is active: tx=%d audit=%d", oldTx.closeCount, oldAudit.closeCount)
+	}
+	if newTx.closeCount != 0 || newAudit.closeCount != 0 {
+		t.Fatalf("rejected replacement must not touch fresh ownership: tx=%d audit=%d", newTx.closeCount, newAudit.closeCount)
+	}
+
+	if err := service.balanceLifecycle.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if service.balanceLifecycle.Running() {
+		t.Fatal("expected balance lifecycle to converge before ownership replacement")
+	}
+
+	if err := service.replaceDatabaseOwnership(newOwnership); err != nil {
+		t.Fatalf("expected replacement after lifecycle convergence, got %v", err)
+	}
+	if service.databaseOwnership != newOwnership {
+		t.Fatal("expected fresh ownership generation to become active after convergence")
+	}
+	if oldTx.closeCount != 1 || oldAudit.closeCount != 1 {
+		t.Fatalf("expected old ownership to close exactly once during replacement: tx=%d audit=%d", oldTx.closeCount, oldAudit.closeCount)
+	}
+	if !reflect.DeepEqual(oldOrder, []string{"old-transaction", "old-audit"}) {
+		t.Fatalf("expected old ownership cleanup order to remain transaction-before-audit, got %v", oldOrder)
+	}
+	if newTx.closeCount != 0 || newAudit.closeCount != 0 {
+		t.Fatalf("fresh ownership must remain open after replacement: tx=%d audit=%d", newTx.closeCount, newAudit.closeCount)
+	}
+
+	if err := service.Close(); err != nil {
+		t.Fatalf("expected fresh ownership Close to succeed, got %v", err)
+	}
+	if newTx.closeCount != 1 || newAudit.closeCount != 1 {
+		t.Fatalf("expected fresh ownership to close exactly once: tx=%d audit=%d", newTx.closeCount, newAudit.closeCount)
+	}
+	if !reflect.DeepEqual(newOrder, []string{"new-transaction", "new-audit"}) {
+		t.Fatalf("expected fresh ownership cleanup order to remain transaction-before-audit, got %v", newOrder)
+	}
+
+	if err := service.replaceDatabaseOwnership(newRuntimeDatabaseOwnership(nil, nil)); err != nil {
+		t.Fatalf("expected replacement from already-closed fresh ownership to remain safe, got %v", err)
+	}
+	if newTx.closeCount != 1 || newAudit.closeCount != 1 {
+		t.Fatalf("replacing an already-closed generation must not double-close it: tx=%d audit=%d", newTx.closeCount, newAudit.closeCount)
+	}
+}
+
 func TestServiceFreshOwnershipReplacementDoesNotReplayStaleCleanupErrors(t *testing.T) {
 	registry := provider.NewRegistry()
 	syncService, err := operational.NewSyncService(registry, operational.NewMemoryStore(), "IDR", 1)
