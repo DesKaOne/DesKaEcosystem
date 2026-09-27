@@ -12871,3 +12871,13 @@ The runtime persistence path now has executable end-to-end evidence covering mig
 ### Next Milestone
 
 Harden runtime PostgreSQL failure/recovery semantics around restart and partial initialization, including migration/readiness failure attribution and database cleanup convergence, while preserving the single-shot ownership boundary and preventing persistence failures from becoming provider transaction retries.
+
+### CI Correction — Milestone #232
+
+- CI #2303 initially failed in both `test` and `race` because the isolated PostgreSQL DSN encoded the `search_path` startup option with a literal `+` instead of a space;
+- root cause was the interaction between `url.Values.Encode()` and libpq/pgx startup-option parsing;
+- fixed by emitting the PostgreSQL `options=-c%20search_path%3D<schema>` query component explicitly;
+- corrected implementation commit: `c9474dace1890dfcf223194f37bc552b4155f372`;
+- exact implementation CI #2305: **GREEN** — test and race completed successfully.
+
+The milestone remains limited to deterministic PostgreSQL integration coverage; no production provider call or financial-ledger behavior was introduced.
