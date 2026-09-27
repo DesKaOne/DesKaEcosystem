@@ -57,7 +57,7 @@ func TestOpenOperationalStorePostgresRequiresSchema(t *testing.T) {
  t.Cleanup(func() {
   _, _ = db.Exec("CREATE TABLE IF NOT EXISTS provider_operational_snapshots (provider_name TEXT PRIMARY KEY, balance BIGINT NOT NULL, currency TEXT NOT NULL, health TEXT NOT NULL, last_checked_at TIMESTAMPTZ NOT NULL, last_success_at TIMESTAMPTZ NOT NULL, last_error TEXT NOT NULL DEFAULT '', consecutive_failures INTEGER NOT NULL DEFAULT 0)")
  })
- _, operationalDB, err := openOperationalStore(context.Background(), Config{OperationalStoreDriver: "postgres", PostgresDSN: dsn}, nil)
+ _, operationalDB, err := openOperationalStore(context.Background(), Config{OperationalStoreDriver: "postgres", PostgresDSN: dsn, PostgresSchemaMode: "check"}, nil)
  if err == nil { t.Fatal("expected schema readiness failure") }
  if operationalDB != nil { t.Fatal("schema readiness failure must not return an owned database handle") }
 }
