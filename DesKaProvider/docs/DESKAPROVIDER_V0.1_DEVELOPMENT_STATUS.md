@@ -10956,3 +10956,57 @@ No architecture document update is required. Milestone #206 validates the existi
 ### Next Milestone
 
 Continue from the runtime lifecycle/reliability status with the next concrete boundary gap, prioritizing deterministic behavior around initialization, shutdown, persistence, or routing only where a currently observable invariant is not yet locked by tests.
+
+
+## 207. Milestone Update — Runtime Startup Failure Cleanup Error Attribution
+
+**Date:** 2026-09-27
+
+Completed:
+
+- added deterministic coverage for a balance worker startup failure after Service ownership has already been transferred;
+- verified the primary `balanceStart` failure remains discoverable through `errors.Is`;
+- verified ownership cleanup errors produced by the startup-failure path remain independently discoverable alongside the primary startup error;
+- verified the transferred database generation is closed exactly once when startup fails before any lifecycle becomes active;
+- verified a subsequent terminal `Service.Close()` does not double-close the failed startup generation and preserves its cleanup error identity;
+- verified the existing production startup failure path already composes the startup error with `Service.Close()`, so no production runtime change was required;
+- no provider retry/failover, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, provider funding, or synthetic transaction/audit reconstruction was introduced.
+
+### Verification
+
+- implementation/test commit: `087969eb363d1b58f4900c6ed643844a32bc6235`;
+- CI #2036 / run `36333165023` is **GREEN** for exact test HEAD `087969eb363d1b58f4900c6ed643844a32bc6235`;
+- `go test ./...` — PASS;
+- `go vet ./...` — PASS;
+- PostgreSQL service-backed integration tests — PASS;
+- `go test -race ./...` — PASS.
+
+### Startup / Ownership Invariants
+
+- a balance lifecycle startup failure remains the primary `Run` error;
+- database cleanup errors remain independently discoverable and do not replace the startup failure identity;
+- because the balance lifecycle never became active, no balance or catalog shutdown operation is incorrectly invoked as rollback;
+- transferred ownership is still cleaned through the existing `Service.Close()` path;
+- startup-failure cleanup remains single-shot per ownership generation;
+- subsequent `Close()` does not replay or double-close the failed startup generation;
+- infrastructure startup/cleanup errors remain lifecycle outcomes and cannot authorize provider retry, failover, resubmission, or financial mutation.
+
+### Safety Boundary
+
+This milestone remains limited to Service startup failure attribution, ownership cleanup, and lifecycle-start gating. It adds no provider retry/failover, transaction recovery, ledger mutation, customer-balance mutation, treasury movement, provider funding, or financial authorization.
+
+### Known Limitations
+
+- the startup failure is injected through the internal `balanceStart` test seam rather than reproducing every worker implementation failure mode;
+- catalog startup is not entered when balance startup fails, consistent with the current lifecycle ordering;
+- database close remains non-context-aware;
+- PostgreSQL integration coverage requires `DESKAPROVIDER_POSTGRES_DSN` and is skipped when unavailable;
+- ownership-generation state remains lifecycle bookkeeping, not a recovery journal or transaction authority.
+
+### Architecture Impact
+
+No architecture document update is required. Milestone #207 strengthens the existing Service startup error/cleanup boundary without changing the documented provider, transaction, financial, or lifecycle authority model.
+
+### Next Milestone
+
+Continue from the runtime lifecycle/reliability status with the next concrete boundary gap, prioritizing deterministic behavior around startup rollback, shutdown convergence, persistence, or routing only where a currently observable invariant is not yet locked by tests.
