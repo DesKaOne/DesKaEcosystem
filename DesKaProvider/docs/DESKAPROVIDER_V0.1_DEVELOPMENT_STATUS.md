@@ -9964,3 +9964,44 @@ This milestone is limited to runtime re-entry protection, lifecycle ownership, s
 **#187 — Runtime Close-State Error Composition Across Direct and Run-Owned Shutdown**
 
 Focus next on the exact error identity and cleanup semantics when direct `Close()`, Run-owned shutdown, and repeated close attempts encounter stored database cleanup errors, without introducing new provider or transaction recovery behavior.
+
+
+## 186. Milestone Update — Runtime Shutdown Error Identity Across Mixed Primary and Cleanup Failures
+
+**Date:** 2026-09-27
+
+Completed:
+
+- added deterministic coverage for mixed runtime shutdown failures spanning primary, balance-worker, catalog, transaction-database, and audit-database errors;
+- verified `errors.Is` preserves independent identity for every component of the composed shutdown error;
+- verified `errors.As` continues to traverse the joined error chain and preserves the first typed error in deterministic order;
+- preserved the existing textual/context ordering: primary error, worker completion error, catalog completion error, transaction cleanup error, then audit cleanup error;
+- preserved the existing transaction-before-audit database cleanup boundary and single-shot ownership cleanup;
+- no new precedence rule suppresses independent cleanup failures; error composition remains based on Go's joined-error semantics;
+- no provider retry/failover, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, provider funding, or synthetic transaction/audit reconstruction was introduced.
+
+### Verification
+
+- Typed-error regression test commit: `5caf9dc7b79213cc077e4d3c8da4a043c0d560a3`.
+- CI #1923 on exact test HEAD: **GREEN**.
+  - `go test ./...` — PASS
+  - `go vet ./...` — PASS
+  - PostgreSQL service-backed integration tests — PASS
+  - `go test -race ./...` — PASS
+
+### Safety Boundary
+
+This milestone is test-only hardening of existing runtime error composition. It does not alter provider execution, transaction recovery authority, audit authority, ledger state, treasury/funding behavior, or retry/failover behavior.
+
+### Known Limitations
+
+- the production catalog lifecycle completion API remains void-returning; catalog completion errors remain available only through the internal test seam;
+- PostgreSQL integration coverage requires `DESKAPROVIDER_POSTGRES_DSN` and is skipped when unavailable;
+- database close remains non-context-aware;
+- this milestone validates mixed-error identity and deterministic context; it does not introduce a new shutdown orchestration subsystem.
+
+### Next Milestone
+
+**#187 — Runtime Shutdown Error Identity Across Repeated Close/Re-entry**
+
+Focus next on ensuring historical cleanup errors remain available through repeated `Service.Close()` while terminal `Service.Run()` re-entry returns only the current lifecycle-state error, without replaying historical primary/lifecycle failures or introducing new provider/transaction recovery behavior.
