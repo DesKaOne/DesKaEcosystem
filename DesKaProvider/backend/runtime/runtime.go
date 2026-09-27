@@ -229,15 +229,18 @@ func (s *Service) Run(ctx context.Context) error {
 	}
 
 catalogStarted := false
-	shutdown := func(primary, workerErr error) error {
-		s.shutdownMu.Lock()
-		defer s.shutdownMu.Unlock()
+	shutdownLocked := func(primary, workerErr error) error {
 		var catalogErr error
 		if catalogStarted {
 			catalogErr = s.shutdownCatalogLifecycle()
 		}
 		closeErr := s.closeOwnedDatabases()
 		return combineRuntimeShutdownError(combineRuntimeShutdownError(combineRuntimeShutdownError(primary, workerErr), catalogErr), closeErr)
+	}
+	shutdown := func(primary, workerErr error) error {
+		s.shutdownMu.Lock()
+		defer s.shutdownMu.Unlock()
+		return shutdownLocked(primary, workerErr)
 	}
 	if s.balanceLifecycle == nil {
 		if s.catalogSync == nil {
@@ -284,8 +287,10 @@ catalogStarted := false
 	}
 	catalogCtx, catalogStartErr := startCatalog(ctx)
 	if catalogStartErr != nil {
+		s.shutdownMu.Lock()
+		defer s.shutdownMu.Unlock()
 		workerErr := s.rollbackStartedLifecycles(workerShutdownCtx)
-		return shutdown(catalogStartErr, workerErr)
+		return shutdownLocked(catalogStartErr, workerErr)
 	}
 	catalogStarted = true
 	_ = s.catalogSync.SyncAll(catalogCtx)
@@ -295,8 +300,10 @@ catalogStarted := false
 	for {
 		select {
 		case <-ctx.Done():
+			s.shutdownMu.Lock()
+			defer s.shutdownMu.Unlock()
 			workerErr := s.shutdownBalanceWorker(workerShutdownCtx)
-			return shutdown(ctx.Err(), workerErr)
+			return shutdownLocked(ctx.Err(), workerErr)
 		case <-ticker.C:
 			_ = s.catalogSync.SyncAll(catalogCtx)
 		}
