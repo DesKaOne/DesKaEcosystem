@@ -11177,3 +11177,60 @@ No architecture document update is required. Milestone #210 adds deterministic r
 ### Next Milestone
 
 Continue from the runtime lifecycle/reliability status with the next concrete initialization, shutdown, persistence, routing, or operational-observability boundary gap only where a currently observable invariant is not yet locked by tests.
+
+
+## 211. Milestone Update — Catalog Persistence Recovery Read-Error Boundary
+
+**Date:** 2026-09-28
+
+Completed:
+
+- identified a concrete persistence/recovery gap in the actual catalog JSON store implementation: `NewJSONFileStore` previously treated any `os.ReadFile` result with zero-length data as an empty/missing store, even when the read returned a non-`ENOENT` error;
+- added deterministic regression coverage using a directory path as the catalog store path, where `os.ReadFile` returns a read error and no payload;
+- verified the regression requires the constructor to surface the persistence read error rather than silently initializing an empty catalog store;
+- changed only the catalog JSON-store constructor so `os.ErrNotExist` remains the missing-store case, other read errors are returned, and a genuinely readable zero-byte file remains an empty store;
+- preserved existing atomic temp-file persistence, restrictive file permissions, snapshot copying, catalog lifecycle behavior, routing freshness checks, and operational-cache semantics;
+- no runtime lifecycle redesign was required; the production fix is limited to correct persistence error classification at catalog startup/recovery;
+- no provider retry/failover, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, provider funding, or synthetic transaction/audit reconstruction was introduced.
+
+### Verification
+
+- regression test commit: `877f4d64061ce21b9fafd52a606b6f7d7cf509bb`;
+- implementation/fix commits: `d694739a3883e7678132bf2dcc4ca71f030e61af`, followed by compile-fix commit `3149689ffdaf0609a44281a2567e1f15bd7eda66`;
+- CI #2053 / run 36335465285: **RED** on `d694739a3883e7678132bf2dcc4ca71f030e61af` because the first implementation edit introduced an incorrect range variable type in `catalog.JSONFileStore.All`; this was a source edit regression, not a test-design failure;
+- corrected exact HEAD: `3149689ffdaf0609a44281a2567e1f15bd7eda66`;
+- CI #2056 / run 36335656585: **GREEN** for the exact corrected implementation/test HEAD;
+- CI #2057 / run 36335658613: **GREEN** for the exact same HEAD through pull-request validation;
+- exact CI gate passed: `go test ./...`, `go vet ./...`, PostgreSQL service-backed integration tests, and `go test -race ./...`;
+- local direct execution was not available in this environment because the container could not resolve/access GitHub for repository checkout; CI is therefore the execution evidence for the exact repository HEAD.
+
+### Persistence / Recovery Invariants
+
+- a missing catalog store file is still treated as an empty initial store;
+- a readable zero-byte catalog store remains an empty initial store;
+- a non-missing catalog read error remains an initialization/persistence error and cannot be silently converted into an empty catalog snapshot;
+- catalog recovery does not manufacture product availability from unreadable persistence;
+- catalog snapshots remain operational cache data and are not financial authority;
+- routing freshness and product-availability gates remain independent safety boundaries;
+- persistence errors do not authorize provider retry, failover, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, or provider funding.
+
+### Safety Boundary
+
+This milestone is limited to catalog persistence error classification during store construction/recovery. It does not change provider execution, routing authority, transaction state, audit authority, financial behavior, or runtime lifecycle ownership. A broken/unreadable catalog store now fails visibly instead of being silently interpreted as an empty cache.
+
+### Known Limitations
+
+- the regression uses a deterministic directory-path read error and does not model every OS/filesystem-specific read failure;
+- catalog synchronization failures are still not exposed through a dedicated runtime health/error channel;
+- retry cadence remains the configured `CatalogSyncInterval` and is not backoff-aware;
+- database close remains non-context-aware;
+- PostgreSQL integration coverage continues to require `DESKAPROVIDER_POSTGRES_DSN` and is skipped when unavailable;
+- ownership-generation state remains lifecycle bookkeeping, not a recovery journal or transaction authority.
+
+### Architecture Impact
+
+No architecture document update is required. Milestone #211 tightens the existing catalog persistence/recovery boundary without changing the documented provider, transaction, financial, routing, or lifecycle authority model.
+
+### Next Milestone
+
+Continue with the next concrete persistence/recovery or routing-safety gap identified from the actual implementation, prioritizing catalog/operational persistence recovery semantics before introducing new provider or business integration.
