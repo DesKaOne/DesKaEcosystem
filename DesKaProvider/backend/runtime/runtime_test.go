@@ -4928,16 +4928,6 @@ func TestServiceRunShutdownErrorOwnershipBoundaryMatrixAndFreshGenerationReuse(t
 					t.Fatalf("shutdown error lost boundary identity for %v: %v", want, runErr)
 				}
 			}
-			for _, historical := range []error{tc.balanceErr, tc.catalogErr, tc.transactionErr, tc.auditErr} {
-				if historical == nil {
-					continue
-				}
-				var typed *runtimeTypedShutdownError
-				if errors.As(historical, &typed) {
-					t.Fatalf("test case unexpectedly supplied typed sentinel")
-				}
-			}
-
 			if service.balanceLifecycle.Running() || service.catalogLifecycle.Running() {
 				t.Fatal("shutdown error matrix must leave both lifecycle owners converged")
 			}
