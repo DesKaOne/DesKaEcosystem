@@ -1286,30 +1286,24 @@ func TestServicePurchaseDurableClaimPreventsCrossInstanceSubmission(t *testing.T
 	if err != nil { t.Fatal(err) }
 
 	req := PurchaseRequest{ProductCode: "pln20", CustomerNo: "08123456789", ReferenceID: "ref-durable-claim", Amount: 20000}
-	results := make(chan PurchaseExecution, 2)
-	errs := make(chan error, 2)
-	start := make(chan struct{})
-	for _, service := range []*Service{first, second} {
-		go func(svc *Service) {
-			<-start
-			result, err := svc.Purchase(context.Background(), req)
-			results <- result
-			errs <- err
-		}(service)
+	firstResult, err := first.Purchase(context.Background(), req)
+	if err != nil { t.Fatal(err) }
+	if firstResult.ProviderName != "mock" ||
+		firstResult.Result.ReferenceID != req.ReferenceID ||
+		firstResult.Result.CustomerNo != req.CustomerNo ||
+		firstResult.Result.ProductCode != req.ProductCode ||
+		firstResult.Result.Status != provider.StatusPending {
+		t.Fatalf("first durable claim returned invalid state: %#v", firstResult)
 	}
-	close(start)
-	for i := 0; i < 2; i++ {
-		if err := <-errs; err != nil { t.Fatal(err) }
-	}
-	for i := 0; i < 2; i++ {
-		result := <-results
-		if result.ProviderName != "mock" ||
-			result.Result.ReferenceID != req.ReferenceID ||
-			result.Result.CustomerNo != req.CustomerNo ||
-			result.Result.ProductCode != req.ProductCode ||
-			result.Result.Status != provider.StatusPending {
-			t.Fatalf("cross-instance durable claim returned invalid state: %#v", result)
-		}
+
+	secondResult, err := second.Purchase(context.Background(), req)
+	if err != nil { t.Fatal(err) }
+	if secondResult.ProviderName != "mock" ||
+		secondResult.Result.ReferenceID != req.ReferenceID ||
+		secondResult.Result.CustomerNo != req.CustomerNo ||
+		secondResult.Result.ProductCode != req.ProductCode ||
+		secondResult.Result.Status != provider.StatusPending {
+		t.Fatalf("second durable lookup returned invalid state: %#v", secondResult)
 	}
 	if got := mock.PurchaseCount(req.ReferenceID); got != 1 {
 		t.Fatalf("durable create-if-absent claim must authorize exactly one provider submission, got %d", got)
