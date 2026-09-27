@@ -9827,3 +9827,56 @@ This milestone is limited to runtime shutdown cancellation/deadline observation,
 **#188 — Runtime Shutdown Cancellation vs Lifecycle Completion Precedence**
 
 Focus next on explicit precedence when caller cancellation/deadline, balance completion, catalog completion, and deferred database cleanup produce overlapping errors, preserving all error identities and lifecycle safety without introducing new financial recovery authority.
+
+
+## 188. Milestone Update — Runtime Shutdown Cancellation vs Lifecycle Completion Precedence
+
+**Date:** 2026-09-27
+
+Completed:
+
+- added deterministic regression coverage for overlapping caller cancellation, balance lifecycle completion error, catalog lifecycle completion error, and transaction/audit database cleanup errors;
+- verified the composed error order remains: primary caller cancellation/deadline -> balance completion -> catalog completion -> transaction cleanup -> audit cleanup;
+- verified all individual error identities remain discoverable with `errors.Is`;
+- verified both managed lifecycles converge before runtime database ownership is closed;
+- verified transaction cleanup remains before audit cleanup;
+- verified repeated `Service.Close()` preserves only the stored database cleanup errors and does not replay the historical caller/lifecycle shutdown errors;
+- verified database ownership closes exactly once;
+- no production runtime behavior was changed; this milestone locks the existing precedence and ownership contract with regression coverage;
+- no provider retry/failover, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, provider funding, or synthetic transaction/audit reconstruction was introduced.
+
+### CI Failure and Correction
+
+CI #1905 on test commit `1ab03face0d231e94e2b4ce837d8c4f227b43d16` was **RED** because the new regression test expected raw transaction/audit cleanup error text, while the established runtime contract correctly prefixes those errors with `close transaction database:` and `close audit database:`.
+
+The correction was committed as `c47cff854a06ba0230a55a2d14e110b402e25ed0` by aligning only the test's expected composed error string with the existing cleanup contract.
+
+CI #1907 on exact corrected test HEAD is **GREEN**.
+
+### Verification
+
+- Initial overlap-precedence test commit: `1ab03face0d231e94e2b4ce837d8c4f227b43d16`.
+- CI #1905: RED — test expectation omitted established database cleanup error prefixes.
+- Corrected test commit: `c47cff854a06ba0230a55a2d14e110b402e25ed0`.
+- CI #1907: **GREEN**
+  - `go test ./...` — PASS
+  - `go vet ./...` — PASS
+  - PostgreSQL service-backed integration tests — PASS
+  - `go test -race ./...` — PASS
+
+### Safety Boundary
+
+This milestone is limited to runtime shutdown error precedence, lifecycle convergence, and infrastructure database ownership cleanup. Caller cancellation/deadline and lifecycle completion errors remain operational signals only. Transaction persistence remains authoritative for transaction state/idempotency, audit persistence remains observational, and neither becomes a recovery authority.
+
+### Known Limitations
+
+- production `catalogWorkerLifecycle.Shutdown()` remains void-returning; catalog completion errors continue to be represented through the existing internal test seam;
+- PostgreSQL integration coverage requires `DESKAPROVIDER_POSTGRES_DSN` and is skipped when unavailable;
+- database close remains non-context-aware;
+- this milestone adds no provider retry/failover or transaction recovery behavior.
+
+### Next Milestone
+
+**#189 — Runtime Shutdown Error Precedence Under Deferred Ownership Cleanup**
+
+Focus next on precedence when lifecycle completion is incomplete and database cleanup is deferred across a later explicit `Service.Close()`, ensuring historical primary/lifecycle errors are not replayed while fresh cleanup errors remain observable and ownership remains single-shot.
