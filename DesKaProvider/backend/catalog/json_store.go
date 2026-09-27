@@ -55,7 +55,7 @@ func (s *JSONFileStore) All() []Snapshot {
 	for name := range s.data { names = append(names,name) }
 	sort.Strings(names)
 	result := make([]Snapshot,0,len(s.data))
-	for name := range names { v:=s.data[name]; v.Products=append([]provider.Product(nil),v.Products...); result=append(result,v) }
+	for _, name := range names { v:=s.data[name]; v.Products=append([]provider.Product(nil),v.Products...); result=append(result,v) }
 	return result
 }
 
