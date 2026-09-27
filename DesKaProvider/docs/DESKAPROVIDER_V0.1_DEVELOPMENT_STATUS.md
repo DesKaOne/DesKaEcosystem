@@ -10091,3 +10091,56 @@ This milestone is limited to repeated lifecycle convergence, deferred database o
 **#192 — Runtime Shutdown Convergence Under Mixed Lifecycle Outcomes**
 
 Focus next on mixed outcomes where one lifecycle converges successfully while the other fails across repeated attempts, ensuring successful completion is not replayed, the still-active lifecycle continues to defer database cleanup, and final convergence preserves stable error identity and ordering.
+
+
+## 192. Milestone Update — Runtime Shutdown Convergence Under Mixed Lifecycle Outcomes
+
+**Date:** 2026-09-27
+
+Completed:
+
+- identified that completion seams must not be replayed after a lifecycle has already converged, even when the parent cancellation can asynchronously stop the underlying lifecycle before the shutdown seam is invoked;
+- added explicit internal runtime completion-state tracking for balance and catalog lifecycle shutdown;
+- shutdown helpers now execute a completion boundary once per lifecycle convergence and retry only when the prior attempt leaves that lifecycle active;
+- added regression coverage for mixed outcomes where balance converges successfully while catalog completion fails on the first attempt;
+- verified a later convergence attempt retries only the still-active catalog lifecycle and does not replay the already-successful balance completion;
+- verified runtime database ownership remains open while any lifecycle remains active and closes only after both lifecycles converge;
+- verified terminal transaction cleanup remains before audit cleanup and both database handles close exactly once;
+- verified historical lifecycle completion errors are not replayed by terminal `Service.Close()`;
+- preserved the existing primary/worker/catalog/database error composition and closed-state/re-entry boundaries;
+- no provider retry/failover, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, provider funding, or synthetic transaction/audit reconstruction was introduced.
+
+### CI Failure and Correction
+
+CI #1937 on test commit `c8cfee2d6f571863f99eaadf8ffd2cdf9313c047` was **RED**. The initial implementation used the current `Running()` state as the sole guard before invoking a completion seam. PostgreSQL-backed shutdown tests demonstrated that parent cancellation can make the lifecycle non-running before the seam executes, which incorrectly suppressed required rollback/completion error reporting.
+
+The correction was committed as `4473e35938b580af6b320d5843af316e0c7603bf` by introducing explicit internal completion-state flags. A completion attempt is allowed until the lifecycle has actually converged; once convergence is observed, subsequent completion calls become no-ops.
+
+### Verification
+
+- Initial regression test commit: `c8cfee2d6f571863f99eaadf8ffd2cdf9313c047`.
+- CI #1937: RED — completion seam was incorrectly suppressed by an asynchronous lifecycle state transition.
+- Corrected implementation commit: `4473e35938b580af6b320d5843af316e0c7603bf`.
+- CI #1939 on exact corrected HEAD: **GREEN**.
+  - `go test ./...` — PASS
+  - `go vet ./...` — PASS
+  - PostgreSQL service-backed integration tests — PASS
+  - `go test -race ./...` — PASS
+
+### Safety Boundary
+
+This milestone is limited to runtime lifecycle convergence bookkeeping, completion replay prevention, error identity, ordering, and deferred/single-shot database ownership cleanup. Lifecycle completion remains infrastructure-only. No lifecycle error is promoted into transaction state, provider state, ledger state, treasury state, or financial authorization.
+
+### Known Limitations
+
+- production `catalogWorkerLifecycle.Shutdown()` remains void-returning; catalog completion errors continue to be represented through the internal test seam;
+- PostgreSQL integration coverage requires `DESKAPROVIDER_POSTGRES_DSN` and is skipped when unavailable;
+- database close remains non-context-aware;
+- completion-state flags are runtime lifecycle bookkeeping and do not constitute a general recovery journal;
+- this milestone adds no provider retry/failover or transaction recovery behavior.
+
+### Next Milestone
+
+**#193 — Runtime Shutdown Convergence Across Re-entry and Fresh Ownership**
+
+Focus next on the boundary where a partially converged lifecycle rejects Run re-entry, later converges, and a fresh Run performs a terminal shutdown without replaying historical lifecycle errors or duplicating ownership cleanup.
