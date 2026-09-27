@@ -321,7 +321,9 @@ func (n *Node) CommitFinalizedBlock(
 	if err := validateCanonicalConsensusContext(n, ctx); err != nil {
 		return err
 	}
-	if _, err := consensus.ValidateFinalizedBlock(ctx, candidate, certificate, validators, votingPower); err != nil {
+	if _, err := consensus.ValidateFinalizedBlockWithAuthority(
+		ctx, candidate, certificate, validators, votingPower, validatorResolver,
+	); err != nil {
 		return err
 	}
 	authorization := consensus.FinalizedBlockAuthorization{
