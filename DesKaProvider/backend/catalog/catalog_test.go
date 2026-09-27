@@ -74,7 +74,7 @@ func TestSyncServiceRecordsFailureAndRecoveryStatus(t *testing.T) {
 	if !ok {
 		t.Fatal("expected provider sync status after failed attempt")
 	}
-	if !status.LastAttemptAt.Equal(first) || status.LastSuccessAt.IsZero() || status.ConsecutiveFailures != 1 || status.LastError != context.Canceled.Error() {
+	if !status.LastAttemptAt.Equal(first) || !status.LastSuccessAt.IsZero() || status.ConsecutiveFailures != 1 || status.LastError != context.Canceled.Error() {
 		t.Fatalf("unexpected failure status: %#v", status)
 	}
 
