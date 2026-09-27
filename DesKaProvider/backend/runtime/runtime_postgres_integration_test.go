@@ -1855,11 +1855,11 @@ func TestServiceRunSuccessfulShutdownOrderingAndDedicatedPostgresSingleClose(t *
 			order = append(order, "balance")
 			return err
 		},
-		catalogShutdown: func() error {
-			service.catalogLifecycle.Shutdown()
-			order = append(order, "catalog")
-			return nil
-		},
+	}
+	service.catalogShutdown = func() error {
+		service.catalogLifecycle.Shutdown()
+		order = append(order, "catalog")
+		return nil
 	}
 
 	runCtx, cancel := context.WithCancel(ctx)
