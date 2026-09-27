@@ -2119,3 +2119,65 @@ func TestServiceRunShutdownCompletionOrderingAcrossWorkersAndDatabaseOwnership(t
 		t.Fatalf("repeated Close must not double-close databases, got tx=%d audit=%d", tx.closeCount, audit.closeCount)
 	}
 }
+
+
+func TestServiceClosedStateSeparatesRunRejectionFromRecordedCleanupError(t *testing.T) {
+	cleanupErr := errors.New("recorded database cleanup failure")
+
+	newService := func(t *testing.T) *Service {
+		t.Helper()
+		registry := provider.NewRegistry()
+		if err := registry.Register("mock", &balanceMock{Provider: mock.New(mock.Config{}), balance: 100000}); err != nil {
+			t.Fatal(err)
+		}
+		syncService, err := operational.NewSyncService(registry, operational.NewMemoryStore(), "IDR", 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		service, err := New(syncService, time.Hour)
+		if err != nil {
+			t.Fatal(err)
+		}
+		db := &closeErrorDB{err: cleanupErr}
+		service.databaseOwnership = newRuntimeDatabaseOwnership(db, nil)
+		service.databaseOwnership.transferToService()
+		return service
+	}
+
+	t.Run("direct close", func(t *testing.T) {
+		service := newService(t)
+		if err := service.Close(); !errors.Is(err, cleanupErr) {
+			t.Fatalf("expected direct Close to record cleanup error, got %v", err)
+		}
+		if err := service.Close(); !errors.Is(err, cleanupErr) {
+			t.Fatalf("expected repeated Close to preserve cleanup error, got %v", err)
+		}
+		if err := service.Run(context.Background()); !errors.Is(err, ErrServiceClosed) {
+			t.Fatalf("expected Run after direct Close to return ErrServiceClosed, got %v", err)
+		} else if errors.Is(err, cleanupErr) {
+			t.Fatalf("Run closed-state rejection must not replay cleanup error: %v", err)
+		}
+	})
+
+	t.Run("run-owned shutdown", func(t *testing.T) {
+		service := newService(t)
+		service.catalogSync = nil
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		runErr := service.Run(ctx)
+		if !errors.Is(runErr, context.Canceled) {
+			t.Fatalf("expected Run to preserve cancellation, got %v", runErr)
+		}
+		if !errors.Is(runErr, cleanupErr) {
+			t.Fatalf("expected Run shutdown to preserve cleanup error, got %v", runErr)
+		}
+		if err := service.Close(); !errors.Is(err, cleanupErr) {
+			t.Fatalf("expected repeated Close to preserve recorded cleanup error, got %v", err)
+		}
+		if err := service.Run(context.Background()); !errors.Is(err, ErrServiceClosed) {
+			t.Fatalf("expected repeated Run after owned shutdown to return ErrServiceClosed, got %v", err)
+		} else if errors.Is(err, cleanupErr) {
+			t.Fatalf("Run closed-state rejection must not replay cleanup error: %v", err)
+		}
+	})
+}
