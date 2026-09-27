@@ -4,8 +4,6 @@ import (
     "database/sql"
     "errors"
     "fmt"
-    "sort"
-    "time"
 )
 
 type PostgresStore struct {
@@ -118,10 +116,8 @@ func (s *PostgresStore) All() []Snapshot {
     if err := rows.Err(); err != nil {
         return nil
     }
-    sort.Slice(result, func(i, j int) bool { return result[i].ProviderName < result[j].ProviderName })
     return result
 }
 
 var _ Store = (*PostgresStore)(nil)
 
-var _ = time.Time{}
