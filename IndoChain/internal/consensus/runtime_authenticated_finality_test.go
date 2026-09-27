@@ -90,7 +90,9 @@ func TestValidatorRuntimeInvalidPrecommitSignatureLeavesStateUnchanged(t *testin
 
 func TestValidatorRuntimeUnauthorizedValidatorLeavesStateUnchanged(t *testing.T) {
 	f := newAuthenticatedRuntimeFixture(t)
-	unauthorized := runtimeMessage(f.state, "validator-c", MessageTypePrecommit, "authenticated-block")
+	if err := f.runtime.AddVote(runtimeMessage(f.state, "validator-a", MessageTypePrevote, "authenticated-block")); err != nil { t.Fatal(err) }
+	if err := f.runtime.AddVote(runtimeMessage(f.state, "validator-b", MessageTypePrevote, "authenticated-block")); err != nil { t.Fatal(err) }
+	unauthorized := runtimeMessage(f.runtime.State(), "validator-c", MessageTypePrecommit, "authenticated-block")
 	before := f.runtime.State()
 	if err := f.runtime.AddVote(unauthorized); !errors.Is(err, ErrConsensusMessageUnauthorized) {
 		t.Fatalf("error = %v, want unauthorized validator", err)
