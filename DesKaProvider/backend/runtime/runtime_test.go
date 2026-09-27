@@ -8,10 +8,10 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
-	"strings"
 
 	provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
 	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/catalog"
