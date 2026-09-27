@@ -11067,3 +11067,59 @@ No architecture document update is required. Milestone #208 adds deterministic r
 ### Next Milestone
 
 Continue from the runtime lifecycle/reliability status with the next concrete initialization, shutdown, persistence, routing, or operational-observability boundary gap only where a currently observable invariant is not yet locked by tests.
+
+
+## 209. Milestone Update — Runtime Catalog Persistence Failure Retry Boundary
+
+**Date:** 2026-09-27
+
+Completed:
+
+- added deterministic coverage for a catalog synchronization failure at the catalog persistence boundary (`catalog.Store.Put`);
+- verified a transient catalog persistence failure does not terminate `Service.Run()` or close transferred database ownership;
+- verified the catalog lifecycle remains active so the configured periodic synchronization can retry after persistence failure;
+- verified a subsequent successful persistence attempt produces the expected catalog snapshot;
+- verified terminal context cancellation still stops the active lifecycle before database ownership cleanup;
+- verified the transferred database generation closes exactly once after shutdown;
+- no production runtime change was required; this milestone extends regression coverage of the existing best-effort catalog synchronization retry boundary;
+- no provider retry/failover, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, provider funding, or synthetic transaction/audit reconstruction was introduced.
+
+### Verification
+
+- implementation/test commit: `2bfe34c8739f8c0562a338cf97569d7800fb6170`;
+- CI #2043 / run `36334508220` is **GREEN** for exact test HEAD `2bfe34c8739f8c0562a338cf97569d7800fb6170`;
+- `go test ./...` — PASS;
+- `go vet ./...` — PASS;
+- PostgreSQL service-backed integration tests — PASS;
+- `go test -race ./...` — PASS.
+
+### Catalog Persistence / Lifecycle Invariants
+
+- provider-fetch failure and catalog-persistence failure both remain inside the catalog worker's best-effort synchronization boundary;
+- a failed `Store.Put` does not invalidate the runtime lifecycle or trigger ownership cleanup;
+- periodic catalog synchronization remains the retry mechanism;
+- a successful retry publishes the fresh snapshot consumed by routing;
+- routing freshness remains an independent safety boundary and does not treat an absent or stale snapshot as transaction authorization;
+- terminal shutdown remains responsible for lifecycle convergence followed by database ownership cleanup;
+- cleanup remains single-shot for the transferred generation.
+
+### Safety Boundary
+
+This milestone remains limited to catalog persistence failure handling, retry continuity, lifecycle convergence, snapshot freshness, and ownership cleanup. It adds no provider transaction retry/failover, resubmission, ledger mutation, customer-balance mutation, treasury movement, provider funding, or financial authorization behavior.
+
+### Known Limitations
+
+- catalog synchronization failures are still not exposed through a dedicated runtime health/error channel;
+- retry cadence remains the configured `CatalogSyncInterval` and is not backoff-aware;
+- catalog snapshots remain operational cache data and are not transaction authority;
+- PostgreSQL integration coverage requires `DESKAPROVIDER_POSTGRES_DSN` and is skipped when unavailable;
+- database close remains non-context-aware;
+- ownership-generation state remains lifecycle bookkeeping, not a recovery journal or transaction authority.
+
+### Architecture Impact
+
+No architecture document update is required. Milestone #209 adds deterministic regression coverage for the existing catalog persistence retry boundary without changing the documented provider, transaction, financial, or lifecycle authority model.
+
+### Next Milestone
+
+Continue from the runtime lifecycle/reliability status with the next concrete initialization, shutdown, persistence, routing, or operational-observability boundary gap only where a currently observable invariant is not yet locked by tests.
