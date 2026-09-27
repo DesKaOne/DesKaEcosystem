@@ -3308,3 +3308,84 @@ func TestServiceRunReentryAfterPartialShutdownConvergesToTerminalState(t *testin
 		t.Fatalf("terminal re-entry must not replay historical shutdown errors: %v", terminalErr)
 	}
 }
+
+
+func TestServiceRunShutdownDeadlineDefersDatabaseCleanupWhileBalanceLifecycleRemainsActive(t *testing.T) {
+	service := newRuntimeTestService(t)
+	service.catalogSync, _ = catalog.NewSyncService(
+		&provider.Registry{},
+		catalog.NewMemoryStore(),
+	)
+	service.catalogLifecycle = newCatalogWorkerLifecycle()
+	service.catalogInterval = time.Hour
+
+	shutdownDeadlineErr := context.DeadlineExceeded
+	transactionErr := errors.New("deadline-deferred transaction cleanup")
+	auditErr := errors.New("deadline-deferred audit cleanup")
+	order := make([]string, 0, 4)
+
+	service.balanceStart = func(context.Context) error {
+		return service.balanceLifecycle.Start(context.Background())
+	}
+	service.balanceShutdown = func(ctx context.Context) error {
+		if ctx == nil {
+			t.Fatal("shutdown context must not be nil")
+		}
+		if err := ctx.Err(); !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("expected shutdown deadline, got %v", err)
+		}
+		return shutdownDeadlineErr
+	}
+	service.catalogShutdown = func() error {
+		service.catalogLifecycle.Shutdown()
+		order = append(order, "catalog")
+		return nil
+	}
+
+	tx := &orderedCloseErrorDB{name: "transaction", order: &order, err: transactionErr}
+	audit := &orderedCloseErrorDB{name: "audit", order: &order, err: auditErr}
+	service.databaseOwnership = newRuntimeDatabaseOwnership(tx, audit)
+	service.databaseOwnership.transferToService()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+
+	runErr := service.Run(ctx)
+	if !errors.Is(runErr, context.DeadlineExceeded) {
+		t.Fatalf("expected primary deadline error, got %v", runErr)
+	}
+	if !errors.Is(runErr, shutdownDeadlineErr) {
+		t.Fatalf("expected shutdown deadline error, got %v", runErr)
+	}
+	if tx.closeCount != 0 || audit.closeCount != 0 {
+		t.Fatalf("database cleanup must remain deferred while balance lifecycle is active: tx=%d audit=%d", tx.closeCount, audit.closeCount)
+	}
+	if !service.balanceLifecycle.Running() {
+		t.Fatal("expected balance lifecycle to remain active after deadline-bound shutdown failure")
+	}
+	if service.catalogLifecycle.Running() {
+		t.Fatal("expected catalog lifecycle to stop despite balance shutdown deadline")
+	}
+	if !reflect.DeepEqual(order, []string{"catalog"}) {
+		t.Fatalf("expected only catalog completion before deferred database cleanup, got %v", order)
+	}
+
+	service.balanceShutdown = func(context.Context) error {
+		service.balanceLifecycle.Shutdown(context.Background())
+		order = append(order, "balance")
+		return nil
+	}
+	if err := service.shutdownBalanceWorker(context.Background()); err != nil {
+		t.Fatalf("expected balance lifecycle convergence, got %v", err)
+	}
+	closeErr := service.Close()
+	if !errors.Is(closeErr, transactionErr) || !errors.Is(closeErr, auditErr) {
+		t.Fatalf("expected deferred database cleanup errors after lifecycle convergence, got %v", closeErr)
+	}
+	if tx.closeCount != 1 || audit.closeCount != 1 {
+		t.Fatalf("expected each database to close exactly once, got tx=%d audit=%d", tx.closeCount, audit.closeCount)
+	}
+	if !reflect.DeepEqual(order, []string{"catalog", "balance", "transaction", "audit"}) {
+		t.Fatalf("unexpected final completion ordering: %v", order)
+	}
+}
