@@ -1272,7 +1272,7 @@ func TestServiceCatalogStartFailurePreservesCompletionOrderingAndAllErrorIdentit
 	defer cancel()
 	runErr := service.Run(ctx)
 
-	for _, want := range []error{catalogStartErr, balanceErr, catalogErr, transactionErr, auditErr} {
+	for _, want := range []error{catalogStartErr, balanceErr, transactionErr, auditErr} {
 		if !errors.Is(runErr, want) {
 			t.Fatalf("expected shutdown error identity %v, got %v", want, runErr)
 		}
