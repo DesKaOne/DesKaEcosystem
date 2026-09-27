@@ -26,6 +26,13 @@ func Definitions() ([]Definition, error) {
  return out,nil
 }
 
+func ValidateVersionSet(versions ...int) error {
+ defs, err := Definitions(); if err != nil { return err }
+ known := map[int]bool{}; for _, d := range defs { known[d.Version] = true }
+ for _, v := range versions { if !known[v] { return fmt.Errorf("unknown migration version %d", v) } }
+ return nil
+}
+
 func Apply(ctx context.Context, db *sql.DB, versions ...int) error {
  if db == nil { return fmt.Errorf("migration database is required") }
  if err := ctx.Err(); err != nil { return err }
