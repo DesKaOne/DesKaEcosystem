@@ -11747,3 +11747,66 @@ No architecture document update is required. This milestone strengthens the exis
 ### Next Milestone
 
 Continue with the next concrete recovery-convergence or routing-safety gap from the actual implementation, prioritizing durable operational-state error handling and shutdown/recovery convergence before introducing new provider or business integration.
+
+
+## 220. Milestone Update — Catalog Sync Status Persistence Error Observability
+
+**Date:** 2026-09-28
+
+Completed:
+
+- closed the concrete operational observability gap identified after Milestone #219: catalog sync status persistence failures were previously discarded by the persistence call;
+- added the provider-neutral ErrStatusPersistence sentinel for status-store durability failures;
+- SyncService now retains the latest status-persistence error and consecutive persistence-failure count separately from provider synchronization status;
+- status persistence recovery clears the retained persistence error and resets the persistence-failure count;
+- exposed status-persistence health through SyncService.StatusPersistenceError() and StatusPersistenceFailures();
+- exposed the same operational health through runtime CatalogSyncStatusPersistenceError() and CatalogSyncStatusPersistenceFailures();
+- added deterministic regression coverage proving that a status-store failure remains observable but does not convert an otherwise successful catalog synchronization into a catalog/provider failure;
+- added recovery coverage proving the observable persistence error clears once the status store becomes writable again;
+- preserved the existing rule that status persistence is operational observability only: persistence failure does not erase catalog snapshots, does not authorize routing, and does not become a financial transaction error;
+- no provider-specific API behavior, transaction retry, financial retry, failover, transaction resubmission, ledger mutation, customer-balance mutation, treasury movement, provider funding, or financial authority was introduced.
+
+### Verification
+
+- implementation/test exact HEAD: b5eb205bb47e9b20e49331d01f160a3126e08a95;
+- push CI run: exact HEAD completed with GREEN test and race gates;
+- pull-request CI run: exact HEAD completed with GREEN test and race gates;
+- final test gate: success;
+- final race gate: success;
+- an intermediate exact HEAD b95675aaf76664e9348eed5aeab697314b64c6c7 failed because catalog.go referenced fmt.Errorf without importing fmt; the missing import was corrected before final exact HEAD verification;
+- the corrected exact HEAD b5eb205bb47e9b20e49331d01f160a3126e08a95 passed both push and pull-request validation.
+
+### Persistence / Recovery / Observability Invariants
+
+- catalog synchronization success/failure semantics remain independent from status-store persistence success/failure;
+- status persistence failure is observable as operational health and is not converted into a provider synchronization failure;
+- status persistence recovery clears the retained operational persistence error;
+- provider-scoped catalog synchronization status remains current-state observability;
+- durable catalog snapshots remain protected by their existing commit-like persistence semantics;
+- stale and future catalog/operational snapshots remain rejected by routing freshness gates;
+- catalog synchronization cancellation still stops provider iteration after cancellation/deadline;
+- deterministic provider ordering remains enforced by the provider registry;
+- runtime shutdown still waits for active catalog work before owned cleanup;
+- no operational observability state can authorize transaction retry, provider failover, transaction resubmission, or ledger mutation.
+
+### Safety Boundary
+
+This milestone is limited to making status-store durability failures observable and recoverable at the operational-health layer. It does not promote status persistence into transaction authority, routing authority, financial retry authority, or provider-side execution authority.
+
+### Known Limitations
+
+- status persistence remains best-effort and therefore does not fail the catalog synchronization operation itself;
+- only the latest status-persistence error and failure count are retained; no historical persistence-error event stream is stored;
+- catalog retry cadence remains the configured CatalogSyncInterval and is not backoff-aware;
+- cancellation remains cooperative and depends on provider context handling;
+- database close remains non-context-aware;
+- PostgreSQL integration coverage requires DESKAPROVIDER_POSTGRES_DSN and is skipped when unavailable;
+- ownership-generation state remains lifecycle bookkeeping, not a recovery journal or transaction authority.
+
+### Architecture Impact
+
+No architecture document update is required. Milestone #220 strengthens the existing catalog operational-observability boundary by making status-store durability failures explicit without changing provider, routing, persistence authority, transaction, or financial boundaries.
+
+### Next Milestone
+
+Continue with the next concrete shutdown/recovery-convergence or routing-safety gap from the actual implementation, prioritizing lifecycle convergence and durable operational-state correctness before introducing new provider or business integration.
