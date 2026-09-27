@@ -479,6 +479,47 @@ func (p *convergingStatusProvider) GetStatus(ctx context.Context, req provider.S
 	return p.Provider.GetStatus(ctx, req)
 }
 
+func TestServiceReconcileLoadsDurablePendingTransactionAfterRestart(t *testing.T) {
+	store := NewMemoryTransactionStore()
+	base := Mock.New(Mock.Config{
+		Products:       []provider.Product{{Code: "pln20", Name: "PLN 20"}},
+		ProviderCode:   "00",
+		Message:        "success after restart",
+		PurchaseStatus: provider.StatusSuccess,
+		Price:          20000,
+	})
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", base); err != nil { t.Fatal(err) }
+	ops := operational.NewMemoryStore()
+	if err := ops.Put(operational.Snapshot{ProviderName:"mock", Balance:100000, Health:operational.HealthHealthy}); err != nil { t.Fatal(err) }
+	router, err := New(registry, ops, map[string]int{"mock":1})
+	if err != nil { t.Fatal(err) }
+
+	first, err := NewServiceWithStoreAndAudit(router, store, NewMemoryTransactionAuditStore())
+	if err != nil { t.Fatal(err) }
+	req := PurchaseRequest{ProductCode:"pln20", CustomerNo:"08123456789", ReferenceID:"ref-reconcile-restart", Amount:20000}
+	pending := TransactionState{
+		Request:req,
+		Execution:PurchaseExecution{ProviderName:"mock", Result:provider.PurchaseResult{
+			ReferenceID:req.ReferenceID, CustomerNo:req.CustomerNo, ProductCode:req.ProductCode, Status:provider.StatusPending,
+		}},
+		Version:1,
+	}
+	if err := store.Put(pending); err != nil { t.Fatal(err) }
+	_ = first
+
+	second, err := NewServiceWithStoreAndAudit(router, store, NewMemoryTransactionAuditStore())
+	if err != nil { t.Fatal(err) }
+	got, err := second.Reconcile(context.Background(), req.ReferenceID)
+	if err != nil { t.Fatalf("reconcile after restart: %v", err) }
+	if got.Result.Status != provider.StatusSuccess { t.Fatalf("expected success, got %#v", got.Result) }
+	if got.ProviderName != "mock" { t.Fatalf("expected durable provider identity, got %q", got.ProviderName) }
+	if base.PurchaseCount(req.ReferenceID) != 0 { t.Fatalf("reconciliation must not submit purchase, got %d submissions", base.PurchaseCount(req.ReferenceID)) }
+
+	persisted, ok := store.Get(req.ReferenceID)
+	if !ok || persisted.Execution.Result.Status != provider.StatusSuccess { t.Fatalf("expected durable success after restart reconciliation, got %#v", persisted) }
+}
+
 func TestServiceWebhookAndReconciliationConvergeAcrossServiceInstances(t *testing.T) {
 	base := Mock.New(Mock.Config{
 		Products: []provider.Product{{Code: "pln20", Name: "PLN 20"}},
