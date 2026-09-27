@@ -1837,8 +1837,11 @@ func TestServiceRunShutdownTimeoutKeepsDatabaseOwnershipUntilWorkerStops(t *test
 	}
 
 	close(mockProvider.release)
-	if err := service.balanceLifecycle.Shutdown(context.Background()); err != nil {
-		t.Fatalf("expected worker to stop after provider release, got %v", err)
+	if err := service.balanceLifecycle.Shutdown(context.Background()); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected worker to stop while preserving its deadline error, got %v", err)
+	}
+	if service.balanceLifecycle.Running() {
+		t.Fatal("expected worker to stop after provider release")
 	}
 	if err := service.Close(); err != nil {
 		t.Fatalf("expected database close after worker completion, got %v", err)
@@ -1973,7 +1976,7 @@ func TestServiceRunShutdownSerializesConcurrentCloseDuringBalanceCompletion(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	service.catalogSync = &catalog.SyncService{}
+	service.catalogSync = nil
 	service.catalogLifecycle = newCatalogWorkerLifecycle()
 
 	tx := &closeErrorDB{}
