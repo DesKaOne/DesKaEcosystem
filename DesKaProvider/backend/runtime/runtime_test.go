@@ -1244,7 +1244,6 @@ func TestServiceCatalogStartFailurePreservesCompletionOrderingAndAllErrorIdentit
 
 	catalogStartErr := errors.New("catalog start failed")
 	balanceErr := errors.New("balance rollback failed")
-	catalogErr := errors.New("catalog completion failed")
 	transactionErr := errors.New("transaction close failed")
 	auditErr := errors.New("audit close failed")
 
@@ -1264,11 +1263,6 @@ func TestServiceCatalogStartFailurePreservesCompletionOrderingAndAllErrorIdentit
 	service.catalogStart = func(context.Context) (context.Context, error) {
 		return nil, catalogStartErr
 	}
-	service.catalogShutdown = func() error {
-		service.catalogLifecycle.Shutdown()
-		record("catalog")
-		return catalogErr
-	}
 	tx := &orderedCloseErrorDB{name: "transaction", order: &order, err: transactionErr}
 	audit := &orderedCloseErrorDB{name: "audit", order: &order, err: auditErr}
 	service.databaseOwnership = newRuntimeDatabaseOwnership(tx, audit)
@@ -1283,7 +1277,7 @@ func TestServiceCatalogStartFailurePreservesCompletionOrderingAndAllErrorIdentit
 			t.Fatalf("expected shutdown error identity %v, got %v", want, runErr)
 		}
 	}
-	if !reflect.DeepEqual(order, []string{"balance", "catalog", "transaction", "audit"}) {
+	if !reflect.DeepEqual(order, []string{"balance", "transaction", "audit"}) {
 		t.Fatalf("unexpected catalog-start failure shutdown ordering: got %v", order)
 	}
 	if service.balanceLifecycle.Running() {
@@ -1300,7 +1294,7 @@ func TestServiceCatalogStartFailurePreservesCompletionOrderingAndAllErrorIdentit
 	if !errors.Is(repeatedCloseErr, transactionErr) || !errors.Is(repeatedCloseErr, auditErr) {
 		t.Fatalf("expected repeated Close to preserve database cleanup errors, got %v", repeatedCloseErr)
 	}
-	if errors.Is(repeatedCloseErr, catalogErr) || errors.Is(repeatedCloseErr, balanceErr) {
+	if errors.Is(repeatedCloseErr, balanceErr) {
 		t.Fatalf("repeated Close must not replay lifecycle completion errors: %v", repeatedCloseErr)
 	}
 	if tx.closeCount != 1 || audit.closeCount != 1 {
@@ -1418,6 +1412,7 @@ func TestServiceRunShutdownPreservesCompletionOrderingAndAllErrorIdentity(t *tes
 		t.Fatal(err)
 	}
 	service.catalogLifecycle = newCatalogWorkerLifecycle()
+	service.catalogSync = &catalog.SyncService{}
 
 	balanceErr := errors.New("balance shutdown failed")
 	catalogErr := errors.New("catalog shutdown failed")
@@ -1605,6 +1600,7 @@ func TestServiceRunShutdownErrorPrecedenceDoesNotReplayLifecycleCompletionOnRepe
 		t.Fatal(err)
 	}
 	service.catalogLifecycle = newCatalogWorkerLifecycle()
+	service.catalogSync = &catalog.SyncService{}
 
 	balanceErr := errors.New("balance completion failed")
 	catalogErr := errors.New("catalog completion failed")
