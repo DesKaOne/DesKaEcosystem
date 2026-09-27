@@ -3,6 +3,7 @@ package operational
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -33,6 +34,18 @@ type Store interface {
 	Get(string) (Snapshot, bool)
 	Put(Snapshot) error
 	All() []Snapshot
+}
+
+type errorAwareStore interface {
+	GetWithError(string) (Snapshot, bool, error)
+}
+
+func getSnapshot(store Store, name string) (Snapshot, bool, error) {
+	if aware, ok := store.(errorAwareStore); ok {
+		return aware.GetWithError(name)
+	}
+	snapshot, found := store.Get(name)
+	return snapshot, found, nil
 }
 
 type MemoryStore struct {
@@ -97,7 +110,10 @@ func (s *SyncService) SyncProvider(ctx context.Context, name string) (Snapshot, 
 		if !ok { return Snapshot{}, provider.ErrUnsupportedOperation }
 	}
 	now := s.Now()
-	previous, _ := s.Store.Get(name)
+	previous, _, storeGetErr := getSnapshot(s.Store, name)
+	if storeGetErr != nil {
+		return Snapshot{}, fmt.Errorf("load provider operational snapshot: %w", storeGetErr)
+	}
 	balance, err := balanceProvider.GetBalance(ctx)
 	if err != nil {
 		failures := previous.ConsecutiveFailures + 1
