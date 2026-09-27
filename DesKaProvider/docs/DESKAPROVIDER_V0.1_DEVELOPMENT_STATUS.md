@@ -12794,3 +12794,80 @@ The runtime now has one explicit PostgreSQL schema boundary instead of independe
 ### Next Milestone
 
 Add full end-to-end PostgreSQL runtime integration for the combined transaction + audit + operational persistence path, including restart/reopen validation and explicit migration-mode startup coverage, while preserving single-shot DB ownership and operational-only balance semantics.
+
+## 232. Milestone Update — End-to-End PostgreSQL Runtime Persistence Integration
+
+**Date:** 2026-09-28
+
+### Completed
+
+- added end-to-end PostgreSQL integration coverage for the combined transaction + audit + operational persistence path;
+- exercised explicit `PostgresSchemaMode: "migrate"` startup against an isolated PostgreSQL schema;
+- verified migration ledger records both migration versions 1 and 2;
+- verified transaction, append-only audit, and operational snapshot data persist before runtime database shutdown;
+- closed the shared runtime PostgreSQL handle through `runtimeDatabaseOwnership` and verified the handle is no longer usable;
+- reopened the PostgreSQL-backed stores with fresh handles and verified all three persistence domains survive restart/reopen;
+- verified the reopened audit and operational stores reuse the fresh transaction PostgreSQL handle rather than acquiring duplicate handles.
+
+### Implementation Details
+
+Added:
+
+- `DesKaProvider/backend/runtime/runtime_postgres_combined_integration_test.go`
+
+The integration test creates a unique PostgreSQL schema and injects it into the PostgreSQL URL through `search_path`, then constructs the same three PostgreSQL persistence drivers used by runtime composition:
+
+1. transaction store;
+2. audit store sharing the transaction DB handle;
+3. operational store sharing the transaction DB handle.
+
+The test runs explicit migration mode, writes a pending transaction and transitions it to success, appends the corresponding audit event, persists an operational provider snapshot, closes the shared runtime database ownership, then reopens the three stores and verifies the durable state.
+
+No customer ledger, treasury movement, provider funding, or provider-specific retry behavior is introduced.
+
+### Verification
+
+- PostgreSQL integration test covers migration-mode startup for versions 1 and 2;
+- transaction state survives close/reopen with terminal success state and version preserved;
+- audit history survives close/reopen;
+- operational balance snapshot survives close/reopen;
+- migration ledger confirms both required schema versions were applied;
+- shared transaction/audit/operational persistence uses one runtime PostgreSQL handle across the combined path;
+- baseline before this milestone: `80f93d15ae521a8f425046b8c43f6b293d563827`, CI #2299 GREEN;
+- implementation commit is subject to the exact-head CI gate below.
+
+### Invariants
+
+- PostgreSQL remains the persistence authority only for provider transaction, operational snapshot, and operational audit data represented by these stores;
+- operational balance remains a provider operational snapshot and is not a customer balance authority;
+- transaction reference identity and terminal state remain durable across restart;
+- audit remains append-only;
+- shared database ownership is closed exactly once;
+- reopen obtains a fresh database handle and does not inherit the prior runtime handle;
+- explicit migration mode remains visible and deterministic; no silent JSON fallback is introduced.
+
+### Safety Boundary
+
+This milestone adds integration verification only. It does not:
+
+- submit live provider transactions;
+- retry a provider operation after restart;
+- mutate DesKaCash customer balances or its financial ledger;
+- introduce automatic provider funding;
+- make stale operational balance data an authorization to transact;
+- claim production readiness or live provider validation.
+
+### Known Limitations
+
+- The end-to-end test requires `DESKAPROVIDER_POSTGRES_DSN` and a PostgreSQL service;
+- schema-isolated runtime integration expects a PostgreSQL URL DSN so the test can inject an isolated `search_path`;
+- live provider calls remain outside this milestone;
+- runtime default PostgreSQL migration behavior remains governed by the existing explicit schema-mode contract from milestone #231.
+
+### Architecture Impact
+
+The runtime persistence path now has executable end-to-end evidence covering migration-mode initialization, durable writes, shared database ownership, shutdown, fresh-handle reopen, and durable reads across all three PostgreSQL persistence domains.
+
+### Next Milestone
+
+Harden runtime PostgreSQL failure/recovery semantics around restart and partial initialization, including migration/readiness failure attribution and database cleanup convergence, while preserving the single-shot ownership boundary and preventing persistence failures from becoming provider transaction retries.
