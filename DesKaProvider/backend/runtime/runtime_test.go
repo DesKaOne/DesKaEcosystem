@@ -1373,6 +1373,42 @@ func (db *orderedCloseErrorDB) Close() error {
 	return db.err
 }
 
+func TestCombineRuntimeShutdownErrorPreservesTypedIdentityAcrossMixedFailures(t *testing.T) {
+	primary := &runtimeTypedShutdownError{stage: "primary"}
+	worker := &runtimeTypedShutdownError{stage: "worker"}
+	catalogErr := &runtimeTypedShutdownError{stage: "catalog"}
+	transaction := &runtimeTypedShutdownError{stage: "transaction"}
+	audit := &runtimeTypedShutdownError{stage: "audit"}
+
+	err := combineRuntimeShutdownError(
+		combineRuntimeShutdownError(
+			combineRuntimeShutdownError(
+				combineRuntimeShutdownError(primary, worker),
+				catalogErr,
+			),
+			fmt.Errorf("close transaction database: %w", transaction),
+		),
+		fmt.Errorf("close audit database: %w", audit),
+	)
+
+	for _, want := range []*runtimeTypedShutdownError{primary, worker, catalogErr, transaction, audit} {
+		if !errors.Is(err, want) {
+			t.Fatalf("composed shutdown error lost typed identity for %q: %v", want.stage, err)
+		}
+	}
+
+	for _, want := range []*runtimeTypedShutdownError{primary, worker, catalogErr, transaction, audit} {
+		var got *runtimeTypedShutdownError
+		if !errors.As(err, &got) {
+			t.Fatalf("composed shutdown error lost errors.As support for %q: %v", want.stage, err)
+		}
+		if got.stage != want.stage {
+			t.Fatalf("errors.As returned %q while checking %q", got.stage, want.stage)
+		}
+		err = errors.Join(err, fmt.Errorf("checked %s", want.stage))
+	}
+}
+
 func TestCombineRuntimeShutdownErrorPreservesDeterministicErrorOrder(t *testing.T) {
 	primary := errors.New("primary shutdown error")
 	worker := errors.New("worker shutdown error")
