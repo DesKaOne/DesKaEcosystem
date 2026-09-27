@@ -1744,3 +1744,66 @@ func TestServiceShutdownTimeoutPreservesWorkerOwnershipBeforeDatabaseClose(t *te
 		t.Fatalf("expected one database close after worker completion, got %d", db.closeCount)
 	}
 }
+
+func TestServiceRunBalanceOnlyShutdownPreservesCompletionPrecedenceAndDatabaseCleanup(t *testing.T) {
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", &balanceMock{Provider: mock.New(mock.Config{}), balance: 100000}); err != nil {
+		t.Fatal(err)
+	}
+	syncService, err := operational.NewSyncService(registry, operational.NewMemoryStore(), "IDR", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := New(syncService, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.catalogSync = nil
+
+	balanceErr := errors.New("balance-only shutdown failed")
+	transactionErr := errors.New("transaction close failed")
+	auditErr := errors.New("audit close failed")
+	order := make([]string, 0, 3)
+	var mu sync.Mutex
+	record := func(name string) {
+		mu.Lock()
+		defer mu.Unlock()
+		order = append(order, name)
+	}
+
+	service.balanceShutdown = func(context.Context) error {
+		service.balanceLifecycle.Shutdown(context.Background())
+		record("balance")
+		return balanceErr
+	}
+	tx := &orderedCloseErrorDB{name: "transaction", order: &order, err: transactionErr}
+	audit := &orderedCloseErrorDB{name: "audit", order: &order, err: auditErr}
+	service.databaseOwnership = newRuntimeDatabaseOwnership(tx, audit)
+	service.databaseOwnership.transferToService()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	runErr := service.Run(ctx)
+
+	for _, want := range []error{context.Canceled, balanceErr, transactionErr, auditErr} {
+		if !errors.Is(runErr, want) {
+			t.Fatalf("expected shutdown error identity for %v, got %v", want, runErr)
+		}
+	}
+	if reflect.DeepEqual(order, []string{"balance", "transaction", "audit"}) == false {
+		t.Fatalf("unexpected balance-only shutdown ordering: got %v", order)
+	}
+	if service.catalogLifecycle.Running() {
+		t.Fatal("catalog lifecycle must remain stopped on balance-only shutdown path")
+	}
+	if tx.closeCount != 1 || audit.closeCount != 1 {
+		t.Fatalf("expected single database close each, got tx=%d audit=%d", tx.closeCount, audit.closeCount)
+	}
+
+	if closeErr := service.Close(); !errors.Is(closeErr, transactionErr) || !errors.Is(closeErr, auditErr) {
+		t.Fatalf("expected repeated Close to preserve database cleanup errors only, got %v", closeErr)
+	}
+	if tx.closeCount != 1 || audit.closeCount != 1 {
+		t.Fatalf("expected repeated Close not to double-close, got tx=%d audit=%d", tx.closeCount, audit.closeCount)
+	}
+}
