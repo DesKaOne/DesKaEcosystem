@@ -91,3 +91,41 @@ func TestSyncServiceRecordsFailureAndRecoveryStatus(t *testing.T) {
 		t.Fatalf("unexpected recovered status: %#v", status)
 	}
 }
+
+
+type cancellationAwareProvider struct {
+	*mock.Provider
+	calls int
+}
+
+func (p *cancellationAwareProvider) GetProducts(ctx context.Context, req provider.ProductRequest) ([]provider.Product, error) {
+	p.calls++
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return p.Provider.GetProducts(ctx, req)
+}
+
+func TestSyncAllStopsAfterContextCancellation(t *testing.T) {
+	first := &cancellationAwareProvider{Provider: mock.New(mock.Config{})}
+	second := &cancellationAwareProvider{Provider: mock.New(mock.Config{})}
+	registry := provider.NewRegistry()
+	if err := registry.Register("first", first); err != nil { t.Fatal(err) }
+	if err := registry.Register("second", second); err != nil { t.Fatal(err) }
+
+	svc, err := NewSyncService(registry, NewMemoryStore())
+	if err != nil { t.Fatal(err) }
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	errs := svc.SyncAll(ctx)
+	if !errors.Is(errs["first"], context.Canceled) {
+		t.Fatalf("expected first provider cancellation, got %v", errs["first"])
+	}
+	if first.calls != 1 {
+		t.Fatalf("expected first provider to be attempted once, got %d", first.calls)
+	}
+	if second.calls != 0 {
+		t.Fatalf("expected second provider not to be attempted after cancellation, got %d", second.calls)
+	}
+}
