@@ -3196,8 +3196,11 @@ func TestServiceRunShutdownDefersDatabaseCloseUntilAllLifecyclesStop(t *testing.
 			return catalogErr
 		},
 	}
-	service.catalogStart = func(parent context.Context) (context.Context, error) {
-		return service.catalogLifecycle.Start(parent)
+	service.balanceStart = func(context.Context) error {
+		return service.balanceLifecycle.Start(context.Background())
+	}
+	service.catalogStart = func(context.Context) (context.Context, error) {
+		return service.catalogLifecycle.Start(context.Background())
 	}
 
 	runCtx, cancel := context.WithCancel(context.Background())
@@ -3542,8 +3545,11 @@ func TestServiceRunDeferredOwnershipCleanupPreservesFreshCloseErrors(t *testing.
 	service.balanceStart = func(context.Context) error {
 		return service.balanceLifecycle.Start(context.Background())
 	}
-	service.catalogStart = func(parent context.Context) (context.Context, error) {
-		return service.catalogLifecycle.Start(parent)
+	service.balanceStart = func(context.Context) error {
+		return service.balanceLifecycle.Start(context.Background())
+	}
+	service.catalogStart = func(context.Context) (context.Context, error) {
+		return service.catalogLifecycle.Start(context.Background())
 	}
 
 	runErr := service.Run(ctx)
