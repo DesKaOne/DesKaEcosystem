@@ -5671,6 +5671,92 @@ func TestRuntimeInitializationCleanupErrorAttributionPreservesPrimaryAndCleanupI
 }
 
 
+type runtimeInitializationDeadlineContext struct {
+	context.Context
+	deadline time.Time
+	done     chan struct{}
+	mu       sync.Mutex
+	err      error
+}
+
+func newRuntimeInitializationDeadlineContext() *runtimeInitializationDeadlineContext {
+	return &runtimeInitializationDeadlineContext{
+		Context:  context.Background(),
+		deadline: time.Now().Add(time.Hour),
+		done:     make(chan struct{}),
+	}
+}
+
+func (c *runtimeInitializationDeadlineContext) Deadline() (time.Time, bool) {
+	return c.deadline, true
+}
+
+func (c *runtimeInitializationDeadlineContext) Done() <-chan struct{} {
+	return c.done
+}
+
+func (c *runtimeInitializationDeadlineContext) Err() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.err
+}
+
+func (c *runtimeInitializationDeadlineContext) expire() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.err != nil {
+		return
+	}
+	c.err = context.DeadlineExceeded
+	close(c.done)
+}
+
+func TestNewFromEnvironmentContextDeadlineAfterAcquisitionCleansPartialGeneration(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("DIGIFLAZZ_USERNAME", "test-user")
+	t.Setenv("DIGIFLAZZ_API_KEY", "test-key")
+	t.Setenv("DESKAPROVIDER_OPERATIONAL_STORE_PATH", filepath.Join(root, "operational", "snapshots.json"))
+	t.Setenv("DESKAPROVIDER_PROVIDER_STATE_STORE_PATH", filepath.Join(root, "provider-state", "state.json"))
+	t.Setenv("DESKAPROVIDER_TRANSACTION_STORE_PATH", filepath.Join(root, "transactions", "state.json"))
+
+	ctx := newRuntimeInitializationDeadlineContext()
+	var captured *runtimeDatabaseOwnership
+	runtimeInitializationFailureHook = func(stage string, ownership *runtimeDatabaseOwnership) error {
+		if stage != "before-ownership-transfer" {
+			return nil
+		}
+		captured = ownership
+		ctx.expire()
+		return nil
+	}
+	defer func() { runtimeInitializationFailureHook = nil }()
+
+	service, err := NewFromEnvironmentContext(ctx, nil)
+	if service != nil {
+		t.Fatal("deadline-exceeded initialization must not return a service")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected context.DeadlineExceeded from post-acquisition deadline, got %v", err)
+	}
+	if captured == nil {
+		t.Fatal("expected partial database ownership at deadline boundary")
+	}
+	if !captured.isClosed() {
+		t.Fatal("deadline-exceeded initialization must close partial ownership before returning")
+	}
+
+	fresh, err := NewFromEnvironment(nil)
+	if err != nil {
+		t.Fatalf("fresh initialization after deadline-exceeded generation should succeed: %v", err)
+	}
+	if fresh.databaseOwnership == nil || fresh.databaseOwnership.isClosed() {
+		t.Fatal("fresh generation must be distinct and open after deadline-exceeded initialization")
+	}
+	if err := fresh.Close(); err != nil {
+		t.Fatalf("fresh generation terminal Close failed: %v", err)
+	}
+}
+
 func TestNewFromEnvironmentContextCancellationAfterAcquisitionCleansPartialGeneration(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("DIGIFLAZZ_USERNAME", "test-user")
