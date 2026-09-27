@@ -1302,7 +1302,6 @@ func TestServiceRunShutdownPreservesCompletionOrderingAndAllErrorIdentity(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	service.catalogSync = &catalog.SyncService{}
 	service.catalogLifecycle = newCatalogWorkerLifecycle()
 
 	balanceErr := errors.New("balance shutdown failed")
