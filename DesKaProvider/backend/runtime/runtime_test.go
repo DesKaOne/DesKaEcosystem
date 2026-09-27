@@ -4976,8 +4976,13 @@ func TestServiceRunShutdownErrorOwnershipBoundaryMatrixAndFreshGenerationReuse(t
 
 			select {
 			case freshRunErr := <-runDone2:
-				if freshRunErr != nil {
-					t.Fatalf("fresh generation Run replayed historical shutdown errors: %v", freshRunErr)
+				if !errors.Is(freshRunErr, context.Canceled) {
+					t.Fatalf("fresh generation Run lost context cancellation: %v", freshRunErr)
+				}
+				for _, historicalErr := range []error{tc.balanceErr, tc.catalogErr, tc.transactionErr, tc.auditErr} {
+					if historicalErr != nil && errors.Is(freshRunErr, historicalErr) {
+						t.Fatalf("fresh generation Run replayed historical shutdown error %v: %v", historicalErr, freshRunErr)
+					}
 				}
 			case <-time.After(time.Second):
 				t.Fatal("fresh generation Run did not converge")
