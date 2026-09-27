@@ -148,6 +148,13 @@ func (l *catalogWorkerLifecycle) Shutdown() {
 
 type Service struct{syncService *operational.SyncService;purchaseService *routing.Service;catalogSync *catalog.SyncService;providerState *operational.ProviderStateStore;databaseOwnership *runtimeDatabaseOwnership;balanceLifecycle *operational.SyncWorkerLifecycle;catalogLifecycle *catalogWorkerLifecycle;interval,catalogInterval time.Duration;catalogStart func(context.Context) (context.Context,error);balanceStart func(context.Context) error;balanceShutdown func(context.Context) error;catalogShutdown func() error;balanceShutdownCompleted bool;catalogShutdownCompleted bool;shutdownMu sync.Mutex}
 
+func (s *Service) CatalogSyncStatuses() []catalog.SyncStatus {
+	if s == nil || s.catalogSync == nil {
+		return nil
+	}
+	return s.catalogSync.Statuses()
+}
+
 func LoadConfig()(Config,error){
  cfg:=Config{StorePath:os.Getenv("DESKAPROVIDER_OPERATIONAL_STORE_PATH"),TransactionStoreDriver:os.Getenv("DESKAPROVIDER_TRANSACTION_STORE_DRIVER"),AuditStoreDriver:os.Getenv("DESKAPROVIDER_AUDIT_STORE_DRIVER"),PostgresDSN:os.Getenv("DESKAPROVIDER_POSTGRES_DSN"),ProviderStateStorePath:os.Getenv("DESKAPROVIDER_PROVIDER_STATE_STORE_PATH"),TransactionStorePath:os.Getenv("DESKAPROVIDER_TRANSACTION_STORE_PATH"),SyncInterval:defaultSyncInterval,FailureThreshold:defaultFailureThreshold,Currency:os.Getenv("DESKAPROVIDER_OPERATIONAL_CURRENCY"),CatalogStorePath:os.Getenv("DESKAPROVIDER_CATALOG_STORE_PATH"),CatalogSyncInterval:defaultCatalogSyncInterval,CatalogMaxAge:defaultCatalogMaxAge,OperationalSnapshotMaxAge:defaultOperationalSnapshotMaxAge}
  if cfg.StorePath==""{cfg.StorePath=defaultStorePath};if cfg.TransactionStoreDriver==""{cfg.TransactionStoreDriver=defaultTransactionStoreDriver};if cfg.AuditStoreDriver==""{cfg.AuditStoreDriver=defaultAuditStoreDriver};if cfg.AuditStoreDriver!="memory"&&cfg.AuditStoreDriver!="postgres"{return Config{},fmt.Errorf("invalid DESKAPROVIDER_AUDIT_STORE_DRIVER: %q",cfg.AuditStoreDriver)};if cfg.TransactionStoreDriver!="json"&&cfg.TransactionStoreDriver!="postgres"{return Config{},fmt.Errorf("invalid DESKAPROVIDER_TRANSACTION_STORE_DRIVER: %q",cfg.TransactionStoreDriver)};if cfg.PostgresDSN=="" {
