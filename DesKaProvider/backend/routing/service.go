@@ -275,6 +275,17 @@ func (s *Service) handleWebhook(ctx context.Context, providerName string, event 
 	if err := validateWebhookEvent(event); err != nil { return PurchaseExecution{}, err }
 	if err := ctx.Err(); err != nil { return PurchaseExecution{}, err }
 
+	s.mu.Lock()
+	if call, ok := s.transactions[event.ReferenceID]; ok {
+		select {
+		case <-call.done:
+		default:
+			s.mu.Unlock()
+			return PurchaseExecution{}, ErrWebhookReferenceConflict
+		}
+	}
+	s.mu.Unlock()
+
 	latest, found, readErr := getTransactionContextE(ctx, s.Store, event.ReferenceID)
 	if readErr != nil { return PurchaseExecution{}, fmt.Errorf("reload transaction for webhook: %w", readErr) }
 	if !found { return PurchaseExecution{}, ErrWebhookTransactionNotFound }
