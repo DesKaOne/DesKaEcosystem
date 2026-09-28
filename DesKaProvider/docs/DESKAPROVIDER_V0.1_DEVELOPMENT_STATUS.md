@@ -15185,3 +15185,104 @@ Scope:
 - keep routing, payment authorization, provider funding, and public API exposure outside the operational persistence boundary.
 
 No public API exposure, automatic provider failover, provider funding, or payment resubmission is included in #255.
+
+
+## Milestone #255 — Provider Operational Persistence / Lifecycle Hardening
+
+**Date:** 2026-09-28
+
+### Completed
+
+- hardened SyncWorkerLifecycle with an explicit Wait(ctx) observation boundary;
+- Wait reports natural worker termination without changing worker ownership;
+- normal context cancellation worker termination is normalized as a clean lifecycle exit;
+- worker ownership remains protected during shutdown timeout/cancellation;
+- lifecycle remains restartable after a worker exits naturally through parent-context cancellation;
+- added deterministic lifecycle coverage for natural parent cancellation, Wait observing worker termination, restart after natural worker exit, immediate synchronization after restart, and invalid wait context handling;
+- retained durable JSON persistence and restart recovery behavior from the previous milestone;
+- retained PostgreSQL durable persistence and read/write consistency validation from #254;
+- no changes were made to payment authorization, provider routing, failover, funding, or transaction resubmission.
+
+### Lifecycle boundary
+
+The worker lifecycle now has three explicit observations:
+
+- Start(parent) establishes one owned worker;
+- Wait(ctx) observes the current worker until it exits or the caller's wait context expires;
+- Shutdown(ctx) requests cancellation and waits for the owned worker to exit.
+
+A worker that exits because its parent context is canceled is considered a clean lifecycle termination. A shutdown timeout does not release ownership; the worker must actually exit before a subsequent Start is allowed.
+
+This keeps lifecycle ownership separate from the synchronization implementation and avoids treating worker cancellation as a provider failure or transaction state.
+
+### Persistence and recovery
+
+The operational persistence boundary remains:
+
+- JSON snapshots survive process/store reconstruction;
+- PostgreSQL snapshots survive store reconstruction;
+- invalid durable snapshots are rejected by the consistency boundary;
+- rejected persistence writes do not replace the previous valid in-memory JSON state;
+- operational state remains provider-neutral observation only.
+
+The lifecycle tests verify that a worker can synchronize, shut down, reconstruct its JSON-backed store, and start again against the recovered state.
+
+### Implementation
+
+Primary changes:
+
+- DesKaProvider/backend/Provider/operational/lifecycle.go
+  - added Wait(ctx);
+  - centralized clean context cancellation worker-exit handling.
+- DesKaProvider/backend/Provider/operational/lifecycle_test.go
+  - natural cancellation, wait, restart, and invalid-context coverage.
+
+### Verification
+
+The exact implementation/test HEAD is:
+
+0cbae49577751b43df27d164cdc01dc479fb8dae
+
+GitHub Actions for this exact HEAD:
+
+- Push CI #2579 / run 36408036562: GREEN
+- Pull Request CI #2580 / run 36408041483: GREEN
+- go test ./...: PASS
+- go vet ./...: PASS
+- go test -race ./...: PASS
+
+The PostgreSQL service-backed suite remains part of the CI test environment and passed for the validated implementation HEAD.
+
+No real provider credentials or live provider transaction was required.
+
+### Safety Boundary / Invariants
+
+- lifecycle state does not authorize payments;
+- operational balance/health remains observational;
+- worker cancellation does not trigger transaction retry or resubmission;
+- no automatic provider failover is introduced;
+- no automatic provider funding is introduced;
+- no customer ledger mutation or treasury movement is introduced;
+- provider-specific behavior remains inside provider adapters;
+- public API exposure remains outside this milestone.
+
+### Known Limitations
+
+- Wait observes the lifecycle of the worker but does not expose provider-specific health policy;
+- provider routing is still a separate boundary;
+- live provider validation remains separate from deterministic CI;
+- RCB and PortalPulsa remain placeholders and are not runtime-registered.
+
+### Next Milestone
+
+**Milestone #256 — Provider Operational Integration Boundary**
+
+Scope:
+
+- formalize the handoff between operational snapshots and provider routing inputs without making operational state itself a routing decision;
+- define explicit read-only operational inputs for future routing;
+- preserve capability, transaction ownership, and financial safety boundaries;
+- add deterministic integration coverage for operational-state consumption by routing;
+- keep automatic failover, transaction resubmission, provider funding, customer ledger mutation, treasury movement, and public API exposure outside the operational boundary.
+
+No automatic provider failover, payment resubmission, provider funding, or public API exposure is included in #256.
