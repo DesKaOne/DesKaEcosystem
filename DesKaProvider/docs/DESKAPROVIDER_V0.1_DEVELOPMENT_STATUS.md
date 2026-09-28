@@ -15523,3 +15523,108 @@ Scope:
 - preserve deterministic ordering and read-only operational consumption.
 
 No automatic provider failover, payment resubmission, provider funding, customer ledger mutation, treasury movement, or public API exposure is included in #258.
+
+
+## Milestone #258 — Provider Runtime Composition Independence
+
+**Date:** 2026-09-28
+
+### Completed
+
+- removed the implicit runtime requirement that DigiFlazz credentials must exist before any DesKaProvider instance can compose other configured providers;
+- DigiFlazz is now an optional provider registration: it is constructed only when its credential environment is configured;
+- partial DigiFlazz configuration remains fail-fast through the existing LoadDigiFlazzConfig validation;
+- provider registry composition can now proceed with another configured provider, such as Midtrans, without synthesizing or inferring a DigiFlazz capability;
+- added deterministic regression coverage proving Midtrans payment/webhook capability registration succeeds when DigiFlazz is absent;
+- preserved explicit capability metadata and default-disabled behavior for all registered providers.
+
+### Verification
+
+Exact implementation/test HEAD:
+
+4af3b2afd75d5c7710cc6c274f8c8ebb566327f1
+
+GitHub Actions exact HEAD:
+
+- Push CI #2615 / run 36410608194: GREEN
+  - go test ./...: PASS
+  - go vet ./...: PASS
+  - go test -race ./...: PASS
+  - service-backed PostgreSQL test container initialized and test job completed successfully
+- Pull Request CI #2616 / run 36410613684: GREEN
+  - test: PASS
+  - race: PASS
+  - service-backed PostgreSQL test container initialized and test job completed successfully
+
+No real provider credentials, sandbox transaction, or live financial transaction was executed.
+
+### Provider composition boundary
+
+Before #258:
+
+```text
+NewFromEnvironment
+      |
+      +-- require DigiFlazz credentials
+      |
+      +-- register other configured providers
+```
+
+After #258:
+
+```text
+NewFromEnvironment
+      |
+      +-- DigiFlazz configured? ---- yes --> construct/register DigiFlazz
+      |                         \
+      |                          no --> skip DigiFlazz
+      |
+      +-- independently compose configured Midtrans / IAK / XP SINDONESIA
+      |
+      v
+Provider Registry + explicit Capability Metadata
+```
+
+Provider absence is not converted into a synthetic capability, and a provider that is not configured cannot become route-eligible merely because another provider is configured.
+
+### Safety Boundary / Invariants
+
+- DesKaProvider remains internal infrastructure;
+- provider credentials remain environment-backed and are not stored in Git;
+- absence of one provider does not create or authorize another provider;
+- DigiFlazz capability registration remains explicit and disabled by default;
+- Midtrans/IAK/XP SINDONESIA capability registration remains independent of DigiFlazz availability;
+- provider-specific request/response/signature/status handling remains inside provider adapters;
+- capability registration does not imply live validation or production readiness;
+- no automatic provider failover is introduced;
+- no automatic transaction resubmission is introduced;
+- no provider funding is introduced;
+- no customer ledger mutation or treasury movement is introduced;
+- no public API exposure is introduced.
+
+### Known Limitations
+
+- RCB currently has no implemented adapter contract in the runtime; its source package remains an empty placeholder and therefore no RCB capability is claimed;
+- Midtrans payment/webhook, IAK PPOB/balance/webhook/catalog, and XP SINDONESIA PPOB/balance/webhook remain explicit adapter capabilities but are disabled by default;
+- deterministic adapter tests are not equivalent to sandbox or live-provider validation;
+- provider business/account verification is kept separate from adapter capability state;
+- DigiFlazz remains supported in the runtime when credentials are explicitly configured, but it is not one of the four current business-target providers;
+- no provider capability is marked LIVE_VALIDATED or ProductionReady by this milestone.
+
+### Architecture Impact
+
+The runtime composition layer is now provider-independent at the deployment boundary: one unavailable/unconfigured adapter no longer prevents another configured provider from being instantiated. This makes the registry a practical multi-provider composition boundary while preserving explicit capability metadata and disabled-by-default safety.
+
+### Next Milestone
+
+**Milestone #259 — Midtrans Sandbox Integration Harness**
+
+Scope:
+
+- add an environment-gated Midtrans sandbox integration harness for the already implemented payment/webhook adapter;
+- reuse the centralized live-integration safety gate and explicit endpoint allowlist;
+- validate provider-neutral payment create/status/webhook contracts against the configured sandbox endpoint when credentials are intentionally supplied;
+- keep normal CI credential-free and deterministic;
+- do not mark Midtrans payment capability LIVE_VALIDATED or ProductionReady until an actual authorized sandbox validation succeeds.
+
+No production activation, automatic failover, payment resubmission, provider funding, customer ledger mutation, treasury movement, or public API exposure is included in #259.
