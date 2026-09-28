@@ -9,9 +9,13 @@ import (
 	"time"
 
 	provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
+	payment "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/internal/Payment"
 )
 
 var (
+	ErrPaymentCapabilityDisabled = errors.New("payment capability is not enabled")
+	ErrPaymentSubmissionClaimed = errors.New("payment submission already claimed")
+	ErrPaymentSubmissionConflict = errors.New("payment submission state conflict")
 	ErrInvalidPurchaseRequest      = errors.New("invalid provider purchase request")
 	ErrReferenceConflict           = errors.New("provider reference ID already used with different request")
 	ErrWebhookTransactionNotFound  = errors.New("provider webhook reference ID not found")
@@ -119,6 +123,126 @@ func newServiceWithStoreContext(ctx context.Context, router *Router, store Trans
 		service.transactions[state.Request.ReferenceID] = call
 	}
 	return service, nil
+}
+
+
+
+// SubmitPayment authorizes exactly one external payment submission for a durable
+// ReferenceID. The atomic create-if-absent operation is the authorization gate:
+// only the caller that creates the pending durable state may invoke the provider.
+// Existing pending state is deliberately returned without resubmission, including
+// after restart. A provider error leaves the durable state pending because the
+// external outcome may be ambiguous; callers must reconcile rather than retry.
+func (s *Service) SubmitPayment(ctx context.Context, providerName string, req payment.PaymentRequest) (payment.PaymentResult, error) {
+	if s == nil || s.Router == nil || s.Router.Registry == nil {
+		return payment.PaymentResult{}, errors.New("payment service router is required")
+	}
+	if err := payment.ValidateRequest(req); err != nil {
+		return payment.PaymentResult{}, err
+	}
+	if err := ctx.Err(); err != nil {
+		return payment.PaymentResult{}, err
+	}
+	providerName = strings.TrimSpace(providerName)
+	if providerName == "" {
+		return payment.PaymentResult{}, errors.New("payment provider name is required")
+	}
+	status, ok := s.Router.Registry.Capabilities(providerName)
+	if ok != nil {
+		return payment.PaymentResult{}, fmt.Errorf("get payment capability %q: %w", providerName, ok)
+	}
+	capability, exists := status.Status(provider.CapabilityPayment)
+	if !exists || !capability.AdapterImplemented || !capability.Enabled {
+		return payment.PaymentResult{}, fmt.Errorf("%w: %s", ErrPaymentCapabilityDisabled, providerName)
+	}
+	p, err := s.Router.Registry.GetPaymentProvider(providerName)
+	if err != nil {
+		return payment.PaymentResult{}, fmt.Errorf("get payment provider %q: %w", providerName, err)
+	}
+	pending, err := NewPaymentTransactionState(req, providerName)
+	if err != nil {
+		return payment.PaymentResult{}, err
+	}
+	claimed, created, err := createTransactionIfAbsentContext(ctx, s.Store, pending)
+	if err != nil {
+		return payment.PaymentResult{}, fmt.Errorf("claim payment submission: %w", err)
+	}
+	if !created {
+		if !sameTransactionIdentity(claimed, pending) {
+			return payment.PaymentResult{}, ErrPaymentSubmissionConflict
+		}
+		return payment.PaymentResult{}, fmt.Errorf("%w: %s", ErrPaymentSubmissionClaimed, req.ReferenceID)
+	}
+
+	_ = s.appendAudit(TransactionAuditEvent{
+		ReferenceID: req.ReferenceID,
+		Action: "PAYMENT_SUBMISSION_CLAIMED",
+		Previous: "",
+		Next: string(payment.StatusPending),
+		ProviderName: providerName,
+		Message: "durable payment submission claim created",
+	})
+
+	result, err := p.CreatePayment(ctx, req)
+	if err != nil {
+		_ = s.appendAudit(TransactionAuditEvent{
+			ReferenceID: req.ReferenceID,
+			Action: "PAYMENT_SUBMISSION_PROVIDER_ERROR",
+			Previous: string(payment.StatusPending),
+			Next: string(payment.StatusPending),
+			ProviderName: providerName,
+			Message: err.Error(),
+		})
+		return payment.PaymentResult{}, fmt.Errorf("create payment with provider %q: %w", providerName, err)
+	}
+	if result.ReferenceID != req.ReferenceID || result.Amount != req.Amount || !strings.EqualFold(result.Currency, req.Currency) {
+		_ = s.appendAudit(TransactionAuditEvent{
+			ReferenceID: req.ReferenceID,
+			Action: "PAYMENT_SUBMISSION_INVALID_RESULT",
+			Previous: string(payment.StatusPending),
+			Next: string(payment.StatusPending),
+			ProviderName: providerName,
+			Message: "provider result did not match durable payment identity",
+		})
+		return payment.PaymentResult{}, ErrPaymentSubmissionConflict
+	}
+	if err := payment.ValidateStatus(result.Status); err != nil {
+		return payment.PaymentResult{}, err
+	}
+	next := claimed
+	next.Payment = &payment.Transaction{
+		ReferenceID: result.ReferenceID,
+		ProviderReference: result.ProviderReference,
+		Amount: result.Amount,
+		Currency: result.Currency,
+		CustomerID: req.CustomerID,
+		Description: req.Description,
+		Status: result.Status,
+		Message: result.Message,
+	}
+	next.Execution.Result.ReferenceID = result.ReferenceID
+	next.Execution.Result.Status = provider.TransactionStatus(result.Status)
+	next.Execution.Result.Message = result.Message
+	if err := s.persistTransition(ctx, req.ReferenceID, claimed, next); err != nil {
+		_ = s.appendAudit(TransactionAuditEvent{
+			ReferenceID: req.ReferenceID,
+			Action: "PAYMENT_SUBMISSION_RESULT_PERSIST_FAILURE",
+			Previous: string(payment.StatusPending),
+			Next: string(payment.StatusPending),
+			ProviderName: providerName,
+			Message: err.Error(),
+		})
+		return result, fmt.Errorf("persist payment submission result: %w", err)
+	}
+	_ = s.appendAudit(TransactionAuditEvent{
+		ReferenceID: req.ReferenceID,
+		Action: "PAYMENT_SUBMITTED",
+		Previous: string(payment.StatusPending),
+		Next: string(result.Status),
+		ProviderName: providerName,
+		Message: result.Message,
+	})
+	return result, nil
 }
 
 func (s *Service) Purchase(ctx context.Context, req PurchaseRequest) (PurchaseExecution, error) {
