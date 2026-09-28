@@ -1520,3 +1520,84 @@ Final verification recorded for Milestone 4.33:
 - go test -race ./... PASS.
 - go vet ./... PASS.
 - This final documentation follow-up does not alter consensus/runtime code.
+
+### 4.37 Authenticated Finality → Multi-Round / Timeout Consistency
+
+**Tanggal:** 2026-09-28
+
+**Objective**
+
+Milestone ini mengunci konsistensi authenticated finality, LockProof, timeout certificate, higher-lock adoption, dan round changes ketika runtime melewati beberapa round. Source status branch sudah memiliki milestone 4.34, 4.35, dan 4.36 untuk boundary P2P/transport sebelumnya, sehingga pekerjaan multi-round ini dicatat sebagai **4.37** agar historical numbering tidak ditimpa.
+
+**Implementation**
+
+- `ValidatorRuntime.AdvanceRoundWithTimeoutEvidence` tetap memvalidasi seluruh timeout evidence sebelum round state berubah.
+- Higher-lock adoption sekarang membandingkan `LockedRound` lebih dulu: proof pada round yang lebih tinggi boleh membawa proposal berbeda dan dapat menggantikan lock lama setelah authenticated validation sukses.
+- Equal-lock dengan proposal berbeda tetap ditolak sebagai `ErrConflictingTimeoutLock`.
+- Lower-lock evidence tidak pernah menurunkan `lockedRound`, `lockedProposal`, atau `lockedProof`; canonical behavior tetap berupa non-downgrade/no-op terhadap lock yang lebih tinggi.
+- Equal-lock authenticated proof dapat mengisi `lockedProof` yang sebelumnya belum tersedia tanpa menurunkan lock.
+- Tidak ada perubahan pada canonical signing domain, quorum arithmetic, validator membership, LockProof encoding, block execution, node commit boundary, mempool ordering, atau P2P transport.
+
+**Regression tests**
+
+`IndoChain/internal/consensus/runtime_multiround_test.go` menambahkan deterministic coverage untuk:
+
+- lower-lock evidence tidak melakukan lock downgrade;
+- higher-lock proof dengan proposal berbeda berhasil diadopsi;
+- wrong height LockProof ditolak;
+- wrong chain LockProof ditolak;
+- wrong epoch LockProof ditolak;
+- tampered authenticated precommit signature pada nested LockProof ditolak;
+- conflicting timeout lock tetap ditolak melalui existing authenticated timeout boundary;
+- replay timeout evidence setelah round change tidak dapat mengubah runtime;
+- failed higher-lock validation atomic terhadap round/lock/proof state;
+- sequence `Round 0 → lock → Round 1 timeout → Round 2 higher-lock adoption → Round 3 authenticated finality` mempertahankan explicit `MessageTypePrecommit` sebagai satu-satunya finality evidence.
+
+Existing regression coverage juga tetap dipertahankan untuk authenticated finality, finality atomicity, explicit prevote/precommit semantics, timeout quorum, LockProof binding, dan highest-lock non-downgrade behavior.
+
+**Verification**
+
+- Exact implementation/test HEAD: `5e598f33bc35a2867bb8af0ee4fee029d7603623`
+- IndoChain CI #1368, run `36410934682`: PASS
+- Tidy: PASS
+- `go test ./...`: PASS
+- `go test -race ./...`: PASS
+- `go vet ./...`: PASS
+- PostgreSQL: tidak relevan; milestone ini hanya menyentuh consensus runtime/evidence dan tidak memakai PostgreSQL.
+
+**Consensus invariants locked**
+
+1. Evidence round lama tidak menjadi evidence round baru tanpa context/adoption validation.
+2. Height/chain/epoch mismatch pada LockProof tidak dapat masuk timeout adoption.
+3. Authenticated finality tetap tidak dapat di-downgrade menjadi structural-only evidence.
+4. LockProof tetap terikat pada protocol context, proposal, round, threshold, validator membership, voting power, dan explicit precommit evidence.
+5. TimeoutCertificate dengan nested LockProof harus melewati authenticated precommit signature validation.
+6. Higher-lock adoption hanya terjadi setelah seluruh timeout + LockProof evidence tervalidasi.
+7. Lower-lock evidence tidak dapat menurunkan existing lock.
+8. Equal-lock conflicting proposal ditolak.
+9. Round change membersihkan proposal/vote state round-local dan mempertahankan hanya lock yang sah.
+10. Failed validation tidak mengubah round, proposal, lock, lock round, lock proof, atau finalized certificate.
+11. Replay timeout evidence tidak menghasilkan round regression atau state mutation.
+12. Explicit `MessageTypePrecommit` tetap menjadi finality evidence pada authenticated boundary; generic `MessageTypeVote` tetap compatibility-only.
+13. Validator authority tetap immutable/defensively copied.
+
+**Safety boundary**
+
+Milestone ini masih merupakan development consensus foundation. Ia tidak membuktikan production BFT safety/liveness, network-wide round synchronization, production validator/proposer lifecycle, persistent consensus state, adversarial network behavior, atau production security. Tidak ada perubahan ledger/financial system DesKaProvider, EVM, wallet, explorer, token/NFT, fee sponsorship, atau mainnet path.
+
+**Known limitations**
+
+- `AdvanceRound` masih merupakan development orchestration primitive; production round driver dan timeout scheduler/network synchronization belum dibekukan.
+- Validator-set lifecycle dan canonical persistent validator authority registry belum selesai.
+- Production proposer/validator algorithm, multi-node consensus loop, adversarial/network failure testing, dan persistent consensus recovery masih menjadi gap menuju production BFT.
+- Block production/execution/commit tetap terpisah dari runtime finality dan belum merupakan production end-to-end BFT loop.
+
+**Architecture impact**
+
+Multi-round timeout evidence sekarang memiliki adoption semantics yang eksplisit: lock dibandingkan berdasarkan round, bukan sekadar proposal bytes. Ini memungkinkan higher-lock proof yang sah membawa proposal baru tanpa membuka downgrade atau equal-round conflict, sementara authenticated precommit evidence tetap menjadi akar authority untuk finality.
+
+**Next milestone**
+
+**4.38 — Production BFT Boundary Audit & Round Driver:** audit source code untuk gap production proposer/validator loop, network-wide round synchronization, validator-set lifecycle, persistent consensus state/recovery, dan adversarial multi-node round-change testing sebelum menambah execution-layer/EVM work.
+
+**Milestone 4.37 final status:** GREEN hanya berdasarkan exact implementation/test HEAD `5e598f33bc35a2867bb8af0ee4fee029d7603623` dan CI #1368 PASS. Documentation-only commit berikutnya wajib diverifikasi ulang pada exact HEAD-nya.
