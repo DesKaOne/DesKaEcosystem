@@ -50,18 +50,15 @@ func (s *PostgresStore) GetWithError(name string) (Snapshot, bool, error) {
 		return Snapshot{}, false, fmt.Errorf("load provider operational snapshot: %w", err)
 	}
 	snapshot.Health = Health(health)
+	if err := ValidateSnapshot(snapshot); err != nil {
+		return Snapshot{}, false, fmt.Errorf("validate provider operational snapshot: %w", err)
+	}
 	return snapshot, true, nil
 }
 
 func (s *PostgresStore) Put(snapshot Snapshot) error {
-    if snapshot.ProviderName == "" {
-        return errors.New("provider name is required")
-    }
-    if snapshot.Currency == "" {
-        return errors.New("currency is required")
-    }
-    if snapshot.Health == "" {
-        return errors.New("health is required")
+    if err := ValidateSnapshot(snapshot); err != nil {
+        return err
     }
     _, err := s.db.Exec(
         `INSERT INTO provider_operational_snapshots
