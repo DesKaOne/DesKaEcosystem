@@ -72,6 +72,27 @@ func normalizeName(name string) string {
 }
 
 
+func validateCapabilityDescriptor(descriptor CapabilityDescriptor) error {
+	for capability, status := range descriptor.Capabilities {
+		if !isCanonicalCapability(capability) {
+			return fmt.Errorf("unsupported capability %q", capability)
+		}
+		if err := status.Validate(); err != nil {
+			return fmt.Errorf("capability %q: %w", capability, err)
+		}
+	}
+	return nil
+}
+
+func isCanonicalCapability(capability Capability) bool {
+	for _, known := range canonicalCapabilities {
+		if capability == known {
+			return true
+		}
+	}
+	return false
+}
+
 func (r *Registry) RegisterWithCapabilities(name string, provider PPOBProvider, descriptor CapabilityDescriptor) error {
 	key := normalizeName(name)
 	if key == "" {
@@ -82,6 +103,9 @@ func (r *Registry) RegisterWithCapabilities(name string, provider PPOBProvider, 
 	}
 	if descriptor.Capabilities == nil {
 		descriptor.Capabilities = make(map[Capability]CapabilityStatus)
+	}
+	if err := validateCapabilityDescriptor(descriptor); err != nil {
+		return err
 	}
 	copied := make(map[Capability]CapabilityStatus, len(descriptor.Capabilities))
 	for capability, status := range descriptor.Capabilities {
@@ -105,7 +129,7 @@ func (r *Registry) RegisterCapabilityProvider(name string, capability Capability
  key := normalizeName(name)
  if key == "" { return errors.New("provider name is required") }
  if implementation == nil { return errors.New("capability implementation is required") }
- if !status.AdapterImplemented { return errors.New("capability implementation must be marked implemented") }
+ if err := status.Validate(); err != nil { return fmt.Errorf("capability %q: %w", capability, err) }
  r.mu.Lock()
  defer r.mu.Unlock()
  entry, exists := r.providers[key]
