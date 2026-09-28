@@ -186,6 +186,9 @@ func TestPostgresRuntimeReopenPreservesSharedTransactionAndAuditOwnership(t *tes
 		_ = firstDB.Close()
 		t.Fatal(err)
 	}
+	paymentMigration, err := os.ReadFile(filepath.Join("..", "migrations", "003_payment_transactions.sql"))
+	if err != nil { _ = firstDB.Close(); t.Fatal(err) }
+	if _, err := firstDB.ExecContext(ctx, string(paymentMigration)); err != nil { _ = firstDB.Close(); t.Fatal(err) }
 
 	auditStore, auditDB, err := openAuditStore(ctx, cfg, firstDB)
 	if err != nil {
