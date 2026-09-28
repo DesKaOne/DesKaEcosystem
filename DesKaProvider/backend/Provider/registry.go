@@ -129,6 +129,7 @@ func (r *Registry) RegisterCapabilityProvider(name string, capability Capability
  key := normalizeName(name)
  if key == "" { return errors.New("provider name is required") }
  if implementation == nil { return errors.New("capability implementation is required") }
+ if !isCanonicalCapability(capability) { return fmt.Errorf("unsupported capability %q", capability) }
  if err := status.Validate(); err != nil { return fmt.Errorf("capability %q: %w", capability, err) }
  r.mu.Lock()
  defer r.mu.Unlock()
