@@ -1,10 +1,13 @@
 package routing
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
 
+	provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
+	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/Mock"
 	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/catalog"
 	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/operational"
 )
@@ -92,17 +95,34 @@ func TestValidateRoutingCandidateInputRejectsCatalogProviderMismatch(t *testing.
 }
 
 func TestRouterSkipsContradictoryOperationalReaderInput(t *testing.T) {
-	// A read-only routing reader must not be able to make a mismatched
-	// provider snapshot routeable.
 	now := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
-	reader := &stubOperationalInputReader{input: OperationalInput{
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", mock.New(mock.Config{
+		Products: []provider.Product{{Code: "xld10", Name: "Test"}},
+	})); err != nil {
+		t.Fatal(err)
+	}
+	store := operational.NewMemoryStore()
+	if err := store.Put(operational.Snapshot{
+		ProviderName: "mock", Health: operational.HealthHealthy,
+		Balance: 100000, LastCheckedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	router, err := New(registry, store, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	router.OperationalMaxAge = time.Minute
+	router.Now = func() time.Time { return now }
+	router.OperationalInput = &stubOperationalInputReader{input: OperationalInput{
 		Snapshot: operational.Snapshot{
-			ProviderName: "other",
-			Health:       operational.HealthHealthy,
-			Balance:      100000,
-			LastCheckedAt: now,
+			ProviderName: "other", Health: operational.HealthHealthy,
+			Balance: 100000, LastCheckedAt: now,
 		},
 		Freshness: operational.FreshnessFresh,
 	}}
-	_ = reader
+	if _, err := router.Select(context.Background(), Request{ProductCode: "xld10", Amount: 50000}); !errors.Is(err, ErrNoProviderAvailable) {
+		t.Fatalf("expected contradictory operational candidate to be rejected, got %v", err)
+	}
 }
