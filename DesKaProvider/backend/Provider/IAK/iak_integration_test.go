@@ -11,27 +11,35 @@ import (
 )
 
 func TestLiveReadOnly(t *testing.T) {
-    if os.Getenv("IAK_INTEGRATION") != "1" || !integration.Enabled("iak") {
-        t.Skip("live integration requires the provider-specific opt-in and global DesKaProvider live gate")
+    if !integration.Enabled("iak") {
+        t.Skip("live integration requires DESKAPROVIDER_LIVE_INTEGRATION=1 and provider=iak")
+    }
+    if os.Getenv("IAK_INTEGRATION") != "1" {
+        t.Skip("IAK integration requires IAK_INTEGRATION=1")
     }
     if os.Getenv("IAK_USERNAME") == "" || os.Getenv("IAK_API_KEY") == "" {
-        t.Skip("IAK runtime credentials are not configured")
+        t.Fatal("IAK runtime credentials are required when the explicit integration gate is enabled")
     }
 
     cfg, err := config.LoadIAKConfig()
     if err != nil {
         t.Fatal(err)
     }
-        if !integration.HostAllowed(cfg.BalanceEndpoint) {
-        t.Skip("provider endpoint host is not explicitly allowlisted for live integration")
+    if err := integration.ValidateEndpoints(cfg.PriceListEndpoint, cfg.BalanceEndpoint); err != nil {
+        t.Fatalf("IAK read-only endpoints failed explicit allowlist validation: %v", err)
     }
-client, err := New(cfg, nil)
+
+    client, err := New(cfg, nil)
     if err != nil {
         t.Fatal(err)
     }
 
-    if _, err := client.GetBalance(context.Background()); err != nil {
+    balance, err := client.GetBalance(context.Background())
+    if err != nil {
         t.Fatalf("IAK live balance check failed: %v", err)
+    }
+    if balance < 0 {
+        t.Fatalf("IAK balance must not be negative: %d", balance)
     }
 
     products, err := client.GetProducts(context.Background(), provider.ProductRequest{})
