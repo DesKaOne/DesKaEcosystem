@@ -72,16 +72,16 @@ func TestCapabilityDescriptorRejectsUnknownCapability(t *testing.T) {
 	}
 }
 
-func TestCapabilityDescriptorSupportsOnlyTestedEnabledCapabilities(t *testing.T) {
+func TestCapabilityDescriptorSupportsOnlyExplicitlyEnabledImplementedCapabilities(t *testing.T) {
 	descriptor := CapabilityDescriptor{Capabilities: map[Capability]CapabilityStatus{
-		CapabilityBalance: {AdapterImplemented: true, Tested: false, Enabled: true},
-		CapabilityCatalog: {AdapterImplemented: true, Tested: true, Enabled: true},
+		CapabilityBalance: {AdapterImplemented: false, Enabled: false},
+		CapabilityCatalog: {AdapterImplemented: true, Tested: false, Enabled: true},
 	}}
 	if descriptor.Supports(CapabilityBalance) {
-		t.Fatal("untested capability must not be routable")
+		t.Fatal("disabled or unimplemented capability must not be routable")
 	}
 	if !descriptor.Supports(CapabilityCatalog) {
-		t.Fatal("tested and enabled capability should be routable")
+		t.Fatal("explicitly enabled and implemented capability should be routable")
 	}
 }
 
