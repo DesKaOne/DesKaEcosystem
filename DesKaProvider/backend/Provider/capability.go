@@ -16,12 +16,45 @@ const (
 // runtime configuration, adapter implementation, operational enablement, and
 // live validation. A capability must not be treated as transaction authority
 // merely because one of these flags is true.
+type CapabilityState string
+
+const (
+	CapabilityNotImplemented CapabilityState = "NOT_IMPLEMENTED"
+	CapabilityImplemented    CapabilityState = "IMPLEMENTED"
+	CapabilityTested         CapabilityState = "TESTED"
+	CapabilityLiveValidated  CapabilityState = "LIVE_VALIDATED"
+	CapabilityDisabled       CapabilityState = "DISABLED"
+)
+
 type CapabilityStatus struct {
-	Verified          bool
-	Configured        bool
+	Verified           bool
+	Configured         bool
 	AdapterImplemented bool
-	Enabled           bool
-	LiveTested        bool
+	Tested             bool
+	Enabled            bool
+	LiveTested         bool
+}
+
+// State returns the canonical externally-observable capability state.
+//
+// The state deliberately does not collapse provider verification/configuration
+// into implementation readiness. Disabled is terminal for routing eligibility,
+// while live validation is only reached after the adapter is implemented,
+// tested, enabled, and actually validated against the provider.
+func (s CapabilityStatus) State() CapabilityState {
+	if !s.AdapterImplemented {
+		return CapabilityNotImplemented
+	}
+	if !s.Enabled {
+		return CapabilityDisabled
+	}
+	if s.LiveTested {
+		return CapabilityLiveValidated
+	}
+	if s.Tested {
+		return CapabilityTested
+	}
+	return CapabilityImplemented
 }
 
 // CapabilityDescriptor is the provider-neutral registry metadata for one
