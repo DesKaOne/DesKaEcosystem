@@ -14576,9 +14576,18 @@ Primary changes:
 
 The exact implementation/test HEAD is:
 
-fc67894e8263f53c9d2885bd996c326665991b02
+c9135fa21e3b9c854a828f54813cb83547cd9c63
 
-GitHub Actions for this exact HEAD are still running at the time of this documentation update. The milestone is therefore implementation-complete but CI-closure pending.
+GitHub Actions for this exact HEAD:
+
+- Push CI #2507: GREEN
+- Pull Request CI #2508: GREEN
+- go test ./...: PASS
+- go vet ./...: PASS
+- go test -race ./...: PASS
+- PostgreSQL 18 service-backed integration environment: PASS
+
+The import-only correction after the first #249 CI failure was verified on this final implementation/test HEAD.
 
 Required verification remains:
 
