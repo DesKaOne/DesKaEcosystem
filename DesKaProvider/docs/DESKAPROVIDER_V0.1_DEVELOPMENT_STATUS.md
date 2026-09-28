@@ -13569,3 +13569,41 @@ The earlier red runs are retained as historical CI failures and are not treated 
 ### Next Milestone
 
 **#241 — Disabled-by-Default Midtrans Payment Registration Boundary:** register the payment adapter behind an explicit provider/capability boundary without enabling live routing, then integrate payment transaction correlation only where the existing durable transaction model can represent the neutral payment lifecycle without weakening the established no-resubmission guarantees.
+
+
+### Milestone #240 Final CI Recovery
+
+A subsequent exact-HEAD race run exposed a pre-existing timing-sensitive runtime test:
+
+- CI run #2418 for documentation HEAD `c92c9b2db13f2993b8e54a675dd6008f9e9bbd89` was **RED** only in `race`;
+- `TestServiceRunShutdownTimeoutKeepsDatabaseOwnershipUntilWorkerStops` used a 10ms shutdown deadline;
+- under `go test -race ./...`, the worker could complete/observe shutdown before the intended deadline-error assertion, producing a nondeterministic `nil` result;
+- this was a deterministic-test timing flaw, not a Midtrans adapter race or production runtime data race;
+- stabilized the test deadline from 10ms to 100ms in commit `3511f0d80190d9bbde525f4bd351036104d9cd0d`;
+- no production runtime or Midtrans behavior changed.
+
+Verification after the test-only correction:
+
+- CI run #2419 for exact HEAD `3511f0d80190d9bbde525f4bd351036104d9cd0d` — **GREEN**;
+- `test` — PASS;
+- `vet` — PASS;
+- `race` — PASS;
+- PostgreSQL integration service remained active and the full suite passed;
+- Midtrans package passed under race detection.
+
+The red run #2418 remains historical and is not treated as successful verification.
+
+### Milestone #240 Status
+
+The Midtrans adapter boundary is implementation-complete and deterministically verified. The current branch remains intentionally **not live-enabled**:
+
+- no Midtrans credentials committed;
+- no live payment request executed;
+- payment capability disabled by default;
+- no automatic retry/failover/resubmission;
+- no DesKaCash ledger mutation;
+- provider-specific Midtrans protocol remains isolated in the adapter.
+
+### Next Milestone
+
+**#241 — Disabled-by-Default Midtrans Payment Registration Boundary:** register the adapter behind an explicit payment-provider registry/capability boundary without enabling live routing, then evaluate how payment token/reference semantics should integrate with the existing durable transaction/audit model.
