@@ -53,9 +53,6 @@ func TestOpenTransactionStorePostgresIntegration(t *testing.T) {
 	paymentMigration, err := os.ReadFile(filepath.Join("..", "migrations", "003_payment_transactions.sql"))
 	if err != nil { t.Fatal(err) }
 	if _, err := db.ExecContext(ctx, string(paymentMigration)); err != nil { t.Fatal(err) }
-	paymentMigration, err := os.ReadFile(filepath.Join("..", "migrations", "003_payment_transactions.sql"))
-	if err != nil { t.Fatal(err) }
-	if _, err := db.ExecContext(ctx, string(paymentMigration)); err != nil { t.Fatal(err) }
 
 	pgStore, ok := store.(*routing.PostgresTransactionStore)
 	if !ok {
