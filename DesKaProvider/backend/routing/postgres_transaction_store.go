@@ -7,6 +7,7 @@ import (
  "fmt"
 
  provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
+ payment "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/internal/Payment"
 )
 
 type DBTX interface {
@@ -26,10 +27,10 @@ var _ AtomicTransactionStore = (*PostgresTransactionStore)(nil)
 var _ ContextTransactionStore = (*PostgresTransactionStore)(nil)
 var _ ContextReadTransactionStore = (*PostgresTransactionStore)(nil)
 
-const postgresGetSQL = "SELECT reference_id, product_code, customer_no, amount, testing, provider_name, status, provider_code, message, serial_number, price, version, created_at, updated_at FROM provider_transactions WHERE reference_id = $1"
-const postgresAllSQL = "SELECT reference_id, product_code, customer_no, amount, testing, provider_name, status, provider_code, message, serial_number, price, version, created_at, updated_at FROM provider_transactions ORDER BY created_at, reference_id"
-const postgresInsertSQL = "INSERT INTO provider_transactions (reference_id, product_code, customer_no, amount, testing, provider_name, status, provider_code, message, serial_number, price, version) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT (reference_id) DO NOTHING RETURNING reference_id"
-const postgresTransitionSQL = "UPDATE provider_transactions SET status=$2, provider_code=$3, message=$4, serial_number=$5, price=$6, version=version+1, updated_at=CURRENT_TIMESTAMP WHERE reference_id=$1 AND version=$7 AND product_code=$8 AND customer_no=$9 AND provider_name=$10 AND status='pending'"
+const postgresGetSQL = "SELECT transaction_kind, reference_id, product_code, customer_no, amount, testing, provider_name, status, provider_code, message, serial_number, price, payment_provider_reference, payment_currency, payment_customer_id, payment_description, version, created_at, updated_at FROM provider_transactions WHERE reference_id = $1"
+const postgresAllSQL = "SELECT transaction_kind, reference_id, product_code, customer_no, amount, testing, provider_name, status, provider_code, message, serial_number, price, payment_provider_reference, payment_currency, payment_customer_id, payment_description, version, created_at, updated_at FROM provider_transactions ORDER BY created_at, reference_id"
+const postgresInsertSQL = "INSERT INTO provider_transactions (transaction_kind, reference_id, product_code, customer_no, amount, testing, provider_name, status, provider_code, message, serial_number, price, payment_provider_reference, payment_currency, payment_customer_id, payment_description, version) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) ON CONFLICT (reference_id) DO NOTHING RETURNING reference_id"
+const postgresTransitionSQL = "UPDATE provider_transactions SET status=$2, provider_code=$3, message=$4, serial_number=$5, price=$6, payment_provider_reference=$7, version=version+1, updated_at=CURRENT_TIMESTAMP WHERE reference_id=$1 AND version=$8 AND transaction_kind=$9 AND product_code=$10 AND customer_no=$11 AND provider_name=$12 AND status='pending'
 
 func (s *PostgresTransactionStore) CreateIfAbsentContext(ctx context.Context, state TransactionState) (TransactionState, bool, error) {
 	if err := validatePostgresState(state); err != nil {
@@ -37,11 +38,12 @@ func (s *PostgresTransactionStore) CreateIfAbsentContext(ctx context.Context, st
 	}
 	var insertedReference string
 	err := s.db.QueryRowContext(ctx, postgresInsertSQL,
-		state.Request.ReferenceID, state.Request.ProductCode, state.Request.CustomerNo,
+		string(normalizeTransactionKind(state.Kind)), transactionReferenceID(state), state.Request.ProductCode, state.Request.CustomerNo,
 		state.Request.Amount, state.Request.Testing, state.Execution.ProviderName,
 		state.Execution.Result.Status, state.Execution.Result.ProviderCode,
 		state.Execution.Result.Message, state.Execution.Result.SerialNumber,
-		state.Execution.Result.Price, 1).Scan(&insertedReference)
+		state.Execution.Result.Price, paymentProviderReference(state), paymentCurrency(state),
+		paymentCustomerID(state), paymentDescription(state), 1).Scan(&insertedReference)
 	if err == nil {
 		state.Version = 1
 		return state, true, nil
@@ -49,7 +51,7 @@ func (s *PostgresTransactionStore) CreateIfAbsentContext(ctx context.Context, st
 	if !errors.Is(err, sql.ErrNoRows) {
 		return TransactionState{}, false, fmt.Errorf("create transaction: %w", err)
 	}
-	current, ok, readErr := s.GetContextE(ctx, state.Request.ReferenceID)
+	current, ok, readErr := s.GetContextE(ctx, transactionReferenceID(state))
 	if readErr != nil {
 		return TransactionState{}, false, fmt.Errorf("reload existing transaction after create race: %w", readErr)
 	}
@@ -88,12 +90,12 @@ func (s *PostgresTransactionStore) PutContext(ctx context.Context, state Transac
  }
  if !ok {
   var insertedReference string
-  err := s.db.QueryRowContext(ctx, postgresInsertSQL, state.Request.ReferenceID, state.Request.ProductCode, state.Request.CustomerNo, state.Request.Amount, state.Request.Testing, state.Execution.ProviderName, state.Execution.Result.Status, state.Execution.Result.ProviderCode, state.Execution.Result.Message, state.Execution.Result.SerialNumber, state.Execution.Result.Price, 1).Scan(&insertedReference)
+  err := s.db.QueryRowContext(ctx, postgresInsertSQL, string(normalizeTransactionKind(state.Kind)), transactionReferenceID(state), state.Request.ProductCode, state.Request.CustomerNo, state.Request.Amount, state.Request.Testing, state.Execution.ProviderName, state.Execution.Result.Status, state.Execution.Result.ProviderCode, state.Execution.Result.Message, state.Execution.Result.SerialNumber, state.Execution.Result.Price, paymentProviderReference(state), paymentCurrency(state), paymentCustomerID(state), paymentDescription(state), 1).Scan(&insertedReference)
   if err == nil {
    return nil
   }
   if errors.Is(err, sql.ErrNoRows) {
-   current, ok, readErr = s.GetContextE(ctx, state.Request.ReferenceID)
+   current, ok, readErr = s.GetContextE(ctx, transactionReferenceID(state))
    if readErr != nil {
     return fmt.Errorf("get transaction after insert race: %w", readErr)
    }
@@ -117,9 +119,10 @@ func (s *PostgresTransactionStore) PutContext(ctx context.Context, state Transac
  if state.Version != 0 && state.Version != current.Version { return ErrTransactionStateConflict }
  next := state
  result, err := s.db.ExecContext(ctx, postgresTransitionSQL,
-  state.Request.ReferenceID, next.Execution.Result.Status, next.Execution.Result.ProviderCode,
+  transactionReferenceID(state), next.Execution.Result.Status, next.Execution.Result.ProviderCode,
   next.Execution.Result.Message, next.Execution.Result.SerialNumber, next.Execution.Result.Price,
-  current.Version, current.Request.ProductCode, current.Request.CustomerNo, current.Execution.ProviderName)
+  paymentProviderReference(next), current.Version, string(normalizeTransactionKind(current.Kind)),
+  current.Request.ProductCode, current.Request.CustomerNo, current.Execution.ProviderName)
  if err != nil { return fmt.Errorf("update transaction: %w", err) }
  n, err := result.RowsAffected()
  if err != nil { return fmt.Errorf("read transaction update result: %w", err) }
@@ -140,7 +143,7 @@ func (s *PostgresTransactionStore) PutIfCurrentContext(ctx context.Context, refe
   return ErrReferenceConflict
  }
  if next.Execution.Result.Status != provider.StatusPending && next.Execution.Result.Status != provider.StatusSuccess && next.Execution.Result.Status != provider.StatusFailed { return ErrReferenceConflict }
- result, err := s.db.ExecContext(ctx, postgresTransitionSQL, referenceID, next.Execution.Result.Status, next.Execution.Result.ProviderCode, next.Execution.Result.Message, next.Execution.Result.SerialNumber, next.Execution.Result.Price, previous.Version, previous.Request.ProductCode, previous.Request.CustomerNo, previous.Execution.ProviderName)
+ result, err := s.db.ExecContext(ctx, postgresTransitionSQL, referenceID, next.Execution.Result.Status, next.Execution.Result.ProviderCode, next.Execution.Result.Message, next.Execution.Result.SerialNumber, next.Execution.Result.Price, paymentProviderReference(next), previous.Version, string(normalizeTransactionKind(previous.Kind)), previous.Request.ProductCode, previous.Request.CustomerNo, previous.Execution.ProviderName)
  if err != nil { return fmt.Errorf("atomic transaction transition: %w", err) }
  n, err := result.RowsAffected()
  if err != nil { return fmt.Errorf("read atomic transition result: %w", err) }
@@ -176,13 +179,18 @@ func (s *PostgresTransactionStore) All() []TransactionState {
  return s.AllContext(context.Background())
 }
 
-func validatePostgresState(state TransactionState) error { if state.Request.ReferenceID == "" || state.Execution.ProviderName == "" { return ErrReferenceConflict }; return nil }
+func validatePostgresState(state TransactionState) error { return validateTransactionState(state) }
 type postgresScanner interface { Scan(...any) error }
 func scanPostgresState(s postgresScanner) (TransactionState, error) {
- var ref, productCode, customerNo, providerName, status, providerCode, message, serial string
+ var kind, ref, productCode, customerNo, providerName, status, providerCode, message, serial string
  var amount, price, version int64
+ var paymentRef, paymentCurrency, paymentCustomerID, paymentDescription string
  var testing bool
  var createdAt, updatedAt any
- if err := s.Scan(&ref,&productCode,&customerNo,&amount,&testing,&providerName,&status,&providerCode,&message,&serial,&price,&version,&createdAt,&updatedAt); err != nil { return TransactionState{}, err }
- return TransactionState{Request: PurchaseRequest{ReferenceID:ref,ProductCode:productCode,CustomerNo:customerNo,Amount:amount,Testing:testing},Execution:PurchaseExecution{ProviderName:providerName,Result:provider.PurchaseResult{ReferenceID:ref,ProductCode:productCode,CustomerNo:customerNo,Status:provider.TransactionStatus(status),ProviderCode:providerCode,Message:message,SerialNumber:serial,Price:price}},Version:version}, nil
+ if err := s.Scan(&kind,&ref,&productCode,&customerNo,&amount,&testing,&providerName,&status,&providerCode,&message,&serial,&price,&paymentRef,&paymentCurrency,&paymentCustomerID,&paymentDescription,&version,&createdAt,&updatedAt); err != nil { return TransactionState{}, err }
+ state := TransactionState{Kind:TransactionKind(kind),Request:PurchaseRequest{ReferenceID:ref,ProductCode:productCode,CustomerNo:customerNo,Amount:amount,Testing:testing},Execution:PurchaseExecution{ProviderName:providerName,Result:provider.PurchaseResult{ReferenceID:ref,ProductCode:productCode,CustomerNo:customerNo,Status:provider.TransactionStatus(status),ProviderCode:providerCode,Message:message,SerialNumber:serial,Price:price}},Version:version}
+ if normalizeTransactionKind(state.Kind) == TransactionKindPayment {
+  state.Payment=&payment.Transaction{ReferenceID:ref,ProviderReference:paymentRef,Amount:amount,Currency:paymentCurrency,CustomerID:paymentCustomerID,Description:paymentDescription,Status:payment.Status(status),Message:message}
+ }
+ return state,nil
 }
