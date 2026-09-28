@@ -146,16 +146,18 @@ func (r *Router) Select(ctx context.Context, req Request) (string, error) {
 			continue
 		}
 
+		var catalogSnapshot *catalog.Snapshot
 		if r.Catalog != nil {
-			snapshot, ok := r.Catalog.Get(name)
+			value, ok := r.Catalog.Get(name)
 			if !ok {
 				continue
 			}
-			if r.CatalogMaxAge > 0 && !isFresh(snapshot.SyncedAt, now, r.CatalogMaxAge) {
+			catalogSnapshot = &value
+			if r.CatalogMaxAge > 0 && !isFresh(value.SyncedAt, now, r.CatalogMaxAge) {
 				staleCatalog = true
 				continue
 			}
-			if !hasProduct(snapshot.Products, req.ProductCode) {
+			if !hasProduct(value.Products, req.ProductCode) {
 				continue
 			}
 		} else {
@@ -172,6 +174,14 @@ func (r *Router) Select(ctx context.Context, req Request) (string, error) {
 		priority, ok := r.Priorities[name]
 		if !ok {
 			priority = 0
+		}
+		if err := validateRoutingCandidateInput(routingCandidateInput{
+			ProviderName: name,
+			Operational:  operationalInput,
+			Catalog:      catalogSnapshot,
+			Priority:     priority,
+		}, now, r.OperationalMaxAge, r.CatalogMaxAge); err != nil {
+			continue
 		}
 		candidates = append(candidates, candidate{name: name, priority: priority})
 	}
