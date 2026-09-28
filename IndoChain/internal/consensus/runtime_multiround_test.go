@@ -6,13 +6,13 @@ import (
 	"testing"
 )
 
-func timeoutMessagesForProof(t *testing.T, state RoundState, proof LockProof) ([]Message, timeoutRuntimeAuthorityResolver) {
+func newTimeoutTestSignerPair(t *testing.T) (timeoutTestSigner, timeoutTestSigner) {\n\tt.Helper()\n\tsignerA, _ := newTimeoutTestSigner(t)\n\tsignerB, _ := newTimeoutTestSigner(t)\n\treturn signerA, signerB\n}\n\nfunc timeoutMessagesForProof(t *testing.T, state RoundState, proof LockProof) ([]Message, timeoutRuntimeAuthorityResolver) {
 	t.Helper()
 	signerA, publicA := newTimeoutTestSigner(t)
 	signerB, publicB := newTimeoutTestSigner(t)
-	resolver := timeoutRuntimeAuthorityResolver{keys: map[string][]byte{
-		"validator-a": append([]byte(nil), publicA...),
-		"validator-b": append([]byte(nil), publicB...),
+	resolver := timeoutRuntimeAuthorityResolver{keys: map[string]ed25519.PublicKey{
+		"validator-a": publicA,
+		"validator-b": publicB,
 	}}
 	msgA, err := NewTimeoutMessageWithLockProof(state, []byte("validator-a"), state.Round+1, proof, signerA)
 	if err != nil { t.Fatal(err) }
