@@ -108,3 +108,38 @@ jobs:
         env:
           DESKAPROVIDER_POSTGRES_DSN: postgres://deskaprovider:deskaprovider@localhost:5432/deskaprovider_test?sslmode=disable
         run: go test -race ./...
+
+
+  midtrans-sandbox:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: DesKaProvider/backend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.1"
+          cache: true
+          cache-dependency-path: DesKaProvider/backend/go.mod
+
+      - name: Run authorized Midtrans sandbox validation
+        env:
+          MIDTRANS_SERVER_KEY: ${{ secrets.MIDTRANS_SERVER_KEY }}
+          MIDTRANS_SNAP_ENDPOINT: https://app.sandbox.midtrans.com/snap/v1/transactions
+          MIDTRANS_API_ENDPOINT: https://api.sandbox.midtrans.com
+          DESKAPROVIDER_LIVE_INTEGRATION: "1"
+          DESKAPROVIDER_LIVE_INTEGRATION_PROVIDER: midtrans
+          DESKAPROVIDER_LIVE_INTEGRATION_ALLOWED_HOSTS: app.sandbox.midtrans.com,api.sandbox.midtrans.com
+        run: |
+          if [ -z "$MIDTRANS_SERVER_KEY" ]; then
+            echo "MIDTRANS_SERVER_KEY is required for the explicit sandbox validation run."
+            exit 1
+          fi
+          go test ./Provider/Midtrans -run '^TestSandboxIntegrationPaymentLifecycle$' -count=1
