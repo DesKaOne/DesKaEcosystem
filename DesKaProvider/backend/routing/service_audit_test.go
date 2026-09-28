@@ -577,7 +577,7 @@ func TestServiceWebhookAndReconciliationConvergeAcrossServiceInstances(t *testin
 		t.Fatalf("expected webhook to durably commit terminal success, execution=%#v err=%v", webhookExecution, webhookErr)
 	}
 
-	base.SetTransactionStatus(req.ReferenceID, provider.StatusSuccess, "reconciliation observation")
+	base.SetTransactionStatus(req.ReferenceID, provider.StatusSuccess, "webhook observation")
 	close(blocking.release)
 
 	select {
