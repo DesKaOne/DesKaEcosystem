@@ -128,6 +128,7 @@ func TestPostgresTransactionStoreIntegration(t *testing.T) {
 	pending := postgresPendingState()
 	pending.Request.ReferenceID = postgresIntegrationReference()
 	pending.Request.Amount = 1
+	pending.Request.Amount = 1
 	pending.Execution.Result.ReferenceID = pending.Request.ReferenceID
 	if err := store.Put(pending); err != nil {
 		t.Fatalf("insert pending transaction: %v", err)
@@ -890,6 +891,7 @@ func TestPostgresTransactionStoreContextWriteHonorsCancellation(t *testing.T) {
 	}
 	pending := postgresPendingState()
 	pending.Request.ReferenceID = postgresIntegrationReference()
+	pending.Request.Amount = 1
 	pending.Execution.Result.ReferenceID = pending.Request.ReferenceID
 
 	if err := store.PutContext(ctx, pending); err == nil {
@@ -928,6 +930,7 @@ func TestPostgresTransactionStorePutContextAdvancesPendingVersion(t *testing.T) 
 
 	pending := postgresPendingState()
 	pending.Request.ReferenceID = postgresIntegrationReference()
+	pending.Request.Amount = 1
 	pending.Execution.Result.ReferenceID = pending.Request.ReferenceID
 	if err := store.PutContext(ctx, pending); err != nil {
 		t.Fatalf("insert initial pending transaction: %v", err)
@@ -976,6 +979,7 @@ func TestPostgresTransactionStoreContextAtomicWriteHonorsCancellation(t *testing
 	}
 	pending := postgresPendingState()
 	pending.Request.ReferenceID = postgresIntegrationReference()
+	pending.Request.Amount = 1
 	pending.Execution.Result.ReferenceID = pending.Request.ReferenceID
 	if err := store.PutContext(ctx, pending); err != nil {
 		t.Fatalf("insert pending transaction: %v", err)
@@ -1020,6 +1024,7 @@ func TestPostgresTransactionStoreContextAtomicWriteCancellationPreservesVersion(
 	}
 	pending := postgresPendingState()
 	pending.Request.ReferenceID = postgresIntegrationReference()
+	pending.Request.Amount = 1
 	pending.Execution.Result.ReferenceID = pending.Request.ReferenceID
 	if err := store.PutContext(ctx, pending); err != nil {
 		t.Fatalf("insert pending transaction: %v", err)
@@ -1102,6 +1107,7 @@ func TestPostgresTransactionStoreAtomicWritePreservesDatabaseErrorClassification
 	}
 	pending := postgresPendingState()
 	pending.Request.ReferenceID = postgresIntegrationReference()
+	pending.Request.Amount = 1
 	pending.Execution.Result.ReferenceID = pending.Request.ReferenceID
 	next := pending
 	next.Execution.Result.Status = provider.StatusSuccess
@@ -1834,6 +1840,7 @@ func TestPostgresConcurrentReadTransitionObservesCompleteState(t *testing.T) {
 
 	pending := postgresPendingState()
 	pending.Request.ReferenceID = postgresIntegrationReference()
+	pending.Request.Amount = 1
 	pending.Execution.ProviderName = "mock"
 	pending.Execution.Result.ReferenceID = pending.Request.ReferenceID
 	pending.Execution.Result.ProviderCode = "00"
@@ -1917,6 +1924,7 @@ func TestPostgresPutContextAdvancesVersionAcrossRepeatedTransitions(t *testing.T
 	}
 	pending := postgresPendingState()
 	pending.Request.ReferenceID = postgresIntegrationReference()
+	pending.Request.Amount = 1
 	pending.Execution.Result.ReferenceID = pending.Request.ReferenceID
 	pending.Version = 1
 	if err := store.PutContext(ctx, pending); err != nil {
@@ -1969,6 +1977,7 @@ func TestPostgresCanceledContextDoesNotWriteTransaction(t *testing.T) {
 	}
 	pending := postgresPendingState()
 	pending.Request.ReferenceID = postgresIntegrationReference()
+	pending.Request.Amount = 1
 	pending.Execution.Result.ReferenceID = pending.Request.ReferenceID
 
 	canceled, stop := context.WithCancel(ctx)
@@ -2453,6 +2462,7 @@ func TestPostgresConcurrentReadDuringAtomicTransitionSeesCompleteState(t *testin
 	}
 	pending := postgresPendingState()
 	pending.Request.ReferenceID = postgresIntegrationReference()
+	pending.Request.Amount = 1
 	pending.Execution.Result.ReferenceID = pending.Request.ReferenceID
 	pending.Execution.Result.Status = provider.StatusPending
 	pending.Execution.Result.ProviderCode = "00"
