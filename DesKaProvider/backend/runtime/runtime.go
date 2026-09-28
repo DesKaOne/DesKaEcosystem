@@ -200,9 +200,15 @@ func NewFromEnvironmentContext(ctx context.Context,httpClient *http.Client)(serv
  if ctx==nil{return nil,errors.New("initialization context is required")}
  if err:=ctx.Err();err!=nil{return nil,err}
  cfg,e:=LoadConfig();if e!=nil{return nil,e}
- digiCfg,e:=config.LoadDigiFlazzConfig();if e!=nil{return nil,e}
- client,e:=digiflazz.New(digiCfg,httpClient);if e!=nil{return nil,e}
- cached,e:=digiflazz.NewCachedClient(client,defaultPriceListCacheTTL);if e!=nil{return nil,e}
+ var cached provider.PPOBProvider
+ digiConfiguredUser, digiUserSet := os.LookupEnv("DIGIFLAZZ_USERNAME")
+ digiConfiguredKey, digiKeySet := os.LookupEnv("DIGIFLAZZ_API_KEY")
+ if digiUserSet || digiKeySet || strings.TrimSpace(digiConfiguredUser) != "" || strings.TrimSpace(digiConfiguredKey) != "" {
+  digiCfg,e:=config.LoadDigiFlazzConfig();if e!=nil{return nil,e}
+  client,e:=digiflazz.New(digiCfg,httpClient);if e!=nil{return nil,e}
+  cachedClient,e:=digiflazz.NewCachedClient(client,defaultPriceListCacheTTL);if e!=nil{return nil,e}
+  cached=cachedClient
+ }
  registry:=provider.NewRegistry()
  if e=registerConfiguredProviders(registry,cached,httpClient);e!=nil{return nil,e}
  var store operational.Store
@@ -255,7 +261,6 @@ func capabilitiesFromDescriptor(descriptor provider.CapabilityDescriptor) []oper
 
 func registerConfiguredProviders(registry *provider.Registry, digi provider.PPOBProvider, httpClient *http.Client) error {
  if registry == nil { return errors.New("provider registry is required") }
- if digi == nil { return errors.New("DigiFlazz provider is required") }
 
  // Capability metadata is explicit at registration time. A capability is
  // listed only when the concrete adapter contract is implemented and covered
@@ -267,7 +272,9 @@ func registerConfiguredProviders(registry *provider.Registry, digi provider.PPOB
   provider.CapabilityWebhook: digiStatus,
   provider.CapabilityCatalog: digiStatus,
  }}
- if err := registry.RegisterWithCapabilities("digiflazz", digi, digiCapabilities); err != nil { return err }
+ if digi != nil {
+  if err := registry.RegisterWithCapabilities("digiflazz", digi, digiCapabilities); err != nil { return err }
+ }
 
  if strings.TrimSpace(os.Getenv("MIDTRANS_SERVER_KEY")) != "" {
   midCfg, err := config.LoadMidtransConfig()
