@@ -47,3 +47,49 @@ func TestCapabilityDescriptorSupportsRemainsSeparateFromState(t *testing.T) {
 		t.Fatal("tested and enabled capability should remain routable")
 	}
 }
+
+func TestAllCapabilitiesIsCanonicalAndDefensive(t *testing.T) {
+	got := AllCapabilities()
+	want := []Capability{CapabilityPayment, CapabilityPPOB, CapabilityPayout, CapabilityBalance, CapabilityWebhook, CapabilityCatalog}
+	if len(got) != len(want) {
+		t.Fatalf("unexpected capability count: got=%d want=%d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("capability[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+	got[0] = "mutated"
+	if AllCapabilities()[0] != CapabilityPayment {
+		t.Fatal("AllCapabilities must return a defensive copy")
+	}
+}
+
+func TestCapabilityStatusProductionReadyDoesNotImplyLiveValidation(t *testing.T) {
+	status := CapabilityStatus{AdapterImplemented: true, Enabled: true, ProductionReady: true}
+	if status.State() != CapabilityImplemented {
+		t.Fatalf("production readiness must not imply live validation, got %q", status.State())
+	}
+}
+
+func TestCapabilityMatrixIsProviderNeutralSnapshot(t *testing.T) {
+	r := NewRegistry()
+	if err := r.RegisterWithCapabilities("Midtrans", registryTestProvider{}, CapabilityDescriptor{
+		Capabilities: map[Capability]CapabilityStatus{
+			CapabilityPayment: {AdapterImplemented: true, Tested: true, Enabled: false},
+			CapabilityWebhook: {AdapterImplemented: true, Tested: true, Enabled: false},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	matrix := r.CapabilityMatrix()
+	status, ok := matrix.Status("midtrans", CapabilityPayment)
+	if !ok || !status.AdapterImplemented || !status.Tested || status.Enabled {
+		t.Fatalf("unexpected matrix status: %#v ok=%v", status, ok)
+	}
+	status.Enabled = true
+	again, _ := r.CapabilityMatrix().Status("midtrans", CapabilityPayment)
+	if again.Enabled {
+		t.Fatal("matrix must be a defensive snapshot")
+	}
+}
