@@ -37,6 +37,37 @@ func TestPaymentWebhookHTTPHandlerMapsDomainErrorsWithoutProviderDetails(t *test
  req:=httptest.NewRequest(http.MethodPost,"/webhooks/payment/midtrans",strings.NewReader("{}")); rec:=httptest.NewRecorder(); h.ServeHTTP(rec,req)
  if rec.Code!=http.StatusBadRequest { t.Fatalf("expected 400, got %d",rec.Code) }; if strings.Contains(rec.Body.String(),"midtrans secret") { t.Fatalf("provider-specific error leaked: %s",rec.Body.String()) }
 }
+func TestPaymentWebhookHTTPHandlerDoesNotTrustSecuritySensitiveHeadersForRouting(t *testing.T) {
+	p := &paymentSubmissionProvider{
+		webhookResult: payment.StatusResult{
+			ReferenceID:       "http-header-1",
+			ProviderReference: "tx-header-1",
+			Status:            payment.StatusPending,
+			Amount:            10000,
+			Currency:          "IDR",
+		},
+	}
+	s := newWebhookHTTPTestService(t, p, true)
+	submitWebhookHTTPTestPayment(t, s, p, "http-header-1", 10000)
+	h, err := NewPaymentWebhookHTTPHandler(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/webhooks/payment/midtrans", strings.NewReader("{}"))
+	req.Host = "attacker.example"
+	req.Header.Set("X-Forwarded-Host", "other-provider")
+	req.Header.Set("X-Forwarded-For", "203.0.113.10")
+	req.Header.Set("Content-Type", "text/plain; charset=invalid")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("security-sensitive headers must not alter provider routing: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if p.webhookCalls != 1 {
+		t.Fatalf("expected exactly one adapter invocation, got %d", p.webhookCalls)
+	}
+}
+
 func TestPaymentWebhookHTTPHandlerDisabledCapability(t *testing.T) {
  p:=&paymentSubmissionProvider{}; s:=newWebhookHTTPTestService(t,p,false); h,_:=NewPaymentWebhookHTTPHandler(s)
  req:=httptest.NewRequest(http.MethodPost,"/webhooks/payment/midtrans",strings.NewReader("{}")); rec:=httptest.NewRecorder(); h.ServeHTTP(rec,req)
