@@ -368,6 +368,124 @@ func (s *Service) ReconcilePayment(ctx context.Context, referenceID string) (pay
 	return status, nil
 }
 
+// HandlePaymentWebhook authenticates/normalizes a provider webhook through the
+// provider-specific adapter, then applies the normalized payment observation
+// only to the transaction owned by that same provider. The adapter is the only
+// layer that understands webhook signatures/payloads; this service never calls
+// CreatePayment from webhook processing.
+func (s *Service) HandlePaymentWebhook(ctx context.Context, providerName string, payload []byte) (payment.StatusResult, error) {
+	if s == nil || s.Router == nil || s.Router.Registry == nil {
+		return payment.StatusResult{}, errors.New("payment service router is required")
+	}
+	providerName = strings.TrimSpace(providerName)
+	if providerName == "" {
+		return payment.StatusResult{}, fmt.Errorf("%w: provider name is required", ErrInvalidWebhookEvent)
+	}
+	if err := ctx.Err(); err != nil {
+		return payment.StatusResult{}, err
+	}
+	capabilities, err := s.Router.Registry.Capabilities(providerName)
+	if err != nil {
+		return payment.StatusResult{}, fmt.Errorf("get payment capability %q: %w", providerName, err)
+	}
+	capability, ok := capabilities.Status(provider.CapabilityPayment)
+	if !ok || !capability.AdapterImplemented || !capability.Enabled {
+		return payment.StatusResult{}, fmt.Errorf("%w: %s", ErrPaymentCapabilityDisabled, providerName)
+	}
+	webhookProvider, err := s.Router.Registry.GetPaymentWebhookProvider(providerName)
+	if err != nil {
+		return payment.StatusResult{}, fmt.Errorf("get payment webhook provider %q: %w", providerName, err)
+	}
+	status, err := webhookProvider.HandlePaymentWebhook(ctx, payload)
+	if err != nil {
+		return payment.StatusResult{}, fmt.Errorf("normalize payment webhook from provider %q: %w", providerName, err)
+	}
+	if err := payment.ValidateStatus(status.Status); err != nil {
+		return payment.StatusResult{}, err
+	}
+	if status.ReferenceID == "" || status.Amount <= 0 || status.Currency == "" {
+		return payment.StatusResult{}, ErrInvalidWebhookEvent
+	}
+
+	latest, found, err := getTransactionContextE(ctx, s.Store, status.ReferenceID)
+	if err != nil {
+		return payment.StatusResult{}, fmt.Errorf("load payment for webhook: %w", err)
+	}
+	if !found || normalizeTransactionKind(latest.Kind) != TransactionKindPayment || latest.Payment == nil {
+		return payment.StatusResult{}, ErrWebhookTransactionNotFound
+	}
+	if latest.Execution.ProviderName != providerName {
+		return payment.StatusResult{}, ErrWebhookReferenceConflict
+	}
+	if latest.Payment.ReferenceID != status.ReferenceID ||
+		latest.Payment.Amount != status.Amount ||
+		!strings.EqualFold(latest.Payment.Currency, status.Currency) {
+		_ = s.appendAudit(TransactionAuditEvent{
+			ReferenceID: status.ReferenceID,
+			Action: "PAYMENT_WEBHOOK_CONFLICT",
+			Previous: string(latest.Payment.Status),
+			Next: string(status.Status),
+			ProviderName: providerName,
+			Message: "provider webhook did not match durable payment identity",
+		})
+		return payment.StatusResult{}, ErrWebhookReferenceConflict
+	}
+
+	latestAfterWebhook, found, err := getTransactionContextE(ctx, s.Store, status.ReferenceID)
+	if err != nil {
+		return payment.StatusResult{}, fmt.Errorf("reload payment before webhook transition: %w", err)
+	}
+	if !found || !sameTransactionIdentity(latestAfterWebhook, latest) {
+		return payment.StatusResult{}, ErrWebhookReferenceConflict
+	}
+	if latestAfterWebhook.Execution.ProviderName != providerName {
+		return payment.StatusResult{}, ErrWebhookReferenceConflict
+	}
+	if latestAfterWebhook.Payment.Status == payment.StatusSuccess || latestAfterWebhook.Payment.Status == payment.StatusFailed {
+		if latestAfterWebhook.Payment.Status == status.Status &&
+			latestAfterWebhook.Payment.ProviderReference == status.ProviderReference &&
+			latestAfterWebhook.Payment.Amount == status.Amount &&
+			strings.EqualFold(latestAfterWebhook.Payment.Currency, status.Currency) &&
+			latestAfterWebhook.Payment.Message == status.Message {
+			return status, nil
+		}
+		return payment.StatusResult{}, ErrWebhookReferenceConflict
+	}
+	if latestAfterWebhook.Payment.Status != payment.StatusPending {
+		return payment.StatusResult{}, ErrWebhookReferenceConflict
+	}
+
+	next := latestAfterWebhook
+	next.Payment = &payment.Transaction{
+		ReferenceID: status.ReferenceID,
+		ProviderReference: status.ProviderReference,
+		Amount: status.Amount,
+		Currency: status.Currency,
+		CustomerID: latestAfterWebhook.Payment.CustomerID,
+		Description: latestAfterWebhook.Payment.Description,
+		Status: status.Status,
+		Message: status.Message,
+	}
+	next.Execution.Result.ReferenceID = status.ReferenceID
+	next.Execution.Result.Status = provider.TransactionStatus(status.Status)
+	next.Execution.Result.Message = status.Message
+	if err := s.persistTransition(ctx, status.ReferenceID, latestAfterWebhook, next); err != nil {
+		if errors.Is(err, ErrTransactionStateConflict) {
+			return payment.StatusResult{}, ErrWebhookReferenceConflict
+		}
+		return payment.StatusResult{}, fmt.Errorf("persist payment webhook: %w", err)
+	}
+	_ = s.appendAudit(TransactionAuditEvent{
+		ReferenceID: status.ReferenceID,
+		Action: "PAYMENT_WEBHOOK",
+		Previous: string(latestAfterWebhook.Payment.Status),
+		Next: string(status.Status),
+		ProviderName: providerName,
+		Message: status.Message,
+	})
+	return status, nil
+}
+
 func (s *Service) Purchase(ctx context.Context, req PurchaseRequest) (PurchaseExecution, error) {
 	if err := validatePurchaseRequest(req); err != nil {
 		return PurchaseExecution{}, err

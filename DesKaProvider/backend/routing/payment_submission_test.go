@@ -11,10 +11,14 @@ import (
 type paymentSubmissionProvider struct {
  calls int
  statusCalls int
+ webhookCalls int
  lastStatusRequest payment.StatusRequest
+ lastWebhookPayload []byte
  result payment.PaymentResult
  statusResult payment.StatusResult
+ webhookResult payment.StatusResult
  err error
+ webhookErr error
 }
 func (p *paymentSubmissionProvider) CreatePayment(_ context.Context, req payment.PaymentRequest) (payment.PaymentResult,error) {
  p.calls++
@@ -26,6 +30,12 @@ func (p *paymentSubmissionProvider) GetPaymentStatus(_ context.Context, req paym
  p.lastStatusRequest=req
  if p.statusResult.ReferenceID=="" { return payment.StatusResult{}, payment.ErrUnsupported }
  return p.statusResult,nil
+}
+func (p *paymentSubmissionProvider) HandlePaymentWebhook(_ context.Context, payload []byte) (payment.StatusResult, error) {
+ p.webhookCalls++
+ p.lastWebhookPayload=append([]byte(nil), payload...)
+ if p.webhookErr != nil { return payment.StatusResult{}, p.webhookErr }
+ return p.webhookResult, nil
 }
 
 func newPaymentSubmissionService(t *testing.T, p *paymentSubmissionProvider, enabled bool) *Service {
@@ -161,3 +171,74 @@ func TestReconcilePaymentDoesNotRewriteTerminalState(t *testing.T) {
 	p.statusResult.Status=payment.StatusFailed
 	if _,err:=s.ReconcilePayment(context.Background(),req.ReferenceID);!errors.Is(err,ErrPaymentReconciliationConflict){t.Fatalf("expected terminal conflict, got %v",err)}
 }
+
+func TestHandlePaymentWebhookTransitionsDurablePaymentWithoutResubmission(t *testing.T) {
+	p:=&paymentSubmissionProvider{
+		result:payment.PaymentResult{ReferenceID:"pay-webhook-1",ProviderReference:"snap-token",Status:payment.StatusPending,Amount:60000,Currency:"IDR"},
+		webhookResult:payment.StatusResult{ReferenceID:"pay-webhook-1",ProviderReference:"midtrans-tx-webhook-1",Status:payment.StatusSuccess,Amount:60000,Currency:"IDR",Message:"settlement"},
+	}
+	s:=newPaymentSubmissionService(t,p,true)
+	req:=payment.PaymentRequest{ReferenceID:"pay-webhook-1",Amount:60000,Currency:"IDR",CustomerID:"cust-webhook"}
+	if _,err:=s.SubmitPayment(context.Background(),"midtrans",req);err!=nil{t.Fatal(err)}
+	got,err:=s.HandlePaymentWebhook(context.Background(),"midtrans",[]byte("{}"))
+	if err!=nil{t.Fatal(err)}
+	if got.Status!=payment.StatusSuccess||got.ProviderReference!="midtrans-tx-webhook-1"{t.Fatalf("unexpected webhook result: %#v",got)}
+	if p.webhookCalls!=1||p.calls!=1{t.Fatalf("webhook must normalize once and never resubmit: webhook=%d create=%d",p.webhookCalls,p.calls)}
+	state,ok:=s.Store.Get(req.ReferenceID)
+	if !ok||state.Payment==nil||state.Payment.Status!=payment.StatusSuccess||state.Payment.ProviderReference!="midtrans-tx-webhook-1"{t.Fatalf("expected durable webhook transition: %#v",state)}
+}
+
+func TestHandlePaymentWebhookRejectsProviderOwnershipMismatch(t *testing.T) {
+	p:=&paymentSubmissionProvider{webhookResult:payment.StatusResult{ReferenceID:"pay-webhook-2",ProviderReference:"tx-2",Status:payment.StatusSuccess,Amount:70000,Currency:"IDR"}}
+	s:=newPaymentSubmissionService(t,p,true)
+	p.result=payment.PaymentResult{ReferenceID:"pay-webhook-2",Status:payment.StatusPending,Amount:70000,Currency:"IDR"}
+	req:=payment.PaymentRequest{ReferenceID:"pay-webhook-2",Amount:70000,Currency:"IDR",CustomerID:"cust-webhook-2"}
+	if _,err:=s.SubmitPayment(context.Background(),"midtrans",req);err!=nil{t.Fatal(err)}
+	if _,err:=s.HandlePaymentWebhook(context.Background(),"other-provider",[]byte("{}"));err==nil{t.Fatal("expected provider mismatch")}
+	state,_:=s.Store.Get(req.ReferenceID)
+	if state.Payment==nil||state.Payment.Status!=payment.StatusPending{t.Fatalf("provider mismatch must not mutate state: %#v",state)}
+	if p.webhookCalls!=0{t.Fatal("provider adapter must not receive payload for a different provider")}
+}
+
+func TestHandlePaymentWebhookDuplicateTerminalIsIdempotent(t *testing.T) {
+	p:=&paymentSubmissionProvider{
+		result:payment.PaymentResult{ReferenceID:"pay-webhook-3",Status:payment.StatusPending,Amount:80000,Currency:"IDR"},
+		webhookResult:payment.StatusResult{ReferenceID:"pay-webhook-3",ProviderReference:"tx-3",Status:payment.StatusSuccess,Amount:80000,Currency:"IDR",Message:"settlement"},
+	}
+	s:=newPaymentSubmissionService(t,p,true)
+	req:=payment.PaymentRequest{ReferenceID:"pay-webhook-3",Amount:80000,Currency:"IDR",CustomerID:"cust-webhook-3"}
+	if _,err:=s.SubmitPayment(context.Background(),"midtrans",req);err!=nil{t.Fatal(err)}
+	if _,err:=s.HandlePaymentWebhook(context.Background(),"midtrans",[]byte("{}"));err!=nil{t.Fatal(err)}
+	if _,err:=s.HandlePaymentWebhook(context.Background(),"midtrans",[]byte("{}"));err!=nil{t.Fatal(err)}
+	if p.webhookCalls!=2||p.calls!=1{t.Fatalf("duplicate webhook must be idempotent without resubmission: webhook=%d create=%d",p.webhookCalls,p.calls)}
+}
+
+func TestHandlePaymentWebhookConflictingTerminalIsRejected(t *testing.T) {
+	p:=&paymentSubmissionProvider{
+		result:payment.PaymentResult{ReferenceID:"pay-webhook-4",Status:payment.StatusPending,Amount:90000,Currency:"IDR"},
+		webhookResult:payment.StatusResult{ReferenceID:"pay-webhook-4",ProviderReference:"tx-4",Status:payment.StatusSuccess,Amount:90000,Currency:"IDR",Message:"settlement"},
+	}
+	s:=newPaymentSubmissionService(t,p,true)
+	req:=payment.PaymentRequest{ReferenceID:"pay-webhook-4",Amount:90000,Currency:"IDR",CustomerID:"cust-webhook-4"}
+	if _,err:=s.SubmitPayment(context.Background(),"midtrans",req);err!=nil{t.Fatal(err)}
+	if _,err:=s.HandlePaymentWebhook(context.Background(),"midtrans",[]byte("{}"));err!=nil{t.Fatal(err)}
+	p.webhookResult.Status=payment.StatusFailed
+	if _,err:=s.HandlePaymentWebhook(context.Background(),"midtrans",[]byte("{}"));!errors.Is(err,ErrWebhookReferenceConflict){t.Fatalf("expected terminal conflict, got %v",err)}
+	state,_:=s.Store.Get(req.ReferenceID)
+	if state.Payment==nil||state.Payment.Status!=payment.StatusSuccess{t.Fatalf("conflicting terminal webhook must not rewrite state: %#v",state)}
+	if p.calls!=1{t.Fatal("webhook must never resubmit payment")}
+}
+
+func TestHandlePaymentWebhookRejectsUnknownReference(t *testing.T) {
+	p:=&paymentSubmissionProvider{webhookResult:payment.StatusResult{ReferenceID:"missing",ProviderReference:"tx-missing",Status:payment.StatusSuccess,Amount:10000,Currency:"IDR"}}
+	s:=newPaymentSubmissionService(t,p,true)
+	if _,err:=s.HandlePaymentWebhook(context.Background(),"midtrans",[]byte("{}"));!errors.Is(err,ErrWebhookTransactionNotFound){t.Fatalf("expected not found, got %v",err)}
+}
+
+func TestHandlePaymentWebhookDoesNotAuthorizeWhenPaymentCapabilityDisabled(t *testing.T) {
+	p:=&paymentSubmissionProvider{webhookResult:payment.StatusResult{ReferenceID:"pay-webhook-disabled",ProviderReference:"tx",Status:payment.StatusSuccess,Amount:10000,Currency:"IDR"}}
+	s:=newPaymentSubmissionService(t,p,false)
+	if _,err:=s.HandlePaymentWebhook(context.Background(),"midtrans",[]byte("{}"));!errors.Is(err,ErrPaymentCapabilityDisabled){t.Fatalf("expected disabled capability, got %v",err)}
+	if p.webhookCalls!=0{t.Fatal("disabled capability must not invoke webhook adapter")}
+}
+

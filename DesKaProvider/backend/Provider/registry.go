@@ -135,6 +135,21 @@ func (r *Registry) GetPaymentProvider(name string) (payment.Provider, error) {
 	return p, nil
 }
 
+// GetPaymentWebhookProvider returns the optional provider-neutral payment
+// webhook implementation registered for a provider. Capability status remains
+// a separate routing gate; this accessor never enables payment processing.
+func (r *Registry) GetPaymentWebhookProvider(name string) (payment.WebhookProvider, error) {
+	implementation, err := r.GetCapabilityProvider(name, CapabilityPayment)
+	if err != nil {
+		return nil, err
+	}
+	p, ok := implementation.(payment.WebhookProvider)
+	if !ok {
+		return nil, fmt.Errorf("provider %q payment webhook implementation has invalid contract", normalizeName(name))
+	}
+	return p, nil
+}
+
 func (r *Registry) GetCapabilityProvider(name string, capability Capability) (any, error) {
  key := normalizeName(name)
  r.mu.RLock()
