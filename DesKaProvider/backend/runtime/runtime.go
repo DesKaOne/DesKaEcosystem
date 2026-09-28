@@ -552,7 +552,17 @@ func checkPostgresMigrationReadiness(ctx context.Context, db *sql.DB, version in
 		return nil
 	}
 	if version == 2 { return checkOperationalSchema(ctx, db) }
+	if version == 3 { return checkPaymentTransactionSchema(ctx, db) }
 	return fmt.Errorf("unsupported PostgreSQL migration readiness check: %d", version)
+}
+
+func checkPaymentTransactionSchema(ctx context.Context, db *sql.DB) error {
+	if db == nil { return errors.New("payment transaction PostgreSQL database is required") }
+	var columns int
+	err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'provider_transactions' AND column_name IN ('transaction_kind','payment_provider_reference','payment_currency','payment_customer_id','payment_description')`).Scan(&columns)
+	if err != nil { return fmt.Errorf("check payment transaction schema: %w", err) }
+	if columns != 5 { return errors.New("payment transaction schema is not ready: apply DesKaProvider/backend/migrations/003_payment_transactions.sql") }
+	return nil
 }
 
 func checkOperationalSchema(ctx context.Context, db *sql.DB) error {
@@ -588,7 +598,7 @@ func openAuditStore(ctx context.Context, cfg Config, transactionDB *sql.DB) (rou
 		_ = db.Close()
 		return nil, nil, fmt.Errorf("ping PostgreSQL audit store: %w", err)
 	}
-	if cfg.PostgresSchemaMode != "" { if err := preparePostgresSchema(ctx, db, cfg.PostgresSchemaMode, 1); err != nil { _ = db.Close(); return nil, nil, err } }
+	if cfg.PostgresSchemaMode != "" { if err := preparePostgresSchema(ctx, db, cfg.PostgresSchemaMode, 3); err != nil { _ = db.Close(); return nil, nil, err } }
 	store, err := routing.NewPostgresTransactionAuditStore(db)
 	if err != nil {
 		_ = db.Close()
@@ -610,7 +620,7 @@ func openTransactionStore(ctx context.Context, cfg Config) (routing.TransactionS
 			_ = db.Close()
 			return nil, nil, fmt.Errorf("ping PostgreSQL transaction store: %w", err)
 		}
-		if cfg.PostgresSchemaMode != "" { if err := preparePostgresSchema(ctx, db, cfg.PostgresSchemaMode, 1); err != nil { _ = db.Close(); return nil, nil, err } }
+		if cfg.PostgresSchemaMode != "" { if err := preparePostgresSchema(ctx, db, cfg.PostgresSchemaMode, 3); err != nil { _ = db.Close(); return nil, nil, err } }
 		store, err := routing.NewPostgresTransactionStore(db)
 		if err != nil {
 			_ = db.Close()

@@ -53,10 +53,11 @@ func postgresMigrationSQL(t *testing.T) string {
 	}
 	path := filepath.Join(filepath.Dir(file), "..", "migrations", "001_provider_transactions.sql")
 	content, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read postgres migration: %v", err)
-	}
-	return string(content)
+	if err != nil { t.Fatalf("read postgres migration: %v", err) }
+	paymentPath := filepath.Join(filepath.Dir(file), "..", "migrations", "003_payment_transactions.sql")
+	paymentContent, err := os.ReadFile(paymentPath)
+	if err != nil { t.Fatalf("read postgres payment migration: %v", err) }
+	return string(content) + "\n" + string(paymentContent)
 }
 
 func applyPostgresMigration(t *testing.T, db DBTX) {

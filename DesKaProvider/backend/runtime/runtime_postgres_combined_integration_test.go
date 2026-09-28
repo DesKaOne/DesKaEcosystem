@@ -216,11 +216,11 @@ func TestPostgresRuntimeCombinedPersistenceMigrationAndReopen(t *testing.T) {
     // The migration ledger is part of the same schema and must prove that
     // explicit migrate mode initialized both runtime persistence versions.
     var migrationCount int
-    if err := reopenedTxDB.QueryRowContext(ctx, "SELECT COUNT(*) FROM provider_schema_migrations WHERE version IN (1,2)").Scan(&migrationCount); err != nil {
+    if err := reopenedTxDB.QueryRowContext(ctx, "SELECT COUNT(*) FROM provider_schema_migrations WHERE version IN (1,2,3)").Scan(&migrationCount); err != nil {
         t.Fatal(err)
     }
-    if migrationCount != 2 {
-        t.Fatalf("expected migrations 1 and 2 to be recorded, got %d", migrationCount)
+    if migrationCount != 3 {
+        t.Fatalf("expected migrations 1, 2 and 3 to be recorded, got %d", migrationCount)
     }
 
     if strings.TrimSpace(schema) == "" {
