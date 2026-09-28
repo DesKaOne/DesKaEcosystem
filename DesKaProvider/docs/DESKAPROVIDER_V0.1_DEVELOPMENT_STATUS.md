@@ -14309,7 +14309,19 @@ The repository CI workflow runs, on both push and pull request:
 - go test -race ./...
 - PostgreSQL 18 service-backed tests for test/race jobs.
 
-For the implementation/test commits preceding this documentation update, GitHub Actions was observed executing both push and pull-request test and race jobs. Final milestone verification is recorded against the post-documentation exact HEAD below after the documentation commit completes.
+Implementation/test HEAD before this status documentation commit:
+`774b287ca7f4f1f72dddfb72fc05b2e691b29ded`
+
+Final status-documentation HEAD:
+`58b488d45c1ec0cca24f90ed4bcea14532393a69`
+
+GitHub Actions verification for the final status-documentation HEAD:
+- Push CI #2487: GREEN
+- Pull Request CI #2488: GREEN
+- `go test ./...`: PASS
+- `go vet ./...`: PASS
+- `go test -race ./...`: PASS
+- PostgreSQL 18 service-backed test environment: PASS
 
 No real provider credentials are used by the regression tests and no live payment/webhook request is performed.
 
