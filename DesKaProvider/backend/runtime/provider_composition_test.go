@@ -4,6 +4,9 @@ import (
     "net/http"
     "os"
     "testing"
+    "reflect"
+
+    "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/operational"
 
     provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
     mock "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/Mock"
@@ -126,5 +129,20 @@ func TestRegisterConfiguredProvidersAlignsExplicitCapabilityMatrix(t *testing.T)
 		if _, ok := descriptor.Status(unsupported.capability); ok {
 			t.Fatalf("%s must not infer unsupported capability %q", unsupported.providerName, unsupported.capability)
 		}
+	}
+}
+
+
+func TestCapabilitiesFromDescriptorMatchesImplementedMetadataOnly(t *testing.T) {
+	descriptor := provider.CapabilityDescriptor{Capabilities: map[provider.Capability]provider.CapabilityStatus{
+		provider.CapabilityPPOB:    {AdapterImplemented: true},
+		provider.CapabilityBalance: {AdapterImplemented: true},
+		provider.CapabilityWebhook: {AdapterImplemented: false},
+		provider.CapabilityPayout:  {AdapterImplemented: true},
+	}}
+	got := capabilitiesFromDescriptor(descriptor)
+	want := []operational.Capability{operational.CapabilityBalance, operational.CapabilityPPOB, operational.CapabilityPayout}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("derived capabilities = %#v, want %#v", got, want)
 	}
 }
