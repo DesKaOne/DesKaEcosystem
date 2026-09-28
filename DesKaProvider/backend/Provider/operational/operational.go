@@ -99,6 +99,38 @@ func NewSyncService(registry *provider.Registry, store Store, currency string, f
 	return &SyncService{Registry: registry, Store: store, Currency: currency, FailureThreshold: failureThreshold, Now: time.Now}, nil
 }
 
+func (s *SyncService) ApplyHealthObservation(observation HealthObservation) (Snapshot, error) {
+	if s == nil || s.Store == nil {
+		return Snapshot{}, errors.New("operational store is required")
+	}
+	name := observation.ProviderName
+	if name == "" {
+		return Snapshot{}, errors.New("provider name is required")
+	}
+	previous, _, err := getSnapshot(s.Store, name)
+	if err != nil {
+		return Snapshot{}, fmt.Errorf("load provider operational snapshot: %w", err)
+	}
+	checkedAt := observation.ObservedAt
+	if checkedAt.IsZero() {
+		return Snapshot{}, errors.New("observation time is required")
+	}
+	snapshot := Snapshot{
+		ProviderName: name,
+		Balance: previous.Balance,
+		Currency: s.Currency,
+		Health: observation.Status,
+		LastCheckedAt: checkedAt,
+		LastSuccessAt: previous.LastSuccessAt,
+		LastError: observation.LastError,
+		ConsecutiveFailures: observation.ConsecutiveFailures,
+	}
+	if err := s.Store.Put(snapshot); err != nil {
+		return Snapshot{}, err
+	}
+	return snapshot, nil
+}
+
 func (s *SyncService) SyncProvider(ctx context.Context, name string) (Snapshot, error) {
 	var balanceProvider provider.BalanceProvider
 	if implementation, err := s.Registry.GetCapabilityProvider(name, provider.CapabilityBalance); err == nil {
@@ -125,9 +157,12 @@ func (s *SyncService) SyncProvider(ctx context.Context, name string) (Snapshot, 
 		failures := previous.ConsecutiveFailures + 1
 		health := HealthDegraded
 		if failures >= s.FailureThreshold { health = HealthUnhealthy }
-		snapshot := Snapshot{ProviderName:name, Balance:previous.Balance, Currency:s.Currency, Health:health, LastCheckedAt:now, LastSuccessAt:previous.LastSuccessAt, LastError:err.Error(), ConsecutiveFailures:failures}
-		if storeErr := s.Store.Put(snapshot); storeErr != nil {
-			return Snapshot{}, errors.Join(err, storeErr)
+		snapshot, observationErr := s.ApplyHealthObservation(HealthObservation{
+			ProviderName: name, Status: health, ObservedAt: now,
+			ConsecutiveFailures: failures, LastError: err.Error(),
+		})
+		if observationErr != nil {
+			return Snapshot{}, errors.Join(err, observationErr)
 		}
 		return snapshot, err
 	}
