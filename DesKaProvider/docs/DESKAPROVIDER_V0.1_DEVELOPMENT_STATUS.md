@@ -13808,3 +13808,114 @@ CI recovery during this milestone included fixes for migration ordering, legacy 
 ### Next Milestone
 
 **#243 — Payment Submission Authorization Boundary:** connect the durable payment correlation state to a provider-neutral submission orchestration boundary, preserving one-time submission authorization, durable provider ownership, CAS protection, restart/reconciliation safety, and the existing no-retry/no-failover/no-ledger-mutation constraints.
+
+## Milestone #243 — Payment Submission Authorization Boundary
+
+**Date:** 2026-09-28
+
+### Completed
+
+- added a provider-neutral Service.SubmitPayment entry point;
+- made the durable ReferenceID claim the authorization boundary for exactly one external payment submission;
+- required CapabilityPayment to be implemented and enabled before any external payment call;
+- preserved provider ownership through the durable ProviderName;
+- rejected an existing reference with different payment identity as a submission conflict;
+- prevented a second CreatePayment call for an already-claimed reference;
+- kept durable payment state pending after provider errors or ambiguous timeouts;
+- persisted provider result only through the existing compare-and-transition boundary;
+- added payment submission audit events without making audit persistence a prerequisite for external submission;
+- fixed PostgreSQL CreateIfAbsent identity checking to use the complete transaction identity rather than PPOB-only request fields;
+- fixed service reconstruction so persisted payment transactions are accepted as payment state instead of being treated as PPOB state;
+- added a restart regression test proving a persisted payment claim remains authoritative and does not resubmit after service reconstruction.
+
+### Implementation
+
+Primary implementation:
+
+- DesKaProvider/backend/routing/service.go
+  - SubmitPayment
+  - ErrPaymentCapabilityDisabled
+  - ErrPaymentSubmissionClaimed
+  - ErrPaymentSubmissionConflict
+  - durable claim before CreatePayment
+- DesKaProvider/backend/routing/postgres_transaction_store.go
+  - payment-aware identity comparison in CreateIfAbsentContext
+- DesKaProvider/backend/routing/payment_submission_test.go
+  - claim-before-submit
+  - identity conflict
+  - provider-error no-retry
+  - disabled-capability guard
+  - restart/no-resubmission regression
+- DesKaProvider/backend/routing/payment_transaction.go
+  - existing durable payment state/transition model reused unchanged
+
+Final implementation/test HEAD before status documentation:
+
+472ffdbf27383912d5e3b1bc23d49049f391a6c2
+
+### Verification
+
+GitHub Actions verified the exact implementation HEAD with both push and pull-request workflows:
+
+- Push CI #2466: GREEN
+- Pull Request CI #2465: GREEN
+- go test ./...: PASS
+- go vet ./...: PASS
+- go test -race ./...: PASS
+- PostgreSQL integration environment: PASS
+
+Earlier CI #2461/#2462 on the previous implementation commit was RED because the payment identity-conflict test exposed an incorrect error path. The root cause was fixed before milestone closure; the corrected implementation and regression test were then verified green.
+
+### Safety Boundary / Invariants
+
+- ReferenceID is the durable correlation and submission-authorization key.
+- Only the successful CreateIfAbsent claimant may call external CreatePayment.
+- Existing references are never resubmitted automatically.
+- A provider error/timeout does not become an automatic terminal failure and does not authorize retry.
+- Persistence/CAS failure after an external provider response does not authorize another submission.
+- ProviderName remains the authoritative durable provider owner.
+- Provider-specific API details remain inside provider adapters.
+- No DesKaCash customer ledger/balance mutation is performed here.
+- No treasury movement or automatic provider funding is introduced.
+- No provider failover or automatic resubmission is introduced.
+- Audit logging is observational and cannot authorize or repeat a payment.
+
+### Known Limitations
+
+The durable claim intentionally happens before the external provider call. If the process crashes after the claim is committed but before/during external submission, the reference remains pending and is not resubmitted automatically. Recovery must use a future reconciliation/status path against the durably selected provider; this milestone does not implement that recovery by retrying CreatePayment.
+
+Midtrans payment capability remains disabled by default and no live payment request was executed.
+
+### Architecture Impact
+
+The payment flow is now:
+
+    DesKaCash
+        |
+        v
+    DesKaProvider SubmitPayment
+        |
+        +-- validate CapabilityPayment
+        |
+        +-- durable ReferenceID claim (CreateIfAbsent)
+        |
+        +-- exactly one CreatePayment call
+        |
+        +-- CAS result persistence
+        |
+        v
+    External Payment Provider
+
+This establishes the authorization boundary needed before adding payment reconciliation/status recovery.
+
+### Next Milestone
+
+Milestone #244 — Payment Reconciliation / Status Recovery Boundary
+
+Scope:
+
+- reconcile a durably claimed payment through the authoritative ProviderName;
+- use provider-neutral GetPaymentStatus;
+- correlate by durable ReferenceID and provider reference without calling CreatePayment;
+- apply CAS-safe payment state transitions after reconciliation;
+- preserve no-retry/no-failover invariants.
