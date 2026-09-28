@@ -212,16 +212,20 @@ func (s *MemoryTransactionStore) Put(state TransactionState) error {
 	if err := validateTransactionState(state); err != nil { return err }
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if previous, ok := s.transactions[state.Request.ReferenceID]; ok {
+	if previous, ok := s.transactions[transactionReferenceID(state)]; ok {
 		if err := validateTransactionTransition(previous, state); err != nil {
 			return err
 		}
 	}
 	s.transactions[transactionReferenceID(state)] = state
+	return nil
 }
 
 func (s *MemoryTransactionStore) PutIfCurrent(referenceID string, previous, next TransactionState) error {
-	if referenceID == "" || next.Request.ReferenceID != referenceID || previous.Request.ReferenceID != referenceID {
+	if referenceID == "" {
+		return ErrReferenceConflict
+	}
+	if transactionReferenceID(previous) != referenceID || transactionReferenceID(next) != referenceID {
 		return ErrReferenceConflict
 	}
 	s.mu.Lock()
