@@ -15843,3 +15843,100 @@ Scope:
 - preserve capability-specific readiness and do not infer Catalog, Inquiry, Status, or Purchase production readiness from Balance validation.
 
 No automatic failover, payment resubmission, provider funding, customer ledger mutation, treasury movement, duplicate purchase creation, or public API exposure is included in #261.
+## Milestone #261 — XP SINDONESIA Read-Only Balance Integration Boundary
+
+**Date:** 2026-09-28
+
+### Completed
+
+- added an environment-gated XP SINDONESIA read-only Balance integration harness;
+- validation requires the explicit global live-integration gate, provider selection `xp_sindonesia`, and `XP_SINDONESIA_INTEGRATION=1`;
+- the harness validates only the configured XP Balance endpoint before making a request;
+- the harness calls `GetBalance` only and does not call Purchase/order, preserving a read-only validation boundary;
+- added deterministic gate and endpoint-allowlist regression coverage for wrong provider selection and unallowlisted hosts;
+- added a manual `workflow_dispatch` CI job using environment-backed `XP_SINDONESIA_ID`, `XP_SINDONESIA_KEY`, and `XP_SINDONESIA_API` secrets;
+- normal push/pull-request CI remains credential-free and skips all authorized live-provider validation jobs;
+- documented `XP_SINDONESIA_INTEGRATION=0` in `.env.example`.
+
+### CI Follow-up
+
+The first XP implementation attempt exposed a module import-path regression:
+
+- `xp_sindonesia_integration_test.go` imported `DesKaProvider/backend/integration`, while the Go module path is `github.com/DesKaOne/DesKaEcosystem/DesKaProvider`;
+- Push CI #2649 and PR CI #2650 were red during that intermediate HEAD because `go mod tidy` could not resolve the integration package;
+- the import was corrected to `github.com/DesKaOne/DesKaEcosystem/DesKaProvider/integration` without changing production provider behavior.
+
+### Verification
+
+Exact corrected implementation/test HEAD:
+
+`b818c5d1353dc9aefa4ec315768dd7246af9d79f`
+
+GitHub Actions for the exact corrected HEAD are **GREEN**:
+
+- Push CI **#2651** / run `36413697605`: GREEN
+  - `go test ./...`: PASS
+  - `go vet ./...`: PASS
+  - `go test -race ./...`: PASS
+  - PostgreSQL-backed test setup completed successfully
+  - `midtrans-sandbox`: skipped
+  - `iak-read-only`: skipped
+  - `xp-sindonesia-read-only`: skipped because authorized provider credentials are not supplied to normal CI
+- Pull Request CI **#2652** / run `36413703066`: GREEN
+  - `test`: PASS
+  - `race`: PASS
+  - PostgreSQL-backed test setup completed successfully
+  - authorized provider jobs skipped
+
+No authorized XP SINDONESIA live request was executed during this milestone. The manual read-only workflow is ready for an explicit authorized `workflow_dispatch` run with provider credentials supplied through repository secrets.
+
+### Safety Boundary / Invariants
+
+- XP SINDONESIA validation is read-only and does not call order/purchase;
+- endpoint authorization remains HTTPS + explicit host allowlisting;
+- provider selection is explicit and the wrong provider cannot authorize the XP harness;
+- credentials remain environment/secret-backed and are not stored in Git;
+- normal CI remains credential-free;
+- deterministic CI success does not imply live-provider validation;
+- no automatic retry, provider failover, or transaction resubmission is introduced;
+- no duplicate purchase/order creation is introduced;
+- no ledger mutation, customer balance mutation, treasury movement, or provider funding is introduced;
+- durable transaction/reference ownership, CAS/idempotency, webhook idempotency, and reconciliation boundaries remain unchanged;
+- no public API exposure is introduced.
+
+### Provider Readiness Separation
+
+XP SINDONESIA Balance readiness remains separated into:
+
+- business/account/KYC readiness;
+- adapter implementation;
+- deterministic test coverage;
+- authorized live validation;
+- capability-specific ProductionReady assessment.
+
+This milestone does not mark XP SINDONESIA Balance, Purchase, Catalog, Inquiry, or Status capabilities LIVE_VALIDATED or ProductionReady.
+
+### Known Limitations
+
+- the manual XP workflow is credential-gated and was not executed with authorized provider credentials;
+- only Balance was validated by this harness; the current XP runtime client explicitly reports Catalog, Inquiry, and Status as unsupported;
+- Purchase/order remains implemented separately but is not exercised by this read-only harness;
+- RCB remains a placeholder without an implemented runtime adapter contract;
+- the repository still does not expose a public DesKaCash API.
+
+### Architecture Impact
+
+Midtrans, IAK, and XP SINDONESIA now share the same explicit live-integration endpoint authorization pattern while retaining provider-specific request formats, credentials, and response parsing inside their adapters. Read-only provider validation is therefore capability-specific and does not grant transaction authority.
+
+### Next Milestone
+
+**Milestone #262 — Provider Capability Validation Matrix Hardening**
+
+Scope:
+
+- reconcile the implemented capability metadata for Midtrans, IAK, XP SINDONESIA, and RCB against their actual adapter method support;
+- add deterministic invariants preventing unsupported operations from being represented as enabled capabilities;
+- preserve explicit LIVE_VALIDATED / ProductionReady separation and disabled-by-default behavior;
+- verify registry composition and routing eligibility cannot infer capabilities from provider presence alone.
+
+No automatic failover, payment resubmission, provider funding, customer ledger mutation, treasury movement, duplicate purchase creation, or public API exposure is included in #262.
