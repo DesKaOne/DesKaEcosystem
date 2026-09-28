@@ -13711,3 +13711,100 @@ Payment registration is now explicitly separated from payment enablement:
 ### Next Milestone
 
 **#242 — Payment Transaction Correlation Boundary:** define the minimal durable payment transaction representation and lifecycle transitions using the existing `ReferenceID`, durable provider ownership, compare-and-transition rules, and restart/reconciliation safety boundary.
+
+
+## Milestone #242 — Payment Transaction Correlation Boundary
+
+**Date:** 2026-09-28
+
+### Completed
+
+- extended the existing durable TransactionState boundary with an explicit TransactionKind: ppob and payment;
+- added the provider-neutral durable payment.Transaction representation containing ReferenceID, ProviderReference, Amount, Currency, CustomerID, Description, lifecycle Status, and provider-neutral Message;
+- added NewPaymentTransactionState(...) to create a durable pending payment state before any external submission is authorized;
+- reused the existing TransactionStore, CreateIfAbsentTransactionStore, and CAS transition boundary rather than introducing a second payment persistence model;
+- made memory-store idempotent creation compare the durable payment identity before accepting a repeated ReferenceID;
+- made payment terminal states immutable through the same compare-and-transition authorization boundary;
+- extended PostgreSQL transaction persistence with transaction_kind, payment_provider_reference, payment_currency, payment_customer_id, and payment_description;
+- added migration 003_payment_transactions.sql to extend provider_transactions without creating a separate payment table;
+- updated PostgreSQL schema orchestration so transaction/audit paths apply migration 1 before migration 3;
+- preserved legacy transaction compatibility by treating an empty persisted kind as the historical PPOB kind;
+- added deterministic payment correlation/CAS tests and updated PostgreSQL/runtime integration fixtures for migration 3.
+
+### Implementation
+
+Primary files:
+
+- DesKaProvider/backend/internal/Payment/payment.go
+- DesKaProvider/backend/routing/transaction_store.go
+- DesKaProvider/backend/routing/payment_transaction.go
+- DesKaProvider/backend/routing/payment_transaction_test.go
+- DesKaProvider/backend/routing/postgres_transaction_store.go
+- DesKaProvider/backend/migrations/003_payment_transactions.sql
+- DesKaProvider/backend/migrations/migrations.go
+- DesKaProvider/backend/runtime/runtime.go
+- PostgreSQL/runtime integration tests under DesKaProvider/backend/routing and DesKaProvider/backend/runtime
+
+### Safety Boundary / Invariants
+
+- ReferenceID remains the durable correlation key;
+- durable ProviderName remains authoritative provider ownership;
+- payment identity must match before a repeated ReferenceID can be treated as the same transaction;
+- CAS/compare-and-transition remains the authorization boundary for lifecycle mutation;
+- terminal payment observations cannot rewrite provider reference, identity, or terminal result;
+- restart/reconciliation can reload the durable payment state but does not authorize a second external submission;
+- provider timeout is not converted automatically into a terminal failure;
+- no automatic retry, failover, or resubmission was added;
+- no webhook/reconciliation path calls CreatePayment;
+- no DesKaCash ledger/balance mutation was added;
+- no treasury/funding movement was added;
+- no live Midtrans payment request was executed.
+
+### Architecture Impact
+
+    DesKaCash
+        |
+        v
+    DesKaProvider
+        |
+        +-- TransactionStore / AuditStore
+        |       |
+        |       +-- PPOB transaction state
+        |       |
+        |       +-- Payment transaction state
+        |
+        +-- payment.Provider
+                |
+                +-- Midtrans adapter
+
+Payment persistence remains provider-neutral. The transaction store records correlation and lifecycle state; provider adapters remain responsible for translating external protocol details.
+
+### Verification
+
+Exact implementation HEAD before status-document closure:
+
+- 8e00fa1205cd06ffc14cf91033636014e3884de0
+
+Latest CI for that exact implementation HEAD:
+
+- CI #2457 push: GREEN;
+- CI #2458 pull request: GREEN;
+- go test ./...: PASS;
+- go vet ./...: PASS;
+- go test -race ./...: PASS;
+- PostgreSQL integration tests: PASS.
+
+CI recovery during this milestone included fixes for migration ordering, legacy transaction compatibility, test fixture migration setup, and path/compile issues. Earlier RED runs are retained as historical failures and are not counted as successful verification.
+
+### Known Limitations
+
+- no payment submission service consumes payment.Provider yet;
+- payment capability remains Enabled=false;
+- LIVE_VALIDATED remains false;
+- no live Midtrans transaction has been executed;
+- refund remains outside the implemented boundary;
+- the durable payment model establishes correlation/lifecycle authority but does not yet perform external payment submission.
+
+### Next Milestone
+
+**#243 — Payment Submission Authorization Boundary:** connect the durable payment correlation state to a provider-neutral submission orchestration boundary, preserving one-time submission authorization, durable provider ownership, CAS protection, restart/reconciliation safety, and the existing no-retry/no-failover/no-ledger-mutation constraints.
