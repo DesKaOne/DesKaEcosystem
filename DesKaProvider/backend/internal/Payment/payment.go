@@ -97,3 +97,22 @@ func ValidateStatus(status Status) error {
 		return ErrInvalidRequest
 	}
 }
+
+
+// Transaction is the minimal durable, provider-neutral payment lifecycle state.
+// It is intentionally separate from provider-specific adapter responses.
+type Transaction struct {
+	ReferenceID string
+	ProviderReference string
+	Amount int64
+	Currency string
+	CustomerID string
+	Description string
+	Status Status
+	Message string
+}
+
+func ValidateTransaction(tx Transaction) error {
+	if tx.ReferenceID == "" || tx.Amount <= 0 || tx.Currency == "" || tx.CustomerID == "" { return ErrInvalidRequest }
+	return ValidateStatus(tx.Status)
+}

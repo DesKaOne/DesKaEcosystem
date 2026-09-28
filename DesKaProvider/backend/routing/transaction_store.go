@@ -7,12 +7,20 @@ import (
 	"time"
 
 	provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
+	payment "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/internal/Payment"
 )
 
+type TransactionKind string
+const (
+	TransactionKindPPOB TransactionKind = "ppob"
+	TransactionKindPayment TransactionKind = "payment"
+)
 type TransactionState struct {
-	Request   PurchaseRequest
+	Kind TransactionKind
+	Request PurchaseRequest
 	Execution PurchaseExecution
-	Version   int64
+	Payment *payment.Transaction
+	Version int64
 }
 
 type TransactionStore interface {
@@ -93,28 +101,37 @@ type ContextReadTransactionAuditStore interface {
 
 var ErrTransactionStateConflict = errors.New("transaction state changed concurrently")
 
-func validateTransactionTransition(previous, next TransactionState) error {
-	if previous.Request != next.Request {
-		return ErrReferenceConflict
+func normalizeTransactionKind(kind TransactionKind) TransactionKind {
+	if kind == "" { return TransactionKindPPOB }
+	return kind
+}
+func transactionReferenceID(state TransactionState) string {
+	if normalizeTransactionKind(state.Kind) == TransactionKindPayment && state.Payment != nil { return state.Payment.ReferenceID }
+	return state.Request.ReferenceID
+}
+func sameTransactionIdentity(a,b TransactionState) bool {
+	if normalizeTransactionKind(a.Kind) != normalizeTransactionKind(b.Kind) || a.Execution.ProviderName != b.Execution.ProviderName { return false }
+	switch normalizeTransactionKind(a.Kind) {
+	case TransactionKindPPOB: return a.Request == b.Request
+	case TransactionKindPayment:
+		if a.Payment == nil || b.Payment == nil { return false }
+		return a.Payment.ReferenceID == b.Payment.ReferenceID && a.Payment.Amount == b.Payment.Amount && a.Payment.Currency == b.Payment.Currency && a.Payment.CustomerID == b.Payment.CustomerID && a.Payment.Description == b.Payment.Description
+	default: return false
 	}
-	if previous.Execution.ProviderName != next.Execution.ProviderName {
-		return ErrReferenceConflict
-	}
-	if previous.Execution.Result.Status == provider.StatusSuccess || previous.Execution.Result.Status == provider.StatusFailed {
-		if !samePurchaseResult(previous.Execution.Result, next.Execution.Result) {
-			return ErrReferenceConflict
+}
+func validateTransactionTransition(previous,next TransactionState) error {
+	if !sameTransactionIdentity(previous,next) { return ErrReferenceConflict }
+	switch normalizeTransactionKind(previous.Kind) {
+	case TransactionKindPPOB:
+		if previous.Execution.Result.Status == provider.StatusSuccess || previous.Execution.Result.Status == provider.StatusFailed {
+			if !samePurchaseResult(previous.Execution.Result,next.Execution.Result) { return ErrReferenceConflict }; return nil
 		}
+		if previous.Execution.Result.Status != provider.StatusPending { return ErrReferenceConflict }
+		if next.Execution.Result.Status != provider.StatusPending && next.Execution.Result.Status != provider.StatusSuccess && next.Execution.Result.Status != provider.StatusFailed { return ErrReferenceConflict }
 		return nil
+	case TransactionKindPayment: return validatePaymentTransactionTransition(previous,next)
+	default: return ErrReferenceConflict
 	}
-	if previous.Execution.Result.Status != provider.StatusPending {
-		return ErrReferenceConflict
-	}
-	if next.Execution.Result.Status != provider.StatusPending &&
-		next.Execution.Result.Status != provider.StatusSuccess &&
-		next.Execution.Result.Status != provider.StatusFailed {
-		return ErrReferenceConflict
-	}
-	return nil
 }
 
 type MemoryTransactionStore struct {
@@ -173,18 +190,14 @@ func (s *MemoryTransactionStore) CreateIfAbsentContext(ctx context.Context, stat
 	if err := ctx.Err(); err != nil {
 		return TransactionState{}, false, err
 	}
-	if state.Request.ReferenceID == "" || state.Execution.ProviderName == "" {
-		return TransactionState{}, false, ErrReferenceConflict
-	}
+	if err := validateTransactionState(state); err != nil { return TransactionState{}, false, err }
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if current, ok := s.transactions[state.Request.ReferenceID]; ok {
-		if current.Request != state.Request || current.Execution.ProviderName != state.Execution.ProviderName {
-			return TransactionState{}, false, ErrReferenceConflict
-		}
+		if !sameTransactionIdentity(current,state) { return TransactionState{}, false, ErrReferenceConflict }
 		return current, false, nil
 	}
-	s.transactions[state.Request.ReferenceID] = state
+	s.transactions[transactionReferenceID(state)] = state
 	return state, true, nil
 }
 
@@ -196,12 +209,7 @@ func (s *MemoryTransactionStore) Get(referenceID string) (TransactionState, bool
 }
 
 func (s *MemoryTransactionStore) Put(state TransactionState) error {
-	if state.Request.ReferenceID == "" {
-		return errors.New("transaction reference ID is required")
-	}
-	if state.Execution.ProviderName == "" {
-		return errors.New("transaction provider name is required")
-	}
+	if err := validateTransactionState(state); err != nil { return err }
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if previous, ok := s.transactions[state.Request.ReferenceID]; ok {
@@ -209,8 +217,7 @@ func (s *MemoryTransactionStore) Put(state TransactionState) error {
 			return err
 		}
 	}
-	s.transactions[state.Request.ReferenceID] = state
-	return nil
+	s.transactions[transactionReferenceID(state)] = state
 }
 
 func (s *MemoryTransactionStore) PutIfCurrent(referenceID string, previous, next TransactionState) error {
