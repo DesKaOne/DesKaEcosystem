@@ -69,3 +69,62 @@ func TestRegisterConfiguredProvidersRegistersIAKOnlyWhenConfigured(t *testing.T)
     _ = os.Unsetenv("IAK_USERNAME")
     _ = os.Unsetenv("IAK_API_KEY")
 }
+
+
+func TestRegisterConfiguredProvidersAlignsExplicitCapabilityMatrix(t *testing.T) {
+	t.Setenv("MIDTRANS_SERVER_KEY", "test-midtrans-key")
+	t.Setenv("IAK_USERNAME", "test-iak-user")
+	t.Setenv("IAK_API_KEY", "test-iak-key")
+	t.Setenv("XP_SINDONESIA_ID", "test-xp-id")
+	t.Setenv("XP_SINDONESIA_KEY", "test-xp-key")
+	t.Setenv("XP_SINDONESIA_API", "test-xp-api")
+
+	registry := provider.NewRegistry()
+	if err := registerConfiguredProviders(registry, mock.New(mock.Config{}), http.DefaultClient); err != nil {
+		t.Fatal(err)
+	}
+
+	want := map[string][]provider.Capability{
+		"midtrans":      {provider.CapabilityPayment, provider.CapabilityWebhook},
+		"digiflazz":     {provider.CapabilityPPOB, provider.CapabilityBalance, provider.CapabilityWebhook, provider.CapabilityCatalog},
+		"iak":            {provider.CapabilityPPOB, provider.CapabilityBalance, provider.CapabilityWebhook, provider.CapabilityCatalog},
+		"xp-sindonesia": {provider.CapabilityPPOB, provider.CapabilityBalance, provider.CapabilityWebhook},
+	}
+	for name, capabilities := range want {
+		descriptor, err := registry.Capabilities(name)
+		if err != nil {
+			t.Fatalf("%s capabilities: %v", name, err)
+		}
+		if len(descriptor.Capabilities) != len(capabilities) {
+			t.Fatalf("%s capability count = %d, want %d: %#v", name, len(descriptor.Capabilities), len(capabilities), descriptor.Capabilities)
+		}
+		for _, capability := range capabilities {
+			status, ok := descriptor.Status(capability)
+			if !ok {
+				t.Fatalf("%s missing capability %q", name, capability)
+			}
+			if !status.Configured || !status.AdapterImplemented || !status.Tested {
+				t.Fatalf("%s capability %q has incomplete implementation metadata: %+v", name, capability, status)
+			}
+			if status.Enabled || status.LiveTested || status.ProductionReady {
+				t.Fatalf("%s capability %q is unsafe by default: %+v", name, capability, status)
+			}
+		}
+	}
+
+	for _, unsupported := range []struct {
+		providerName string
+		capability   provider.Capability
+	}{
+		{"midtrans", provider.CapabilityPPOB},
+		{"xp-sindonesia", provider.CapabilityCatalog},
+	} {
+		descriptor, err := registry.Capabilities(unsupported.providerName)
+		if err != nil {
+			t.Fatalf("%s capabilities: %v", unsupported.providerName, err)
+		}
+		if _, ok := descriptor.Status(unsupported.capability); ok {
+			t.Fatalf("%s must not infer unsupported capability %q", unsupported.providerName, unsupported.capability)
+		}
+	}
+}
