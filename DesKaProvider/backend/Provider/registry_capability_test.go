@@ -88,7 +88,7 @@ func TestCapabilityDescriptorSupportsOnlyTestedEnabledCapabilities(t *testing.T)
 func TestRegisterCapabilityProviderRejectsInvalidMetadata(t *testing.T) {
 	registry := NewRegistry()
 	if err := registry.RegisterCapabilityProvider("demo", CapabilityBalance, struct{}{}, CapabilityStatus{
-		AdapterImplemented: true,
+		AdapterImplemented: false,
 		Enabled: true,
 	}); err == nil {
 		t.Fatal("expected invalid capability metadata to be rejected")
