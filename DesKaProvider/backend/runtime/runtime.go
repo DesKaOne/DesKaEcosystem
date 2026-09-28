@@ -535,10 +535,17 @@ func openOperationalStore(ctx context.Context, cfg Config, transactionDB *sql.DB
 
 func preparePostgresSchema(ctx context.Context, db *sql.DB, mode string, version int) error {
 	if db == nil { return errors.New("PostgreSQL schema database is required") }
-	if err := migrations.ValidateVersionSet(version); err != nil { return err }
+	versions := []int{version}
+	if version == 3 {
+		versions = []int{1, 3}
+	}
+	if err := migrations.ValidateVersionSet(versions...); err != nil { return err }
 	if mode == "migrate" {
-		if err := migrations.Apply(ctx, db, version); err != nil { return fmt.Errorf("apply PostgreSQL provider migration %d: %w", version, err) }
+		if err := migrations.Apply(ctx, db, versions...); err != nil { return fmt.Errorf("apply PostgreSQL provider migration %d: %w", version, err) }
 		return nil
+	}
+	if version == 3 {
+		if err := checkPostgresMigrationReadiness(ctx, db, 1); err != nil { return err }
 	}
 	return checkPostgresMigrationReadiness(ctx, db, version)
 }
