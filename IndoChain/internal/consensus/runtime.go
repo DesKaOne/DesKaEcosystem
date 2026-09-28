@@ -11,7 +11,6 @@ var (
 	ErrUnexpectedProposer        = errors.New("unexpected consensus proposer")
 	ErrInvalidRuntimePhase       = errors.New("invalid consensus runtime phase")
 	ErrConflictingLockedProposal = errors.New("conflicting locked proposal")
-	ErrStaleTimeoutLock       = errors.New("stale timeout lock proof")
 	ErrInvalidRuntimeVoteType   = errors.New("invalid runtime vote type")
 	ErrRoundChangeFinalized      = errors.New("cannot change round after finalization")
 )
@@ -190,9 +189,6 @@ func (r *ValidatorRuntime) AdvanceRoundWithTimeoutEvidence(
 	if len(r.lockedProposal) > 0 {
 		if len(certificate.LockedProposal) == 0 {
 			return TimeoutCertificate{}, ErrConflictingTimeoutLock
-		}
-		if certificate.LockedRound < r.lockedRound {
-			return TimeoutCertificate{}, ErrStaleTimeoutLock
 		}
 		if certificate.LockedRound == r.lockedRound && !bytes.Equal(r.lockedProposal, certificate.LockedProposal) {
 			return TimeoutCertificate{}, ErrConflictingTimeoutLock
