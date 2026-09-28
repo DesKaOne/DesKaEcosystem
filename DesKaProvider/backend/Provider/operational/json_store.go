@@ -40,6 +40,11 @@ func NewJSONFileStore(path string) (*JSONFileStore, error) {
 		return nil, fmt.Errorf("decode operational store: %w", err)
 	}
 	if state.Snapshots != nil {
+		for name, snapshot := range state.Snapshots {
+			if err := ValidateSnapshot(snapshot); err != nil {
+				return nil, fmt.Errorf("validate operational snapshot %q: %w", name, err)
+			}
+		}
 		store.snapshots = state.Snapshots
 	}
 	return store, nil
@@ -74,8 +79,8 @@ func (s *JSONFileStore) All() []Snapshot {
 }
 
 func (s *JSONFileStore) Put(snapshot Snapshot) error {
-	if snapshot.ProviderName == "" {
-		return errors.New("provider name is required")
+	if err := ValidateSnapshot(snapshot); err != nil {
+		return err
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
