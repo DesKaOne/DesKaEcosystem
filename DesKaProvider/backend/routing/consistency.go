@@ -15,7 +15,6 @@ var (
 	ErrOperationalFreshnessMismatch = errors.New("operational input freshness mismatch")
 	ErrCatalogInputMismatch = errors.New("catalog input provider mismatch")
 	ErrCatalogFreshnessMismatch = errors.New("catalog input freshness mismatch")
-	ErrInvalidRoutingPriority = errors.New("invalid routing priority")
 )
 
 type routingCandidateInput struct {
@@ -62,9 +61,6 @@ func validateRoutingCandidateInput(input routingCandidateInput, now time.Time, o
 				return errors.Join(ErrRoutingInputInconsistent, ErrCatalogFreshnessMismatch)
 			}
 		}
-	}
-	if input.Priority < -1_000_000_000 || input.Priority > 1_000_000_000 {
-		return errors.Join(ErrRoutingInputInconsistent, ErrInvalidRoutingPriority)
 	}
 	return nil
 }
