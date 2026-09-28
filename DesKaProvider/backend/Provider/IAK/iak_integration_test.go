@@ -6,12 +6,13 @@ import (
     "testing"
 
     "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/config"
+    "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/integration"
     provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
 )
 
 func TestLiveReadOnly(t *testing.T) {
-    if os.Getenv("IAK_INTEGRATION") != "1" {
-        t.Skip("set IAK_INTEGRATION=1 to run the live IAK integration test")
+    if os.Getenv("IAK_INTEGRATION") != "1" || !integration.Enabled("iak") {
+        t.Skip("live integration requires the provider-specific opt-in and global DesKaProvider live gate")
     }
     if os.Getenv("IAK_USERNAME") == "" || os.Getenv("IAK_API_KEY") == "" {
         t.Skip("IAK runtime credentials are not configured")
@@ -21,7 +22,10 @@ func TestLiveReadOnly(t *testing.T) {
     if err != nil {
         t.Fatal(err)
     }
-    client, err := New(cfg, nil)
+        if !integration.HostAllowed(cfg.BalanceEndpoint) {
+        t.Skip("provider endpoint host is not explicitly allowlisted for live integration")
+    }
+client, err := New(cfg, nil)
     if err != nil {
         t.Fatal(err)
     }
