@@ -6,19 +6,23 @@ import (
 	"testing"
 )
 
-func newTimeoutTestSignerPair(t *testing.T) (timeoutTestSigner, timeoutTestSigner) {\n\tt.Helper()\n\tsignerA, _ := newTimeoutTestSigner(t)\n\tsignerB, _ := newTimeoutTestSigner(t)\n\treturn signerA, signerB\n}\n\nfunc timeoutMessagesForProof(t *testing.T, state RoundState, proof LockProof) ([]Message, timeoutRuntimeAuthorityResolver) {
+func newTimeoutTestSignerPair(t *testing.T) (timeoutTestSigner, timeoutTestSigner, timeoutRuntimeAuthorityResolver) {
 	t.Helper()
 	signerA, publicA := newTimeoutTestSigner(t)
 	signerB, publicB := newTimeoutTestSigner(t)
-	resolver := timeoutRuntimeAuthorityResolver{keys: map[string]ed25519.PublicKey{
+	return signerA, signerB, timeoutRuntimeAuthorityResolver{keys: map[string]ed25519.PublicKey{
 		"validator-a": publicA,
 		"validator-b": publicB,
 	}}
+}
+
+func timeoutMessagesForProof(t *testing.T, state RoundState, proof LockProof, signerA, signerB timeoutTestSigner) []Message {
+	t.Helper()
 	msgA, err := NewTimeoutMessageWithLockProof(state, []byte("validator-a"), state.Round+1, proof, signerA)
 	if err != nil { t.Fatal(err) }
 	msgB, err := NewTimeoutMessageWithLockProof(state, []byte("validator-b"), state.Round+1, proof, signerB)
 	if err != nil { t.Fatal(err) }
-	return []Message{msgA, msgB}, resolver
+	return []Message{msgA, msgB}
 }
 
 func primeRuntimeLock(t *testing.T, runtime *ValidatorRuntime, state RoundState, proposal string) {
@@ -43,9 +47,13 @@ func TestValidatorRuntimeRejectsLowerTimeoutLockWithoutMutation(t *testing.T) {
 	runtime.lockedProposal = []byte("locked-proposal")
 	runtime.lockedRound = 1
 
-	proof := timeoutLockProofAtRound(t, state, validators, power, 0, "locked-proposal",
-		newTimeoutTestSignerPair(t))
-	messages, resolver := timeoutMessagesForProof(t, runtime.State(), proof)
+	signerA, signerB, resolver := newTimeoutTestSignerPair(t)
+
+
+	proof := timeoutLockProofAtRound(t, state, validators, power, 0, "locked-proposal", signerA, signerB)
+
+
+	messages := timeoutMessagesForProof(t, runtime.State(), proof, signerA, signerB)
 
 	beforeState := runtime.state
 	beforeProposal := append([]byte(nil), runtime.lockedProposal...)
@@ -65,9 +73,13 @@ func TestValidatorRuntimeAdoptsHigherLockWithDifferentProposal(t *testing.T) {
 	runtime.lockedProposal = []byte("old-proposal")
 	runtime.lockedRound = 0
 
-	proof := timeoutLockProofAtRound(t, state, validators, power, 1, "new-proposal",
-		newTimeoutTestSignerPair(t))
-	messages, resolver := timeoutMessagesForProof(t, runtime.State(), proof)
+	signerA, signerB, resolver := newTimeoutTestSignerPair(t)
+
+
+	proof := timeoutLockProofAtRound(t, state, validators, power, 1, "new-proposal", signerA, signerB)
+
+
+	messages := timeoutMessagesForProof(t, runtime.State(), proof, signerA, signerB)
 
 	if _, err := runtime.AdvanceRoundWithTimeoutEvidence(messages, resolver); err != nil {
 		t.Fatalf("higher-lock adoption failed: %v", err)
@@ -97,9 +109,11 @@ func TestValidatorRuntimeRejectsWrongContextTimeoutLockProofs(t *testing.T) {
 			runtime, state, validators, power := runtimeFixture(t)
 			proofState := state
 			tc.mutate(&proofState)
-			proof := timeoutLockProofAtRound(t, proofState, validators, power, proofState.Round, "context-proposal",
-				newTimeoutTestSignerPair(t))
-			messages, resolver := timeoutMessagesForProof(t, runtime.State(), proof)
+			signerA, signerB, resolver := newTimeoutTestSignerPair(t)
+
+			proof := timeoutLockProofAtRound(t, proofState, validators, power, proofState.Round, "context-proposal", signerA, signerB)
+
+			messages := timeoutMessagesForProof(t, runtime.State(), proof, signerA, signerB)
 
 			before := runtime.state
 			_, err := runtime.AdvanceRoundWithTimeoutEvidence(messages, resolver)
@@ -115,10 +129,13 @@ func TestValidatorRuntimeRejectsWrongContextTimeoutLockProofs(t *testing.T) {
 
 func TestValidatorRuntimeRejectsTamperedPrecommitSignatureInTimeoutLockProof(t *testing.T) {
 	runtime, state, validators, power := runtimeFixture(t)
-	proof := timeoutLockProofAtRound(t, state, validators, power, state.Round, "tampered-proposal",
-		newTimeoutTestSignerPair(t))
+	signerA, signerB, resolver := newTimeoutTestSignerPair(t)
+
+	proof := timeoutLockProofAtRound(t, state, validators, power, state.Round, "tampered-proposal", signerA, signerB)
+
 	proof.Certificate.Votes[0].Signature[0] ^= 0xff
-	messages, resolver := timeoutMessagesForProof(t, runtime.State(), proof)
+
+	messages := timeoutMessagesForProof(t, runtime.State(), proof, signerA, signerB)
 
 	beforeState := runtime.state
 	beforeProposal := append([]byte(nil), runtime.lockedProposal...)
@@ -189,18 +206,22 @@ func TestValidatorRuntimeMultiRoundLockTimeoutAndAuthenticatedFinality(t *testin
 	primeRuntimeLock(t, runtime, state, "round-0-proposal")
 
 	// Round 0 -> Round 1: carry the authenticated round-0 lock.
-	proof0 := timeoutLockProofAtRound(t, state, validators, power, 0, "round-0-proposal",
-		newTimeoutTestSignerPair(t))
-	messages0, resolver0 := timeoutMessagesForProof(t, runtime.State(), proof0)
+	signer0A, signer0B, resolver0 := newTimeoutTestSignerPair(t)
+
+	proof0 := timeoutLockProofAtRound(t, state, validators, power, 0, "round-0-proposal", signer0A, signer0B)
+
+	messages0 := timeoutMessagesForProof(t, runtime.State(), proof0, signer0A, signer0B)
 	if _, err := runtime.AdvanceRoundWithTimeoutEvidence(messages0, resolver0); err != nil {
 		t.Fatalf("round-0 timeout transition failed: %v", err)
 	}
 
 	// Round 1 -> Round 2: adopt a higher authenticated lock for a new proposal.
 	state1 := runtime.State()
-	proof1 := timeoutLockProofAtRound(t, state1, validators, power, 1, "round-1-proposal",
-		newTimeoutTestSignerPair(t))
-	messages1, resolver1 := timeoutMessagesForProof(t, runtime.State(), proof1)
+	signer1A, signer1B, resolver1 := newTimeoutTestSignerPair(t)
+
+	proof1 := timeoutLockProofAtRound(t, state1, validators, power, 1, "round-1-proposal", signer1A, signer1B)
+
+	messages1 := timeoutMessagesForProof(t, runtime.State(), proof1, signer1A, signer1B)
 	if _, err := runtime.AdvanceRoundWithTimeoutEvidence(messages1, resolver1); err != nil {
 		t.Fatalf("higher-lock round-1 adoption failed: %v", err)
 	}
@@ -210,7 +231,7 @@ func TestValidatorRuntimeMultiRoundLockTimeoutAndAuthenticatedFinality(t *testin
 
 	// Round 2 -> Round 3: preserve the adopted lock through another timeout.
 	state2 := runtime.State()
-	messages2, resolver2 := timeoutMessagesForProof(t, state2, proof1)
+	messages2 := timeoutMessagesForProof(t, state2, proof1, signer1A, signer1B)\n\tresolver2 := resolver1
 	if _, err := runtime.AdvanceRoundWithTimeoutEvidence(messages2, resolver2); err != nil {
 		t.Fatalf("round-2 timeout transition failed: %v", err)
 	}
