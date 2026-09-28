@@ -14954,3 +14954,112 @@ Scope:
 - ensure provider health failures remain observable without authorizing provider failover, payment retry, or resubmission.
 
 No public API exposure, automatic provider failover, provider funding, or payment resubmission is included in #253.
+
+## Milestone #253 — Provider Health Observation Integration Boundary
+
+**Date:** 2026-09-28
+
+### Completed
+
+- introduced an explicit provider-neutral health observation application boundary through `SyncService.ApplyHealthObservation`;
+- connected provider health failure observations from `SyncProvider` through that boundary instead of persisting health state inline;
+- preserved the last successful observation timestamp and cached balance while applying degraded/unhealthy observations;
+- added deterministic persistence/recovery coverage for health observations using the existing JSON operational store;
+- verified recovered observations retain health, timestamp, failure count, and error information across process/store reconstruction;
+- verified freshness remains observational: a recovered old observation becomes stale and is rejected by the explicit fresh-only read path;
+- preserved explicit capability registration, disabled-by-default lifecycle state, and payment safety invariants.
+
+### Operational observation boundary
+
+Health observation is now represented explicitly as provider-neutral operational evidence:
+
+- provider identity;
+- health state;
+- observation timestamp;
+- consecutive failure count;
+- last error.
+
+Applying a health observation only updates operational state. It does not:
+
+- authorize provider routing;
+- authorize payment or payout;
+- trigger provider failover;
+- retry or resubmit a transaction;
+- fund a provider;
+- mutate a customer ledger.
+
+The cached balance remains an operational snapshot and is not promoted to transaction authorization.
+
+### Lifecycle and persistence integration
+
+The existing synchronization lifecycle remains responsible for obtaining provider balance observations. Health failure state is now handed to the explicit observation boundary, which persists the resulting operational snapshot.
+
+The existing JSON operational store provides atomic replacement semantics and can reconstruct persisted snapshots on restart. #253 adds regression coverage that:
+
+1. applies an unhealthy observation;
+2. reconstructs the store from the persisted file;
+3. verifies the observation state survives restart;
+4. evaluates freshness after time advances;
+5. rejects the stale snapshot through the explicit fresh-only read API.
+
+### Implementation
+
+Primary changes:
+
+- `DesKaProvider/backend/Provider/operational/operational.go`
+  - added `SyncService.ApplyHealthObservation`;
+  - `SyncProvider` now routes health failure persistence through the observation boundary.
+- `DesKaProvider/backend/Provider/operational/operational_test.go`
+  - explicit observation boundary regression coverage.
+- `DesKaProvider/backend/Provider/operational/lifecycle_test.go`
+  - health observation persistence/recovery and stale-after-restart coverage.
+
+### Verification
+
+The exact implementation/test HEAD is:
+
+d7a308bfa86e6c3e4a8d2585e6e7669679afd747
+
+GitHub Actions for this exact HEAD:
+
+- Push CI #2552 / run 36401222150: **GREEN**
+- Pull Request CI #2553 / run 36401226680: **GREEN**
+- `go test ./...`: PASS
+- `go vet ./...`: PASS
+- `go test -race ./...`: PASS
+- PostgreSQL 18 service-backed test environment: PASS
+
+No real provider credentials or live provider transaction was required.
+
+### Safety Boundary / Invariants
+
+- health observation remains provider-neutral operational evidence;
+- freshness remains an observation property, not routing authorization;
+- recovered health state cannot authorize payment, payout, failover, funding, retry, or resubmission;
+- provider lifecycle state remains separate from capability enablement;
+- no automatic provider failover is introduced;
+- no automatic transaction retry or resubmission is introduced;
+- no customer ledger mutation or treasury movement is introduced;
+- no automatic provider funding is introduced;
+- public API exposure remains outside this milestone.
+
+### Known Limitations
+
+- health observations remain based on provider balance synchronization results and deterministic test observations;
+- provider-specific health/SLA policy is not introduced;
+- operational health is still not a routing policy;
+- live provider validation remains separate from deterministic CI;
+- RCB and PortalPulsa remain placeholders and are not runtime-registered.
+
+### Next Milestone
+
+**Milestone #254 — Provider Operational Observation Consistency**
+
+Scope:
+
+- define deterministic consistency rules between balance, health, timestamp, and failure fields;
+- prevent contradictory operational snapshots from being persisted;
+- add PostgreSQL-backed consistency/recovery coverage;
+- preserve observational-only semantics and prevent operational state from becoming implicit transaction authorization.
+
+No public API exposure, automatic provider failover, provider funding, or payment resubmission is included in #254.
