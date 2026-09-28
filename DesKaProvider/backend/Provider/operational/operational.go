@@ -68,8 +68,8 @@ func (s *MemoryStore) GetWithError(name string) (Snapshot, bool, error) {
 
 
 func (s *MemoryStore) Put(snapshot Snapshot) error {
-	if snapshot.ProviderName == "" {
-		return errors.New("provider name is required")
+	if err := ValidateSnapshot(snapshot); err != nil {
+		return err
 	}
 	s.mu.Lock(); defer s.mu.Unlock()
 	s.snapshots[snapshot.ProviderName] = snapshot
@@ -125,6 +125,9 @@ func (s *SyncService) ApplyHealthObservation(observation HealthObservation) (Sna
 		LastError: observation.LastError,
 		ConsecutiveFailures: observation.ConsecutiveFailures,
 	}
+	if err := ValidateSnapshot(snapshot); err != nil {
+		return Snapshot{}, err
+	}
 	if err := s.Store.Put(snapshot); err != nil {
 		return Snapshot{}, err
 	}
@@ -167,6 +170,9 @@ func (s *SyncService) SyncProvider(ctx context.Context, name string) (Snapshot, 
 		return snapshot, err
 	}
 	snapshot := Snapshot{ProviderName:name, Balance:balance, Currency:s.Currency, Health:HealthHealthy, LastCheckedAt:now, LastSuccessAt:now, ConsecutiveFailures:0}
+	if err := ValidateSnapshot(snapshot); err != nil {
+		return Snapshot{}, err
+	}
 	if storeErr := s.Store.Put(snapshot); storeErr != nil {
 		return Snapshot{}, storeErr
 	}
