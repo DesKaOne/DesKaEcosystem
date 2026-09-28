@@ -511,7 +511,8 @@ CI run DesKaProvider CI #47 remained red. The test job still reported the same p
 
 Follow-up root cause:
 
-- the previous edit did not remove the literal escaped newline/tab sequence from the import block; the source still contained `"os"\\n\\t"path/filepath"` as literal characters.
+- the previous edit did not remove the literal escaped newline/tab sequence from the import block; the source still contained `"os"\
+\\t"path/filepath"` as literal characters.
 
 Fix applied:
 
@@ -5253,7 +5254,8 @@ Completed:
 
 ### Next milestone
 
-**#117 — Atomic Transition Version Semantics Review**: audit sequential and concurrent PostgreSQL transaction version transitions so every durable state mutation uses the current version and preserves idempotent terminal behavior across repeated writes and restart recovery.\n
+**#117 — Atomic Transition Version Semantics Review**: audit sequential and concurrent PostgreSQL transaction version transitions so every durable state mutation uses the current version and preserves idempotent terminal behavior across repeated writes and restart recovery.
+
 
 ### 39. Milestone Update — Atomic Reconciliation Convergence Verification
 
@@ -7662,7 +7664,8 @@ Completed:
 
 ### Verification
 
-- Initial CI attempt on `5c4ba2814d06d3034e4346033e8ae1b98ecd2ba7` failed because the automated edit introduced literal `\\n` characters into `runtime.go`; this was corrected immediately.
+- Initial CI attempt on `5c4ba2814d06d3034e4346033e8ae1b98ecd2ba7` failed because the automated edit introduced literal `\
+` characters into `runtime.go`; this was corrected immediately.
 - Final implementation/test commit: `da03cba929dfb6e143700bf1ffac40547dadb484`
 - Push CI #1584: **GREEN** (`go test ./...`, `go vet ./...`, `go test -race ./...`, PostgreSQL service-backed integration tests).
 - PR CI #1585: **GREEN** (`test`, `race`).
@@ -16080,4 +16083,4 @@ Scope:
 - add deterministic persistence/recovery coverage for capability state.
 
 No automatic failover, payment resubmission, provider funding, customer ledger mutation, treasury movement, duplicate purchase creation, or public API exposure is included in #264.
-\n
+
