@@ -16017,3 +16017,56 @@ Scope:
 - preserve the existing no-failover/no-resubmission/no-ledger/no-treasury/no-provider-funding boundaries.
 
 No public API exposure is included in #263.
+
+## Milestone #263 — Provider Capability Matrix Runtime Composition Tests
+
+**Date:** 2026-09-29
+
+### Implementation
+
+- exercised the hardened capability matrix through the real registerConfiguredProviders runtime composition path;
+- verified Midtrans and XP SINDONESIA can compose independently when IAK and DigiFlazz are unconfigured;
+- verified incomplete XP SINDONESIA configuration fails before the provider is registered;
+- verified capability metadata remains explicitly disabled and never becomes LIVE_VALIDATED or ProductionReady merely from runtime configuration;
+- verified the runtime registry snapshot is defensive: caller mutation cannot alter stored capability metadata;
+- verified XP SINDONESIA's unsupported Catalog method remains ErrUnsupportedOperation and does not create a Catalog capability entry;
+- preserved the existing explicit capability vocabulary and provider-neutral registry boundary.
+
+### Changed Files
+
+- DesKaProvider/backend/runtime/provider_composition_test.go
+
+### Safety Boundary / Invariants
+
+- provider presence/configuration does not infer unsupported capabilities;
+- partial provider configuration cannot leave a half-registered provider in the runtime registry;
+- capability snapshots do not expose mutable registry state;
+- unsupported adapter methods remain unsupported and cannot become routable through inferred metadata;
+- Enabled, LiveTested, and ProductionReady remain explicit state transitions;
+- no automatic retry, provider failover, or transaction resubmission is introduced;
+- no duplicate payment/purchase creation is introduced;
+- no ledger mutation, customer balance mutation, treasury movement, or provider funding is introduced;
+- durable transaction/reference ownership, CAS/idempotency, webhook idempotency, and reconciliation boundaries remain unchanged;
+- no public API exposure is introduced.
+
+### Verification
+
+Implementation/test commit:
+
+7c20e10bb6823227329a47e8bea8322d8dddab75
+
+CI verification for the final status-update HEAD is required before this milestone is considered closed.
+
+### Next Milestone
+
+**Milestone #264 — Provider Capability Operational State Synchronization**
+
+Scope:
+
+- align persisted provider lifecycle state with explicit capability readiness without promoting disabled or unvalidated capabilities;
+- verify restart/recovery preserves provider-neutral capability state;
+- keep operational health/balance state separate from transaction authorization and ProductionReady;
+- add deterministic persistence/recovery coverage for capability state.
+
+No automatic failover, payment resubmission, provider funding, customer ledger mutation, treasury movement, duplicate purchase creation, or public API exposure is included in #264.
+\n
