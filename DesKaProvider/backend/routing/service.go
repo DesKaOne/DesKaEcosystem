@@ -254,6 +254,120 @@ func (s *Service) SubmitPayment(ctx context.Context, providerName string, req pa
 	return result, nil
 }
 
+
+var (
+	ErrPaymentReconciliationNotFound = errors.New("payment transaction not found")
+	ErrPaymentReconciliationConflict = errors.New("payment reconciliation conflict")
+)
+
+func (s *Service) ReconcilePayment(ctx context.Context, referenceID string) (payment.StatusResult, error) {
+	if s == nil || s.Router == nil || s.Router.Registry == nil {
+		return payment.StatusResult{}, errors.New("payment service router is required")
+	}
+	referenceID = strings.TrimSpace(referenceID)
+	if referenceID == "" {
+		return payment.StatusResult{}, fmt.Errorf("%w: reference ID is required", payment.ErrInvalidRequest)
+	}
+	if err := ctx.Err(); err != nil {
+		return payment.StatusResult{}, err
+	}
+
+	latest, found, err := getTransactionContextE(ctx, s.Store, referenceID)
+	if err != nil {
+		return payment.StatusResult{}, fmt.Errorf("load payment for reconciliation: %w", err)
+	}
+	if !found || normalizeTransactionKind(latest.Kind) != TransactionKindPayment || latest.Payment == nil {
+		return payment.StatusResult{}, ErrPaymentReconciliationNotFound
+	}
+	if latest.Execution.ProviderName == "" {
+		return payment.StatusResult{}, ErrPaymentReconciliationConflict
+	}
+	providerName := latest.Execution.ProviderName
+	capabilities, err := s.Router.Registry.Capabilities(providerName)
+	if err != nil {
+		return payment.StatusResult{}, fmt.Errorf("get payment capability %q: %w", providerName, err)
+	}
+	capability, ok := capabilities.Status(provider.CapabilityPayment)
+	if !ok || !capability.AdapterImplemented || !capability.Enabled {
+		return payment.StatusResult{}, fmt.Errorf("%w: %s", ErrPaymentCapabilityDisabled, providerName)
+	}
+	p, err := s.Router.Registry.GetPaymentProvider(providerName)
+	if err != nil {
+		return payment.StatusResult{}, fmt.Errorf("get payment provider %q: %w", providerName, err)
+	}
+
+	// ReferenceID is the durable correlation key. ProviderReference is deliberately
+	// not sent here because an initiation token may not be the provider's status
+	// lookup identifier (for example, Midtrans Snap token vs transaction ID).
+	status, err := p.GetPaymentStatus(ctx, payment.StatusRequest{ReferenceID: referenceID})
+	if err != nil {
+		return payment.StatusResult{}, fmt.Errorf("get payment status from provider %q: %w", providerName, err)
+	}
+	if status.ReferenceID != referenceID || status.Amount != latest.Payment.Amount || !strings.EqualFold(status.Currency, latest.Payment.Currency) {
+		_ = s.appendAudit(TransactionAuditEvent{
+			ReferenceID: referenceID,
+			Action: "PAYMENT_RECONCILIATION_CONFLICT",
+			Previous: string(latest.Payment.Status),
+			Next: string(latest.Payment.Status),
+			ProviderName: providerName,
+			Message: "provider status did not match durable payment identity",
+		})
+		return payment.StatusResult{}, ErrPaymentReconciliationConflict
+	}
+	if err := payment.ValidateStatus(status.Status); err != nil {
+		return payment.StatusResult{}, err
+	}
+
+	latestAfterStatus, found, err := getTransactionContextE(ctx, s.Store, referenceID)
+	if err != nil {
+		return payment.StatusResult{}, fmt.Errorf("reload payment before reconciliation transition: %w", err)
+	}
+	if !found || !sameTransactionIdentity(latestAfterStatus, latest) {
+		return payment.StatusResult{}, ErrPaymentReconciliationConflict
+	}
+	if latestAfterStatus.Payment.Status == payment.StatusSuccess || latestAfterStatus.Payment.Status == payment.StatusFailed {
+		if latestAfterStatus.Payment.Status == status.Status &&
+			latestAfterStatus.Payment.Amount == status.Amount &&
+			strings.EqualFold(latestAfterStatus.Payment.Currency, status.Currency) {
+			return status, nil
+		}
+		return payment.StatusResult{}, ErrPaymentReconciliationConflict
+	}
+	if latestAfterStatus.Payment.Status != payment.StatusPending {
+		return payment.StatusResult{}, ErrPaymentReconciliationConflict
+	}
+
+	next := latestAfterStatus
+	next.Payment = &payment.Transaction{
+		ReferenceID: status.ReferenceID,
+		ProviderReference: status.ProviderReference,
+		Amount: status.Amount,
+		Currency: status.Currency,
+		CustomerID: latestAfterStatus.Payment.CustomerID,
+		Description: latestAfterStatus.Payment.Description,
+		Status: status.Status,
+		Message: status.Message,
+	}
+	next.Execution.Result.ReferenceID = status.ReferenceID
+	next.Execution.Result.Status = provider.TransactionStatus(status.Status)
+	next.Execution.Result.Message = status.Message
+	if err := s.persistTransition(ctx, referenceID, latestAfterStatus, next); err != nil {
+		if errors.Is(err, ErrTransactionStateConflict) {
+			return payment.StatusResult{}, ErrPaymentReconciliationConflict
+		}
+		return payment.StatusResult{}, fmt.Errorf("persist payment reconciliation: %w", err)
+	}
+	_ = s.appendAudit(TransactionAuditEvent{
+		ReferenceID: referenceID,
+		Action: "PAYMENT_RECONCILIATION",
+		Previous: string(latestAfterStatus.Payment.Status),
+		Next: string(status.Status),
+		ProviderName: providerName,
+		Message: status.Message,
+	})
+	return status, nil
+}
+
 func (s *Service) Purchase(ctx context.Context, req PurchaseRequest) (PurchaseExecution, error) {
 	if err := validatePurchaseRequest(req); err != nil {
 		return PurchaseExecution{}, err
