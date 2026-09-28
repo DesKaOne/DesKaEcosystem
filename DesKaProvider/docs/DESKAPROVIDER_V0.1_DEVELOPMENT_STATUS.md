@@ -15286,3 +15286,112 @@ Scope:
 - keep automatic failover, transaction resubmission, provider funding, customer ledger mutation, treasury movement, and public API exposure outside the operational boundary.
 
 No automatic provider failover, payment resubmission, provider funding, or public API exposure is included in #256.
+
+
+## Milestone #256 — Provider Operational Integration Boundary
+
+**Date:** 2026-09-28
+
+### Completed
+
+- formalized the handoff from provider-neutral operational observations into routing through an explicit read-only operational input boundary;
+- introduced `routing.OperationalInput` as an immutable routing handoff containing the operational snapshot and derived freshness observation;
+- introduced `OperationalInputReader` so routing no longer depends directly on the mutable operational store contract;
+- added `StoreOperationalInputReader` as the compatibility adapter from the existing operational store to the read-only routing boundary;
+- removed the mutable operational store field from `routing.Router`; the router now retains only the read-only operational input reader;
+- preserved routing ownership of provider eligibility decisions: health, balance, freshness, capability state, catalog state, and priority remain routing predicates rather than being converted into an operational authorization flag;
+- added deterministic integration/regression coverage proving routing consumes the read-only operational input and does not mutate operational state;
+- added deterministic coverage proving the store-backed handoff returns the expected snapshot/freshness without exposing mutation through the routing reader;
+- preserved existing stale/future operational snapshot rejection behavior at the routing decision boundary.
+
+### Operational-to-routing handoff
+
+The boundary is now explicit:
+
+```text
+Operational Store
+      |
+      | read-only adapter
+      v
+OperationalInputReader
+      |
+      | immutable OperationalInput
+      v
+Provider Router
+      |
+      +-- routing eligibility decision
+      +-- capability state
+      +-- catalog/product availability
+      +-- priority
+```
+
+Operational state remains evidence consumed by routing. It does not itself become a financial authorization, capability enablement, transaction state mutation, or automatic failover instruction.
+
+The routing reader exposes no `Put`, synchronization, funding, or transaction mutation operation. The router therefore cannot use the operational handoff to persist a changed operational snapshot.
+
+### Implementation
+
+Primary changes:
+
+- `DesKaProvider/backend/routing/operational_input.go`
+  - read-only `OperationalInput`;
+  - `OperationalInputReader`;
+  - store-backed read-only adapter.
+- `DesKaProvider/backend/routing/router.go`
+  - router consumes `OperationalInputReader`;
+  - mutable operational store removed from router state.
+- `DesKaProvider/backend/routing/operational_input_test.go`
+  - read-only handoff and no-mutation regression coverage.
+
+### Verification
+
+The exact implementation/test HEAD is:
+
+03143d5d3b420c51d0b1a07b30bede6467ac96de
+
+GitHub Actions for this exact implementation HEAD are pending report at the time this status entry is written.
+
+The previous exact branch HEAD before #256 remained:
+
+6448ea0b9aad65fafe5e94bac85115babbde3da0
+
+with final CI GREEN:
+
+- Push CI #2581 / run 36408288467: success
+- Pull Request CI #2582 / run 36408295744: success
+
+No real provider credentials or live provider transaction was required.
+
+### Safety Boundary / Invariants
+
+- operational snapshots remain observational evidence only;
+- routing consumes operational data through a read-only handoff;
+- operational data does not authorize payment, payout, funding, retry, or transaction resubmission;
+- no automatic provider failover is introduced;
+- no automatic transaction resubmission is introduced;
+- no provider funding is introduced;
+- no customer ledger mutation or treasury movement is introduced;
+- transaction persistence remains authoritative for transaction state;
+- provider-specific behavior remains inside provider adapters;
+- public API exposure remains outside this milestone.
+
+### Known Limitations
+
+- the routing input boundary is provider-neutral and does not define provider-specific SLA policy;
+- provider routing still uses explicit health, balance, freshness, capability, catalog, and priority predicates;
+- no automatic failover policy is introduced;
+- live provider validation remains separate from deterministic CI;
+- RCB and PortalPulsa remain placeholders and are not runtime-registered.
+
+### Next Milestone
+
+**Milestone #257 — Routing Decision Consistency Boundary**
+
+Scope:
+
+- define deterministic consistency rules for routing eligibility inputs;
+- ensure capability, operational freshness/health, catalog availability, and priority are evaluated without contradictory route decisions;
+- add deterministic and PostgreSQL-backed routing consistency/recovery coverage where applicable;
+- preserve transaction ownership, CAS/idempotency, and no-resubmission safety boundaries.
+
+No automatic provider failover, payment resubmission, provider funding, customer ledger mutation, treasury movement, or public API exposure is included in #257.
