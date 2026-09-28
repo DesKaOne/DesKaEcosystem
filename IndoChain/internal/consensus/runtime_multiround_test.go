@@ -2,6 +2,7 @@ package consensus
 
 import (
 	"bytes"
+	"crypto/ed25519"
 	"errors"
 	"testing"
 )
@@ -153,9 +154,9 @@ func TestValidatorRuntimeRejectsReplayedTimeoutEvidenceAfterRoundChange(t *testi
 	runtime, state, _, _ := runtimeFixture(t)
 	signerA, publicA := newTimeoutTestSigner(t)
 	signerB, publicB := newTimeoutTestSigner(t)
-	resolver := timeoutRuntimeAuthorityResolver{keys: map[string][]byte{
-		"validator-a": append([]byte(nil), publicA...),
-		"validator-b": append([]byte(nil), publicB...),
+	resolver := timeoutRuntimeAuthorityResolver{keys: map[string]ed25519.PublicKey{
+		"validator-a": publicA,
+		"validator-b": publicB,
 	}}
 	msgA, err := NewTimeoutMessage(state, []byte("validator-a"), state.Round+1, signerA)
 	if err != nil { t.Fatal(err) }
@@ -180,10 +181,10 @@ func TestValidatorRuntimeHigherLockValidationFailureIsAtomic(t *testing.T) {
 	runtime.state.Round = 1
 	runtime.lockedProposal = []byte("old-proposal")
 	runtime.lockedRound = 0
-	proof := timeoutLockProofAtRound(t, state, validators, power, 1, "new-proposal",
-		newTimeoutTestSignerPair(t))
+	signerA, signerB, resolver := newTimeoutTestSignerPair(t)
+	proof := timeoutLockProofAtRound(t, state, validators, power, 1, "new-proposal", signerA, signerB)
 	proof.Certificate.Votes[0].Signature[0] ^= 0xff
-	messages, resolver := timeoutMessagesForProof(t, runtime.State(), proof)
+	messages := timeoutMessagesForProof(t, runtime.State(), proof, signerA, signerB)
 
 	beforeState := runtime.state
 	beforeProposal := append([]byte(nil), runtime.lockedProposal...)
@@ -231,7 +232,8 @@ func TestValidatorRuntimeMultiRoundLockTimeoutAndAuthenticatedFinality(t *testin
 
 	// Round 2 -> Round 3: preserve the adopted lock through another timeout.
 	state2 := runtime.State()
-	messages2 := timeoutMessagesForProof(t, state2, proof1, signer1A, signer1B)\n\tresolver2 := resolver1
+	messages2 := timeoutMessagesForProof(t, state2, proof1, signer1A, signer1B)
+	resolver2 := resolver1
 	if _, err := runtime.AdvanceRoundWithTimeoutEvidence(messages2, resolver2); err != nil {
 		t.Fatalf("round-2 timeout transition failed: %v", err)
 	}
