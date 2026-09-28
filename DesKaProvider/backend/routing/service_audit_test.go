@@ -505,7 +505,9 @@ func TestServiceReconcileLoadsDurablePendingTransactionAfterRestart(t *testing.T
 		}},
 		Version:1,
 	}
-	if _, err := first.Purchase(context.Background(), req); err != nil { t.Fatal(err) }
+	if _, err := base.Purchase(context.Background(), provider.PurchaseRequest{
+		ProductCode:req.ProductCode, CustomerNo:req.CustomerNo, ReferenceID:req.ReferenceID,
+	}); err != nil { t.Fatal(err) }
 	if got := base.PurchaseCount(req.ReferenceID); got != 1 { t.Fatalf("expected one initial provider submission, got %d", got) }
 	pending.Version = 1
 	pending.Execution.Result.Status = provider.StatusPending
