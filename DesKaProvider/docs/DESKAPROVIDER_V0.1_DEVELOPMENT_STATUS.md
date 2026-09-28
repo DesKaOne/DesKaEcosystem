@@ -13919,3 +13919,124 @@ Scope:
 - correlate by durable ReferenceID and provider reference without calling CreatePayment;
 - apply CAS-safe payment state transitions after reconciliation;
 - preserve no-retry/no-failover invariants.
+
+## Milestone #244 — Payment Reconciliation / Status Recovery Boundary
+
+**Date:** 2026-09-28
+
+### Completed
+
+- added Service.ReconcilePayment for durably claimed payment transactions;
+- reconciliation resolves the authoritative provider from persisted ProviderName;
+- reconciliation uses provider-neutral GetPaymentStatus and never calls CreatePayment;
+- durable ReferenceID is the primary correlation key for status lookup;
+- provider status must match durable reference, amount, and currency before any state transition;
+- payment state transitions remain CAS-protected through the existing transaction store boundary;
+- terminal payment states are immutable unless the provider observation is an identical terminal observation;
+- provider status failures and correlation conflicts do not mutate the durable payment state;
+- successful reconciliation updates the durable provider reference when the provider returns its authoritative transaction reference;
+- added tests for successful reconciliation, no-resubmission, provider identity mismatch, and terminal-state protection.
+
+### Implementation
+
+Primary implementation:
+
+- DesKaProvider/backend/routing/service.go
+  - ReconcilePayment
+  - ErrPaymentReconciliationNotFound
+  - ErrPaymentReconciliationConflict
+  - provider-neutral GetPaymentStatus call
+  - CAS-safe payment state transition
+- DesKaProvider/backend/routing/payment_submission_test.go
+  - reconciliation success
+  - durable-reference lookup
+  - no CreatePayment resubmission
+  - provider identity mismatch rejection
+  - terminal-state immutability
+- DesKaProvider/backend/internal/Payment/payment.go
+  - existing provider-neutral status contract reused unchanged
+- DesKaProvider/backend/Provider/Midtrans/midtrans.go
+  - existing GetPaymentStatus contract supports order-ID based reconciliation
+
+Final implementation/test HEAD before status documentation:
+
+78a0c7de6e4e38bfcf768fa63ceca5c5efb8be18
+
+### Verification
+
+GitHub Actions verified the exact implementation HEAD with both push and pull-request workflows:
+
+- Push CI #2469: GREEN
+- Pull Request CI #2470: GREEN
+- go test ./...: PASS
+- go vet ./...: PASS
+- go test -race ./...: PASS
+- PostgreSQL integration environment: PASS
+
+The previous Milestone #243 verification also remained GREEN before this milestone began.
+
+### Safety Boundary / Invariants
+
+- ReferenceID remains the durable payment correlation key.
+- ProviderName stored with the transaction is authoritative; reconciliation never selects a different provider automatically.
+- ReconcilePayment can call GetPaymentStatus only; it never calls CreatePayment.
+- A status lookup error does not authorize retrying payment creation.
+- A provider status that mismatches reference, amount, or currency is rejected without state mutation.
+- CAS conflict does not authorize another provider submission.
+- Terminal success/failed payment states cannot be overwritten by a conflicting later observation.
+- No provider failover is introduced.
+- No DesKaCash customer ledger/balance mutation is introduced.
+- No treasury movement or automatic provider funding is introduced.
+- Provider-specific status mapping remains inside the provider adapter.
+
+### Known Limitations
+
+Midtrans Snap returns a payment token during creation, while the Midtrans status endpoint can return a transaction ID. The reconciliation path therefore uses the durable order/reference ID for status lookup rather than treating the Snap token as a status lookup identifier. When status returns the authoritative provider transaction reference, it replaces the initiation-time provider reference in durable payment state.
+
+This milestone does not introduce scheduled/background reconciliation. It provides the safe service boundary that a future caller, webhook/reconciliation worker, or administrative recovery flow can invoke.
+
+No live Midtrans payment or status request was executed; verification is deterministic test-based validation only.
+
+### Architecture Impact
+
+The payment lifecycle is now:
+
+    DesKaCash
+        |
+        v
+    DesKaProvider SubmitPayment
+        |
+        +-- durable ReferenceID claim
+        |
+        +-- exactly one CreatePayment
+        |
+        v
+    External Provider
+        |
+        +-- GetPaymentStatus(referenceID)
+        |
+        v
+    DesKaProvider ReconcilePayment
+        |
+        +-- validate provider identity/amount/currency
+        +-- CAS transition
+        +-- durable terminal/pending state
+
+This preserves the separation:
+
+DesKaCash -> DesKaProvider -> External Providers
+
+and keeps provider-specific protocol details inside adapters.
+
+### Next Milestone
+
+Milestone #245 — Payment Webhook Ingress / Normalization Boundary
+
+Scope:
+
+- expose a provider-neutral payment webhook normalization path;
+- authenticate/validate provider-specific webhook payloads inside adapters;
+- correlate webhook ReferenceID with the durable payment transaction;
+- enforce authoritative ProviderName before mutation;
+- apply the same payment transition/CAS invariants as reconciliation;
+- never invoke CreatePayment from webhook processing.
