@@ -33,8 +33,6 @@ func NewSyncWorkerLifecycle(service *SyncService, interval time.Duration) (*Sync
 	return &SyncWorkerLifecycle{service: service, interval: interval}, nil
 }
 
-// Start starts one owned synchronization worker. The worker performs its
-// immediate synchronization before waiting for the periodic interval.
 func (l *SyncWorkerLifecycle) Start(parent context.Context) error {
 	if parent == nil {
 		return errors.New("parent context is required")
@@ -67,6 +65,33 @@ func (l *SyncWorkerLifecycle) Start(parent context.Context) error {
 	return nil
 }
 
+// Wait blocks until the current worker exits or ctx is canceled. It is safe
+// to call after Start and does not alter worker ownership.
+func (l *SyncWorkerLifecycle) Wait(ctx context.Context) error {
+	if ctx == nil {
+		return errors.New("wait context is required")
+	}
+
+	l.mu.Lock()
+	if !l.running {
+		err := l.err
+		l.mu.Unlock()
+		return normalizeWorkerExitError(err)
+	}
+	done := l.done
+	l.mu.Unlock()
+
+	select {
+	case <-done:
+		l.mu.Lock()
+		err := l.err
+		l.mu.Unlock()
+		return normalizeWorkerExitError(err)
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 // Shutdown requests cancellation and waits for the owned worker to exit.
 // Normal context cancellation is treated as a clean shutdown.
 func (l *SyncWorkerLifecycle) Shutdown(ctx context.Context) error {
@@ -78,10 +103,7 @@ func (l *SyncWorkerLifecycle) Shutdown(ctx context.Context) error {
 	if !l.running {
 		err := l.err
 		l.mu.Unlock()
-		if errors.Is(err, context.Canceled) {
-			return nil
-		}
-		return err
+		return normalizeWorkerExitError(err)
 	}
 	cancel := l.cancel
 	done := l.done
@@ -94,15 +116,12 @@ func (l *SyncWorkerLifecycle) Shutdown(ctx context.Context) error {
 		l.mu.Lock()
 		err := l.err
 		l.mu.Unlock()
-		if errors.Is(err, context.Canceled) {
-			return nil
-		}
-		return err
+		return normalizeWorkerExitError(err)
 	case <-ctx.Done():
 		return ctx.Err()
 	}
 }
-// Running reports whether the owned synchronization worker is active.
+
 func (l *SyncWorkerLifecycle) Running() bool {
 	if l == nil {
 		return false
@@ -110,4 +129,11 @@ func (l *SyncWorkerLifecycle) Running() bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.running
+}
+
+func normalizeWorkerExitError(err error) error {
+	if errors.Is(err, context.Canceled) {
+		return nil
+	}
+	return err
 }
