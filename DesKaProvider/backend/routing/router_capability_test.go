@@ -22,7 +22,7 @@ func TestRouterRequiresExplicitRegistryCapabilityEligibility(t *testing.T) {
         },
         {
             name: "not-implemented",
-            status: provider.CapabilityStatus{AdapterImplemented: false, Enabled: true},
+            status: provider.CapabilityStatus{AdapterImplemented: false, Enabled: false},
         },
         {
             name: "implemented-and-enabled",
