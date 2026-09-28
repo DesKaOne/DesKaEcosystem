@@ -2,6 +2,8 @@ package provider
 
 import (
 	"context"
+	
+	payment "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/internal/Payment"
 	"errors"
 	"testing"
 )
@@ -35,5 +37,59 @@ func TestRegistryRegisterGetAndNames(t *testing.T) {
 	}
 	if len(r.Names()) != 1 || r.Names()[0] != "digiflazz" {
 		t.Fatalf("unexpected names: %v", r.Names())
+	}
+}
+
+
+type registryTestPaymentProvider struct{}
+
+func (registryTestPaymentProvider) CreatePayment(context.Context, payment.PaymentRequest) (payment.PaymentResult, error) {
+	return payment.PaymentResult{}, nil
+}
+func (registryTestPaymentProvider) GetPaymentStatus(context.Context, payment.StatusRequest) (payment.StatusResult, error) {
+	return payment.StatusResult{}, nil
+}
+
+func TestRegistryPaymentCapabilityIsExplicitAndTyped(t *testing.T) {
+	r := NewRegistry()
+	if err := r.RegisterCapabilityProvider("midtrans", CapabilityPayment, registryTestPaymentProvider{}, CapabilityStatus{
+		AdapterImplemented: true, Tested: true, Enabled: false,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	p, err := r.GetPaymentProvider("midtrans")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p == nil {
+		t.Fatal("expected typed payment provider")
+	}
+
+	statuses, err := r.Capabilities("midtrans")
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, ok := statuses.Status(CapabilityPayment)
+	if !ok {
+		t.Fatal("expected payment capability metadata")
+	}
+	if status.Enabled {
+		t.Fatal("payment capability must remain disabled by default")
+	}
+	if status.State() != CapabilityDisabled {
+		t.Fatalf("expected DISABLED state, got %s", status.State())
+	}
+}
+
+func TestRegistryPaymentCapabilityRejectsWrongImplementation(t *testing.T) {
+	r := NewRegistry()
+	if err := r.RegisterCapabilityProvider("midtrans", CapabilityPayment, struct{}{}, CapabilityStatus{
+		AdapterImplemented: true, Tested: true, Enabled: false,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.GetPaymentProvider("midtrans"); err == nil {
+		t.Fatal("expected invalid payment contract error")
 	}
 }
