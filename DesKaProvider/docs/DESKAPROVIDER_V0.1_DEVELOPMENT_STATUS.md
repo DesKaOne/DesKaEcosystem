@@ -15752,3 +15752,94 @@ Scope:
 - keep deterministic CI credential-free and separate business/account/KYC readiness from repository and provider validation state.
 
 No automatic failover, payment resubmission, provider funding, customer ledger mutation, treasury movement, or public API exposure is included in #260.
+
+## Milestone #260 — IAK Read-Only Sandbox/Live Integration Boundary
+
+**Date:** 2026-09-28
+
+### Completed
+
+- hardened the existing IAK integration harness with the shared endpoint safety boundary;
+- IAK read-only validation now requires the explicit global live-integration gate plus `IAK_INTEGRATION=1` and explicit IAK provider selection;
+- both IAK Price List and Balance endpoints are validated before any provider request is made;
+- read-only validation calls only IAK Balance and Catalog/Price List operations; no purchase/top-up operation is invoked;
+- added deterministic endpoint-gate regression coverage proving a wrong provider gate or disabled global gate cannot authorize IAK validation;
+- added a manual `workflow_dispatch` IAK read-only job using environment-backed `IAK_USERNAME` and `IAK_API_KEY` secrets;
+- normal push/pull-request CI remains credential-free and skips the IAK integration job;
+- documented `IAK_INTEGRATION=0` as the default opt-in boundary in `.env.example`.
+
+### Verification
+
+Exact implementation/test HEAD before this status-only update:
+
+`ff6a42330789d6587adb0101c25163e6baa71da8`
+
+GitHub Actions for that exact HEAD are **GREEN**:
+
+- Push CI **#2641** / run `36412932029`: GREEN
+  - `go test ./...`: PASS
+  - `go vet ./...`: PASS
+  - `go test -race ./...`: PASS
+  - PostgreSQL-backed test setup completed successfully
+  - `midtrans-sandbox`: skipped because normal push/PR CI is credential-free
+  - `iak-read-only`: skipped because authorized credentials are not supplied to normal CI
+- Pull Request CI **#2642** / run `36412938487`: GREEN
+  - `test`: PASS
+  - `race`: PASS
+  - PostgreSQL-backed test setup completed successfully
+  - `midtrans-sandbox`: skipped
+  - `iak-read-only`: skipped
+
+No authorized IAK sandbox/live request was executed during this milestone. The manual harness is ready for an explicit authorized `workflow_dispatch` run with provider credentials supplied through repository secrets.
+
+### Safety Boundary / Invariants
+
+- IAK integration validation is read-only and does not call purchase/top-up;
+- endpoint authorization requires HTTPS, hostname validation, and explicit allowlisting;
+- provider selection is explicit and the wrong provider cannot authorize the IAK harness;
+- credentials remain environment/secret-backed and are not stored in Git;
+- normal CI remains credential-free;
+- deterministic CI success does not imply sandbox/live validation;
+- no automatic retry, provider failover, or transaction resubmission is introduced;
+- no duplicate payment/purchase creation is introduced;
+- no ledger mutation, customer balance mutation, treasury movement, or provider funding is introduced;
+- durable transaction/reference ownership, CAS/idempotency, webhook idempotency, and reconciliation boundaries remain unchanged;
+- no public API exposure is introduced.
+
+### Provider Readiness Separation
+
+IAK readiness remains separated into:
+
+- business/account/KYC readiness;
+- adapter implementation;
+- deterministic test coverage;
+- authorized sandbox/live validation;
+- capability-specific ProductionReady assessment.
+
+The repository does not mark IAK Balance or Catalog capability LIVE_VALIDATED or ProductionReady from this milestone alone.
+
+### Known Limitations
+
+- the manual IAK workflow is credential-gated and was not executed with authorized provider credentials in this milestone;
+- the read-only harness validates Balance and Price List contracts only; it does not validate IAK purchase/top-up, inquiry, status, or webhook capabilities;
+- the repository still does not expose a public DesKaCash API;
+- RCB remains a placeholder without an implemented runtime adapter contract;
+- XP SINDONESIA remains separately evaluated by capability and currently exposes a concrete Balance adapter while Catalog/Inquiry/Status are unsupported in the runtime client.
+
+### Architecture Impact
+
+The integration boundary now reuses one endpoint authorization model across Midtrans and IAK while keeping provider-specific credentials, endpoints, request signing, and response parsing inside their adapters. IAK read-only validation can therefore verify operational balance/catalog contracts without creating financial transactions or coupling DesKaCash to provider-specific APIs.
+
+### Next Milestone
+
+**Milestone #261 — XP SINDONESIA Read-Only Balance Integration Boundary**
+
+Scope:
+
+- add the same centralized endpoint validation and explicit provider-selection gate to the existing XP SINDONESIA Balance adapter;
+- validate the XP Balance contract only, using environment-backed credentials and no purchase/order call;
+- keep normal CI credential-free with an explicit manual `workflow_dispatch` validation path;
+- add deterministic gate and response-contract tests;
+- preserve capability-specific readiness and do not infer Catalog, Inquiry, Status, or Purchase production readiness from Balance validation.
+
+No automatic failover, payment resubmission, provider funding, customer ledger mutation, treasury movement, duplicate purchase creation, or public API exposure is included in #261.
