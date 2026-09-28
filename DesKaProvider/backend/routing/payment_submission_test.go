@@ -213,6 +213,58 @@ func TestHandlePaymentWebhookDuplicateTerminalIsIdempotent(t *testing.T) {
 	if p.webhookCalls!=2||p.calls!=1{t.Fatalf("duplicate webhook must be idempotent without resubmission: webhook=%d create=%d",p.webhookCalls,p.calls)}
 }
 
+func TestHandlePaymentWebhookDuplicatePendingIsIdempotent(t *testing.T) {
+	p := &paymentSubmissionProvider{
+		result: payment.PaymentResult{
+			ReferenceID: "pay-webhook-pending-duplicate",
+			Status:      payment.StatusPending,
+			Amount:      91000,
+			Currency:    "IDR",
+		},
+		webhookResult: payment.StatusResult{
+			ReferenceID:       "pay-webhook-pending-duplicate",
+			ProviderReference: "tx-pending-duplicate",
+			Status:            payment.StatusPending,
+			Amount:            91000,
+			Currency:          "IDR",
+			Message:           "pending",
+		},
+	}
+	s := newPaymentSubmissionService(t, p, true)
+	req := payment.PaymentRequest{
+		ReferenceID: "pay-webhook-pending-duplicate",
+		Amount:      91000,
+		Currency:    "IDR",
+		CustomerID:  "cust-webhook-pending-duplicate",
+	}
+	if _, err := s.SubmitPayment(context.Background(), "midtrans", req); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.HandlePaymentWebhook(context.Background(), "midtrans", []byte("{}")); err != nil {
+		t.Fatal(err)
+	}
+	before, ok := s.Store.Get(req.ReferenceID)
+	if !ok {
+		t.Fatal("expected durable payment state")
+	}
+	if _, err := s.HandlePaymentWebhook(context.Background(), "midtrans", []byte("{}")); err != nil {
+		t.Fatal(err)
+	}
+	after, ok := s.Store.Get(req.ReferenceID)
+	if !ok {
+		t.Fatal("expected durable payment state after duplicate webhook")
+	}
+	if after.Version != before.Version {
+		t.Fatalf("identical pending webhook must not rewrite durable version: before=%d after=%d", before.Version, after.Version)
+	}
+	if after.Payment == nil || after.Payment.Status != payment.StatusPending || after.Payment.ProviderReference != "tx-pending-duplicate" {
+		t.Fatalf("duplicate pending webhook must preserve observation: %#v", after)
+	}
+	if p.calls != 1 || p.webhookCalls != 2 {
+		t.Fatalf("duplicate pending webhook must never resubmit payment: create=%d webhook=%d", p.calls, p.webhookCalls)
+	}
+}
+
 func TestHandlePaymentWebhookConflictingTerminalIsRejected(t *testing.T) {
 	p:=&paymentSubmissionProvider{
 		result:payment.PaymentResult{ReferenceID:"pay-webhook-4",Status:payment.StatusPending,Amount:90000,Currency:"IDR"},
