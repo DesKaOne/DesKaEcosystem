@@ -141,7 +141,7 @@ func TestCapabilitiesFromDescriptorMatchesImplementedMetadataOnly(t *testing.T) 
 		provider.CapabilityPayout:  {AdapterImplemented: true},
 	}}
 	got := capabilitiesFromDescriptor(descriptor)
-	want := []operational.Capability{operational.CapabilityBalance, operational.CapabilityPPOB, operational.CapabilityPayout}
+	want := []operational.Capability{operational.CapabilityBalance, operational.CapabilityPayout, operational.CapabilityPPOB}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("derived capabilities = %#v, want %#v", got, want)
 	}
