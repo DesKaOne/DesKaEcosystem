@@ -364,11 +364,6 @@ func (s *Service) Reconcile(ctx context.Context, referenceID string) (PurchaseEx
 	if providerName == "" {
 		return PurchaseExecution{}, ErrWebhookReferenceConflict
 	}
-	if latest.Execution.Result.Status != provider.StatusPending {
-		s.syncLocalTransaction(latest)
-		return latest.Execution, nil
-	}
-
 	p, err := s.Router.Registry.Get(providerName)
 	if err != nil {
 		return PurchaseExecution{}, fmt.Errorf("get provider for reconciliation: %w", err)
