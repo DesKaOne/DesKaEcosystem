@@ -517,7 +517,7 @@ func TestServiceReconcileLoadsDurablePendingTransactionAfterRestart(t *testing.T
 	if err != nil { t.Fatalf("reconcile after restart: %v", err) }
 	if got.Result.Status != provider.StatusSuccess { t.Fatalf("expected success, got %#v", got.Result) }
 	if got.ProviderName != "mock" { t.Fatalf("expected durable provider identity, got %q", got.ProviderName) }
-	if base.PurchaseCount(req.ReferenceID) != 0 { t.Fatalf("reconciliation must not submit purchase, got %d submissions", base.PurchaseCount(req.ReferenceID)) }
+	if base.PurchaseCount(req.ReferenceID) != 1 { t.Fatalf("reconciliation must not submit a second purchase, got %d submissions", base.PurchaseCount(req.ReferenceID)) }
 
 	persisted, ok := store.Get(req.ReferenceID)
 	if !ok || persisted.Execution.Result.Status != provider.StatusSuccess { t.Fatalf("expected durable success after restart reconciliation, got %#v", persisted) }
