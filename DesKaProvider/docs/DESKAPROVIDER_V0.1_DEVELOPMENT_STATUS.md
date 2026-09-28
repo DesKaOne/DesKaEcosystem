@@ -14040,3 +14040,128 @@ Scope:
 - enforce authoritative ProviderName before mutation;
 - apply the same payment transition/CAS invariants as reconciliation;
 - never invoke CreatePayment from webhook processing.
+
+## Milestone #245 — Payment Webhook Ingress / Normalization Boundary
+
+**Date:** 2026-09-28
+
+### Completed
+
+- added a provider-neutral Service.HandlePaymentWebhook ingress for payment webhook processing;
+- added a typed Registry.GetPaymentWebhookProvider accessor so webhook handling remains behind the provider-neutral payment.WebhookProvider contract;
+- required the payment capability to be implemented and enabled before webhook processing can mutate durable payment state;
+- delegated payload authentication and provider-specific normalization to the adapter before any durable transaction lookup/mutation;
+- correlated the normalized webhook by durable ReferenceID;
+- required the webhook provider identity supplied by the ingress boundary to match the durable Execution.ProviderName;
+- validated webhook ReferenceID, amount, and currency against the durable payment identity before state transition;
+- reloaded durable state immediately before mutation to reduce stale-read races;
+- applied payment lifecycle changes through the existing CAS/compare-and-transition boundary;
+- treated an identical terminal webhook observation as idempotent;
+- rejected conflicting terminal webhook observations without rewriting terminal state;
+- added regression tests for successful webhook transition, provider ownership mismatch, duplicate terminal delivery, conflicting terminal delivery, unknown reference, disabled capability, and the no-resubmission invariant;
+- preserved Midtrans adapter responsibility for SHA-512 signature validation and provider-status normalization.
+
+### Implementation
+
+Primary implementation:
+
+- DesKaProvider/backend/Provider/registry.go
+  - GetPaymentWebhookProvider
+- DesKaProvider/backend/routing/service.go
+  - HandlePaymentWebhook
+  - provider capability gate
+  - adapter normalization boundary
+  - durable provider ownership/identity validation
+  - CAS-safe transition
+  - terminal idempotency/conflict handling
+- DesKaProvider/backend/routing/payment_submission_test.go
+  - payment webhook regression coverage
+
+The existing neutral contract remains:
+
+- payment.WebhookProvider.HandlePaymentWebhook(context.Context, []byte) (StatusResult, error)
+
+Provider-specific webhook payloads and authentication remain inside the adapter. The service receives only the normalized provider-neutral StatusResult.
+
+### Safety Boundary / Invariants
+
+- webhook processing never calls CreatePayment;
+- webhook processing never authorizes a second submission for an existing ReferenceID;
+- durable ProviderName remains authoritative ownership;
+- a webhook from a different provider cannot mutate the transaction;
+- ReferenceID, amount, and currency must match the durable payment identity before mutation;
+- CAS/compare-and-transition remains the lifecycle authorization boundary;
+- terminal success/failed states are immutable except for an identical terminal observation;
+- webhook normalization/authentication failure causes no durable state mutation;
+- persistence/CAS conflict does not authorize retry or failover;
+- no automatic provider failover, retry, or resubmission was added;
+- no DesKaCash customer ledger/balance mutation was added;
+- no treasury movement or automatic provider funding was added;
+- payment capability remains disabled by default in runtime registration;
+- no live Midtrans webhook was executed; validation remains deterministic test/CI based.
+
+### Architecture Impact
+
+The payment callback path is now:
+
+    External Provider Webhook
+        |
+        v
+    Provider Adapter
+        |
+        +-- authenticate provider-specific payload
+        +-- normalize provider status
+        |
+        v
+    DesKaProvider HandlePaymentWebhook
+        |
+        +-- require enabled payment capability
+        +-- resolve durable ReferenceID
+        +-- verify durable ProviderName ownership
+        +-- verify amount/currency identity
+        +-- CAS transition
+        |
+        v
+    Durable Payment Transaction
+
+This keeps the existing boundary:
+
+DesKaCash -> DesKaProvider -> External Providers
+
+and prevents provider-specific webhook formats, signatures, and status codes from crossing into the DesKaCash/payment domain.
+
+### Verification
+
+Exact implementation/test HEAD:
+
+- 88f8d741617449d1611dd35577f6a63aad490956
+
+GitHub Actions for that exact HEAD:
+
+- Push CI #2473: GREEN
+- Pull Request CI #2474: GREEN
+- CI test: PASS
+- CI vet: PASS
+- CI race: PASS
+
+The workflow completed successfully for both push and pull-request runs. No live provider webhook was executed.
+
+### Known Limitations
+
+- webhook transport/HTTP endpoint wiring is not yet exposed as a public/internal HTTP handler; this milestone establishes the service ingress boundary;
+- payment webhook capability remains tied to the enabled payment capability and is disabled by default;
+- no persistent webhook-event inbox/deduplication table was introduced; identical terminal observations are idempotent at the transaction-state boundary;
+- no scheduled/background reconciliation worker was introduced;
+- no live Midtrans webhook validation was performed.
+
+### Next Milestone
+
+**#246 — Payment Webhook Transport / HTTP Ingress Boundary**
+
+Scope:
+
+- add an internal/provider-facing HTTP webhook transport that captures the raw payload and provider identity without leaking provider-specific fields into DesKaCash;
+- preserve adapter-level authentication/normalization;
+- propagate request context and bounded payload handling;
+- return provider-neutral acknowledgement/error behavior;
+- keep webhook transport free of CreatePayment, retry, failover, ledger, and treasury mutations.
