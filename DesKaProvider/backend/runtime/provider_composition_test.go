@@ -12,6 +12,22 @@ import (
     mock "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/Mock"
 )
 
+func TestRegisterConfiguredProvidersDoesNotRequireDigiFlazz(t *testing.T) {
+    t.Setenv("MIDTRANS_SERVER_KEY", "test-midtrans-key")
+    registry := provider.NewRegistry()
+
+    if err := registerConfiguredProviders(registry, nil, http.DefaultClient); err != nil {
+        t.Fatal(err)
+    }
+
+    if _, err := registry.GetCapabilityProvider("midtrans", provider.CapabilityPayment); err != nil {
+        t.Fatalf("Midtrans should register without DigiFlazz: %v", err)
+    }
+    if _, err := registry.Get("digiflazz"); err == nil {
+        t.Fatal("DigiFlazz must remain unregistered when its credentials are absent")
+    }
+}
+
 func TestRegisterConfiguredProvidersRequiresExplicitCapabilityMetadata(t *testing.T) {
     registry := provider.NewRegistry()
     if err := registerConfiguredProviders(registry, mock.New(mock.Config{}), http.DefaultClient); err != nil {
