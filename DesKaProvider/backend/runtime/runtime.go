@@ -228,7 +228,7 @@ if e != nil { return nil, e }
 statePersistence,e:=operational.NewJSONFileProviderStateStore(cfg.ProviderStateStorePath);if e!=nil{return nil,e}
 stateStore,e:=operational.NewPersistentProviderStateStore(statePersistence);if e!=nil{return nil,e}
 if e:=runRuntimeInitializationFailureHook("after-provider-state-store", ownership); e!=nil { return nil,e }
-for _, name:=range registry.Names(){state,ok:=stateStore.Get(name);if !ok{state,e=operational.NewProviderState(name);if e!=nil{return nil,e}};descriptor,e:=registry.Capabilities(name);if e!=nil{return nil,e};state.Capabilities=state.Capabilities[:0];for capability,status:=range descriptor.Capabilities{if status.AdapterImplemented{state.Capabilities=append(state.Capabilities,operational.Capability(capability))}};if e=stateStore.Put(state);e!=nil{return nil,e}} // persist provider lifecycle/capability state from explicit registry metadata before router construction
+for _, name:=range registry.Names(){state,ok:=stateStore.Get(name);if !ok{state,e=operational.NewProviderState(name);if e!=nil{return nil,e}};descriptor,e:=registry.Capabilities(name);if e!=nil{return nil,e};state.Capabilities=capabilitiesFromDescriptor(descriptor);if e=stateStore.Put(state);e!=nil{return nil,e}} // persist provider lifecycle/capability state from explicit registry metadata before router construction
 router,e:=routing.NewWithCatalogAndStateAndOperationalMaxAge(registry,store,nil,catalogStore,stateStore,cfg.OperationalSnapshotMaxAge);if e!=nil{return nil,e}
 if e:=runRuntimeInitializationFailureHook("after-router", ownership); e!=nil { return nil,e }
 purchaseService,e:=routing.NewServiceWithStoreContextAndAudit(ctx,router,transactionStore,auditStore);if e!=nil{return nil,e}
@@ -239,6 +239,17 @@ if e:=runRuntimeInitializationFailureHook("before-ownership-transfer", ownership
 if err := checkRuntimeInitializationContext(ctx); err != nil { return nil, err }
 ownership.transferToService()
 return service,nil
+}
+
+func capabilitiesFromDescriptor(descriptor provider.CapabilityDescriptor) []operational.Capability {
+	capabilities := make([]operational.Capability, 0, len(descriptor.Capabilities))
+	for capability, status := range descriptor.Capabilities {
+		if status.AdapterImplemented {
+			capabilities = append(capabilities, operational.Capability(capability))
+		}
+	}
+	sort.Slice(capabilities, func(i, j int) bool { return capabilities[i] < capabilities[j] })
+	return capabilities
 }
 
 func registerConfiguredProviders(registry *provider.Registry, digi provider.PPOBProvider, httpClient *http.Client) error {
