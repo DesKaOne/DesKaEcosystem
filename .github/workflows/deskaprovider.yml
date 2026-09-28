@@ -181,3 +181,39 @@ jobs:
             exit 1
           fi
           go test ./Provider/IAK -run '^TestLiveReadOnly$' -count=1
+
+  xp-sindonesia-read-only:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: DesKaProvider/backend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.1"
+          cache: true
+          cache-dependency-path: DesKaProvider/backend/go.mod
+
+      - name: Run authorized XP SINDONESIA read-only balance validation
+        env:
+          XP_SINDONESIA_ID: ${{ secrets.XP_SINDONESIA_ID }}
+          XP_SINDONESIA_KEY: ${{ secrets.XP_SINDONESIA_KEY }}
+          XP_SINDONESIA_API: ${{ secrets.XP_SINDONESIA_API }}
+          XP_SINDONESIA_SALDO_ENDPOINT: https://xp.sindonesia.net/api/saldo.php
+          XP_SINDONESIA_INTEGRATION: "1"
+          DESKAPROVIDER_LIVE_INTEGRATION: "1"
+          DESKAPROVIDER_LIVE_INTEGRATION_PROVIDER: xp_sindonesia
+          DESKAPROVIDER_LIVE_INTEGRATION_ALLOWED_HOSTS: xp.sindonesia.net
+        run: |
+          if [ -z "$XP_SINDONESIA_ID" ] || [ -z "$XP_SINDONESIA_KEY" ] || [ -z "$XP_SINDONESIA_API" ]; then
+            echo "XP_SINDONESIA_ID, XP_SINDONESIA_KEY, and XP_SINDONESIA_API are required for the explicit read-only validation run."
+            exit 1
+          fi
+          go test ./Provider/XPSindonesia -run '^TestLiveReadOnlyBalance$' -count=1
