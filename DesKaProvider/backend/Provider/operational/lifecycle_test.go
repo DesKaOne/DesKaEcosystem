@@ -190,3 +190,46 @@ func TestSyncWorkerLifecycleRecoversPersistedSnapshotAcrossRestart(t *testing.T)
 		t.Fatal(err)
 	}
 }
+
+
+func TestHealthObservationPersistsAndRecoversAcrossStoreRestart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "provider-operational.json")
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", balanceStub{balance: 2200000}); err != nil {
+		t.Fatal(err)
+	}
+	store, err := NewJSONFileStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc, err := NewSyncService(registry, store, "IDR", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	observedAt := time.Date(2026, 9, 28, 10, 5, 0, 0, time.UTC)
+	if _, err := svc.ApplyHealthObservation(HealthObservation{
+		ProviderName: "mock", Status: HealthUnhealthy, ObservedAt: observedAt,
+		ConsecutiveFailures: 3, LastError: "provider error",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	recovered, err := NewJSONFileStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := recovered.Get("mock")
+	if !ok {
+		t.Fatal("expected persisted health observation")
+	}
+	if got.Health != HealthUnhealthy || got.LastCheckedAt != observedAt || got.ConsecutiveFailures != 3 || got.LastError != "provider error" {
+		t.Fatalf("unexpected recovered observation: %#v", got)
+	}
+	freshSvc, err := NewSyncService(registry, recovered, "IDR", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	freshSvc.Now = func() time.Time { return observedAt.Add(10 * time.Minute) }
+	if _, err := freshSvc.ReadFreshOperationalSnapshot("mock", 5*time.Minute); !errors.Is(err, ErrStaleOperationalSnapshot) {
+		t.Fatalf("expected recovered observation to become stale, got %v", err)
+	}
+}
