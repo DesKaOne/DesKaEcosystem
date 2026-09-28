@@ -88,7 +88,7 @@ func newRouter(registry *provider.Registry, store operational.Store, priorities 
 	for name, priority := range priorities {
 		copied[normalize(name)] = priority
 	}
-	return &Router{Registry: registry, Store: store, OperationalInput: operationalInput, Priorities: copied, Catalog: catalogStore, CatalogMaxAge: catalogMaxAge, OperationalMaxAge: operationalMaxAge, ProviderState: stateStore, Now: time.Now}, nil
+	return &Router{Registry: registry, OperationalInput: operationalInput, Priorities: copied, Catalog: catalogStore, CatalogMaxAge: catalogMaxAge, OperationalMaxAge: operationalMaxAge, ProviderState: stateStore, Now: time.Now}, nil
 }
 
 func (r *Router) Select(ctx context.Context, req Request) (string, error) {
