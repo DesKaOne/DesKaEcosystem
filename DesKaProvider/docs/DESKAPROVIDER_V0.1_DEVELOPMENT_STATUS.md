@@ -13607,3 +13607,70 @@ The Midtrans adapter boundary is implementation-complete and deterministically v
 ### Next Milestone
 
 **#241 — Disabled-by-Default Midtrans Payment Registration Boundary:** register the adapter behind an explicit payment-provider registry/capability boundary without enabling live routing, then evaluate how payment token/reference semantics should integrate with the existing durable transaction/audit model.
+
+
+## Milestone #241 — Disabled-by-Default Midtrans Payment Registration Boundary
+
+**Date:** 2026-09-28
+
+### Completed
+
+- extended the provider registry with a typed `GetPaymentProvider` accessor;
+- kept payment implementations separate from the legacy `PPOBProvider` contract;
+- registered a configured Midtrans adapter through the provider capability registry only when `MIDTRANS_SERVER_KEY` is explicitly present;
+- marked the registered payment capability as `AdapterImplemented=true` and `Tested=true`, while keeping `Enabled=false` and `LiveTested=false`;
+- preserved `CapabilityPayment` as an explicit routing/enablement boundary;
+- added registry tests proving:
+  - a payment adapter can be retrieved through the typed neutral contract;
+  - capability metadata remains `DISABLED` by default;
+  - an implementation that does not satisfy `payment.Provider` is rejected by the typed accessor;
+- no live payment routing was added;
+- no provider failover/retry/resubmission was added;
+- no customer ledger, treasury, or funding mutation was added.
+
+### Architecture Impact
+
+The registry now supports capability-specific adapters without forcing every provider capability into the historical PPOB interface:
+
+```
+Provider Registry
+  |
+  +-- PPOBProvider
+  |
+  +-- CapabilityPayment -> payment.Provider
+  |
+  +-- CapabilityBalance
+  +-- CapabilityWebhook
+```
+
+This keeps the Midtrans payment adapter provider-neutral at the boundary while allowing future routing to require an explicit capability state.
+
+### Safety Boundary
+
+- configuration of a Midtrans server key is **not** equivalent to enabling payment routing;
+- registry registration is metadata/implementation availability only;
+- `Enabled=false` remains the routing gate;
+- `LiveTested=false` remains the live-validation gate;
+- the registry accessor does not submit transactions and does not mutate durable transaction state;
+- no live credentials were used during development validation.
+
+### Verification
+
+- implementation commits:
+  - `91f9e567ccce6c74ee52587c67eea83e72d31c1f` — typed payment accessor;
+  - `271b77a7ade5bf756ace6770f3f2551f83e6500c` — registry tests;
+  - `0e3b8dee43919ca9e7a51a3572ec35b1068abf97` — runtime disabled-by-default registration;
+- local execution was attempted but the execution environment could not resolve `github.com`; no local test result is claimed;
+- exact branch CI is the authoritative verification gate.
+
+### Known Limitations
+
+- registration is currently configuration-driven but still disabled by default;
+- no production routing path consumes `payment.Provider` yet;
+- payment token/reference semantics are not yet connected to the durable transaction model;
+- no live Midtrans validation has been performed;
+- refund remains unimplemented.
+
+### Next Milestone
+
+**#242 — Payment Transaction Correlation Boundary:** define the minimal durable transaction representation for a neutral payment lifecycle, preserving the existing `ReferenceID`/provider ownership/CAS rules and without authorizing a second external submission after restart or reconciliation.
