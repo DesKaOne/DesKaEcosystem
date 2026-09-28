@@ -13173,3 +13173,88 @@ Both webhook and reconciliation observations now pass through the same durable t
 ### Next Milestone
 
 Harden PostgreSQL transaction transition semantics and restart behavior under concurrent webhook/reconciliation observations, including explicit integration coverage for cross-process compare-and-transition conflicts and deterministic terminal convergence, while preserving single-shot provider submission and audit/operational boundaries.
+
+
+## Milestone #237 — PostgreSQL Durable Reconciliation After Restart
+
+**Date:** 2026-09-28
+
+### Completed
+
+- Removed the reconciliation dependency on the in-memory `Service.transactions` map as the source of transaction existence.
+- Reconciliation now reloads the durable transaction state first, allowing a fresh service instance to reconcile a pending provider transaction after process restart.
+- Terminal durable transactions are still checked against a fresh provider observation rather than being accepted solely from stale local state.
+- Durable compare-and-transition remains the only state-mutation authorization boundary.
+- Existing stale-observer protection remains strict for reconciliation terminal results; divergent provider observations are rejected rather than overwriting the durable terminal result.
+- Existing webhook observation idempotency remains tolerant only of non-material message normalization differences.
+- PostgreSQL integration fixtures were normalized to satisfy the migration's positive transaction-amount constraint.
+- Added restart coverage proving reconciliation can recover a durable pending transaction without issuing a second provider purchase.
+- Preserved the single-shot provider submission invariant.
+
+### Implementation Details
+
+- `backend/routing/service.go`
+  - `Reconcile` now begins with `getTransactionContextE` and obtains request/provider identity from durable state.
+  - A missing local runtime call no longer prevents reconciliation of a transaction that survived restart.
+  - Provider status is queried even when durable state is terminal, so a fresh provider observation can be compared against the durable terminal result.
+  - Reconciliation terminal equality remains strict through `samePurchaseResult`; a divergent status/provider code/message/serial/price observation is rejected.
+  - Pending reconciliation transitions continue through `persistTransition`, backed by `PutIfCurrentContext` for PostgreSQL.
+  - Conflict recovery reloads durable state and converges only when the latest durable state is compatible with the observation.
+- `backend/routing/service_audit_test.go`
+  - Added `TestServiceReconcileLoadsDurablePendingTransactionAfterRestart`.
+  - The test seeds a provider-side transaction once, persists a pending durable state, constructs a fresh service instance, reconciles it, and verifies exactly one provider submission occurred.
+  - Existing webhook/reconciliation concurrency coverage remains in place.
+- `backend/routing/postgres_transaction_store_integration_test.go`
+  - Existing concurrent `PutIfCurrent` coverage continues to verify one successful CAS transition and one conflict.
+  - Restart/reopen coverage verifies terminal state durability and stale pending transitions remain conflicts.
+  - Pending fixtures now explicitly satisfy the PostgreSQL positive-amount constraint.
+
+### Verification
+
+- Baseline before this milestone: `ff0e1910e0289d871ac133f58eb33ce42f213c08`, CI #2358 GREEN.
+- Intermediate CI #2362: RED — restart test initially used a mock provider without a seeded provider-side reference; existing terminal-message semantics and a schema-invalid PostgreSQL fixture were also exposed.
+- Intermediate CI #2369: RED — reconciliation test/terminal semantics were corrected; the follow-up build exposed test fixture cleanup issues.
+- Intermediate CI #2375: RED — a temporary test compile error from removing the wrong local service variable.
+- Intermediate CI #2379: RED — same test's submission-count assertion expected zero even though the fixture intentionally seeded one external provider observation.
+- Exact implementation HEAD: `865b057abec4edf2a50548afdd7b7e2e398916b7`.
+- Exact implementation CI #2385: **GREEN** — `go test ./...`, `go vet ./...`, and `go test -race ./...` all PASS, with PostgreSQL service integration enabled.
+
+### Invariants
+
+- Durable `ReferenceID` remains the primary transaction correlation key.
+- Durable `ProviderName` remains authoritative for reconciliation provider selection.
+- Reconciliation never submits a provider purchase.
+- A fresh service instance can reconcile durable pending state without reconstructing an old in-memory purchase call.
+- Durable compare-and-transition remains the authorization boundary for concurrent state mutation.
+- A stale observer cannot overwrite a newer durable terminal state.
+- Reconciliation terminal observations remain strict; webhook-only observational message normalization does not weaken durable transaction equality.
+- Persistence errors and CAS conflicts never authorize provider retry or failover.
+- Provider submission count remains independent from reconciliation observation count.
+
+### Safety Boundary
+
+- No automatic provider retry was introduced.
+- No automatic provider failover was introduced.
+- No duplicate provider purchase was authorized.
+- No customer ledger, balance authority, treasury, or funding behavior changed.
+- No provider-specific protocol moved into the routing layer.
+- No live provider credentials or live-provider validation were used.
+
+### Known Limitations
+
+- JSON transaction storage remains an interim v0.1 implementation and does not provide a cross-process filesystem locking protocol.
+- PostgreSQL remains the production-direction durable transaction boundary for cross-process CAS semantics.
+- The current integration suite validates PostgreSQL CAS and restart/reopen behavior, but does not simulate a PostgreSQL server/network failure occurring between provider observation and durable transition.
+- Provider-side idempotency is not assumed; recovery after an external acceptance with local persistence failure remains reconciliation-driven rather than automatic resubmission.
+
+### Architecture Impact
+
+The recovery path is now explicitly durable:
+
+`restart → durable transaction reload → provider identity recovery → provider status observation → durable compare-and-transition → local runtime convergence`
+
+Reconciliation no longer depends on ephemeral service-instance state to discover an existing transaction. This closes the restart gap where a durable pending transaction could previously be invisible to a fresh reconciliation service instance.
+
+### Next Milestone
+
+Harden the PostgreSQL transaction/audit observation boundary under database interruption and restart during reconciliation, including explicit failure attribution for read/CAS/audit errors and verification that no persistence interruption can cause a second provider submission.
