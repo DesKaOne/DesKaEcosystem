@@ -10,6 +10,7 @@ const (
 	CapabilityPayout  Capability = "payout"
 	CapabilityBalance Capability = "balance"
 	CapabilityWebhook Capability = "webhook"
+	CapabilityCatalog Capability = "catalog"
 )
 
 // CapabilityStatus deliberately separates commercial/provider verification,
@@ -33,6 +34,7 @@ type CapabilityStatus struct {
 	Tested             bool
 	Enabled            bool
 	LiveTested         bool
+	ProductionReady    bool
 }
 
 // State returns the canonical externally-observable capability state.
@@ -72,4 +74,37 @@ func (d CapabilityDescriptor) Supports(capability Capability) bool {
 func (d CapabilityDescriptor) Status(capability Capability) (CapabilityStatus, bool) {
 	status, ok := d.Capabilities[capability]
 	return status, ok
+}
+
+var canonicalCapabilities = []Capability{
+	CapabilityPayment,
+	CapabilityPPOB,
+	CapabilityPayout,
+	CapabilityBalance,
+	CapabilityWebhook,
+	CapabilityCatalog,
+}
+
+// AllCapabilities returns the provider-neutral capability vocabulary used by
+// the registry and capability matrix. Provider-specific protocols are not part
+// of this vocabulary.
+func AllCapabilities() []Capability {
+	out := make([]Capability, len(canonicalCapabilities))
+	copy(out, canonicalCapabilities)
+	return out
+}
+
+// CapabilityMatrix is a provider-neutral snapshot of capability metadata.
+// It deliberately contains no provider protocol, endpoint, credential, or
+// provider-specific status code.
+type CapabilityMatrix struct {
+	Providers map[string]CapabilityDescriptor
+}
+
+func (m CapabilityMatrix) Status(providerName string, capability Capability) (CapabilityStatus, bool) {
+	d, ok := m.Providers[normalizeName(providerName)]
+	if !ok {
+		return CapabilityStatus{}, false
+	}
+	return d.Status(capability)
 }
