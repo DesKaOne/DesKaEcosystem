@@ -14154,14 +14154,115 @@ The workflow completed successfully for both push and pull-request runs. No live
 - no scheduled/background reconciliation worker was introduced;
 - no live Midtrans webhook validation was performed.
 
+## Milestone #246 — Payment Webhook Transport / HTTP Ingress Boundary
+
+**Date:** 2026-09-28
+
+### Completed
+
+- added a reusable provider-neutral `PaymentWebhookHTTPHandler` implementing `http.Handler`;
+- exposed the transport boundary at `POST /webhooks/payment/{provider}` without opening a listener or changing runtime process lifecycle;
+- restricted the transport to POST requests and rejects malformed provider paths;
+- bounded inbound webhook bodies with `http.MaxBytesReader`, defaulting to 1 MiB;
+- propagated the inbound `context.Context` into `Service.HandlePaymentWebhook`;
+- kept provider identity as the only transport-level routing value; raw provider payload remains opaque to the HTTP layer;
+- kept provider-specific authentication/normalization inside the registered `WebhookProvider` adapter;
+- added provider-neutral JSON acknowledgement containing ReferenceID, provider reference, and normalized status;
+- mapped domain errors to stable HTTP status classes without leaking provider-specific adapter error details;
+- added deterministic httptest coverage for success, method/path validation, body-size bounds, error sanitization, disabled capability, and the no-resubmission invariant.
+
+### Implementation
+
+Primary implementation:
+
+- `DesKaProvider/backend/routing/payment_webhook_http.go`
+  - `PaymentWebhookHTTPHandler`
+  - `NewPaymentWebhookHTTPHandler`
+  - bounded body handling
+  - provider path extraction
+  - provider-neutral acknowledgement/error mapping
+- `DesKaProvider/backend/routing/payment_webhook_http_test.go`
+  - HTTP transport regression coverage
+
+The transport deliberately does not parse provider-specific JSON, inspect provider signatures, or construct provider-specific requests. It passes the raw bounded body to the provider-neutral service ingress.
+
+### Safety Boundary / Invariants
+
+- only POST is accepted;
+- request bodies are bounded before reaching the service/adapter;
+- provider-specific payloads and authentication remain inside adapters;
+- HTTP transport never calls `CreatePayment`;
+- HTTP transport never retries or fails over;
+- HTTP transport never mutates DesKaCash customer ledger/balance state;
+- HTTP transport never moves treasury funds or authorizes provider funding;
+- disabled payment capability prevents adapter invocation and durable mutation;
+- provider-specific errors are not exposed verbatim through the HTTP response;
+- the transport does not select an alternate provider;
+- no listener/port is opened automatically by this milestone.
+
+### Architecture Impact
+
+The payment webhook path is now:
+
+    External Provider
+        |
+        | HTTP POST /webhooks/payment/{provider}
+        v
+    PaymentWebhookHTTPHandler
+        |
+        +-- method/path validation
+        +-- bounded raw body
+        +-- request context
+        |
+        v
+    DesKaProvider HandlePaymentWebhook
+        |
+        v
+    Provider Adapter
+        |
+        +-- authenticate provider payload
+        +-- normalize provider status
+        |
+        v
+    Durable Payment Transaction
+
+This preserves:
+
+`DesKaCash -> DesKaProvider -> External Providers`
+
+and keeps transport concerns separate from provider protocol concerns.
+
+### Verification
+
+Exact implementation/test HEAD:
+
+- `26522021ffb3fab6dbe893c585fb39fcc0870b7b`
+
+GitHub Actions for that exact HEAD:
+
+- Push CI #2477: GREEN
+- Pull Request CI #2478: GREEN
+- test: PASS
+- vet: PASS
+- race: PASS
+
+No live provider webhook or externally reachable HTTP listener was exercised.
+
+### Known Limitations
+
+- this milestone provides the HTTP handler but does not bind it to a production listener;
+- authentication/authorization of the network edge remains an operational deployment concern; provider-specific webhook authentication remains adapter-owned;
+- no rate limiter or persistent webhook-event inbox was introduced;
+- no live Midtrans webhook was executed;
+- payment capability remains disabled by default.
+
 ### Next Milestone
 
-**#246 — Payment Webhook Transport / HTTP Ingress Boundary**
+**#247 — Payment Webhook Operational Hardening / Replay Safety Boundary**
 
 Scope:
 
-- add an internal/provider-facing HTTP webhook transport that captures the raw payload and provider identity without leaking provider-specific fields into DesKaCash;
-- preserve adapter-level authentication/normalization;
-- propagate request context and bounded payload handling;
-- return provider-neutral acknowledgement/error behavior;
-- keep webhook transport free of CreatePayment, retry, failover, ledger, and treasury mutations.
+- review replay/idempotency behavior beyond terminal-state idempotency;
+- define bounded operational duplicate handling without authorizing payment resubmission;
+- add transport-level security/header handling required by verified provider adapters;
+- preserve CAS, provider ownership, no-retry, no-failover, no-ledger, and no-treasury invariants.
