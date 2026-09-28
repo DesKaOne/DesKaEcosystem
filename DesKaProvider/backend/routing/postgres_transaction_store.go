@@ -58,7 +58,7 @@ func (s *PostgresTransactionStore) CreateIfAbsentContext(ctx context.Context, st
 	if !ok {
 		return TransactionState{}, false, ErrTransactionStateConflict
 	}
-	if current.Request != state.Request || current.Execution.ProviderName != state.Execution.ProviderName {
+	if !sameTransactionIdentity(current, state) {
 		return TransactionState{}, false, ErrReferenceConflict
 	}
 	return current, false, nil

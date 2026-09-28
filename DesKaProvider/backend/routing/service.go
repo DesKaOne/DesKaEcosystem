@@ -111,6 +111,12 @@ func newServiceWithStoreContext(ctx context.Context, router *Router, store Trans
 		states = store.All()
 	}
 	for _, state := range states {
+		if normalizeTransactionKind(state.Kind) == TransactionKindPayment {
+			if state.Payment == nil || state.Payment.ReferenceID == "" || state.Execution.ProviderName == "" {
+				return nil, errors.New("invalid persisted payment transaction state")
+			}
+			continue
+		}
 		if state.Request.ReferenceID == "" || state.Execution.ProviderName == "" {
 			return nil, errors.New("invalid persisted transaction state")
 		}
@@ -165,6 +171,9 @@ func (s *Service) SubmitPayment(ctx context.Context, providerName string, req pa
 	}
 	claimed, created, err := createTransactionIfAbsentContext(ctx, s.Store, pending)
 	if err != nil {
+		if errors.Is(err, ErrReferenceConflict) {
+			return payment.PaymentResult{}, ErrPaymentSubmissionConflict
+		}
 		return payment.PaymentResult{}, fmt.Errorf("claim payment submission: %w", err)
 	}
 	if !created {
