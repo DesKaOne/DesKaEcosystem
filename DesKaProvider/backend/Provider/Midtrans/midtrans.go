@@ -43,36 +43,36 @@ func New(cfg config.MidtransConfig, httpClient *http.Client) (*Client, error) {
 }
 
 type snapCreateRequest struct {
-	TransactionDetails snapTransactionDetails \`json:"transaction_details"\`
+	TransactionDetails snapTransactionDetails `json:"transaction_details"`
 }
 
 type snapTransactionDetails struct {
-	OrderID     string \`json:"order_id"\`
-	GrossAmount int64  \`json:"gross_amount"\`
+	OrderID     string `json:"order_id"`
+	GrossAmount int64  `json:"gross_amount"`
 }
 
 type snapCreateResponse struct {
-	Token       string \`json:"token"\`
-	RedirectURL string \`json:"redirect_url"\`
+	Token       string `json:"token"`
+	RedirectURL string `json:"redirect_url"`
 }
 
 type transactionResponse struct {
-	StatusCode        string \`json:"status_code"\`
-	StatusMessage     string \`json:"status_message"\`
-	TransactionID     string \`json:"transaction_id"\`
-	OrderID           string \`json:"order_id"\`
-	TransactionStatus string \`json:"transaction_status"\`
-	GrossAmount       string \`json:"gross_amount"\`
+	StatusCode        string `json:"status_code"`
+	StatusMessage     string `json:"status_message"`
+	TransactionID     string `json:"transaction_id"`
+	OrderID           string `json:"order_id"`
+	TransactionStatus string `json:"transaction_status"`
+	GrossAmount       string `json:"gross_amount"`
 }
 
 type notification struct {
-	StatusCode        string \`json:"status_code"\`
-	StatusMessage     string \`json:"status_message"\`
-	SignatureKey      string \`json:"signature_key"\`
-	TransactionID     string \`json:"transaction_id"\`
-	OrderID           string \`json:"order_id"\`
-	TransactionStatus string \`json:"transaction_status"\`
-	GrossAmount       string \`json:"gross_amount"\`
+	StatusCode        string `json:"status_code"`
+	StatusMessage     string `json:"status_message"`
+	SignatureKey      string `json:"signature_key"`
+	TransactionID     string `json:"transaction_id"`
+	OrderID           string `json:"order_id"`
+	TransactionStatus string `json:"transaction_status"`
+	GrossAmount       string `json:"gross_amount"`
 }
 
 func (c *Client) CreatePayment(ctx context.Context, req payment.PaymentRequest) (payment.PaymentResult, error) {
