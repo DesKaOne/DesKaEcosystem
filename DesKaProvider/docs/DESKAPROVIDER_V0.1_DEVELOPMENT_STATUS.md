@@ -13258,3 +13258,84 @@ Reconciliation no longer depends on ephemeral service-instance state to discover
 ### Next Milestone
 
 Harden the PostgreSQL transaction/audit observation boundary under database interruption and restart during reconciliation, including explicit failure attribution for read/CAS/audit errors and verification that no persistence interruption can cause a second provider submission.
+
+
+## Milestone #238 — Canonical Provider Capability State Model
+
+**Date:** 2026-09-28
+
+### Completed
+
+- replaced the previously boolean-only capability readiness interpretation with a provider-neutral canonical `CapabilityState`;
+- added explicit states: `NOT_IMPLEMENTED`, `IMPLEMENTED`, `TESTED`, `LIVE_VALIDATED`, and `DISABLED`;
+- added `CapabilityStatus.State()` so implementation readiness, deterministic test evidence, enablement, and live validation are evaluated without conflating provider account/configuration status;
+- added a separate `Tested` flag so deterministic adapter tests are distinguishable from live provider validation;
+- preserved the existing `CapabilityDescriptor.Supports()` routing predicate: a capability remains routable only when its adapter is implemented and the capability is explicitly enabled;
+- recorded deterministic adapter-test evidence for the existing DigiFlazz and conditionally configured IAK capability descriptors without enabling either provider capability;
+- added regression tests covering every canonical state and proving that provider verification/configuration alone never implies implementation.
+
+### Implementation Details
+
+- `backend/Provider/capability.go`
+  - introduced `CapabilityState`;
+  - introduced `CapabilityStatus.State()`;
+  - retained the independent `Verified`, `Configured`, `AdapterImplemented`, `Enabled`, and `LiveTested` evidence fields;
+  - canonical precedence: adapter not implemented -> `NOT_IMPLEMENTED`; implemented but disabled -> `DISABLED`; enabled and live-tested -> `LIVE_VALIDATED`; enabled and deterministically tested -> `TESTED`; otherwise enabled implementation -> `IMPLEMENTED`.
+- `backend/Provider/capability_state_test.go`
+  - added deterministic coverage for all canonical states;
+  - verified stale `LiveTested` metadata cannot bypass disabled state;
+  - verified `Verified` and `Configured` do not imply adapter implementation;
+  - verified canonical state remains separate from the existing routing `Supports()` predicate.
+- `backend/runtime/runtime.go`
+  - marked the existing DigiFlazz and IAK descriptors as deterministically `Tested=true` based on repository adapter tests;
+  - kept `Enabled=false` and `LiveTested=false`.
+
+### Verification
+
+- Implementation commit: `51433ba6ddfb1867b1bd96f755174c009f86d78b`.
+- Regression test commit: `7c31521e5ab95d46244232372c5acd991113fff6`.
+- Runtime evidence commit: `d9315d293c4f2c17c8f03af24d460dde3b404032`.
+- Final status-document commit is this milestone documentation update; CI verification must be performed against the resulting branch HEAD.
+- No live provider credentials or live provider calls were used.
+
+### Capability Matrix Semantics
+
+The matrix now separates:
+
+`Provider account / KYC / commercial verification` -> `Verified` -> `Configured` -> `AdapterImplemented` -> `Tested` -> `Enabled` -> `LiveTested` -> canonical `CapabilityState`.
+
+A provider may therefore be externally verified while a specific capability is `NOT_IMPLEMENTED`, `IMPLEMENTED`, `TESTED`, or `DISABLED`. `LIVE_VALIDATED` is reserved for an actual credential-backed runtime validation and is not inferred from deterministic unit tests.
+
+### Invariants
+
+- Capability state never authorizes a provider transaction by itself.
+- `CapabilityDescriptor.Supports()` remains the routing eligibility predicate and still requires implementation plus explicit enablement.
+- Provider verification/configuration is not treated as live validation.
+- Deterministic adapter tests are not treated as live-provider tests.
+- Provider-specific protocols and credentials remain inside adapters/configuration.
+- Provider balance remains operational provider liquidity data, not customer balance authority.
+- No automatic provider retry, failover, or resubmission is introduced.
+- No customer ledger, customer balance, treasury, funding, or financial authorization boundary changes.
+
+### Safety Boundary
+
+This milestone is metadata and evidence-model hardening only. It does not enable any provider capability, execute external provider operations, or alter transaction/reconciliation authorization.
+
+### Known Limitations
+
+- `Verified` remains metadata and is not backed by a durable evidence/audit record;
+- `Tested` currently represents deterministic repository test evidence, not a stored test-result artifact;
+- `LIVE_VALIDATED` remains false until a real runtime credential-backed validation is performed;
+- XP SINDONESIA remains only partially represented in runtime composition because its current adapter explicitly does not implement the full PPOB contract;
+- RCB and Midtrans still do not have production adapters established by the current source;
+- Payment, payout, catalog, refund, and reverse capabilities remain separate future contracts rather than being inferred from PPOB.
+
+### Architecture Impact
+
+The provider capability boundary now has a canonical state vocabulary that can be consumed by future routing, admin, observability, and provider-readiness surfaces without conflating commercial verification, adapter implementation, deterministic testing, operational enablement, and live validation.
+
+No public API is introduced and no financial authority changes.
+
+### Next Milestone
+
+Establish the provider-neutral payment capability contract and deterministic Midtrans adapter boundary only after the required payment semantics are defined. Keep live validation separate and do not infer payment capability from the existing PPOB contract.
