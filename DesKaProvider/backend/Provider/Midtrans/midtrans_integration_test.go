@@ -73,6 +73,10 @@ func TestSandboxIntegrationPaymentLifecycle(t *testing.T) {
 	// identity/status shape without causing a second payment request.
 	statusCode := "200"
 	grossAmount := "10000.00"
+	midtransStatus := mapWebhookStatus(status.Status)
+	if midtransStatus == "" {
+		t.Fatalf("cannot map normalized status back to Midtrans webhook status: %q", status.Status)
+	}
 	signatureKey := signature(orderID, statusCode, grossAmount, cfg.ServerKey)
 	payload, err := json.Marshal(map[string]string{
 		"status_code":        statusCode,
@@ -80,7 +84,7 @@ func TestSandboxIntegrationPaymentLifecycle(t *testing.T) {
 		"signature_key":      signatureKey,
 		"transaction_id":     status.ProviderReference,
 		"order_id":           orderID,
-		"transaction_status": string(status.Status),
+		"transaction_status": midtransStatus,
 		"gross_amount":       grossAmount,
 	})
 	if err != nil {
@@ -92,5 +96,18 @@ func TestSandboxIntegrationPaymentLifecycle(t *testing.T) {
 	}
 	if webhook.ReferenceID != orderID || webhook.ProviderReference != status.ProviderReference {
 		t.Fatalf("unexpected webhook identity: %+v", webhook)
+	}
+}
+
+func mapWebhookStatus(status payment.Status) string {
+	switch status {
+	case payment.StatusSuccess:
+		return "settlement"
+	case payment.StatusPending:
+		return "pending"
+	case payment.StatusFailed:
+		return "deny"
+	default:
+		return ""
 	}
 }
