@@ -144,13 +144,14 @@ func TestPostgresRuntimeCombinedPersistenceMigrationAndReopen(t *testing.T) {
         t.Fatal(err)
     }
 
+    snapshotNow := time.Now().UTC()
     snapshot := operational.Snapshot{
         ProviderName: "mock",
         Balance: 500000,
         Currency: "IDR",
         Health: operational.HealthHealthy,
-        LastCheckedAt: time.Now().UTC(),
-        LastSuccessAt: time.Now().UTC(),
+        LastCheckedAt: snapshotNow,
+        LastSuccessAt: snapshotNow,
         ConsecutiveFailures: 0,
     }
     if err := operationalStore.Put(snapshot); err != nil {
