@@ -43,3 +43,25 @@ func TestValidateEndpointsRequiresExplicitAllowlist(t *testing.T) {
 		t.Fatal("unallowlisted endpoint must fail validation")
 	}
 }
+
+
+func TestEndpointAllowedWrongProviderGateDoesNotAuthorize(t *testing.T) {
+    t.Setenv(LiveIntegrationEnv, "1")
+    t.Setenv(LiveProviderEnv, "midtrans")
+    t.Setenv(LiveAllowedHostsEnv, "prepaid.iak.id")
+    if Enabled("iak") {
+        t.Fatal("wrong provider selection must not enable IAK integration")
+    }
+    if !EndpointAllowed("https://prepaid.iak.id/api/check-balance") {
+        t.Fatal("endpoint allowlist itself should remain independently testable")
+    }
+}
+
+func TestEndpointAllowedMissingGateDoesNotAuthorize(t *testing.T) {
+    t.Setenv(LiveIntegrationEnv, "0")
+    t.Setenv(LiveProviderEnv, "iak")
+    t.Setenv(LiveAllowedHostsEnv, "prepaid.iak.id")
+    if Enabled("iak") {
+        t.Fatal("disabled global gate must not enable IAK integration")
+    }
+}
