@@ -1,7 +1,9 @@
 package runtime
 
 import (
-    "context"\n    "errors"\n    "net/http"
+    "context"
+    "errors"
+    "net/http"
     "os"
     "testing"
     "reflect"
@@ -222,7 +224,9 @@ func TestRuntimeCapabilityMatrixSnapshotIsDefensive(t *testing.T) {
 
 	snapshot := registry.CapabilityMatrix()
 	snapshot.Providers["midtrans"].Capabilities[provider.CapabilityPayment] = provider.CapabilityStatus{}
-	xp := snapshot.Providers["xp-sindonesia"]\n\txp.Capabilities = nil\n\tsnapshot.Providers["xp-sindonesia"] = xp
+	xp := snapshot.Providers["xp-sindonesia"]
+\txp.Capabilities = nil
+\tsnapshot.Providers["xp-sindonesia"] = xp
 
 	again := registry.CapabilityMatrix()
 	midtransStatus, ok := again.Status("midtrans", provider.CapabilityPayment)
