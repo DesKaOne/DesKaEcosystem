@@ -15940,3 +15940,80 @@ Scope:
 - verify registry composition and routing eligibility cannot infer capabilities from provider presence alone.
 
 No automatic failover, payment resubmission, provider funding, customer ledger mutation, treasury movement, duplicate purchase creation, or public API exposure is included in #262.
+
+## Milestone #262 — Provider Capability Validation Matrix Hardening
+
+**Date:** 2026-09-28
+
+### Completed
+
+- hardened provider capability metadata validation at registry boundaries;
+- added canonical capability vocabulary validation so provider-specific/unknown capability keys cannot be registered;
+- added monotonic readiness invariants:
+  - `Enabled` requires an implemented adapter;
+  - `LiveTested` requires implementation, testing, and explicit enablement;
+  - `ProductionReady` requires verification, configuration, implementation, testing, enablement, and live validation;
+- preserved routing semantics as explicit `Enabled` + `AdapterImplemented`, without inferring capability from provider presence;
+- preserved the separation between routing enablement and higher readiness states;
+- added deterministic tests for invalid readiness combinations, unknown capabilities, explicit capability eligibility, and invalid capability-provider registration metadata;
+- aligned routing tests with the new invariant that an unimplemented capability cannot be registered as enabled;
+
+### CI Follow-up
+
+Three intermediate CI failures were found and corrected during this milestone:
+
+- Push/PR #2661/#2662: registry validation initially rejected existing routing tests that intentionally used `Enabled=true` without `Tested=true`; the invariant was refined so `Tested` gates live validation/production readiness rather than basic explicit routing enablement.
+- Push/PR #2667/#2668: the router test intentionally registered `AdapterImplemented=false, Enabled=true`; the test was corrected because #262 explicitly forbids that invalid metadata combination.
+- Push/PR #2669/#2670: a capability test expected an untested-but-implemented enabled capability to be rejected; it was corrected to assert the actual routing contract of explicit enablement plus implementation.
+
+These failures were test-contract mismatches, not production adapter regressions. Each was corrected before milestone closure.
+
+### Verification
+
+Exact implementation/test HEAD before this status-only update:
+
+`86b1a37b9efb92e2aeb18aee50ab6cae57370fb2`
+
+GitHub Actions for that exact HEAD are **GREEN**:
+
+- Push CI **#2671** / run `36416083024`: GREEN
+  - `go test ./...`: PASS
+  - `go vet ./...`: PASS
+  - `go test -race ./...`: PASS
+  - PostgreSQL-backed test setup completed successfully
+  - `midtrans-sandbox`: skipped
+  - `iak-read-only`: skipped
+  - `xp-sindonesia-read-only`: skipped because authorized provider credentials are not supplied to normal CI
+- Pull Request CI for the same implementation HEAD also passed the `test` and `race` jobs; the status-only commit below triggers a fresh verification run.
+
+### Safety Boundary / Invariants
+
+- provider registration never infers unsupported capabilities from the PPOB interface;
+- unknown capability identifiers are rejected;
+- an unimplemented adapter cannot be marked enabled;
+- live validation cannot be asserted without tested + enabled implementation;
+- ProductionReady cannot be asserted without verified + configured + tested + enabled + live-validated capability state;
+- capability metadata remains provider-neutral and contains no provider credentials or protocol details;
+- no automatic retry, provider failover, or transaction resubmission is introduced;
+- no duplicate payment/purchase creation is introduced;
+- no ledger mutation, customer balance mutation, treasury movement, or provider funding is introduced;
+- durable transaction/reference ownership, CAS/idempotency, webhook idempotency, and reconciliation boundaries remain unchanged;
+- no public API exposure is introduced;
+
+### Architecture Impact
+
+The registry is now a stronger policy boundary: provider presence and adapter implementation are no longer sufficient to imply unsupported capability availability or production readiness. Routing remains explicitly enabled per capability, while live validation and ProductionReady remain separate state transitions.
+
+### Next Milestone
+
+**Milestone #263 — Provider Capability Matrix Runtime Composition Tests**
+
+Scope:
+
+- exercise the hardened capability matrix through actual runtime provider composition for Midtrans, IAK, XP SINDONESIA, and DigiFlazz;
+- verify disabled-by-default behavior and capability-specific registration under partial configuration;
+- verify that missing credentials or unsupported adapter methods cannot synthesize capability entries;
+- verify registry snapshots remain defensive and provider-neutral;
+- preserve the existing no-failover/no-resubmission/no-ledger/no-treasury/no-provider-funding boundaries.
+
+No public API exposure is included in #263.
