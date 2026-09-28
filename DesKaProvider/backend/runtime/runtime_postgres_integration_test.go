@@ -356,6 +356,9 @@ func TestPostgresRuntimeReopenPreservesDedicatedAuditOwnership(t *testing.T) {
 		_ = transactionDB.Close()
 		t.Fatal(err)
 	}
+	paymentMigration, err := os.ReadFile(filepath.Join("..", "migrations", "003_payment_transactions.sql"))
+	if err != nil { _ = transactionDB.Close(); t.Fatal(err) }
+	if _, err := transactionDB.ExecContext(ctx, string(paymentMigration)); err != nil { _ = transactionDB.Close(); t.Fatal(err) }
 
 	auditStore, auditDB, err := openAuditStore(ctx, auditCfg, nil)
 	if err != nil {
