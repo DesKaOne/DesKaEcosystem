@@ -14312,8 +14312,11 @@ The repository CI workflow runs, on both push and pull request:
 Implementation/test HEAD before this status documentation commit:
 `774b287ca7f4f1f72dddfb72fc05b2e691b29ded`
 
-Final status-documentation HEAD:
+Documentation verification baseline HEAD:
 `58b488d45c1ec0cca24f90ed4bcea14532393a69`
+
+Final branch HEAD after this milestone documentation:
+`3880644ed621ad4e415c1a4c57e3e8ce266b6187`
 
 GitHub Actions verification for the final status-documentation HEAD:
 - Push CI #2487: GREEN
