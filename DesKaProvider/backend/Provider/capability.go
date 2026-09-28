@@ -1,5 +1,7 @@
 package provider
 
+import "errors"
+
 // Capability identifies a provider-neutral capability that can be exposed to
 // routing and operational state without leaking provider-specific protocols.
 type Capability string
@@ -107,4 +109,21 @@ func (m CapabilityMatrix) Status(providerName string, capability Capability) (Ca
 		return CapabilityStatus{}, false
 	}
 	return d.Status(capability)
+}
+
+
+// Validate enforces the monotonic readiness invariants used by registry
+// metadata. Commercial verification, configuration, implementation, tests,
+// enablement, live validation, and production readiness remain distinct.
+func (s CapabilityStatus) Validate() error {
+	if s.Enabled && (!s.AdapterImplemented || !s.Tested) {
+		return errors.New("enabled capability must be implemented and tested")
+	}
+	if s.LiveTested && (!s.AdapterImplemented || !s.Tested || !s.Enabled) {
+		return errors.New("live-tested capability must be implemented, tested, and enabled")
+	}
+	if s.ProductionReady && (!s.Verified || !s.Configured || !s.AdapterImplemented || !s.Tested || !s.Enabled || !s.LiveTested) {
+		return errors.New("production-ready capability must be verified, configured, implemented, tested, enabled, and live-tested")
+	}
+	return nil
 }
