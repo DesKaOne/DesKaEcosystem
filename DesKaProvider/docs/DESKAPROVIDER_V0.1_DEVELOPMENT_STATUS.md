@@ -14843,3 +14843,114 @@ Scope:
 - preserve disabled-by-default capability state and all payment safety invariants.
 
 No public API exposure, automatic provider failover, provider funding, or payment resubmission is included in #252.
+
+## Milestone #252 — Provider Operational Fixture Alignment
+
+**Date:** 2026-09-28
+
+### Completed
+
+- aligned provider operational lifecycle state with the explicit capability metadata already registered in the runtime;
+- removed the runtime assumption that every configured provider automatically supports PPOB, Balance, and Webhook state;
+- added deterministic provider-neutral health observation fixtures covering:
+  - successful fresh observation;
+  - successful but stale observation;
+  - provider unavailable/degraded observation;
+  - provider error/unhealthy observation;
+- kept health observations separate from routing authorization and financial side effects;
+- added deterministic regression coverage proving fixture states remain provider-neutral and do not carry financial authorization data;
+- added regression coverage proving runtime capability-state derivation includes only capabilities whose adapter contract is explicitly marked implemented;
+- preserved disabled-by-default runtime capability state and all payment safety invariants.
+
+### Runtime capability/operational alignment
+
+Provider state capabilities are now derived from the registry's explicit CapabilityDescriptor metadata instead of a hard-coded capability list.
+
+This means:
+
+- unsupported capabilities are not persisted into provider lifecycle state merely because a provider implements another interface;
+- capability registration remains the source of explicit adapter metadata;
+- provider lifecycle state remains operational control-plane state and does not enable a capability;
+- health/balance observations remain operational evidence and do not authorize routing, payment, payout, funding, retry, or resubmission.
+
+### Deterministic operational fixtures
+
+The standard health fixture set models four provider-neutral observations:
+
+| Observation | Health | Freshness | Financial authorization |
+|---|---|---|---|
+| success-fresh | healthy | fresh | none |
+| success-stale | healthy | stale | none |
+| unavailable | degraded | fresh | none |
+| error | unhealthy | fresh | none |
+
+The fixtures contain no provider credentials, endpoint data, provider-specific status codes, or transaction authorization state.
+
+### Implementation
+
+Primary changes:
+
+- DesKaProvider/backend/Provider/operational/health_fixture.go
+  - provider-neutral HealthObservation;
+  - deterministic standard operational observation fixtures.
+- DesKaProvider/backend/Provider/operational/health_fixture_test.go
+  - success/stale/unavailable/error fixture coverage;
+  - regression proving fixtures do not authorize financial/routing behavior.
+- DesKaProvider/backend/runtime/runtime.go
+  - provider state capabilities are derived from explicit registry capability metadata;
+  - deterministic ordering of derived capability state.
+- DesKaProvider/backend/runtime/provider_composition_test.go
+  - regression coverage for capability-state derivation.
+
+### Verification
+
+The exact implementation/test HEAD is:
+
+beed9fa53ff87455436b949336c383da66b05390
+
+GitHub Actions for this exact HEAD:
+
+- Push CI #2545 / run 36400418144: GREEN
+- Pull Request CI #2546 / run 36400423675: GREEN
+- go test ./...: PASS
+- go vet ./...: PASS
+- go test -race ./...: PASS
+- PostgreSQL 18 service-backed test environment: PASS
+
+The first implementation attempt exposed a missing sort import and then a deterministic fixture-order assertion mismatch. Both were corrected; the final exact HEAD above is the green validation point.
+
+No real provider credentials or live provider transaction was required.
+
+### Safety Boundary / Invariants
+
+- health observations are provider-neutral operational evidence only;
+- freshness does not authorize payment, payout, routing, provider funding, retry, or resubmission;
+- provider lifecycle state does not enable capabilities by itself;
+- unsupported capabilities are not inferred or persisted from unrelated provider interfaces;
+- no automatic provider failover is introduced;
+- no automatic payment retry or transaction resubmission is introduced;
+- no customer ledger mutation or treasury movement is introduced;
+- no automatic provider funding is introduced;
+- transaction persistence remains authoritative for transaction state;
+- public API exposure remains outside this milestone.
+
+### Known Limitations
+
+- health fixtures are deterministic test fixtures and are not live provider health measurements;
+- provider-specific SLA/health policy is not defined by these fixtures;
+- operational health remains observational and is not yet a routing policy;
+- live provider validation remains separate from deterministic CI;
+- RCB and PortalPulsa remain placeholders and are not runtime-registered.
+
+### Next Milestone
+
+**Milestone #253 — Provider Health Observation Integration Boundary**
+
+Scope:
+
+- connect provider-neutral health observations to the existing operational sync lifecycle without making health an implicit routing authorization;
+- preserve explicit capability enablement and freshness semantics;
+- add deterministic observation persistence/recovery coverage;
+- ensure provider health failures remain observable without authorizing provider failover, payment retry, or resubmission.
+
+No public API exposure, automatic provider failover, provider funding, or payment resubmission is included in #253.
