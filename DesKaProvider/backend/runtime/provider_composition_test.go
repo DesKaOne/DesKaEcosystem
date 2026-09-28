@@ -259,4 +259,4 @@ func TestRuntimeCompositionDoesNotInferUnsupportedXPSindonesiaCapabilities(t *te
 		t.Fatalf("XP SINDONESIA Catalog method must remain unsupported, got %v", err)
 	}
 }
-\n
+
