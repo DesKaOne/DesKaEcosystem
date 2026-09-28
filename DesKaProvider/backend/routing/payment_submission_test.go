@@ -68,3 +68,33 @@ func TestSubmitPaymentRequiresEnabledCapability(t *testing.T){
  if _,err:=s.SubmitPayment(context.Background(),"midtrans",req);!errors.Is(err,ErrPaymentCapabilityDisabled){t.Fatalf("expected disabled capability, got %v",err)}
  if p.calls!=0{t.Fatalf("disabled capability must not call provider, calls=%d",p.calls)}
 }
+
+func TestNewServiceLoadsPersistedPaymentStateWithoutTreatingItAsPPOB(t *testing.T) {
+	p := &paymentSubmissionProvider{result: payment.PaymentResult{
+		ReferenceID:      "pay-submit-restart",
+		ProviderReference: "mid-restart",
+		Status:           payment.StatusPending,
+		Amount:           50000,
+		Currency:         "IDR",
+	}}
+	s := newPaymentSubmissionService(t, p, true)
+	req := payment.PaymentRequest{
+		ReferenceID: "pay-submit-restart",
+		Amount:      50000,
+		Currency:    "IDR",
+		CustomerID:  "cust-restart",
+	}
+	if _, err := s.SubmitPayment(context.Background(), "midtrans", req); err != nil {
+		t.Fatal(err)
+	}
+	restarted, err := NewServiceWithStoreAndAudit(s.Router, s.Store, NewMemoryTransactionAuditStore())
+	if err != nil {
+		t.Fatalf("payment state must survive service reconstruction: %v", err)
+	}
+	if _, err := restarted.SubmitPayment(context.Background(), "midtrans", req); !errors.Is(err, ErrPaymentSubmissionClaimed) {
+		t.Fatalf("expected persisted claim to remain authoritative after restart, got %v", err)
+	}
+	if p.calls != 1 {
+		t.Fatalf("restart must not resubmit payment, calls=%d", p.calls)
+	}
+}
