@@ -6,12 +6,13 @@ import (
 	"testing"
 
 	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/config"
+    "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/integration"
 	provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
 )
 
 func TestLiveCSFailureCase(t *testing.T) {
-	if os.Getenv("DIGIFLAZZ_INTEGRATION") != "1" {
-		t.Skip("set DIGIFLAZZ_INTEGRATION=1 to run the live DigiFlazz integration test")
+	if os.Getenv("DIGIFLAZZ_INTEGRATION") != "1" || !integration.Enabled("digiflazz") {
+		t.Skip("live integration requires the provider-specific opt-in and global DesKaProvider live gate")
 	}
 	if os.Getenv("DIGIFLAZZ_USERNAME") == "" || os.Getenv("DIGIFLAZZ_API_KEY") == "" {
 		t.Skip("DigiFlazz runtime credentials are not configured")
@@ -21,7 +22,10 @@ func TestLiveCSFailureCase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	client, err := New(cfg, nil)
+		if !integration.HostAllowed(cfg.Endpoint) {
+		t.Skip("provider endpoint host is not explicitly allowlisted for live integration")
+	}
+client, err := New(cfg, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
