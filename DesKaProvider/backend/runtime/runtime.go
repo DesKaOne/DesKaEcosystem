@@ -19,6 +19,7 @@ import (
 	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/migrations"
  digiflazz "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/DigiFlazz"
  iak "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/IAK"
+	midtrans "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/Midtrans"
  "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/operational"
  "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/config"
  "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/routing"
@@ -247,6 +248,19 @@ func registerConfiguredProviders(registry *provider.Registry, digi provider.PPOB
   provider.CapabilityWebhook: {Verified:true, Configured:true, AdapterImplemented:true, Tested:true, Enabled:false, LiveTested:false},
  }}
  if err := registry.RegisterWithCapabilities("digiflazz", digi, digiCapabilities); err != nil { return err }
+ // Midtrans payment registration is intentionally disabled by default.
+ // If credentials are configured, register the adapter as implemented/tested,
+ // but keep Enabled=false so runtime configuration cannot silently authorize
+ // live payment routing.
+ if strings.TrimSpace(os.Getenv("MIDTRANS_SERVER_KEY")) != "" {
+  midCfg, err := config.LoadMidtransConfig()
+  if err != nil { return err }
+  midClient, err := midtrans.New(midCfg, httpClient)
+  if err != nil { return err }
+  if err := registry.RegisterCapabilityProvider("midtrans", provider.CapabilityPayment, midClient, provider.CapabilityStatus{
+   Verified: true, Configured: true, AdapterImplemented: true, Tested: true, Enabled: false, LiveTested: false,
+  }); err != nil { return err }
+ }
  if os.Getenv("IAK_USERNAME") == "" && os.Getenv("IAK_API_KEY") == "" { return nil }
  iakCfg, err := config.LoadIAKConfig(); if err != nil { return err }
  iakClient, err := iak.New(iakCfg, httpClient); if err != nil { return err }
