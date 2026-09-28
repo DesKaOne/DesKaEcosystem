@@ -13674,3 +13674,40 @@ This keeps the Midtrans payment adapter provider-neutral at the boundary while a
 ### Next Milestone
 
 **#242 — Payment Transaction Correlation Boundary:** define the minimal durable transaction representation for a neutral payment lifecycle, preserving the existing `ReferenceID`/provider ownership/CAS rules and without authorizing a second external submission after restart or reconciliation.
+
+
+### Milestone #241 CI Recovery and Closure
+
+The first runtime registration commit `0e3b8dee43919ca9e7a51a3572ec35b1068abf97` failed CI because the new `strings.TrimSpace` registration gate was missing its `strings` import in `runtime/runtime.go`.
+
+- CI #2427 / #2428: **RED**;
+- root cause: compile error `runtime/runtime.go:255:5: undefined: strings`;
+- fixed in `2c50434fddbbf83e609707028e842f416be6ed4a`;
+- no payment logic or safety invariant changed.
+
+Final validation for exact implementation HEAD `2c50434fddbbf83e609707028e842f416be6ed4a`:
+
+- CI #2431 push: **GREEN**;
+- CI #2432 pull request: **GREEN**;
+- `test`: PASS;
+- `vet`: PASS;
+- `race`: PASS;
+- PostgreSQL integration: PASS.
+
+The earlier red runs are retained as historical failures and are not treated as successful verification.
+
+### Milestone #241 Final State
+
+Payment registration is now explicitly separated from payment enablement:
+
+- Midtrans adapter may be registered as a capability implementation when credentials are configured;
+- payment capability remains `Enabled=false`;
+- `CapabilityPayment.State()` therefore remains `DISABLED`;
+- typed access does not authorize external payment submission;
+- no live payment request was executed;
+- no customer ledger or treasury mutation was introduced;
+- no automatic retry/failover/resubmission was introduced.
+
+### Next Milestone
+
+**#242 — Payment Transaction Correlation Boundary:** define the minimal durable payment transaction representation and lifecycle transitions using the existing `ReferenceID`, durable provider ownership, compare-and-transition rules, and restart/reconciliation safety boundary.
