@@ -11,16 +11,18 @@ func TestStandardHealthObservationFixturesAreProviderNeutral(t *testing.T) {
 	if len(fixtures) != 4 {
 		t.Fatalf("expected four standard fixtures, got %d", len(fixtures))
 	}
-	want := []Health{HealthHealthy, HealthDegraded, HealthUnhealthy, HealthUnknown}
+	want := []struct{ status Health; freshness Freshness; observation string }{
+		{HealthHealthy, FreshnessFresh, "success"},
+		{HealthHealthy, FreshnessStale, "stale"},
+		{HealthDegraded, FreshnessFresh, "unavailable"},
+		{HealthUnhealthy, FreshnessFresh, "error"},
+	}
 	for i, fixture := range fixtures {
 		if fixture.Provider != "digiflazz" || fixture.Health.ProviderName != "digiflazz" {
 			t.Fatalf("fixture %d leaked an unexpected provider identity: %#v", i, fixture)
 		}
-		if fixture.Health.Status != want[i] {
-			t.Fatalf("fixture %d status = %q, want %q", i, fixture.Health.Status, want[i])
-		}
-		if fixture.Health.ObservedAt.IsZero() != (want[i] == HealthUnknown) {
-			t.Fatalf("fixture %d timestamp state mismatch: %#v", i, fixture)
+		if fixture.Health.Status != want[i].status || fixture.Freshness != want[i].freshness || fixture.Observation != want[i].observation {
+			t.Fatalf("fixture %d mismatch: %#v", i, fixture)
 		}
 	}
 }
