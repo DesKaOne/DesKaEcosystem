@@ -222,7 +222,7 @@ func TestRuntimeCapabilityMatrixSnapshotIsDefensive(t *testing.T) {
 
 	snapshot := registry.CapabilityMatrix()
 	snapshot.Providers["midtrans"].Capabilities[provider.CapabilityPayment] = provider.CapabilityStatus{}
-	snapshot.Providers["xp-sindonesia"].Capabilities = nil
+	xp := snapshot.Providers["xp-sindonesia"]\n\txp.Capabilities = nil\n\tsnapshot.Providers["xp-sindonesia"] = xp
 
 	again := registry.CapabilityMatrix()
 	midtransStatus, ok := again.Status("midtrans", provider.CapabilityPayment)
