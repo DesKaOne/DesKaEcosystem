@@ -68,8 +68,8 @@ func (s *MemoryStore) GetWithError(name string) (Snapshot, bool, error) {
 
 
 func (s *MemoryStore) Put(snapshot Snapshot) error {
-	if err := ValidateSnapshot(snapshot); err != nil {
-		return err
+	if snapshot.ProviderName == "" {
+		return errors.New("provider name is required")
 	}
 	s.mu.Lock(); defer s.mu.Unlock()
 	s.snapshots[snapshot.ProviderName] = snapshot
