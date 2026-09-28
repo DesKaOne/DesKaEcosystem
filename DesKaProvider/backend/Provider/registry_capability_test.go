@@ -47,8 +47,8 @@ func TestCapabilityStatusRejectsInvalidReadinessCombinations(t *testing.T) {
 		name string
 		status CapabilityStatus
 	}{
-		{"enabled without tested", CapabilityStatus{AdapterImplemented: true, Enabled: true}},
-		{"live tested without enabled", CapabilityStatus{AdapterImplemented: true, Tested: true, LiveTested: true}},
+		{"enabled without implementation", CapabilityStatus{Tested: true, Enabled: true}},
+		{"live tested without tested", CapabilityStatus{AdapterImplemented: true, Enabled: true, LiveTested: true}},
 		{"production ready without verification", CapabilityStatus{Configured: true, AdapterImplemented: true, Tested: true, Enabled: true, LiveTested: true, ProductionReady: true}},
 	}
 	for _, tc := range cases {
