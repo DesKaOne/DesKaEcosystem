@@ -193,7 +193,7 @@ func (s *MemoryTransactionStore) CreateIfAbsentContext(ctx context.Context, stat
 	if err := validateTransactionState(state); err != nil { return TransactionState{}, false, err }
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if current, ok := s.transactions[state.Request.ReferenceID]; ok {
+	if current, ok := s.transactions[transactionReferenceID(state)]; ok {
 		if !sameTransactionIdentity(current,state) { return TransactionState{}, false, ErrReferenceConflict }
 		return current, false, nil
 	}

@@ -13,6 +13,6 @@ func TestPaymentTransactionCASAndTerminalImmutability(t *testing.T){
  claimed,created,err:=s.CreateIfAbsentContext(context.Background(),state);if err!=nil||!created{t.Fatal(err)}
  next:=claimed;next.Payment=&payment.Transaction{ReferenceID:"pay-ref-2",ProviderReference:"mid-123",Amount:20000,Currency:"IDR",CustomerID:"cust-2",Status:payment.StatusSuccess,Message:"settlement"};next.Version=2
  if err:=s.PutIfCurrentContext(context.Background(),"pay-ref-2",claimed,next);err!=nil{t.Fatal(err)}
- conflict:=next;conflict.Payment.ProviderReference="mid-456"
+ conflict:=next;conflict.Payment=&payment.Transaction{ReferenceID:"pay-ref-2",ProviderReference:"mid-456",Amount:20000,Currency:"IDR",CustomerID:"cust-2",Status:payment.StatusSuccess,Message:"settlement"}
  if err:=s.PutIfCurrent("pay-ref-2",next,conflict);!errors.Is(err,ErrReferenceConflict){t.Fatalf("expected terminal mutation rejection, got %v",err)}
 }

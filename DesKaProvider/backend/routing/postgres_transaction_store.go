@@ -84,7 +84,7 @@ func (s *PostgresTransactionStore) Get(referenceID string) (TransactionState, bo
 
 func (s *PostgresTransactionStore) PutContext(ctx context.Context, state TransactionState) error {
  if err := validatePostgresState(state); err != nil { return err }
- current, ok, readErr := s.GetContextE(ctx, state.Request.ReferenceID)
+ current, ok, readErr := s.GetContextE(ctx, transactionReferenceID(state))
  if readErr != nil {
   return fmt.Errorf("get transaction: %w", readErr)
  }
@@ -102,7 +102,7 @@ func (s *PostgresTransactionStore) PutContext(ctx context.Context, state Transac
    if !ok {
     return ErrTransactionStateConflict
    }
-   if validateTransactionTransition(current, state) == nil && current.Request == state.Request && current.Execution.ProviderName == state.Execution.ProviderName && samePurchaseResult(current.Execution.Result, state.Execution.Result) {
+   if validateTransactionTransition(current, state) == nil && sameTransactionIdentity(current, state) && sameTransactionObservedResult(current, state) {
     return nil
    }
    return ErrTransactionStateConflict
@@ -110,7 +110,7 @@ func (s *PostgresTransactionStore) PutContext(ctx context.Context, state Transac
   return fmt.Errorf("insert transaction: %w", err)
  }
  if err := validateTransactionTransition(current, state); err != nil { return err }
- if samePurchaseResult(current.Execution.Result, state.Execution.Result) {
+ if sameTransactionObservedResult(current, state) {
   return nil
  }
  if current.Execution.Result.Status != provider.StatusPending {
@@ -135,8 +135,8 @@ func (s *PostgresTransactionStore) Put(state TransactionState) error {
 }
 
 func (s *PostgresTransactionStore) PutIfCurrentContext(ctx context.Context, referenceID string, previous, next TransactionState) error {
- if referenceID == "" || previous.Request.ReferenceID != referenceID || next.Request.ReferenceID != referenceID { return ErrReferenceConflict }
- if previous.Request != next.Request || previous.Execution.ProviderName != next.Execution.ProviderName { return ErrReferenceConflict }
+ if referenceID == "" || transactionReferenceID(previous) != referenceID || transactionReferenceID(next) != referenceID { return ErrReferenceConflict }
+ if !sameTransactionIdentity(previous, next) { return ErrReferenceConflict }
  if err := validatePostgresState(next); err != nil { return err }
  if previous.Execution.Result.Status != provider.StatusPending {
   if samePurchaseResult(previous.Execution.Result, next.Execution.Result) && previous.Request == next.Request && previous.Execution.ProviderName == next.Execution.ProviderName { return nil }
@@ -188,7 +188,9 @@ func scanPostgresState(s postgresScanner) (TransactionState, error) {
  var testing bool
  var createdAt, updatedAt any
  if err := s.Scan(&kind,&ref,&productCode,&customerNo,&amount,&testing,&providerName,&status,&providerCode,&message,&serial,&price,&paymentRef,&paymentCurrency,&paymentCustomerID,&paymentDescription,&version,&createdAt,&updatedAt); err != nil { return TransactionState{}, err }
- state := TransactionState{Kind:TransactionKind(kind),Request:PurchaseRequest{ReferenceID:ref,ProductCode:productCode,CustomerNo:customerNo,Amount:amount,Testing:testing},Execution:PurchaseExecution{ProviderName:providerName,Result:provider.PurchaseResult{ReferenceID:ref,ProductCode:productCode,CustomerNo:customerNo,Status:provider.TransactionStatus(status),ProviderCode:providerCode,Message:message,SerialNumber:serial,Price:price}},Version:version}
+ stateKind := TransactionKind(kind)
+ if stateKind == TransactionKindPPOB { stateKind = "" }
+ state := TransactionState{Kind:stateKind,Request:PurchaseRequest{ReferenceID:ref,ProductCode:productCode,CustomerNo:customerNo,Amount:amount,Testing:testing},Execution:PurchaseExecution{ProviderName:providerName,Result:provider.PurchaseResult{ReferenceID:ref,ProductCode:productCode,CustomerNo:customerNo,Status:provider.TransactionStatus(status),ProviderCode:providerCode,Message:message,SerialNumber:serial,Price:price}},Version:version}
  if normalizeTransactionKind(state.Kind) == TransactionKindPayment {
   state.Payment=&payment.Transaction{ReferenceID:ref,ProviderReference:paymentRef,Amount:amount,Currency:paymentCurrency,CustomerID:paymentCustomerID,Description:paymentDescription,Status:payment.Status(status),Message:message}
  }
