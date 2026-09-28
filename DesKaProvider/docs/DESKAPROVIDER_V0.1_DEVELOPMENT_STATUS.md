@@ -14659,3 +14659,110 @@ Scope:
 - preserve all payment no-retry/no-failover and ledger/treasury invariants.
 
 No public API exposure or automatic provider routing is included in #250.
+
+
+## Milestone #250 — Real Provider Adapter Integration Readiness
+
+**Date:** 2026-09-28
+
+### Completed
+
+- added a centralized live-integration safety gate;
+- live integration now requires:
+  - global explicit switch "DESKAPROVIDER_LIVE_INTEGRATION=1";
+  - explicit provider selection through "DESKAPROVIDER_LIVE_INTEGRATION_PROVIDER";
+  - explicit endpoint-host allowlist through "DESKAPROVIDER_LIVE_INTEGRATION_ALLOWED_HOSTS";
+- existing DigiFlazz and IAK live integration tests now require the centralized gate and explicit endpoint allowlisting;
+- added deterministic tests for gate behavior, provider selection, malformed URLs, and empty/unlisted host allowlists;
+- retained provider-specific credentials entirely in environment/config loading and never committed secrets;
+- kept runtime capability registration disabled by default; live-test gating does not authorize or enable production routing;
+- preserved existing provider-specific deterministic HTTP contract tests and existing PostgreSQL integration coverage.
+
+### Integration readiness boundary
+
+The repository now distinguishes three separate concerns:
+
+1. Deterministic adapter tests — run in normal CI with local HTTP fixtures and no provider credentials.
+2. Live integration tests — opt-in only, additionally gated by provider selection and explicit endpoint-host allowlisting.
+3. Runtime capability enablement — remains independent and disabled by default.
+
+A configured credential is therefore not sufficient to run a live test, and a live-test opt-in cannot enable a runtime capability.
+
+### Live-test gate
+
+The centralized gate lives in:
+
+- DesKaProvider/backend/integration/live_gate.go
+- DesKaProvider/backend/integration/live_gate_test.go
+
+Gate rules:
+
+- DESKAPROVIDER_LIVE_INTEGRATION must equal 1;
+- DESKAPROVIDER_LIVE_INTEGRATION_PROVIDER must match the requested provider;
+- the concrete endpoint hostname must be present in the comma-separated DESKAPROVIDER_LIVE_INTEGRATION_ALLOWED_HOSTS allowlist;
+- an empty allowlist never authorizes a live request;
+- malformed endpoint URLs are rejected.
+
+The gate is test infrastructure only. It does not mutate registry capability state.
+
+### Provider coverage
+
+| Provider | Deterministic adapter coverage | Live-test readiness |
+|---|---|---|
+| Midtrans | Payment + Webhook | Gate available; no live transaction executed |
+| DigiFlazz | PPOB + Balance + Webhook + Catalog | Existing live test now gated |
+| IAK | PPOB + Balance + Webhook + Catalog | Existing live read-only test now gated |
+| XP SINDONESIA | PPOB partial + Balance + Webhook | Gate available; no live test executed |
+| RCB | Placeholder | Not ready |
+| PortalPulsa | Placeholder | Not ready |
+
+No provider is marked LiveTested or ProductionReady by this milestone.
+
+### Verification
+
+Implementation/test HEAD at documentation time:
+
+ae3c58655f233902e4aca6102cd7bde3951c607f
+
+CI closure is pending for this HEAD.
+
+Required verification:
+
+- go test ./...
+- go vet ./...
+- go test -race ./...
+- PostgreSQL 18 service-backed integration environment
+
+No real provider credentials or live transaction is required for the new tests.
+
+### Safety Boundary / Invariants
+
+- live integration opt-in never enables runtime capabilities;
+- credentials remain outside repository source;
+- live endpoint authorization requires explicit host allowlisting;
+- no automatic payment retry or provider failover is introduced;
+- no provider routing changes are introduced;
+- no customer ledger mutation, treasury movement, or provider funding is introduced;
+- existing ReferenceID, ProviderName, CAS, webhook, and reconciliation safety boundaries remain unchanged.
+
+### Known Limitations
+
+- no live provider API call was executed in this milestone;
+- live credentials, IP allowlists, account permissions, and provider-side sandbox/production policies remain operational concerns;
+- Midtrans has no live transaction test in this milestone;
+- XP SINDONESIA has no live integration test in this milestone;
+- RCB and PortalPulsa remain placeholders.
+
+### Next Milestone
+
+**Milestone #251 — Provider Balance / Health Operational Boundary**
+
+Scope:
+
+- formalize provider balance and health snapshots as provider-neutral operational state;
+- define freshness and failure semantics without using stale balance as payment authorization;
+- preserve capability and routing separation;
+- add deterministic health/balance fixtures for implemented providers;
+- no automatic provider funding, routing failover, or payment resubmission.
+
+No public API exposure is included in #251.
