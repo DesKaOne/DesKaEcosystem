@@ -4,6 +4,8 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
 )
 
 func TestSnapshotEvaluateFreshness(t *testing.T) {
@@ -108,8 +110,8 @@ func TestReadOperationalSnapshotRejectsMissingProvider(t *testing.T) {
 	}
 }
 
-func NewRegistryForFreshnessTest(name string, balance int64) *Registry {
-	registry := NewRegistry()
+func NewRegistryForFreshnessTest(name string, balance int64) *provider.Registry {
+	registry := provider.NewRegistry()
 	_ = registry.Register(name, balanceStub{balance: balance})
 	return registry
 }
