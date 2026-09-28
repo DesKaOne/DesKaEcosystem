@@ -15513,14 +15513,13 @@ No real provider credentials or live financial transaction was used.
 
 ### Next Milestone
 
-**Milestone #258 — Routing Persistence / Recovery Consistency**
+**Milestone #258 — Provider Runtime Composition Independence**
 
 Scope:
 
-- verify that routing inputs recovered from durable operational, catalog, and provider-state stores preserve the same consistency rules after restart;
-- add PostgreSQL-backed routing recovery/consistency coverage where applicable;
-- ensure stale or contradictory recovered state cannot silently become route-eligible;
-- preserve deterministic ordering and read-only operational consumption.
+- remove the implicit DigiFlazz runtime dependency from multi-provider composition;
+- keep provider registration explicit and capability-neutral;
+- verify configured providers can compose independently without synthetic capabilities.
 
 No automatic provider failover, payment resubmission, provider funding, customer ledger mutation, treasury movement, or public API exposure is included in #258.
 
