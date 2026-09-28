@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/backend/integration"
+	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/integration"
 	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/config"
 )
 
