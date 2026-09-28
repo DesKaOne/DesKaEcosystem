@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 	"sync"
+
+	payment "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/internal/Payment"
 )
 
 var ErrProviderNotFound = errors.New("provider not found")
@@ -118,6 +120,21 @@ func (r *Registry) RegisterCapabilityProvider(name string, capability Capability
 }
 
 // GetCapabilityProvider returns the implementation registered for one optional capability.
+// GetPaymentProvider returns the provider-neutral payment implementation only when
+// it has been explicitly registered. Capability status remains a separate routing
+// gate; this accessor does not enable or authorize payment execution.
+func (r *Registry) GetPaymentProvider(name string) (payment.Provider, error) {
+	implementation, err := r.GetCapabilityProvider(name, CapabilityPayment)
+	if err != nil {
+		return nil, err
+	}
+	p, ok := implementation.(payment.Provider)
+	if !ok {
+		return nil, fmt.Errorf("provider %q payment implementation has invalid contract", normalizeName(name))
+	}
+	return p, nil
+}
+
 func (r *Registry) GetCapabilityProvider(name string, capability Capability) (any, error) {
  key := normalizeName(name)
  r.mu.RLock()
