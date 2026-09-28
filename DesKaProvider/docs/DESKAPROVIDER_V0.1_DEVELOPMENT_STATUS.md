@@ -15063,3 +15063,125 @@ Scope:
 - preserve observational-only semantics and prevent operational state from becoming implicit transaction authorization.
 
 No public API exposure, automatic provider failover, provider funding, or payment resubmission is included in #254.
+
+
+## Milestone #254 — Provider Operational Observation Consistency
+
+**Date:** 2026-09-28
+
+### Completed
+
+- introduced deterministic validation for persisted provider operational snapshots;
+- enforced required provider identity, currency, and observation timestamp fields;
+- rejected contradictory timestamp ordering where LastSuccessAt is later than LastCheckedAt;
+- rejected negative consecutive failure counts;
+- enforced health/failure consistency:
+  - healthy requires zero consecutive failures, no error, and LastSuccessAt == LastCheckedAt;
+  - degraded / unhealthy require positive failure evidence and a non-empty last error;
+  - unknown cannot carry failure evidence;
+  - unsupported health values are rejected;
+- applied the consistency boundary to durable JSON and PostgreSQL operational stores;
+- validated loaded JSON snapshots during store reconstruction so contradictory persisted state is rejected rather than silently reused;
+- validated PostgreSQL snapshots on read as well as write;
+- kept the in-memory store permissive for existing deterministic transaction/routing fixtures while SyncService validates snapshots before persistence;
+- added deterministic unit coverage for accepted and rejected operational-state combinations;
+- added PostgreSQL-backed consistency/recovery coverage proving an invalid update is rejected and the previously valid persisted snapshot remains recoverable;
+- corrected an existing PostgreSQL runtime integration fixture so LastCheckedAt and LastSuccessAt use the same deterministic observation timestamp.
+
+### Consistency boundary
+
+The operational snapshot is treated as provider-neutral evidence, not as authorization state.
+
+The persistence boundary now guarantees that a durable snapshot cannot represent combinations such as:
+
+- healthy provider with outstanding failure evidence;
+- degraded/unhealthy provider with zero failure evidence;
+- a successful observation occurring after its check timestamp;
+- negative consecutive failure count;
+- missing provider identity/currency/check timestamp;
+- unsupported health state.
+
+Freshness remains derived from LastCheckedAt; it is not persisted as a health value and does not authorize payment, payout, routing, provider funding, retry, or resubmission.
+
+### Persistence and recovery
+
+The durable stores now validate the same provider-neutral consistency rules:
+
+- JSON persistence rejects invalid snapshots before atomic replacement;
+- JSON startup/recovery rejects persisted snapshots that violate the consistency contract;
+- PostgreSQL writes reject invalid snapshots;
+- PostgreSQL reads reject invalid persisted snapshots;
+- a rejected write does not replace an already-valid persisted snapshot.
+
+This preserves the operational observation boundary without introducing automatic failover, transaction retry, resubmission, customer ledger mutation, treasury movement, or provider funding.
+
+### Implementation
+
+Primary changes:
+
+- DesKaProvider/backend/Provider/operational/consistency.go
+  - canonical provider-neutral snapshot consistency rules and sentinel errors.
+- DesKaProvider/backend/Provider/operational/consistency_test.go
+  - deterministic valid/invalid state coverage.
+- DesKaProvider/backend/Provider/operational/operational.go
+  - SyncService validates generated snapshots before persistence.
+- DesKaProvider/backend/Provider/operational/json_store.go
+  - validates durable writes and recovered snapshots.
+- DesKaProvider/backend/Provider/operational/postgres_store.go
+  - validates durable writes and loaded snapshots.
+- DesKaProvider/backend/Provider/operational/postgres_store_integration_test.go
+  - PostgreSQL consistency rejection and recovery coverage.
+- DesKaProvider/backend/runtime/runtime_postgres_combined_integration_test.go
+  - deterministic shared observation timestamp for healthy operational snapshot fixture.
+
+### Verification
+
+The exact implementation/test HEAD is:
+
+3fcf613c666ddfa505c1046102bfd6598c85bc27
+
+GitHub Actions for this exact HEAD:
+
+- Push CI #2573 / run 36405688304: GREEN
+- Pull Request CI #2572 / run 36405679879: GREEN
+- go test ./...: PASS
+- go vet ./...: PASS
+- go test -race ./...: PASS
+- PostgreSQL 18 service-backed test environment: PASS
+
+An earlier CI attempt exposed compatibility issues in existing fixtures; those were corrected without weakening durable-store validation. The exact implementation HEAD above is the green validation point.
+
+No real provider credentials or live provider transaction was required.
+
+### Safety Boundary / Invariants
+
+- operational snapshot consistency is provider-neutral;
+- operational health and balance remain observational evidence only;
+- freshness remains observational and does not authorize financial activity;
+- operational state does not enable provider capabilities;
+- no automatic provider failover is introduced;
+- no automatic transaction retry or resubmission is introduced;
+- no customer ledger mutation or treasury movement is introduced;
+- no automatic provider funding is introduced;
+- transaction persistence remains authoritative for transaction state;
+- public API exposure remains outside this milestone.
+
+### Known Limitations
+
+- the consistency contract validates provider-neutral operational state but does not define provider-specific SLA/health policy;
+- operational health remains observational and is not yet a routing policy;
+- live provider validation remains separate from deterministic CI;
+- RCB and PortalPulsa remain placeholders and are not runtime-registered.
+
+### Next Milestone
+
+**Milestone #255 — Provider Operational Persistence / Lifecycle Hardening**
+
+Scope:
+
+- continue hardening durable operational persistence and lifecycle behavior after the consistency boundary;
+- verify recovery behavior across operational store restart and worker lifecycle transitions;
+- preserve provider-neutral observation semantics and transaction safety invariants;
+- keep routing, payment authorization, provider funding, and public API exposure outside the operational persistence boundary.
+
+No public API exposure, automatic provider failover, provider funding, or payment resubmission is included in #255.
