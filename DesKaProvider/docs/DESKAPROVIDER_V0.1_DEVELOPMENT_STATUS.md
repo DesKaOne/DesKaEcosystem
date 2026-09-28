@@ -16051,11 +16051,22 @@ No public API exposure is included in #263.
 
 ### Verification
 
-Implementation/test commit:
+Implementation/test final commit:
 
-7c20e10bb6823227329a47e8bea8322d8dddab75
+928ade9cd83d24da0a88d1858917fbf950231a4a
 
-CI verification for the final status-update HEAD is required before this milestone is considered closed.
+### Final CI Verification
+
+- Push CI #2688 / run 36500204496: GREEN
+  - test: PASS
+  - race: PASS
+  - credential-gated provider validation jobs: skipped as expected
+- Pull Request CI #2689 / run 36500208772: GREEN
+  - test: PASS
+  - race: PASS
+  - credential-gated provider validation jobs: skipped as expected
+
+No authorized live-provider transaction was executed by this milestone.
 
 ### Next Milestone
 
