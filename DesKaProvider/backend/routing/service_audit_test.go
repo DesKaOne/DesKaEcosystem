@@ -421,6 +421,8 @@ func TestServiceWebhookCorrelationSurvivesRestartAndRejectsWrongProvider(t *test
 
 	store, err := NewJSONFileTransactionStore(storePath)
 	if err != nil { t.Fatal(err) }
+	first, err := NewServiceWithStoreAndAudit(router, store, NewMemoryTransactionAuditStore())
+	if err != nil { t.Fatal(err) }
 	req := PurchaseRequest{ProductCode: "pln20", CustomerNo: "08123456789", ReferenceID: "ref-webhook-restart-correlation", Amount: 20000}
 	if _, err := first.Purchase(context.Background(), req); err != nil { t.Fatal(err) }
 	if got := mock.PurchaseCount(req.ReferenceID); got != 1 { t.Fatalf("expected one provider submission, got %d", got) }
@@ -493,8 +495,6 @@ func TestServiceReconcileLoadsDurablePendingTransactionAfterRestart(t *testing.T
 	router, err := New(registry, ops, map[string]int{"mock":1})
 	if err != nil { t.Fatal(err) }
 
-	first, err := NewServiceWithStoreAndAudit(router, store, NewMemoryTransactionAuditStore())
-	if err != nil { t.Fatal(err) }
 	req := PurchaseRequest{ProductCode:"pln20", CustomerNo:"08123456789", ReferenceID:"ref-reconcile-restart", Amount:20000}
 	pending := TransactionState{
 		Request:req,
