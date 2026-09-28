@@ -243,34 +243,62 @@ return service,nil
 func registerConfiguredProviders(registry *provider.Registry, digi provider.PPOBProvider, httpClient *http.Client) error {
  if registry == nil { return errors.New("provider registry is required") }
  if digi == nil { return errors.New("DigiFlazz provider is required") }
+
+ // Capability metadata is explicit at registration time. A capability is
+ // listed only when the concrete adapter contract is implemented and covered
+ // by deterministic repository tests; Enabled and LiveTested remain false.
+ digiStatus := provider.CapabilityStatus{Verified:true, Configured:true, AdapterImplemented:true, Tested:true, Enabled:false, LiveTested:false}
  digiCapabilities := provider.CapabilityDescriptor{Capabilities: map[provider.Capability]provider.CapabilityStatus{
-  provider.CapabilityPPOB: {Verified:true, Configured:true, AdapterImplemented:true, Tested:true, Enabled:false, LiveTested:false},
-  provider.CapabilityBalance: {Verified:true, Configured:true, AdapterImplemented:true, Tested:true, Enabled:false, LiveTested:false},
-  provider.CapabilityWebhook: {Verified:true, Configured:true, AdapterImplemented:true, Tested:true, Enabled:false, LiveTested:false},
+  provider.CapabilityPPOB: digiStatus,
+  provider.CapabilityBalance: digiStatus,
+  provider.CapabilityWebhook: digiStatus,
+  provider.CapabilityCatalog: digiStatus,
  }}
  if err := registry.RegisterWithCapabilities("digiflazz", digi, digiCapabilities); err != nil { return err }
- // Midtrans payment registration is intentionally disabled by default.
- // If credentials are configured, register the adapter as implemented/tested,
- // but keep Enabled=false so runtime configuration cannot silently authorize
- // live payment routing.
+
  if strings.TrimSpace(os.Getenv("MIDTRANS_SERVER_KEY")) != "" {
   midCfg, err := config.LoadMidtransConfig()
   if err != nil { return err }
   midClient, err := midtrans.New(midCfg, httpClient)
   if err != nil { return err }
-  if err := registry.RegisterCapabilityProvider("midtrans", provider.CapabilityPayment, midClient, provider.CapabilityStatus{
-   Verified: true, Configured: true, AdapterImplemented: true, Tested: true, Enabled: false, LiveTested: false,
-  }); err != nil { return err }
+  midStatus := provider.CapabilityStatus{Verified:true, Configured:true, AdapterImplemented:true, Tested:true, Enabled:false, LiveTested:false}
+  if err := registry.RegisterCapabilityProvider("midtrans", provider.CapabilityPayment, midClient, midStatus); err != nil { return err }
+  if err := registry.RegisterCapabilityProvider("midtrans", provider.CapabilityWebhook, midClient, midStatus); err != nil { return err }
  }
- if os.Getenv("IAK_USERNAME") == "" && os.Getenv("IAK_API_KEY") == "" { return nil }
+
+ if os.Getenv("IAK_USERNAME") == "" && os.Getenv("IAK_API_KEY") == "" {
+  return registerConfiguredXPSindonesia(registry, httpClient)
+ }
  iakCfg, err := config.LoadIAKConfig(); if err != nil { return err }
  iakClient, err := iak.New(iakCfg, httpClient); if err != nil { return err }
+ iakStatus := provider.CapabilityStatus{Verified:false, Configured:true, AdapterImplemented:true, Tested:true, Enabled:false, LiveTested:false}
  iakCapabilities := provider.CapabilityDescriptor{Capabilities: map[provider.Capability]provider.CapabilityStatus{
-  provider.CapabilityPPOB: {Verified:false, Configured:true, AdapterImplemented:true, Tested:true, Enabled:false, LiveTested:false},
-  provider.CapabilityBalance: {Verified:false, Configured:true, AdapterImplemented:true, Tested:true, Enabled:false, LiveTested:false},
-  provider.CapabilityWebhook: {Verified:false, Configured:true, AdapterImplemented:true, Tested:true, Enabled:false, LiveTested:false},
+  provider.CapabilityPPOB: iakStatus,
+  provider.CapabilityBalance: iakStatus,
+  provider.CapabilityWebhook: iakStatus,
+  provider.CapabilityCatalog: iakStatus,
  }}
- return registry.RegisterWithCapabilities("iak", iakClient, iakCapabilities)
+ if err := registry.RegisterWithCapabilities("iak", iakClient, iakCapabilities); err != nil { return err }
+ return registerConfiguredXPSindonesia(registry, httpClient)
+}
+
+func registerConfiguredXPSindonesia(registry *provider.Registry, httpClient *http.Client) error {
+ configured := strings.TrimSpace(os.Getenv("XP_SINDONESIA_ID")) != "" ||
+  strings.TrimSpace(os.Getenv("XP_SINDONESIA_KEY")) != "" ||
+  strings.TrimSpace(os.Getenv("XP_SINDONESIA_API")) != ""
+ if !configured { return nil }
+
+ cfg, err := config.LoadXPSindonesiaConfig()
+ if err != nil { return err }
+ client, err := xpsindonesia.New(cfg, httpClient)
+ if err != nil { return err }
+ status := provider.CapabilityStatus{Verified:false, Configured:true, AdapterImplemented:true, Tested:true, Enabled:false, LiveTested:false}
+ capabilities := provider.CapabilityDescriptor{Capabilities: map[provider.Capability]provider.CapabilityStatus{
+  provider.CapabilityPPOB: status,
+  provider.CapabilityBalance: status,
+  provider.CapabilityWebhook: status,
+ }}
+ return registry.RegisterWithCapabilities("xp-sindonesia", client, capabilities)
 }
 
 func New(syncService *operational.SyncService,interval time.Duration)(*Service,error){if syncService==nil{return nil,errors.New("sync service is required")};if interval<=0{return nil,errors.New("sync interval must be greater than zero")};balanceLifecycle,err:=operational.NewSyncWorkerLifecycle(syncService,interval);if err!=nil{return nil,err};return &Service{syncService:syncService,balanceLifecycle:balanceLifecycle,catalogLifecycle:newCatalogWorkerLifecycle(),interval:interval},nil}
