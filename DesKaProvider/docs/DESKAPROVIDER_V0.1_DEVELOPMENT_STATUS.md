@@ -15395,3 +15395,20 @@ Scope:
 - preserve transaction ownership, CAS/idempotency, and no-resubmission safety boundaries.
 
 No automatic provider failover, payment resubmission, provider funding, customer ledger mutation, treasury movement, or public API exposure is included in #257.
+
+
+### #256 CI follow-up
+
+The first #256 validation at `a766efe78838a8566ac9d416da18d0b07107cb6f` exposed one compile-only regression in `routing/router.go`: the constructor still initialized the removed mutable `Router.Store` field.
+
+Fix applied:
+
+- removed the stale `Store: store` initializer;
+- retained the constructor's compatibility input of `operational.Store`, which is immediately adapted into `OperationalInputReader`;
+- no routing behavior or safety boundary was weakened.
+
+The corrected implementation HEAD is:
+
+58b68defffa11ed54d534a29852fe822075307cc
+
+CI for the corrected HEAD is pending and must be GREEN before #256 is considered finally verified.
