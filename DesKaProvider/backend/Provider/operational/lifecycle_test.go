@@ -233,3 +233,79 @@ func TestHealthObservationPersistsAndRecoversAcrossStoreRestart(t *testing.T) {
 		t.Fatalf("expected recovered observation to become stale, got %v", err)
 	}
 }
+
+
+func TestSyncWorkerLifecycleWaitObservesNaturalParentCancellationAndAllowsRestart(t *testing.T) {
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", balanceStub{balance: 4400000}); err != nil {
+		t.Fatal(err)
+	}
+	store := NewMemoryStore()
+	svc, err := NewSyncService(registry, store, "IDR", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lifecycle, err := NewSyncWorkerLifecycle(svc, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	parent, cancel := context.WithCancel(context.Background())
+	if err := lifecycle.Start(parent); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.After(time.Second)
+	for !lifecycle.Running() {
+		select {
+		case <-deadline:
+			t.Fatal("worker did not enter running state")
+		default:
+			time.Sleep(time.Millisecond)
+		}
+	}
+
+	cancel()
+
+	waitCtx, waitCancel := context.WithTimeout(context.Background(), time.Second)
+	defer waitCancel()
+	if err := lifecycle.Wait(waitCtx); err != nil {
+		t.Fatalf("natural parent cancellation should be a clean worker exit, got %v", err)
+	}
+	if lifecycle.Running() {
+		t.Fatal("worker must report stopped after natural parent cancellation")
+	}
+
+	restartedCtx, restartedCancel := context.WithCancel(context.Background())
+	defer restartedCancel()
+	if err := lifecycle.Start(restartedCtx); err != nil {
+		t.Fatalf("worker should be restartable after natural exit: %v", err)
+	}
+
+	deadline = time.After(time.Second)
+	for {
+		if snapshot, ok := store.Get("mock"); ok && snapshot.Balance == 4400000 {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("restarted worker did not synchronize")
+		default:
+			time.Sleep(time.Millisecond)
+		}
+	}
+
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), time.Second)
+	defer shutdownCancel()
+	if err := lifecycle.Shutdown(shutdownCtx); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSyncWorkerLifecycleWaitRejectsInvalidContext(t *testing.T) {
+	lifecycle := &SyncWorkerLifecycle{}
+	if err := lifecycle.Wait(nil); !errors.Is(err, errors.New("wait context is required")) {
+		if err == nil || err.Error() != "wait context is required" {
+			t.Fatalf("expected invalid wait context error, got %v", err)
+		}
+	}
+}
