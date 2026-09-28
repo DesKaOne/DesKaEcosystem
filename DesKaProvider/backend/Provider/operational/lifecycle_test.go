@@ -303,9 +303,7 @@ func TestSyncWorkerLifecycleWaitObservesNaturalParentCancellationAndAllowsRestar
 
 func TestSyncWorkerLifecycleWaitRejectsInvalidContext(t *testing.T) {
 	lifecycle := &SyncWorkerLifecycle{}
-	if err := lifecycle.Wait(nil); !errors.Is(err, errors.New("wait context is required")) {
-		if err == nil || err.Error() != "wait context is required" {
-			t.Fatalf("expected invalid wait context error, got %v", err)
-		}
+	if err := lifecycle.Wait(nil); err == nil || err.Error() != "wait context is required" {
+		t.Fatalf("expected invalid wait context error, got %v", err)
 	}
 }
