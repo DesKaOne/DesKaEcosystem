@@ -14753,16 +14753,93 @@ No real provider credentials or live transaction is required for the new tests.
 - XP SINDONESIA has no live integration test in this milestone;
 - RCB and PortalPulsa remain placeholders.
 
+## Milestone #251 — Provider Balance / Health Operational Boundary
+
+**Date:** 2026-09-28
+
+### Completed
+
+- formalized provider operational snapshot freshness as provider-neutral state;
+- added explicit freshness states: `unknown`, `fresh`, and `stale`;
+- derived freshness deterministically from `LastCheckedAt` and a caller-supplied maximum age;
+- added `ReadOperationalSnapshot` for observational reads and `ReadFreshOperationalSnapshot` for consumers that explicitly require a fresh observation;
+- added deterministic regression coverage for missing observations, invalid freshness windows, boundary timestamps, stale observations, and fresh-observation reads;
+- preserved the separation between operational observation and transaction authorization.
+
+### Operational boundary
+
+Freshness is observational metadata only:
+
+1. `unknown` means no successful operational check timestamp is available;
+2. `fresh` means the observation is within the caller's declared freshness window;
+3. `stale` means the observation is older than that window.
+
+A fresh balance snapshot does not authorize payment, payout, routing, funding, or any other financial side effect. A stale snapshot must not be treated as current provider capacity.
+
+The operational read path remains provider-neutral and does not expose provider-specific protocol or credentials.
+
+### Implementation
+
+Primary changes:
+
+- `DesKaProvider/backend/Provider/operational/freshness.go`
+  - freshness state model;
+  - deterministic freshness evaluation;
+  - observational snapshot read;
+  - fresh-only observational read guard.
+- `DesKaProvider/backend/Provider/operational/freshness_test.go`
+  - deterministic freshness boundary tests;
+  - missing snapshot coverage;
+  - stale snapshot rejection;
+  - regression proving the operational read remains observational.
+
+### Verification
+
+The exact implementation/test HEAD is:
+
+9b0521fd480d6f9ead3874cb02c2a34b0982dfb2
+
+GitHub Actions for this exact HEAD:
+
+- Push CI #2525: GREEN
+- Pull Request CI #2526: GREEN
+- go test ./...: PASS
+- go vet ./...: PASS
+- go test -race ./...: PASS
+- PostgreSQL service-backed integration environment: PASS
+
+No real provider credentials or live provider transaction was required.
+
+### Safety Boundary / Invariants
+
+- operational freshness never authorizes payment;
+- operational freshness never authorizes payout;
+- operational freshness never selects or fails over a provider;
+- operational freshness never authorizes provider funding;
+- stale operational state cannot be silently treated as current;
+- no automatic payment retry or transaction resubmission is introduced;
+- no automatic provider funding is introduced;
+- no customer ledger mutation or treasury movement is introduced;
+- provider-specific credentials and protocol remain inside provider configuration/adapters;
+- public API exposure remains outside this milestone.
+
+### Known Limitations
+
+- freshness windows are caller-supplied and are not yet a provider-specific SLA policy;
+- operational snapshots remain observational state and are not yet a routing policy;
+- no automatic balance refresh scheduler is introduced;
+- no automatic provider funding or failover is introduced;
+- real provider live API validation remains separate from deterministic operational tests.
+
 ### Next Milestone
 
-**Milestone #251 — Provider Balance / Health Operational Boundary**
+**Milestone #252 — Provider Operational Fixture Alignment**
 
 Scope:
 
-- formalize provider balance and health snapshots as provider-neutral operational state;
-- define freshness and failure semantics without using stale balance as payment authorization;
-- preserve capability and routing separation;
-- add deterministic health/balance fixtures for implemented providers;
-- no automatic provider funding, routing failover, or payment resubmission.
+- align deterministic balance/health fixtures with every currently runtime-registered provider capability;
+- make provider health observations explicit and provider-neutral;
+- cover success, stale, unavailable, and error observations without turning health into routing authorization;
+- preserve disabled-by-default capability state and all payment safety invariants.
 
-No public API exposure is included in #251.
+No public API exposure, automatic provider failover, provider funding, or payment resubmission is included in #252.
