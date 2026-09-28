@@ -127,6 +127,7 @@ func TestPostgresTransactionStoreIntegration(t *testing.T) {
 
 	pending := postgresPendingState()
 	pending.Request.ReferenceID = postgresIntegrationReference()
+	pending.Request.Amount = 1
 	pending.Execution.Result.ReferenceID = pending.Request.ReferenceID
 	if err := store.Put(pending); err != nil {
 		t.Fatalf("insert pending transaction: %v", err)
