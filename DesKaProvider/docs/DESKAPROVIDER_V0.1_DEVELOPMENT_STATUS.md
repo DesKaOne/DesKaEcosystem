@@ -14266,3 +14266,118 @@ Scope:
 - define bounded operational duplicate handling without authorizing payment resubmission;
 - add transport-level security/header handling required by verified provider adapters;
 - preserve CAS, provider ownership, no-retry, no-failover, no-ledger, and no-treasury invariants.
+
+## Milestone #247 — Payment Webhook Operational Hardening / Replay Safety Boundary
+
+**Date:** 2026-09-28
+
+### Completed
+
+- reviewed the payment webhook lifecycle beyond terminal-state idempotency;
+- identified a concrete replay gap: an identical non-terminal (pending) webhook observation previously passed through the CAS/persistence path again;
+- made identical normalized webhook observations operationally idempotent for both terminal and non-terminal states;
+- repeated identical pending webhook delivery now returns the normalized observation without rewriting durable payment state/version;
+- preserved the existing behavior for a genuinely different observation, so a changed provider reference/message/status still reaches the existing CAS-safe transition rules;
+- kept provider-specific authentication and normalization inside the provider adapter;
+- locked transport routing to the explicit {provider} path value; Host, X-Forwarded-Host, X-Forwarded-For, and Content-Type are not used to select or authorize a provider;
+- added deterministic regression coverage for duplicate pending replay and security-sensitive HTTP headers;
+- did not introduce a persistent webhook inbox/event table because no concrete requirement for event-level deduplication beyond transaction-state idempotency was established by the current contracts.
+
+### Implementation
+
+Primary implementation:
+
+- DesKaProvider/backend/routing/service.go
+  - HandlePaymentWebhook
+  - constructs the normalized durable observation after the authoritative-provider and identity checks;
+  - returns early when the observation is equivalent at the normalized transaction-observation level;
+  - therefore avoids an unnecessary CAS/persistence mutation for identical pending replays.
+- DesKaProvider/backend/routing/payment_submission_test.go
+  - TestHandlePaymentWebhookDuplicatePendingIsIdempotent
+  - verifies duplicate non-terminal delivery does not rewrite the durable version and never calls CreatePayment.
+- DesKaProvider/backend/routing/payment_webhook_http_test.go
+  - TestPaymentWebhookHTTPHandlerDoesNotTrustSecuritySensitiveHeadersForRouting
+  - verifies security-sensitive headers cannot override provider routing derived from the path.
+
+### Verification
+
+The repository CI workflow runs, on both push and pull request:
+
+- go mod tidy
+- go test ./...
+- go vet ./...
+- go test -race ./...
+- PostgreSQL 18 service-backed tests for test/race jobs.
+
+For the implementation/test commits preceding this documentation update, GitHub Actions was observed executing both push and pull-request test and race jobs. Final milestone verification is recorded against the post-documentation exact HEAD below after the documentation commit completes.
+
+No real provider credentials are used by the regression tests and no live payment/webhook request is performed.
+
+### Safety Boundary / Invariants
+
+- ReferenceID remains the durable payment correlation key.
+- Stored ProviderName remains authoritative provider ownership.
+- CreatePayment remains authorized only by the durable claim boundary.
+- Webhook processing never calls CreatePayment.
+- Identical terminal observations remain idempotent.
+- Identical non-terminal observations are now also idempotent at the transaction-state boundary.
+- Conflicting terminal observations remain rejected and cannot overwrite terminal state.
+- Provider mismatch remains rejected before durable mutation.
+- ReferenceID, amount, and currency mismatch remain rejected.
+- CAS remains the lifecycle mutation boundary.
+- Persistence/CAS failure does not authorize payment submission retry.
+- No automatic payment retry or provider failover is introduced.
+- No customer ledger mutation, treasury movement, or automatic provider funding is introduced.
+- Provider-specific webhook authentication/normalization remains adapter-owned.
+- Transport security-sensitive headers do not become provider routing or authorization inputs.
+- No listener/port binding is introduced.
+
+### Known Limitations
+
+- Idempotency is bounded to the durable normalized transaction observation; there is still no persistent webhook-event inbox keyed by an external event ID.
+- Repeated delivery of a semantically different pending observation may still be evaluated by the existing CAS/state-transition rules; this is intentionally not converted into an event-history subsystem.
+- Network/TLS termination, rate limiting, and edge admission controls remain deployment/operational concerns.
+- Midtrans legacy HTTP notification authenticity is verified by its body signature_key in the adapter; the HTTP transport intentionally does not reinterpret provider-specific headers.
+- No live Midtrans webhook was executed.
+- Payment capability remains disabled by default in runtime registration.
+
+### Architecture Impact
+
+The webhook path remains:
+
+    External Provider
+        |
+        | HTTP POST /webhooks/payment/{provider}
+        v
+    PaymentWebhookHTTPHandler
+        |
+        +-- method/path validation
+        +-- bounded raw body
+        +-- inbound context
+        |
+        v
+    DesKaProvider HandlePaymentWebhook
+        |
+        +-- provider capability gate
+        +-- provider adapter authentication/normalization
+        +-- authoritative ProviderName check
+        +-- durable ReferenceID/amount/currency validation
+        +-- identical-observation no-op
+        +-- CAS transition for new observation
+        |
+        v
+    Durable Payment Transaction
+
+No provider-specific protocol or webhook authentication mechanism crosses into DesKaCash.
+
+### Next Milestone
+
+**Milestone #248 — Provider Capability Matrix Boundary**
+
+Scope:
+
+- lock the provider-neutral capability matrix for Payment, PPOB, Payout, Balance, Webhook, and Catalog;
+- distinguish explicitly between KYC/account verified, adapter implemented, capability enabled, live API tested, and production-ready;
+- record capability state per provider without claiming live capability from account/KYC verification alone;
+- keep provider-specific protocol details inside adapters;
+- use the matrix as the prerequisite for later real-provider integration and routing decisions.
