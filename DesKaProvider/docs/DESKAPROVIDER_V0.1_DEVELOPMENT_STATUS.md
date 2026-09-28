@@ -13339,3 +13339,97 @@ No public API is introduced and no financial authority changes.
 ### Next Milestone
 
 Establish the provider-neutral payment capability contract and deterministic Midtrans adapter boundary only after the required payment semantics are defined. Keep live validation separate and do not infer payment capability from the existing PPOB contract.
+
+
+## Milestone #239 — Provider-Neutral Payment Contract Boundary
+
+**Date:** 2026-09-28
+
+### Completed
+
+- established the first explicit provider-neutral Payment contract under `backend/internal/Payment`;
+- defined the minimum payment collection lifecycle as:
+  - `CreatePayment`
+  - `GetPaymentStatus`
+- introduced neutral payment request/result/status types using:
+  - DesKaProvider `ReferenceID`
+  - amount/currency
+  - optional customer identifier/description
+  - provider reference as an opaque correlation value;
+- defined canonical payment statuses:
+  - `pending`
+  - `success`
+  - `failed`
+- added request/status validation without embedding any provider-specific protocol;
+- separated optional payment capabilities into independent contracts:
+  - `WebhookProvider`
+  - `RefundProvider`
+- added deterministic compile-time and validation tests for the minimum contract and optional-capability separation;
+- deliberately did **not** mark Midtrans as implemented and did **not** enable `CapabilityPayment` for any provider.
+
+### Implementation Details
+
+- `backend/internal/Payment/payment.go`
+  - provider-neutral `Provider` interface;
+  - `PaymentRequest`, `PaymentResult`, `StatusRequest`, and `StatusResult`;
+  - canonical `Status` values;
+  - `ValidateRequest`, `ValidateStatusRequest`, and `ValidateStatus`;
+  - optional `WebhookProvider` and `RefundProvider` interfaces.
+- `backend/internal/Payment/payment_test.go`
+  - deterministic request validation coverage;
+  - status validation coverage;
+  - compile-time proof that a minimal provider can implement the payment contract without webhook/refund capabilities.
+
+### Verification
+
+- Payment contract implementation commit: `6fd8bdcda4971000ea663c6dbf7900049f2a08e2`.
+- Deterministic payment contract test commit: `73d026a19090bf89cb961ea463481df0dd4d6584`.
+- No external provider credentials were used.
+- No live payment request was executed.
+- No provider capability was enabled.
+
+### Invariants
+
+- Payment contract contains no Midtrans-specific fields, API paths, authentication material, provider status codes, or webhook payload types.
+- `ReferenceID` remains a DesKaProvider correlation key; a provider reference is opaque provider output.
+- Payment creation is not automatically retried or resubmitted.
+- Payment status observation does not authorize a new payment submission.
+- Webhook support is optional and separate from payment creation/status.
+- Refund support is optional and cannot be inferred from payment support.
+- Payment capability does not mutate the DesKaCash customer ledger.
+- Provider balance remains an operational liquidity snapshot, not customer balance authority.
+
+### Safety Boundary
+
+This milestone is contract-only. It introduces no external provider call, no transaction execution service, no automatic retry/failover, no refund execution, no webhook-to-purchase path, and no DesKaCash integration.
+
+### Known Limitations
+
+- `Provider/Midtrans/midtrans.go` remains unimplemented;
+- Midtrans payment semantics still require adapter-specific mapping against verified provider documentation before implementation;
+- no provider is currently `CapabilityPayment = TESTED`, `LIVE_VALIDATED`, or enabled;
+- idempotent payment execution remains governed by the existing transaction correlation boundary and must be integrated before any real payment submission adapter is enabled;
+- live validation remains outside this milestone and requires runtime credentials supplied through secure environment configuration.
+
+### Architecture Impact
+
+The architecture now has an explicit separation:
+
+```text
+DesKaCash
+    |
+    v
+DesKaProvider payment contract
+    |
+    +-- Midtrans adapter
+    +-- future payment adapters
+    |
+    v
+External payment providers
+```
+
+Provider-specific protocol remains confined to the adapter layer. Optional webhook/refund capabilities cannot silently become part of the base payment contract.
+
+### Next Milestone
+
+Implement the deterministic Midtrans adapter boundary against the verified Midtrans payment API semantics, including request mapping, response normalization, and status mapping, while keeping credentials external, payment capability disabled by default, and no automatic retry/failover.
