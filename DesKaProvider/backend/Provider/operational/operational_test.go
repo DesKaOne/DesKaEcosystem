@@ -241,3 +241,34 @@ func TestSyncServiceRunPerformsImmediateSyncAndStopsOnContextCancellation(t *tes
 		t.Fatal("sync worker did not stop after context cancellation")
 	}
 }
+
+
+func TestApplyHealthObservationPersistsOperationalStateWithoutAuthorization(t *testing.T) {
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", balanceStub{balance: 5000000}); err != nil {
+		t.Fatal(err)
+	}
+	store := NewMemoryStore()
+	svc, err := NewSyncService(registry, store, "IDR", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	initial := Snapshot{ProviderName: "mock", Balance: 5000000, Currency: "IDR", Health: HealthHealthy, LastCheckedAt: time.Date(2026, 9, 28, 10, 0, 0, 0, time.UTC), LastSuccessAt: time.Date(2026, 9, 28, 10, 0, 0, 0, time.UTC)}
+	if err := store.Put(initial); err != nil {
+		t.Fatal(err)
+	}
+	observedAt := time.Date(2026, 9, 28, 10, 1, 0, 0, time.UTC)
+	got, err := svc.ApplyHealthObservation(HealthObservation{
+		ProviderName: "mock", Status: HealthDegraded, ObservedAt: observedAt,
+		ConsecutiveFailures: 1, LastError: "provider unavailable",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Balance != initial.Balance || got.Health != HealthDegraded || got.LastCheckedAt != observedAt {
+		t.Fatalf("unexpected operational observation state: %#v", got)
+	}
+	if got.LastSuccessAt != initial.LastSuccessAt {
+		t.Fatalf("health observation should preserve last successful observation: %#v", got)
+	}
+}
