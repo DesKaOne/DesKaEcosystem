@@ -161,6 +161,23 @@ func (r *Registry) GetCapabilityProvider(name string, capability Capability) (an
  return impl, nil
 }
 
+// CapabilityMatrix returns a defensive provider-neutral snapshot of all
+// registered capability metadata. It does not enable capabilities or resolve
+// provider implementations.
+func (r *Registry) CapabilityMatrix() CapabilityMatrix {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	matrix := CapabilityMatrix{Providers: make(map[string]CapabilityDescriptor, len(r.providers))}
+	for name, entry := range r.providers {
+		caps := make(map[Capability]CapabilityStatus, len(entry.descriptor.Capabilities))
+		for capability, status := range entry.descriptor.Capabilities {
+			caps[capability] = status
+		}
+		matrix.Providers[name] = CapabilityDescriptor{Capabilities: caps}
+	}
+	return matrix
+}
+
 func (r *Registry) Capabilities(name string) (CapabilityDescriptor, error) {
 	key := normalizeName(name)
 	r.mu.RLock()
