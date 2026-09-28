@@ -33,7 +33,6 @@ type Request struct {
 type Router struct {
 	Now            func() time.Time
 	Registry       *provider.Registry
-	Store          operational.Store
 	OperationalInput OperationalInputReader
 	Priorities     map[string]int
 	Catalog        catalog.Store
