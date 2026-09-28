@@ -13539,3 +13539,33 @@ The adapter is isolated from DesKaCash. Provider-specific credentials, endpoints
 2. if green, integrate payment-provider registration as a disabled-by-default capability without enabling live payment routing;
 3. add payment transaction correlation to the existing durable transaction/audit boundary only where the neutral payment semantics require it;
 4. keep live validation and any production enablement explicitly separate from deterministic adapter tests.
+
+
+### Milestone #240 CI Closure
+
+The first CI validation for the milestone exposed a source-format defect in the new adapter:
+
+- CI runs #2413 / #2414 for HEAD `82725eb6bf8bce9a678782c6ed7c7f3dcb2806e0` were **RED** because the generated Go struct tags in `Provider/Midtrans/midtrans.go` contained literal backslash characters;
+- the failure was isolated to the new Midtrans adapter package; the repository's PostgreSQL integration service remained healthy;
+- corrected the struct tags in commit `a73e18629971c195a56f8e3ca0cf340e73b0fcbb`;
+- CI run #2415 (push) and #2416 (pull request) validated the corrected exact HEAD;
+- run #2416: **GREEN**;
+- `test`: PASS;
+- `vet`: PASS;
+- `race`: PASS;
+- PostgreSQL 18 integration service remained active and the full test/race suite passed.
+
+The earlier red runs are retained as historical CI failures and are not treated as successful verification.
+
+### Final Verification State
+
+- corrected implementation HEAD: `a73e18629971c195a56f8e3ca0cf340e73b0fcbb`;
+- exact HEAD CI gate: **GREEN**;
+- no live Midtrans credentials were used;
+- no live Midtrans payment request was executed;
+- `CapabilityPayment` remains disabled;
+- no automatic retry/failover/resubmission was introduced.
+
+### Next Milestone
+
+**#241 — Disabled-by-Default Midtrans Payment Registration Boundary:** register the payment adapter behind an explicit provider/capability boundary without enabling live routing, then integrate payment transaction correlation only where the existing durable transaction model can represent the neutral payment lifecycle without weakening the established no-resubmission guarantees.
