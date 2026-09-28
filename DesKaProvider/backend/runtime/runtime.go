@@ -242,18 +242,18 @@ func registerConfiguredProviders(registry *provider.Registry, digi provider.PPOB
  if registry == nil { return errors.New("provider registry is required") }
  if digi == nil { return errors.New("DigiFlazz provider is required") }
  digiCapabilities := provider.CapabilityDescriptor{Capabilities: map[provider.Capability]provider.CapabilityStatus{
-  provider.CapabilityPPOB: {Verified:true, Configured:true, AdapterImplemented:true, Enabled:false, LiveTested:false},
-  provider.CapabilityBalance: {Verified:true, Configured:true, AdapterImplemented:true, Enabled:false, LiveTested:false},
-  provider.CapabilityWebhook: {Verified:true, Configured:true, AdapterImplemented:true, Enabled:false, LiveTested:false},
+  provider.CapabilityPPOB: {Verified:true, Configured:true, AdapterImplemented:true, Tested:true, Enabled:false, LiveTested:false},
+  provider.CapabilityBalance: {Verified:true, Configured:true, AdapterImplemented:true, Tested:true, Enabled:false, LiveTested:false},
+  provider.CapabilityWebhook: {Verified:true, Configured:true, AdapterImplemented:true, Tested:true, Enabled:false, LiveTested:false},
  }}
  if err := registry.RegisterWithCapabilities("digiflazz", digi, digiCapabilities); err != nil { return err }
  if os.Getenv("IAK_USERNAME") == "" && os.Getenv("IAK_API_KEY") == "" { return nil }
  iakCfg, err := config.LoadIAKConfig(); if err != nil { return err }
  iakClient, err := iak.New(iakCfg, httpClient); if err != nil { return err }
  iakCapabilities := provider.CapabilityDescriptor{Capabilities: map[provider.Capability]provider.CapabilityStatus{
-  provider.CapabilityPPOB: {Verified:false, Configured:true, AdapterImplemented:true, Enabled:false, LiveTested:false},
-  provider.CapabilityBalance: {Verified:false, Configured:true, AdapterImplemented:true, Enabled:false, LiveTested:false},
-  provider.CapabilityWebhook: {Verified:false, Configured:true, AdapterImplemented:true, Enabled:false, LiveTested:false},
+  provider.CapabilityPPOB: {Verified:false, Configured:true, AdapterImplemented:true, Tested:true, Enabled:false, LiveTested:false},
+  provider.CapabilityBalance: {Verified:false, Configured:true, AdapterImplemented:true, Tested:true, Enabled:false, LiveTested:false},
+  provider.CapabilityWebhook: {Verified:false, Configured:true, AdapterImplemented:true, Tested:true, Enabled:false, LiveTested:false},
  }}
  return registry.RegisterWithCapabilities("iak", iakClient, iakCapabilities)
 }
