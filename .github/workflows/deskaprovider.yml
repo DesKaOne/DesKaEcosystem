@@ -143,3 +143,41 @@ jobs:
             exit 1
           fi
           go test ./Provider/Midtrans -run '^TestSandboxIntegrationPaymentLifecycle$' -count=1
+
+
+  iak-read-only:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: DesKaProvider/backend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.1"
+          cache: true
+          cache-dependency-path: DesKaProvider/backend/go.mod
+
+      - name: Run authorized IAK read-only validation
+        env:
+          IAK_USERNAME: ${{ secrets.IAK_USERNAME }}
+          IAK_API_KEY: ${{ secrets.IAK_API_KEY }}
+          IAK_BASE_URL: https://prepaid.iak.id
+          IAK_PRICE_LIST_ENDPOINT: https://prepaid.iak.id/api/pricelist
+          IAK_BALANCE_ENDPOINT: https://prepaid.iak.id/api/check-balance
+          IAK_INTEGRATION: "1"
+          DESKAPROVIDER_LIVE_INTEGRATION: "1"
+          DESKAPROVIDER_LIVE_INTEGRATION_PROVIDER: iak
+          DESKAPROVIDER_LIVE_INTEGRATION_ALLOWED_HOSTS: prepaid.iak.id
+        run: |
+          if [ -z "$IAK_USERNAME" ] || [ -z "$IAK_API_KEY" ]; then
+            echo "IAK_USERNAME and IAK_API_KEY are required for the explicit read-only validation run."
+            exit 1
+          fi
+          go test ./Provider/IAK -run '^TestLiveReadOnly$' -count=1
