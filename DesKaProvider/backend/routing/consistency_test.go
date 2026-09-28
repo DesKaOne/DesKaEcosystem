@@ -7,7 +7,7 @@ import (
 	"time"
 
 	provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
-	"mock "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/Mock""
+	mock "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/Mock"
 	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/catalog"
 	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/operational"
 )
