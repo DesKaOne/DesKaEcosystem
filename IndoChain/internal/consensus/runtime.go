@@ -11,6 +11,7 @@ var (
 	ErrUnexpectedProposer        = errors.New("unexpected consensus proposer")
 	ErrInvalidRuntimePhase       = errors.New("invalid consensus runtime phase")
 	ErrConflictingLockedProposal = errors.New("conflicting locked proposal")
+	ErrStaleTimeoutLock       = errors.New("stale timeout lock proof")
 	ErrInvalidRuntimeVoteType   = errors.New("invalid runtime vote type")
 	ErrRoundChangeFinalized      = errors.New("cannot change round after finalization")
 )
@@ -187,20 +188,27 @@ func (r *ValidatorRuntime) AdvanceRoundWithTimeoutEvidence(
 		return TimeoutCertificate{}, err
 	}
 	if len(r.lockedProposal) > 0 {
-		if !bytes.Equal(r.lockedProposal, certificate.LockedProposal) {
+		if len(certificate.LockedProposal) == 0 {
 			return TimeoutCertificate{}, ErrConflictingTimeoutLock
 		}
-		if len(certificate.LockedProposal) == 0 {
+		if certificate.LockedRound < r.lockedRound {
+			return TimeoutCertificate{}, ErrStaleTimeoutLock
+		}
+		if certificate.LockedRound == r.lockedRound && !bytes.Equal(r.lockedProposal, certificate.LockedProposal) {
 			return TimeoutCertificate{}, ErrConflictingTimeoutLock
 		}
 	}
 	if err := r.AdvanceRound(certificate.NextRound); err != nil {
 		return TimeoutCertificate{}, err
 	}
-	if len(certificate.LockedProposal) > 0 && (len(r.lockedProposal) == 0 || certificate.LockedRound > r.lockedRound) {
-		r.lockedProposal = append([]byte(nil), certificate.LockedProposal...)
-		r.lockedRound = certificate.LockedRound
-		r.lockedProof = cloneLockProofPtr(certificate.LockProof)
+	if len(certificate.LockedProposal) > 0 {
+		higherLock := len(r.lockedProposal) == 0 || certificate.LockedRound > r.lockedRound
+		equalLockWithNewProof := certificate.LockedRound == r.lockedRound && r.lockedProof == nil && certificate.LockProof != nil
+		if higherLock || equalLockWithNewProof {
+			r.lockedProposal = append([]byte(nil), certificate.LockedProposal...)
+			r.lockedRound = certificate.LockedRound
+			r.lockedProof = cloneLockProofPtr(certificate.LockProof)
+		}
 	}
 	return certificate, nil
 }
