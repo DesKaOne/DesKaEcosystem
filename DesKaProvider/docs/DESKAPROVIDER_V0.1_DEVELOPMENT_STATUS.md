@@ -14522,3 +14522,131 @@ Scope:
 - preserve the distinction between adapter implementation, deterministic test coverage, live validation, and production readiness.
 
 Do not add provider routing or public API exposure in #249.
+
+
+## Milestone #249 — Capability Matrix Runtime Registration / Provider Adapter Alignment
+
+**Date:** 2026-09-28
+
+### Completed
+
+- aligned runtime provider registration with the provider-neutral capability matrix;
+- made capability metadata explicit at registration time instead of relying on implicit interface shape;
+- registered only capabilities backed by concrete adapter contracts already implemented and covered by deterministic repository tests;
+- kept all runtime capabilities disabled by default and did not treat registration as transaction authorization;
+- added deterministic runtime composition coverage for Midtrans, DigiFlazz, IAK, and XP SINDONESIA;
+- preserved the distinction between adapter implementation, deterministic test coverage, live validation, and production readiness.
+
+### Runtime registration alignment
+
+Current runtime registration now records:
+
+| Provider | Registered capabilities |
+|---|---|
+| Midtrans | Payment, Webhook |
+| DigiFlazz | PPOB, Balance, Webhook, Catalog |
+| IAK | PPOB, Balance, Webhook, Catalog |
+| XP SINDONESIA | PPOB (partial), Balance, Webhook |
+
+Important boundaries:
+
+- Midtrans Payment/Webhook remain disabled by default; registration requires configured credentials but does not enable payment.
+- DigiFlazz capabilities are registered only for the implemented/tested PPOB, balance, webhook, and catalog contracts.
+- IAK capabilities are registered only when credentials are configured and remain disabled.
+- XP SINDONESIA is registered only when its credentials are configured; PPOB remains explicitly partial because GetProducts, Inquiry, and GetStatus are unsupported.
+- RCB and PortalPulsa are not runtime-registered because they remain placeholders.
+- No Payout capability is registered.
+- Unsupported capabilities are not inferred from a provider implementing another interface.
+
+### Implementation
+
+Primary changes:
+
+- DesKaProvider/backend/runtime/runtime.go
+  - explicit capability descriptors for configured providers;
+  - Midtrans Payment + Webhook registration;
+  - DigiFlazz Catalog metadata alignment;
+  - IAK Catalog metadata alignment;
+  - XP SINDONESIA configured registration with partial PPOB/Balance/Webhook metadata.
+- DesKaProvider/backend/runtime/provider_composition_test.go
+  - deterministic capability alignment fixture covering Midtrans, DigiFlazz, IAK, and XP SINDONESIA;
+  - regression coverage proving unsupported capabilities are not inferred.
+
+### Verification
+
+The exact implementation/test HEAD is:
+
+fc67894e8263f53c9d2885bd996c326665991b02
+
+GitHub Actions for this exact HEAD are still running at the time of this documentation update. The milestone is therefore implementation-complete but CI-closure pending.
+
+Required verification remains:
+
+- go test ./...
+- go vet ./...
+- go test -race ./...
+- PostgreSQL 18 service-backed integration environment
+
+No real provider credentials or live provider API transaction is required by the deterministic registration tests.
+
+### Safety Boundary / Invariants
+
+- capability registration never authorizes payment by itself;
+- all registered runtime capabilities remain Enabled=false;
+- no capability is marked LiveTested or ProductionReady by registration;
+- provider-specific credentials remain outside capability metadata;
+- provider-specific protocol remains inside adapters;
+- unsupported interfaces are not inferred as capabilities;
+- ProviderName remains authoritative for existing payment transactions;
+- payment submission remains behind the durable ReferenceID claim;
+- webhook processing never calls CreatePayment;
+- no automatic payment retry or provider failover is introduced;
+- no customer ledger mutation, treasury movement, or provider funding is introduced.
+
+### Known Limitations
+
+- capability registration is still in-memory runtime metadata;
+- provider commercial terms, SLA, latency, IP allowlists, and live validation remain outside this matrix;
+- IAK and XP SINDONESIA operational verification remains separate from repository adapter/test state;
+- XP SINDONESIA PPOB remains partial and disabled;
+- no Payout adapter exists;
+- no provider routing changes are included in this milestone.
+
+### Architecture Impact
+
+The runtime path is now:
+
+    DesKaCash
+        |
+        | provider-neutral internal boundary
+        v
+    DesKaProvider
+        |
+        +-- Provider Registry
+        |     |
+        |     +-- Explicit Capability Metadata
+        |     +-- Capability Matrix
+        |
+        +-- Payment
+        +-- PPOB
+        +-- Balance
+        +-- Webhook
+        +-- Catalog
+        |
+        +-- Provider adapters
+
+Capability metadata is descriptive and registration-scoped. It does not replace the transaction safety boundary and does not expose provider-specific APIs to DesKaCash.
+
+### Next Milestone
+
+**Milestone #250 — Real Provider Adapter Integration Readiness**
+
+Scope:
+
+- establish deterministic integration harness boundaries for real provider adapters;
+- validate configuration/credential loading without committing secrets;
+- define live-test gating so credentials cannot accidentally enable production routing;
+- prepare provider-specific contract tests for the providers already implemented;
+- preserve all payment no-retry/no-failover and ledger/treasury invariants.
+
+No public API exposure or automatic provider routing is included in #250.
