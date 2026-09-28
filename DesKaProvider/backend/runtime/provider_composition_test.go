@@ -162,3 +162,101 @@ func TestCapabilitiesFromDescriptorMatchesImplementedMetadataOnly(t *testing.T) 
 		t.Fatalf("derived capabilities = %#v, want %#v", got, want)
 	}
 }
+
+func TestRegisterConfiguredProvidersComposesPartialConfigurationIndependently(t *testing.T) {
+	t.Setenv("MIDTRANS_SERVER_KEY", "test-midtrans-key")
+	t.Setenv("IAK_USERNAME", "")
+	t.Setenv("IAK_API_KEY", "")
+	t.Setenv("XP_SINDONESIA_ID", "test-xp-id")
+	t.Setenv("XP_SINDONESIA_KEY", "test-xp-key")
+	t.Setenv("XP_SINDONESIA_API", "test-xp-api")
+	t.Setenv("DIGIFLAZZ_USERNAME", "")
+	t.Setenv("DIGIFLAZZ_API_KEY", "")
+
+	registry := provider.NewRegistry()
+	if err := registerConfiguredProviders(registry, nil, http.DefaultClient); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, name := range []string{"midtrans", "xp-sindonesia"} {
+		if _, err := registry.Capabilities(name); err != nil {
+			t.Fatalf("%s should compose independently: %v", name, err)
+		}
+	}
+	for _, name := range []string{"iak", "digiflazz"} {
+		if _, err := registry.Capabilities(name); err == nil {
+			t.Fatalf("%s must remain absent without configuration", name)
+		}
+	}
+}
+
+func TestRegisterConfiguredProvidersRejectsPartialXPSindonesiaConfiguration(t *testing.T) {
+	t.Setenv("MIDTRANS_SERVER_KEY", "")
+	t.Setenv("IAK_USERNAME", "")
+	t.Setenv("IAK_API_KEY", "")
+	t.Setenv("XP_SINDONESIA_ID", "test-xp-id")
+	t.Setenv("XP_SINDONESIA_KEY", "")
+	t.Setenv("XP_SINDONESIA_API", "")
+
+	registry := provider.NewRegistry()
+	if err := registerConfiguredProviders(registry, nil, http.DefaultClient); err == nil {
+		t.Fatal("expected incomplete XP SINDONESIA configuration to fail")
+	}
+	if _, err := registry.Capabilities("xp-sindonesia"); err == nil {
+		t.Fatal("XP SINDONESIA must not be partially registered")
+	}
+}
+
+func TestRuntimeCapabilityMatrixSnapshotIsDefensive(t *testing.T) {
+	t.Setenv("MIDTRANS_SERVER_KEY", "test-midtrans-key")
+	t.Setenv("IAK_USERNAME", "test-iak-user")
+	t.Setenv("IAK_API_KEY", "test-iak-key")
+	t.Setenv("XP_SINDONESIA_ID", "test-xp-id")
+	t.Setenv("XP_SINDONESIA_KEY", "test-xp-key")
+	t.Setenv("XP_SINDONESIA_API", "test-xp-api")
+
+	registry := provider.NewRegistry()
+	if err := registerConfiguredProviders(registry, nil, http.DefaultClient); err != nil {
+		t.Fatal(err)
+	}
+
+	snapshot := registry.CapabilityMatrix()
+	snapshot.Providers["midtrans"].Capabilities[provider.CapabilityPayment] = provider.CapabilityStatus{}
+	snapshot.Providers["xp-sindonesia"].Capabilities = nil
+
+	again := registry.CapabilityMatrix()
+	midtransStatus, ok := again.Status("midtrans", provider.CapabilityPayment)
+	if !ok || !midtransStatus.Configured || !midtransStatus.AdapterImplemented || !midtransStatus.Tested {
+		t.Fatalf("registry snapshot mutation leaked into runtime metadata: %+v", midtransStatus)
+	}
+	if _, ok := again.Status("xp-sindonesia", provider.CapabilityPPOB); !ok {
+		t.Fatal("registry snapshot mutation removed XP SINDONESIA metadata")
+	}
+}
+
+func TestRuntimeCompositionDoesNotInferUnsupportedXPSindonesiaCapabilities(t *testing.T) {
+	t.Setenv("XP_SINDONESIA_ID", "test-xp-id")
+	t.Setenv("XP_SINDONESIA_KEY", "test-xp-key")
+	t.Setenv("XP_SINDONESIA_API", "test-xp-api")
+
+	registry := provider.NewRegistry()
+	if err := registerConfiguredProviders(registry, nil, http.DefaultClient); err != nil {
+		t.Fatal(err)
+	}
+
+	descriptor, err := registry.Capabilities("xp-sindonesia")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := descriptor.Status(provider.CapabilityCatalog); ok {
+		t.Fatal("XP SINDONESIA must not infer Catalog from PPOBProvider presence")
+	}
+	client, err := registry.Get("xp-sindonesia")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.GetProducts(context.Background(), provider.ProductRequest{}); !errors.Is(err, provider.ErrUnsupportedOperation) {
+		t.Fatalf("XP SINDONESIA Catalog method must remain unsupported, got %v", err)
+	}
+}
+\n
