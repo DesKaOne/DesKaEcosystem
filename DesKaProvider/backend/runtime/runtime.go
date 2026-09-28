@@ -21,6 +21,7 @@ import (
  digiflazz "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/DigiFlazz"
  iak "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/IAK"
 	midtrans "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/Midtrans"
+	xpsindonesia "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/XPSindonesia"
  "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/operational"
  "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/config"
  "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/routing"
