@@ -13433,3 +13433,109 @@ Provider-specific protocol remains confined to the adapter layer. Optional webho
 ### Next Milestone
 
 Implement the deterministic Midtrans adapter boundary against the verified Midtrans payment API semantics, including request mapping, response normalization, and status mapping, while keeping credentials external, payment capability disabled by default, and no automatic retry/failover.
+
+
+## Milestone #240 — Deterministic Midtrans Payment Adapter Boundary
+
+**Date:** 2026-09-28
+
+### Completed
+
+- added environment-backed Midtrans configuration:
+  - `MIDTRANS_SERVER_KEY`
+  - `MIDTRANS_SNAP_ENDPOINT`
+  - `MIDTRANS_API_ENDPOINT`
+- implemented the provider-neutral Midtrans `payment.Provider` adapter;
+- mapped `PaymentRequest.ReferenceID` and IDR amount to the verified Snap `transaction_details.order_id` and `gross_amount` request;
+- maps successful Snap token creation to a neutral `pending` result instead of claiming that a customer payment has already succeeded;
+- implemented neutral status lookup through Midtrans Core API `GET /v2/{order_id_or_transaction_id}/status`;
+- normalizes Midtrans `settlement`/`capture` to `success`, `pending`/`authorize` to `pending`, and terminal negative statuses to `failed`;
+- validates returned order/transaction identity against the requested correlation identifiers;
+- implemented the optional provider-neutral `WebhookProvider` boundary;
+- validates Midtrans notification signature using the documented SHA-512 formula `SHA512(order_id + status_code + gross_amount + server_key)`;
+- added deterministic `httptest` coverage for Snap request/authentication, token normalization, status normalization, identity mismatch, webhook signature validation, and unsupported currency;
+- added compile-time assertions that the adapter implements the required payment and webhook contracts;
+- documented Midtrans runtime configuration in `backend/.env.example`.
+
+### Verified Midtrans Semantics
+
+The adapter is based on the current official Midtrans documentation:
+
+- Snap backend integration uses `POST https://app.sandbox.midtrans.com/snap/v1/transactions` with Basic Authentication using the server key;
+- the minimum Snap request contains `transaction_details.order_id` and `transaction_details.gross_amount`;
+- transaction status can be queried with `GET https://api.sandbox.midtrans.com/v2/{order_id}/status`;
+- Midtrans documents `capture` and `settlement` as successful payment states and `pending` as a waiting state;
+- HTTP notifications carry `order_id`, `transaction_id`, `transaction_status`, `status_code`, `gross_amount`, and `signature_key`;
+- notification signature validation uses SHA-512 over `order_id + status_code + gross_amount + ServerKey`.
+
+Source references:
+- https://docs.midtrans.com/reference/backend-integration
+- https://docs.midtrans.com/reference/get-transaction-status
+- https://docs.midtrans.com/reference/transaction-status
+- https://docs.midtrans.com/reference/handle-notifications
+
+### Safety Boundary
+
+- Midtrans credentials remain environment-only and are not stored in Git;
+- Snap token creation is normalized as `pending`, not `success`;
+- provider status observation and webhook normalization never call payment creation again;
+- no automatic retry, failover, or resubmission was introduced;
+- no DesKaCash customer ledger mutation was introduced;
+- no provider funding or treasury movement was introduced;
+- provider-specific HTTP/auth/status/signature details remain inside the Midtrans adapter;
+- `CapabilityPayment` remains disabled and Midtrans is not automatically registered as an enabled payment provider;
+- no live Midtrans credential validation or live payment request was executed.
+
+### Invariants
+
+- `ReferenceID` remains the DesKaProvider correlation key;
+- provider reference values remain opaque to the neutral payment contract;
+- status identity mismatches are rejected rather than silently accepted;
+- unsupported non-IDR requests are rejected without an external provider call;
+- webhook authenticity is verified before normalized transaction state is returned;
+- payment adapter behavior does not authorize financial ledger mutation.
+
+### Verification Gate
+
+- configuration commit: `024bc47a85c485d8fa3a7e48734b059057b38436`;
+- configuration tests: `3dbdd0b15f034aec33b7f713afcfc3d6d1cdba46`;
+- adapter implementation: `220f297de2a7d237f8d53793ade533b6a6f650f4`;
+- deterministic adapter tests: `bf520d6b434444d2a4136d30d411aa88ecb27e95`;
+- contract assertion: `1bf753d5c17868582e456d68b0bace66e80e8441`;
+- environment documentation: `6a46567ddb3c1b104492a81b6dcc2b0a1ac9a373`;
+- final status-document commit is the current milestone closure commit;
+- fresh CI for the resulting HEAD is mandatory; `test`, `vet`, `race`, and PostgreSQL integration must all be GREEN before this milestone is closed.
+
+### Known Limitations
+
+- the neutral payment contract does not expose a dedicated checkout URL/token field, so the Snap token is carried as an opaque provider reference until a concrete provider-neutral checkout artifact contract is justified;
+- the adapter currently supports the documented Snap minimum request and does not add provider-specific customer/payment-channel fields;
+- no refund adapter is implemented;
+- no live credential-backed validation has been performed;
+- production payment capability remains disabled pending runtime registration, capability enablement, and live validation;
+- PostgreSQL transaction/audit persistence remains the authoritative reliability boundary for future payment execution integration; this adapter itself does not bypass it.
+
+### Architecture Impact
+
+The payment boundary is now executable for deterministic adapter testing:
+
+```
+DesKaCash
+    |
+    v
+DesKaProvider internal Payment contract
+    |
+    +-- Midtrans adapter
+    |
+    v
+Midtrans Snap/Core API
+```
+
+The adapter is isolated from DesKaCash. Provider-specific credentials, endpoints, status values, and webhook signature logic remain inside configuration/adapter code.
+
+### Next Milestone
+
+1. verify fresh CI for exact HEAD;
+2. if green, integrate payment-provider registration as a disabled-by-default capability without enabling live payment routing;
+3. add payment transaction correlation to the existing durable transaction/audit boundary only where the neutral payment semantics require it;
+4. keep live validation and any production enablement explicitly separate from deterministic adapter tests.
