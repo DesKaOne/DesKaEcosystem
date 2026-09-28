@@ -15627,3 +15627,128 @@ Scope:
 - do not mark Midtrans payment capability LIVE_VALIDATED or ProductionReady until an actual authorized sandbox validation succeeds.
 
 No production activation, automatic failover, payment resubmission, provider funding, customer ledger mutation, treasury movement, or public API exposure is included in #259.
+
+
+## Milestone #259 — Midtrans Sandbox Integration Harness
+
+**Date:** 2026-09-28
+
+### Scope
+
+- add an environment-gated Midtrans sandbox integration harness for the existing payment/webhook adapter;
+- reuse the centralized live-integration provider gate;
+- require explicit HTTPS endpoint host allowlisting before an integration endpoint can be used;
+- validate provider-neutral payment create/status/webhook contracts against the configured Midtrans sandbox boundary when credentials are intentionally supplied;
+- keep normal CI credential-free and deterministic;
+- keep LIVE_VALIDATED and ProductionReady separate from adapter implementation and business/account readiness.
+
+### Completed
+
+- added `integration.EndpointAllowed` and `integration.ValidateEndpoints` as the shared endpoint safety boundary;
+- endpoint validation requires HTTPS, a parseable hostname, no URL userinfo, no fragment, and an explicitly allowlisted host;
+- added deterministic tests for malformed endpoints, HTTP endpoints, unallowlisted hosts, allowed sandbox endpoints, and multi-endpoint validation;
+- added `Provider/Midtrans/midtrans_integration_test.go` with an explicit `DESKAPROVIDER_LIVE_INTEGRATION=1` + `DESKAPROVIDER_LIVE_INTEGRATION_PROVIDER=midtrans` gate;
+- the sandbox harness loads `MIDTRANS_SERVER_KEY` only from the environment and validates Snap create, Core status, and normalized webhook contract handling;
+- the harness uses a single sandbox payment creation and does not perform automatic retry, failover, or resubmission;
+- added an explicit `workflow_dispatch` GitHub Actions job for authorized Midtrans sandbox validation using the repository secret `MIDTRANS_SERVER_KEY`;
+- normal push/pull-request CI does not receive Midtrans credentials and skips the sandbox job;
+- documented the integration gate and sandbox allowlist in `DesKaProvider/backend/.env.example`.
+
+### Verification
+
+Exact implementation/test HEAD:
+
+`5cd78c50de396221387586e1018eeafea3cfc192`
+
+GitHub Actions exact HEAD:
+
+- Push CI **#2629** / run `36412044371`: **GREEN**
+  - `go test ./...`: PASS
+  - `go vet ./...`: PASS
+  - `go test -race ./...`: PASS
+  - PostgreSQL 18 service-backed tests completed successfully
+  - `midtrans-sandbox`: skipped because the run was a normal push and no sandbox credentials were supplied
+- Pull Request CI **#2630** / run `36412051818`: **GREEN**
+
+Local checkout verification was unavailable because this execution environment could not resolve `github.com`; repository verification therefore relies on the exact GitHub Actions HEAD above.
+
+No authorized Midtrans sandbox transaction was executed during this milestone. The sandbox harness is implemented and ready for an explicit `workflow_dispatch` run with `MIDTRANS_SERVER_KEY` supplied through repository secrets.
+
+### Safety Boundary / Invariants
+
+- provider-specific Midtrans API behavior remains inside the Midtrans adapter;
+- the integration harness does not expose Midtrans details to DesKaCash;
+- endpoint authorization is explicit and host allowlisted;
+- credentials are environment/secret-backed only;
+- normal CI remains credential-free;
+- provider selection is explicit and the wrong provider cannot enable the Midtrans harness;
+- capability registration remains disabled by default;
+- sandbox harness execution does not mark the capability LIVE_VALIDATED automatically;
+- no automatic payment retry is introduced;
+- no automatic provider failover is introduced;
+- no transaction resubmission is introduced;
+- no duplicate payment creation is introduced by the harness;
+- no ledger mutation, customer balance mutation, treasury movement, or provider funding is introduced;
+- durable transaction/reference ownership, CAS/idempotency, webhook idempotency, and reconciliation boundaries remain unchanged;
+- no public API exposure is introduced.
+
+### Provider Readiness Separation
+
+The following remain distinct and must not be conflated:
+
+- **Business/account/KYC verification:** Midtrans is listed as business-ready by the current project context, but that is not repository validation evidence;
+- **Adapter implementation:** Midtrans payment and webhook adapter contracts are implemented;
+- **Deterministic test coverage:** adapter and integration-boundary tests pass in CI;
+- **Sandbox validation:** the harness exists, but no authorized sandbox transaction was executed in this milestone;
+- **Live validation:** not established;
+- **Production readiness:** not established.
+
+Accordingly, Midtrans payment capability remains **not LIVE_VALIDATED and not ProductionReady**.
+
+### Known Limitations
+
+- the current sandbox harness validates create/status/webhook contracts but does not itself configure a Midtrans webhook destination or claim receipt of a provider-originated webhook;
+- actual sandbox validation requires an authorized `MIDTRANS_SERVER_KEY` supplied through repository secrets and an explicit manual workflow run;
+- deterministic CI cannot substitute for provider sandbox validation;
+- the repository still does not expose a public DesKaCash API;
+- IAK, XP SINDONESIA, and RCB remain separately evaluated by capability; RCB still has no implemented runtime adapter contract.
+
+### Architecture Impact
+
+The integration boundary is now:
+
+    Explicit live gate
+          |
+          +-- provider == midtrans
+          |
+    Explicit endpoint allowlist
+          |
+          +-- HTTPS + allowlisted sandbox host
+          |
+    Environment/secret credentials
+          |
+          v
+    Midtrans Adapter
+          |
+          +-- payment create
+          +-- payment status
+          +-- webhook normalization
+          |
+          v
+    Provider-neutral payment contract
+
+The harness strengthens validation without changing runtime capability enablement or transaction authority.
+
+### Next Milestone
+
+**Milestone #260 — IAK Read-Only Sandbox/Live Integration Boundary**
+
+Scope:
+
+- harden the existing IAK integration harness against the same centralized endpoint validation boundary;
+- validate IAK Balance and Catalog/Price List contracts using explicit provider selection and environment credentials;
+- keep the validation read-only and avoid provider purchase/top-up side effects;
+- preserve capability-specific validation rather than treating IAK PPOB, Balance, Webhook, and Catalog as one production-ready capability;
+- keep deterministic CI credential-free and separate business/account/KYC readiness from repository and provider validation state.
+
+No automatic failover, payment resubmission, provider funding, customer ledger mutation, treasury movement, or public API exposure is included in #260.
