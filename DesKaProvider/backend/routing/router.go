@@ -34,6 +34,7 @@ type Router struct {
 	Now            func() time.Time
 	Registry       *provider.Registry
 	Store          operational.Store
+	OperationalInput OperationalInputReader
 	Priorities     map[string]int
 	Catalog        catalog.Store
 	CatalogMaxAge  time.Duration
@@ -80,11 +81,15 @@ func newRouter(registry *provider.Registry, store operational.Store, priorities 
 	if store == nil {
 		return nil, errors.New("operational store is required")
 	}
+	operationalInput, err := NewStoreOperationalInputReader(store)
+	if err != nil {
+		return nil, err
+	}
 	copied := make(map[string]int, len(priorities))
 	for name, priority := range priorities {
 		copied[normalize(name)] = priority
 	}
-	return &Router{Registry: registry, Store: store, Priorities: copied, Catalog: catalogStore, CatalogMaxAge: catalogMaxAge, OperationalMaxAge: operationalMaxAge, ProviderState: stateStore, Now: time.Now}, nil
+	return &Router{Registry: registry, Store: store, OperationalInput: operationalInput, Priorities: copied, Catalog: catalogStore, CatalogMaxAge: catalogMaxAge, OperationalMaxAge: operationalMaxAge, ProviderState: stateStore, Now: time.Now}, nil
 }
 
 func (r *Router) Select(ctx context.Context, req Request) (string, error) {
@@ -123,8 +128,18 @@ func (r *Router) Select(ctx context.Context, req Request) (string, error) {
 				continue
 			}
 		}
-		snapshot, ok := r.Store.Get(name)
-		if !ok || snapshot.Health != operational.HealthHealthy || snapshot.Balance < req.Amount {
+		if r.OperationalInput == nil {
+			return "", errors.New("operational input reader is required")
+		}
+		operationalInput, err := r.OperationalInput.ReadOperationalInput(ctx, name, r.OperationalMaxAge, now)
+		if err != nil {
+			if errors.Is(err, operational.ErrOperationalSnapshotNotFound) {
+				continue
+			}
+			continue
+		}
+		snapshot := operationalInput.Snapshot
+		if snapshot.Health != operational.HealthHealthy || snapshot.Balance < req.Amount {
 			continue
 		}
 		if r.OperationalMaxAge > 0 && !isFresh(snapshot.LastCheckedAt, now, r.OperationalMaxAge) {
