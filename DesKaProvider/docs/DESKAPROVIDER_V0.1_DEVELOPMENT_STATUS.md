@@ -15412,3 +15412,114 @@ The corrected implementation HEAD is:
 58b68defffa11ed54d534a29852fe822075307cc
 
 CI for the corrected HEAD is pending and must be GREEN before #256 is considered finally verified.
+
+
+## Milestone #257 — Routing Decision Consistency Boundary
+
+**Date:** 2026-09-28
+
+### Completed
+
+- formalized a deterministic consistency validation boundary for provider routing eligibility inputs;
+- routing now validates provider identity consistency between the registry candidate and the read-only operational handoff;
+- routing validates that the operational freshness value carried by `OperationalInput` matches the snapshot's freshness evaluation at the router's decision time and configured maximum age;
+- routing validates provider identity consistency between the registry candidate and the catalog snapshot;
+- routing retains explicit catalog freshness evaluation before catalog product eligibility is accepted;
+- routing performs consistency validation before a candidate enters deterministic priority/name ordering;
+- contradictory routing inputs are rejected from eligibility instead of being allowed to influence provider selection;
+- added deterministic tests for:
+  - consistent operational/catalog inputs;
+  - operational provider identity mismatch;
+  - operational freshness mismatch;
+  - catalog provider identity mismatch;
+  - router rejection of contradictory read-only operational input;
+- preserved observational-only semantics: routing consistency validation cannot authorize payment, payout, funding, retry, or transaction resubmission.
+
+### Decision boundary
+
+The routing decision path is now:
+
+```text
+Provider Registry
+      |
+      +-- capability / provider-state eligibility
+      |
+OperationalInputReader
+      |
+      +-- provider identity
+      +-- health / balance
+      +-- freshness consistency
+      |
+Catalog Store (when configured)
+      |
+      +-- provider identity
+      +-- freshness
+      +-- product availability
+      |
+Priority
+      |
+      v
+Routing Consistency Boundary
+      |
+      v
+Deterministic Candidate Ordering
+      |
+      v
+Selected Provider
+```
+
+The consistency boundary does not become a financial authorization boundary. It only determines whether the available operational inputs are coherent enough to participate in routing eligibility.
+
+### CI follow-up
+
+Initial #257 CI run **#2608** was red because `routing/consistency_test.go` contained a malformed import alias introduced during implementation.
+
+The failure was corrected without changing production routing logic.
+
+Corrected implementation/test HEAD:
+
+`4f7251462d7e7324d8d2d80aabe007afab98352f`
+
+CI run **#2610** is GREEN:
+
+- `go test ./...`: PASS
+- `go vet ./...`: PASS
+- `go test -race ./...`: PASS
+- PostgreSQL 18 service-backed test environment: PASS
+
+No real provider credentials or live financial transaction was used.
+
+### Safety Boundary / Invariants
+
+- provider-specific behavior remains inside adapters;
+- routing consumes operational state only through the read-only handoff introduced in #256;
+- contradictory operational/catalog identity or freshness inputs cannot become eligible candidates;
+- cached provider balance remains operational evidence, not authoritative transaction state;
+- routing does not mutate operational state;
+- no automatic provider failover is introduced;
+- no automatic transaction resubmission is introduced;
+- no provider funding is introduced;
+- no customer ledger mutation or treasury movement is introduced;
+- payment transaction ownership, durable correlation, CAS, idempotency, and reconciliation boundaries remain unchanged;
+- public API exposure remains outside this milestone.
+
+### Known Limitations
+
+- routing consistency currently validates the provider identity and freshness relationships required by the existing routing model; it does not introduce provider-specific SLA policy;
+- catalog freshness is still evaluated directly from the catalog snapshot because the catalog boundary does not yet carry a separate derived freshness object;
+- routing priority remains an explicit deterministic ordering input; no implicit business weighting is inferred;
+- live provider validation remains separate from deterministic CI;
+- RCB and PortalPulsa remain placeholders and are not runtime-registered.
+
+### Next Milestone
+
+**Milestone #258 — Routing Persistence / Recovery Consistency**
+
+Scope:
+
+- verify that routing inputs recovered from durable operational, catalog, and provider-state stores preserve the same consistency rules after restart;
+- add PostgreSQL-backed routing recovery/consistency coverage where applicable;
+- ensure stale or contradictory recovered state cannot silently become route-eligible;
+- preserve deterministic ordering and read-only operational consumption.
+
+No automatic provider failover, payment resubmission, provider funding, customer ledger mutation, treasury movement, or public API exposure is included in #258.
