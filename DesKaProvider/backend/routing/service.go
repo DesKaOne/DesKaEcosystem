@@ -441,6 +441,22 @@ func (s *Service) HandlePaymentWebhook(ctx context.Context, providerName string,
 	if latestAfterWebhook.Execution.ProviderName != providerName {
 		return payment.StatusResult{}, ErrWebhookReferenceConflict
 	}
+	observed := &payment.Transaction{
+		ReferenceID:       status.ReferenceID,
+		ProviderReference: status.ProviderReference,
+		Amount:            status.Amount,
+		Currency:          status.Currency,
+		CustomerID:        latestAfterWebhook.Payment.CustomerID,
+		Description:       latestAfterWebhook.Payment.Description,
+		Status:            status.Status,
+		Message:           status.Message,
+	}
+	// An identical normalized webhook observation is operationally idempotent
+	// regardless of whether the payment is terminal. In particular, repeated
+	// pending notifications must not keep rewriting the durable state/version.
+	if samePaymentObservedResult(latestAfterWebhook.Payment, observed) {
+		return status, nil
+	}
 	if latestAfterWebhook.Payment.Status == payment.StatusSuccess || latestAfterWebhook.Payment.Status == payment.StatusFailed {
 		if latestAfterWebhook.Payment.Status == status.Status &&
 			latestAfterWebhook.Payment.ProviderReference == status.ProviderReference &&
