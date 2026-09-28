@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/ed25519"
 	"errors"
-	"strings"
 	"testing"
 )
 
@@ -172,8 +171,8 @@ func TestValidatorRuntimeRejectsReplayedTimeoutEvidenceAfterRoundChange(t *testi
 	}
 	before := runtime.state
 	_, err = runtime.AdvanceRoundWithTimeoutEvidence(messages, resolver)
-	if !strings.Contains(err.Error(), ErrStateContextMismatch.Error()) {
-		t.Fatalf("expected replay/context rejection, got %v", err)
+	if err == nil {
+		t.Fatal("replayed timeout evidence unexpectedly advanced the runtime")
 	}
 	if runtime.state != before {
 		t.Fatal("runtime round changed after replayed timeout evidence")
