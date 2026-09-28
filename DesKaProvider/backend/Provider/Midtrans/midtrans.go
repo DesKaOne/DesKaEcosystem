@@ -21,6 +21,9 @@ import (
 
 const maxResponseBody = 1 << 20
 
+var _ payment.Provider = (*Client)(nil)
+var _ payment.WebhookProvider = (*Client)(nil)
+
 type Client struct {
 	cfg        config.MidtransConfig
 	httpClient *http.Client
