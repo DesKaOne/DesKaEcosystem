@@ -667,3 +667,107 @@ func TestRouterFailsClosedWhenPersistedCapabilityMetadataDrifts(t *testing.T) {
 		t.Fatalf("expected capability drift to block routing, got %v", err)
 	}
 }
+
+
+func TestRouterJoinedErrorsAreDeterministicAndDeduplicatedAcrossCandidates(t *testing.T) {
+	now := time.Date(2026, 9, 29, 12, 0, 0, 0, time.UTC)
+	registry := provider.NewRegistry()
+	for _, name := range []string{"catalog-stale", "drift", "operational-stale-a", "operational-stale-b"} {
+		if err := registry.RegisterWithCapabilities(name, mock.New(mock.Config{
+			Products: []provider.Product{{Code: "xld10", Name: "Test"}},
+		}), provider.CapabilityDescriptor{Capabilities: map[provider.Capability]provider.CapabilityStatus{
+			provider.CapabilityPPOB: {AdapterImplemented: true, Enabled: true, Tested: true},
+		}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	store := operational.NewMemoryStore()
+	catalogs := catalog.NewMemoryStore()
+	states := operational.NewProviderStateStore()
+	for _, name := range []string{"catalog-stale", "drift", "operational-stale-a", "operational-stale-b"} {
+		d, err := registry.Capabilities(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := states.Put(operational.ProviderState{
+			ProviderName:        name,
+			Lifecycle:           operational.LifecycleEnabled,
+			Capabilities:        []operational.Capability{operational.CapabilityPPOB},
+			CapabilityFingerprint: operational.CapabilityMetadataFingerprint(d),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := store.Put(operational.Snapshot{
+		ProviderName: "catalog-stale", Balance: 100000, Health: operational.HealthHealthy, LastCheckedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := catalogs.Put(catalog.Snapshot{
+		ProviderName: "catalog-stale", Products: []provider.Product{{Code: "xld10"}}, SyncedAt: now.Add(-2 * time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.Put(operational.Snapshot{
+		ProviderName: "drift", Balance: 100000, Health: operational.HealthHealthy, LastCheckedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := catalogs.Put(catalog.Snapshot{
+		ProviderName: "drift", Products: []provider.Product{{Code: "xld10"}}, SyncedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	drifted, ok := states.Get("drift")
+	if !ok {
+		t.Fatal("expected drift provider state")
+	}
+	drifted.CapabilityFingerprint = "drifted"
+	if err := states.Put(drifted); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, name := range []string{"operational-stale-a", "operational-stale-b"} {
+		if err := store.Put(operational.Snapshot{
+			ProviderName: name, Balance: 100000, Health: operational.HealthHealthy, LastCheckedAt: now.Add(-2 * time.Hour),
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if err := catalogs.Put(catalog.Snapshot{
+			ProviderName: name, Products: []provider.Product{{Code: "xld10"}}, SyncedAt: now,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	router, err := NewWithCatalogAndStateAndOperationalMaxAge(registry, store, nil, catalogs, states, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	router.Now = func() time.Time { return now }
+
+	const expected = "no provider available\nprovider operational snapshot is stale\nprovider catalog is stale\nprovider capability metadata drift detected"
+	for i := 0; i < 3; i++ {
+		_, selectErr := router.Select(context.Background(), Request{ProductCode: "xld10", Amount: 100})
+		if selectErr == nil {
+			t.Fatal("expected joined routing error")
+		}
+		if selectErr.Error() != expected {
+			t.Fatalf("unexpected deterministic joined error on iteration %d: %q", i, selectErr.Error())
+		}
+		for _, target := range []error{ErrNoProviderAvailable, ErrOperationalSnapshotStale, ErrCatalogStale, ErrProviderCapabilityDrift} {
+			if !errors.Is(selectErr, target) {
+				t.Fatalf("joined error missing %v on iteration %d: %v", target, i, selectErr)
+			}
+		}
+	}
+
+	// Two providers contribute the same operational-stale condition, but the
+	// aggregate router error must contain that sentinel only once.
+	if strings.Count(expected, ErrOperationalSnapshotStale.Error()) != 1 {
+		t.Fatal("test fixture must assert a single operational-stale sentinel")
+	}
+}
