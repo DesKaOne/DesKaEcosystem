@@ -2059,3 +2059,112 @@ Scope:
 - preserve all existing safety boundaries.
 
 No speculative RCB PPOB implementation, automatic retry/failover/resubmission, funding, ledger/treasury mutation, public API, or DesKaCash provider-specific coupling is included.
+
+
+## Milestone #286 — Provider Administrative / Routing Explanation Transition Parity
+
+**Date:** 2026-09-29
+
+### Scope
+
+Verify that `ExplainProviderRoute` remains observational and transition-deterministic while its eligibility explanation stays aligned with `Router.Select` across explicit provider-state transitions.
+
+### Source Finding
+
+- Existing #283/#284 matrices covered individual candidate rejection states and deep explanation states, but did not exercise one continuous state transition sequence against both administrative explanation and the actual router.
+- `ExplainProviderRoute` evaluates lifecycle, operational capability, capability drift, operational freshness/health/balance, catalog state, and readiness metadata without mutating those sources.
+- `Router.Select` remains the actual routing decision path.
+- Explicit capability reconciliation can clear drift while deliberately disabling lifecycle; only explicit lifecycle enablement can restore eligibility.
+- The explanation therefore must change with state transitions, but must never itself cause those transitions.
+
+### Implementation
+
+Added `TestExplainProviderRouteTransitionParityWithRouterSelect` to `DesKaProvider/backend/routing/readiness_explanation_test.go`.
+
+The deterministic transition sequence is:
+
+1. **Initial eligible state**
+   - explanation: `RouteEligible=true`;
+   - `Router.Select`: selects `mock`.
+
+2. **Lifecycle disabled**
+   - explanation reports blocking `lifecycle_disabled`;
+   - `Router.Select`: rejects with `ErrNoProviderAvailable`.
+
+3. **Capability fingerprint drift**
+   - lifecycle is restored in state, then fingerprint is intentionally changed;
+   - explanation reports blocking `capability_drift`;
+   - `Router.Select`: rejects with `ErrNoProviderAvailable`.
+
+4. **Explicit reconciliation**
+   - reconciliation clears capability drift;
+   - reconciliation keeps lifecycle disabled;
+   - explanation reports blocking `lifecycle_disabled`;
+   - `Router.Select` remains blocked.
+
+5. **Explicit lifecycle enable**
+   - explanation returns to eligible;
+   - `Router.Select` selects `mock` again.
+
+No production routing, provider adapter, authorization, or financial behavior changed.
+
+### Changed Files
+
+- `DesKaProvider/backend/routing/readiness_explanation_test.go`
+- `DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md`
+
+### Verification
+
+Implementation/test commit:
+
+`7e2a737d59f3b32f9719250a360eac6a18094890`
+
+GitHub Actions Push CI #2886 / run `36582151831`: **GREEN**
+
+- test: PASS
+  - `go test ./...`: PASS
+  - `go vet ./...`: PASS
+  - PostgreSQL service-backed environment: PASS
+- race: PASS
+  - `go test -race ./...`: PASS
+- IAK read-only: SKIPPED (credential-gated)
+- XP SINDONESIA read-only: SKIPPED (credential-gated)
+- Midtrans sandbox: SKIPPED (credential-gated)
+
+No authorized live-provider transaction or external provider request was executed.
+
+### Safety Boundary / Invariants
+
+- `ExplainProviderRoute` remains observational and never authorizes routing, payment, purchase, payout, retry, failover, or resubmission.
+- Explanation state transitions do not mutate `ProviderState`, capability metadata, operational snapshots, catalog snapshots, or readiness evidence.
+- `Router.Select` remains the sole routing decision authority.
+- Reconciliation clears drift but does not auto-enable lifecycle.
+- Explicit enablement remains the only tested transition that restores lifecycle eligibility after reconciliation.
+- Readiness evidence remains separate from operational routing gates.
+- No automatic retry/failover/resubmission, duplicate transaction creation, funding, ledger mutation, customer-balance mutation, or treasury movement is introduced.
+- No public API or DesKaCash provider-specific coupling is introduced.
+- RCB remains unregistered, non-routable, and fail-closed pending an authoritative PPOB contract.
+
+### Known Limitations
+
+- Transition coverage is deterministic/internal and does not establish external provider availability.
+- IAK, XP SINDONESIA, and Midtrans external validation remains credential-gated.
+- No authorized live-provider transaction was executed.
+- RCB PPOB contract acquisition remains incomplete.
+
+### Architecture Impact
+
+#286 strengthens the separation between administrative explanation and routing authority by proving a continuous state-transition sequence remains aligned with `Router.Select` while explanation remains read-only.
+
+### Next Milestone
+
+**Milestone #287 — Provider Administrative Explanation Snapshot / Copy Isolation Audit**
+
+Scope:
+
+- verify returned `ProviderRouteExplanation` reason slices cannot mutate subsequent explanation results or hidden shared state;
+- verify repeated explanations remain deterministic after caller-side mutation of returned values;
+- verify explanation remains observational when operational/catalog/provider state snapshots are changed externally;
+- preserve `Router.Select` as the sole routing decision path.
+
+No speculative RCB PPOB implementation, automatic retry/failover/resubmission, funding, ledger/treasury mutation, public API, or DesKaCash provider-specific coupling is included.
