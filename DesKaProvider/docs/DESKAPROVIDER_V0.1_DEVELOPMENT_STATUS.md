@@ -1551,3 +1551,103 @@ Explicit non-goals:
 - no public API;
 - no DesKaCash provider-specific coupling.
 
+## Milestone #281 — Provider State Persistence / Recovery Boundary Hardening
+
+**Date:** 2026-09-29
+
+### Scope
+
+- audit multi-provider persistence/recovery behavior for operational ProviderState;
+- verify deterministic provider ordering and capability fingerprints survive recovery;
+- verify a failed replacement cannot partially replace previously durable or in-memory provider state;
+- preserve separation between operational persistence, registry readiness, routing eligibility, and transaction ownership.
+
+### Source Finding
+
+ProviderStateStore already sorts provider states deterministically before persistence and commits the in-memory map only after persistence succeeds. The remaining gap was regression coverage for multiple providers and for a failed replacement of an already persisted provider.
+
+The persistence layer stores operational provider state and capability fingerprints; it does not become a second readiness authority and does not redefine transaction/reference ownership semantics.
+
+### Implementation
+
+Added deterministic recovery-boundary coverage in `DesKaProvider/backend/Provider/operational/provider_state_json_test.go`:
+
+- `TestProviderStateStorePersistsMultipleProvidersDeterministically` verifies canonical provider-name normalization, deterministic persisted/recovered ordering, and capability-fingerprint retention across multiple providers;
+- `TestProviderStateStoreFailedReplacementPreservesPreviousDurableState` verifies a persistence failure leaves both the previous in-memory state and previously durable state unchanged.
+
+The first CI run exposed only a test expectation error: the test used the pre-normalized `Zulu` name when constructing the fingerprint, while `NewProviderState` canonicalizes provider names to lowercase. The test was corrected to derive the fingerprint from canonical `state.ProviderName`; no production persistence behavior changed.
+
+### Changed Files
+
+- DesKaProvider/backend/Provider/operational/provider_state_json_test.go
+- DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md
+
+No provider credentials or external provider requests were added or executed.
+
+### Verification
+
+Implementation/test final HEAD:
+
+`6479aaa7d1f39c63472899d0b6596ff56d48cc09`
+
+GitHub Actions Push CI **#2857** / run **36576027446** for that exact HEAD: **GREEN**.
+
+- `test`: PASS
+  - `go test ./...`: PASS
+  - `go vet ./...`: PASS
+  - PostgreSQL service-backed test environment completed successfully
+- `race`: PASS
+  - `go test -race ./...`: PASS
+- `iak-read-only`: SKIPPED because authorized credentials/manual provider validation were not supplied
+- `xp-sindonesia-read-only`: SKIPPED because authorized credentials/manual provider validation were not supplied
+- `midtrans-sandbox`: SKIPPED because authorized credentials/manual provider validation were not supplied
+
+An earlier CI #2855 for implementation HEAD `af272b5c8ac327d6c9f042341024c829015b16c4` failed only because the new test expected a non-canonical provider name in its fingerprint assertion. The failure was corrected in `6479aaa7d1f39c63472899d0b6596ff56d48cc09`; final CI #2857 is GREEN.
+
+No authorized live-provider transaction or external provider request was executed.
+
+### Safety Boundary / Invariants
+
+- persistence remains provider-neutral operational state only;
+- deterministic ordering does not authorize routing or promote readiness;
+- failed persistence cannot partially replace existing provider state in memory or durable storage;
+- capability fingerprints remain drift evidence and cannot promote LiveTested or ProductionReady;
+- registry capability readiness remains separate from operational persistence;
+- Router.Select remains the sole routing decision path;
+- no automatic retry, provider failover, or transaction resubmission is introduced;
+- no duplicate payment/purchase creation is introduced;
+- no ledger mutation, customer balance mutation, treasury movement, or provider funding is introduced;
+- durable transaction/reference ownership, CAS/idempotency, webhook idempotency, and reconciliation boundaries remain unchanged;
+- no public API exposure is introduced;
+- RCB remains unregistered, non-routable, and fail-closed pending an authoritative PPOB contract.
+
+### Known Limitations
+
+- external provider validation remains credential-gated and was skipped in CI;
+- deterministic persistence tests do not establish external provider availability or live/sandbox contract compatibility;
+- generation/ownership semantics for transaction/reference state remain outside ProviderState persistence and are not redefined here;
+- RCB PPOB contract details remain incomplete.
+
+### Architecture Impact
+
+#281 strengthens the operational persistence boundary without adding a second readiness or routing authority. Multi-provider recovery is deterministic, failed writes remain atomic from the store's perspective, and capability fingerprints remain available for drift detection after restart.
+
+### Next Milestone
+
+**Milestone #282 — Provider State Persistence / Drift Recovery Integration Audit**
+
+Scope:
+
+- verify the complete recovery sequence across persisted ProviderState, capability drift detection, administrative diagnostics, and explicit lifecycle re-enable;
+- add an end-to-end deterministic regression proving a recovered drifted provider remains blocked until explicit reconciliation and re-enable;
+- preserve read-only diagnostics and the existing fail-closed routing boundary.
+
+Explicit non-goals:
+
+- no speculative RCB PPOB implementation;
+- no automatic retry/failover/resubmission;
+- no provider funding or financial mutation;
+- no ledger/treasury mutation;
+- no public API;
+- no DesKaCash provider-specific coupling.
+
