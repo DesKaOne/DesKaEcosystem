@@ -197,7 +197,6 @@ No automatic failover, payment resubmission, provider funding, customer ledger m
 - no public API exposure is introduced.
 
 ### Verification
-
 Implementation/test final HEAD:
 
 7fbf4b39c4288370a9a8f6e2032804e784e7e892
@@ -397,8 +396,7 @@ GitHub Actions run #2794 for that exact HEAD:
 
 - `test`: PASS
 - `go vet ./...`: PASS
-- `race`: PASS
-- PostgreSQL service-backed integration environment: executed by CI
+- `race`: PASS- PostgreSQL service-backed integration environment: executed by CI
 - Midtrans sandbox validation: skipped as expected
 - IAK read-only validation: skipped as expected
 - XP SINDONESIA read-only validation: skipped as expected
@@ -597,7 +595,6 @@ External references reviewed:
 - No provider transaction was executed.
 - No capability registration or routing behavior was changed.
 ### Known Limitations
-
 The current public RCB material is insufficient to safely implement the neutral PPOB adapter. A provider-issued technical integration document, sandbox credentials with documented test cases, or equivalent authoritative contract is still required before protocol implementation and live/read-only validation.
 
 ### Architecture Impact
@@ -797,7 +794,6 @@ Audit whether administrative route explanations expose the same candidate reject
 ### Source Finding
 
 The parity audit found one concrete mismatch: when ProviderState existed, Router.Select() required the operational state to explicitly support the PPOB capability before considering the provider route-eligible. ExplainProviderRoute() checked lifecycle state but did not report the missing operational capability gate. This could make administrative explainability appear less restrictive than the actual router.
-
 ### Implementation
 
 - added the provider-neutral operational_capability_missing readiness reason;
@@ -998,7 +994,6 @@ The source audit confirmed that `Router.Select()` reads the provider operational
 Before #276, these reason codes existed but there was no deterministic regression matrix proving that each administrative explanation matched the corresponding router rejection gate.
 
 ### Implementation
-
 Added `TestExplainProviderRouteOperationalFreshnessHealthBalanceParity`.
 
 The deterministic matrix fixes the router clock and covers:
@@ -1197,8 +1192,7 @@ Scope:
 Explicit non-goals:
 
 - no speculative RCB PPOB implementation;
-- no automatic retry/failover/resubmission;
-- no provider funding or financial mutation;
+- no automatic retry/failover/resubmission;- no provider funding or financial mutation;
 - no ledger/treasury mutation;
 - no public API;
 - no DesKaCash provider-specific coupling.
@@ -1398,7 +1392,6 @@ No authorized live-provider transaction or external provider request was execute
 - RCB remains unregistered, non-routable, and fail-closed pending an authoritative PPOB contract.
 
 ### Known Limitations
-
 - the audit is deterministic and does not establish external provider availability;
 - provider-specific validation remains credential-gated and was not executed;
 - the routing policy intentionally does not require PRODUCTION_READY for every route; route eligibility is governed by capability implementation/enablement plus operational and catalog gates;
@@ -1455,3 +1448,106 @@ Changed by the amendment:
 - DesKaProvider/backend/runtime/runtime_test.go — test-only timing stabilization; no production runtime behavior change.
 
 No provider credentials or external provider requests were executed.
+
+## Milestone #280 — Provider Capability Drift / Readiness Persistence Recovery Cross-Audit
+
+**Date:** 2026-09-29
+
+### Scope
+
+- audit persistence/recovery of provider capability metadata fingerprints used for drift detection;
+- verify restart/recovery preserves the persisted fingerprint and does not silently erase drift evidence;
+- verify persistence failure does not partially mutate in-memory provider state;
+- preserve the distinction between registry capability readiness metadata and persisted operational provider state; no separate readiness persistence mechanism is introduced or inferred.
+
+### Source Finding
+
+The repository persists operational `ProviderState`, including `CapabilityFingerprint`, through the existing provider-state persistence boundary. Registry `CapabilityStatus` remains the authoritative provider-neutral readiness metadata and is not duplicated into a separate readiness store.
+
+The existing persistence path writes the durable state before replacing the in-memory state. The recovery path reloads the persisted state and retains the capability fingerprint used by `DetectCapabilityDrift`. This supports fail-closed drift detection after restart without promoting readiness evidence.
+
+No generation/ownership model specific to capability readiness was found in the provider-state persistence layer. Existing transaction/reference ownership boundaries therefore remain outside this milestone and are not reinterpreted as capability-readiness state.
+
+### Implementation
+
+Added deterministic persistence/recovery regression coverage in `DesKaProvider/backend/Provider/operational/provider_state_json_test.go`:
+
+- `TestJSONFileProviderStateStorePreservesCapabilityFingerprintAcrossRestart` verifies the persisted capability fingerprint survives a store reload and matching registry metadata does not report drift;
+- `TestJSONFileProviderStateStoreRecoveryPreservesDriftEvidence` verifies changed registry capability metadata remains detectable after restart and the recovered fingerprint is still available;
+- existing `TestProviderStateStoreDoesNotMutateMemoryWhenPersistenceFails` continues to protect the persistence-before-memory-commit boundary.
+
+No production routing, provider adapter, readiness-state promotion, or public API behavior was changed.
+
+### Changed Files
+
+- DesKaProvider/backend/Provider/operational/provider_state_json_test.go
+- DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md
+
+No provider credentials or external provider requests were added or executed.
+
+### Verification
+
+Implementation/test final HEAD:
+
+`86199149df80099d39d31d3f94ccfc88c73e26e5`
+
+GitHub Actions Push CI **#2850** / run **36575033777** for that exact HEAD: **GREEN**.
+
+- `test`: PASS
+  - `go test ./...`: PASS
+  - `go vet ./...`: PASS
+  - PostgreSQL service-backed test environment initialized and completed successfully
+- `race`: PASS
+  - `go test -race ./...`: PASS
+- `iak-read-only`: SKIPPED because authorized credentials/manual provider validation were not supplied
+- `xp-sindonesia-read-only`: SKIPPED because authorized credentials/manual provider validation were not supplied
+- `midtrans-sandbox`: SKIPPED because authorized credentials/manual provider validation were not supplied
+
+No authorized live-provider transaction or external provider request was executed.
+
+### Safety Boundary / Invariants
+
+- persisted capability fingerprints are evidence for drift detection, not readiness promotion;
+- restart/recovery cannot convert persisted state into LiveTested or ProductionReady;
+- changed registry capability metadata remains a blocking drift signal after recovery;
+- persistence failure does not partially commit the proposed provider state to memory;
+- registry readiness metadata remains separate from operational lifecycle/capability state;
+- no automatic retry, provider failover, or transaction resubmission is introduced;
+- no duplicate payment/purchase creation is introduced;
+- no ledger mutation, customer balance mutation, treasury movement, or provider funding is introduced;
+- durable transaction/reference ownership, CAS/idempotency, webhook idempotency, and reconciliation boundaries remain unchanged;
+- no public API exposure is introduced;
+- RCB remains unregistered, non-routable, and fail-closed pending an authoritative PPOB contract.
+
+### Known Limitations
+
+- no separate persisted CapabilityStatus/readiness store exists or was introduced;
+- generation/ownership isolation for transaction/reference state is not redefined by this capability-persistence audit;
+- provider-specific validation remains credential-gated and was skipped in CI;
+- deterministic CI cannot establish external provider availability or live/sandbox contract compatibility;
+- RCB PPOB contract details remain incomplete.
+
+### Architecture Impact
+
+#280 confirms that capability-drift safety can survive provider-state restart without creating a second readiness authority. Persisted operational state retains the fingerprint required to detect registry changes, while registry readiness evidence and routing authority remain separate. Router.Select remains the sole routing decision path.
+
+### Next Milestone
+
+**Milestone #281 — Provider State Persistence / Recovery Boundary Hardening**
+
+Scope:
+
+- audit the remaining provider-state persistence/recovery failure boundaries, including multi-provider replacement and deterministic state ordering;
+- verify failed persistence cannot erase or partially replace previously durable provider state;
+- add recovery coverage for multiple provider states and capability fingerprints;
+- preserve the existing separation between operational persistence, registry readiness, routing eligibility, and transaction ownership.
+
+Explicit non-goals:
+
+- no speculative RCB PPOB implementation;
+- no automatic retry/failover/resubmission;
+- no provider funding or financial mutation;
+- no ledger/treasury mutation;
+- no public API;
+- no DesKaCash provider-specific coupling.
+
