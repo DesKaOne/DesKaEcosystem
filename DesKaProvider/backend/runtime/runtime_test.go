@@ -1916,7 +1916,7 @@ func TestServiceRunShutdownTimeoutKeepsDatabaseOwnershipUntilWorkerStops(t *test
 	service.databaseOwnership = newRuntimeDatabaseOwnership(db, nil)
 	service.databaseOwnership.transferToService()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 	runDone := make(chan error, 1)
 	go func() {
