@@ -59,6 +59,9 @@ func TestProviderDiagnosticsRecoveryKeepsReadinessSeparate(t *testing.T) {
 	if !enabled.Enabled() {
 		t.Fatal("explicit enable should restore lifecycle")
 	}
+	if selected, err := router.Select(context.Background(), routing.Request{ProductCode: "xld10", Amount: 1000}); err != nil || selected != "mock" {
+		t.Fatalf("explicitly re-enabled and reconciled provider should become route-eligible, selected=%q err=%v", selected, err)
+	}
 
 	// Explicit lifecycle recovery must not promote live validation or ProductionReady.
 	status, ok := descriptor.Status(provider.CapabilityPPOB)
