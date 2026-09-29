@@ -16145,3 +16145,67 @@ Scope:
 
 No automatic failover, payment resubmission, provider funding, customer ledger mutation, treasury movement, duplicate purchase creation, or public API exposure is included in #265.
 
+## Milestone #265 — Provider Operational State / Capability Drift Detection
+
+**Date:** 2026-09-29
+
+### Implementation
+
+- added a deterministic capability metadata fingerprint to persisted ProviderState;
+- added provider-neutral drift diagnostics covering added, removed, and metadata-changed capabilities;
+- preserved a legacy-state migration path: matching capability sets without a fingerprint are synchronized and fingerprinted without forcing a false drift event;
+- during runtime startup, capability drift now fails closed by disabling the persisted provider lifecycle before current registry metadata is synchronized;
+- routing now re-checks capability drift whenever explicit capability metadata exists, preventing a stale operational state from becoming route-eligible after runtime composition changes;
+- preserved the legacy compatibility path for registry entries that predate capability descriptors;
+- added deterministic tests for fingerprint stability, added/removed capabilities, metadata changes, legacy-state migration, startup lifecycle disabling, and routing rejection.
+
+### Changed Files
+
+- DesKaProvider/backend/Provider/operational/capability_drift.go
+- DesKaProvider/backend/Provider/operational/capability_drift_test.go
+- DesKaProvider/backend/Provider/operational/provider_state.go
+- DesKaProvider/backend/runtime/runtime.go
+- DesKaProvider/backend/runtime/runtime_test.go
+- DesKaProvider/backend/routing/router.go
+- DesKaProvider/backend/routing/router_test.go
+
+### Safety Boundary / Invariants
+
+- capability drift never enables a provider; drift forces the persisted lifecycle to disabled until explicit re-enablement;
+- current registry metadata is synchronized after drift detection, but routing remains blocked by lifecycle state until an explicit enable operation;
+- routing fails closed when persisted capability metadata differs from the current registry metadata;
+- legacy registry entries without capability descriptors retain their existing compatibility behavior;
+- no automatic retry, provider failover, or transaction resubmission is introduced;
+- no duplicate payment/purchase creation is introduced;
+- no ledger mutation, customer balance mutation, treasury movement, or provider funding is introduced;
+- durable transaction/reference ownership, CAS/idempotency, webhook idempotency, and reconciliation boundaries remain unchanged;
+- no public API exposure is introduced.
+
+### Verification
+
+Implementation/test final HEAD:
+
+9ec01c93c77f45e376a7e91b97513fadb75c644b
+
+Pull Request CI #2735 / run 36503154507: GREEN
+
+- test: PASS
+- race: PASS
+- midtrans-sandbox: skipped as expected
+- iak-read-only: skipped as expected
+- xp-sindonesia-read-only: skipped as expected
+
+No authorized live-provider transaction was executed by this milestone.
+
+### Next Milestone
+
+**Milestone #266 — Provider Capability Drift Observability / Administrative Recovery**
+
+Scope:
+
+- expose deterministic, provider-neutral drift diagnostics through internal administrative/runtime inspection surfaces;
+- verify explicit re-enable after drift clears only the lifecycle gate and does not promote capability readiness;
+- add recovery tests for drift -> disabled -> explicit re-enable -> route eligibility;
+- preserve the separation between diagnostics, operational state, routing eligibility, and ProductionReady.
+
+No automatic failover, payment resubmission, provider funding, customer ledger mutation, treasury movement, duplicate purchase creation, or public API exposure is included in #266.
