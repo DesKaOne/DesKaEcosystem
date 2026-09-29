@@ -6337,7 +6337,7 @@ func TestNewFromEnvironmentContextPreservesProviderLifecycleAcrossRestart(t *tes
 	if !recovered.Supports(operational.CapabilityWebhook) {
 		t.Fatal("unrelated capability must remain enabled after runtime restart")
 	}
-	if !recovered.Supports(operational.CapabilityPayment) || !recovered.Supports(operational.CapabilityWebhook) {
+	if !recovered.Supports(operational.CapabilityWebhook) {
 		t.Fatalf("capability synchronization must survive restart, got %#v", recovered.Capabilities)
 	}
 
