@@ -3350,3 +3350,98 @@ No authorized live-provider transaction or external provider request was execute
 
 No new production milestone is opened automatically from #298. The next step should be selected from the remaining Provider v0.1 readiness gaps after reviewing the current repository state, rather than increasing the milestone number without a concrete architectural need.
 
+
+
+## Milestone #299 — Provider Operational Capability Control Separation
+
+**Date:** 2026-09-30
+
+### Scope
+
+- add an explicit operational capability enable/disable control-plane state separate from provider lifecycle;
+- preserve registry capability metadata as the verification/implementation authority rather than mutating it for administrative toggles;
+- persist operational capability enablement across restart;
+- ensure capability reconciliation does not silently re-enable a capability that an administrator explicitly disabled;
+- preserve Router.Select() as the sole routing decision authority and keep registry capability readiness as an independent routing gate.
+
+### Source Finding
+
+- the operational-admin requirements require provider lifecycle and provider capability to remain independently controllable;
+- the existing ProviderAdminService exposed lifecycle Enable/Disable only, while ProviderState.Capabilities was simultaneously used as persisted implemented-capability membership and capability-drift evidence;
+- removing a capability directly from that field would be unsafe because runtime reconciliation reconstructs implemented capabilities from registry metadata, potentially re-enabling an administrative disable;
+- therefore operational enablement required a separate persisted state field rather than a mutation of registry verification metadata.
+
+### Implementation
+
+Added an operational EnabledCapabilities state to ProviderState.
+
+Administrative control-plane additions:
+
+- SetCapabilityEnabled;
+- EnableCapability;
+- DisableCapability;
+- DisableProvider runtime wrapper;
+- EnableProviderCapability runtime wrapper;
+- DisableProviderCapability runtime wrapper.
+
+Runtime/reconciliation behavior:
+
+- legacy state with no EnabledCapabilities is migrated without changing existing operational semantics;
+- implemented capabilities remain the persisted drift comparison set;
+- operational capability enablement is persisted independently;
+- reconciliation preserves explicit capability disables while refreshing implemented capability membership and metadata fingerprint;
+- unavailable/non-implemented capabilities cannot be operationally enabled.
+
+### Changed Files
+
+- DesKaProvider/backend/Provider/operational/provider_state.go
+- DesKaProvider/backend/Provider/operational/provider_admin.go
+- DesKaProvider/backend/Provider/operational/provider_admin_test.go
+- DesKaProvider/backend/Provider/operational/provider_state_json_test.go
+- DesKaProvider/backend/runtime/runtime.go
+
+No provider credentials, provider contract assumptions, or external provider requests were added.
+
+### Verification
+
+Final implementation/test HEAD:
+
+e6b83804d1a215e31d2207e785873529b37d8e49
+
+- Push CI #3020 / run 36625404768: GREEN
+  - test: PASS
+  - vet: PASS
+  - race: PASS
+  - IAK read-only: SKIPPED (credential-gated)
+  - XP SINDONESIA read-only: SKIPPED (credential-gated)
+  - Midtrans sandbox: SKIPPED (credential-gated)
+- Pull Request CI #3021 / run 36625410340: verification pending at documentation update time.
+
+No authorized live-provider transaction or external provider request was executed.
+
+### Safety Boundary / Invariants
+
+- lifecycle and operational capability enablement are separate persisted controls;
+- registry capability metadata remains the source of verification, implementation, and provider-readiness state;
+- administrative capability disable does not mutate registry metadata and does not promote or demote external verification state;
+- capability reconciliation does not silently restore an explicitly disabled operational capability;
+- unavailable capabilities remain fail-closed and cannot be enabled through the operational control plane;
+- Router.Select() remains the sole routing decision authority;
+- no automatic retry, provider failover, transaction resubmission, duplicate transaction creation, provider funding, ledger mutation, customer-balance mutation, treasury movement, or public API exposure is introduced;
+- RCB remains unregistered, non-routable, and fail-closed pending an authoritative PPOB contract;
+- no DesKaCash provider-specific coupling is introduced.
+
+### Known Limitations
+
+- this milestone establishes internal operational capability control separation; it does not establish external provider availability, provider contract correctness, or live validation;
+- IAK, XP SINDONESIA, and Midtrans external validation remains credential-gated;
+- no authorized live-provider transaction was executed;
+- RCB PPOB contract acquisition remains incomplete.
+
+### Architecture Impact
+
+#299 closes the operational control-plane gap between provider lifecycle and capability enablement. Implemented capability membership remains tied to registry metadata and drift detection, while administrator-controlled operational enablement is persisted independently. This allows a capability to be disabled without mutating verification metadata or being silently restored by reconciliation.
+
+### Next Step
+
+No automatic production milestone is opened from #299. The remaining v0.1 readiness gaps are external verification/activation evidence for the intended providers and acquisition of an authoritative RCB PPOB contract. Any next production milestone should be opened only when one of those gaps yields a concrete repository-level architectural requirement.
