@@ -67,24 +67,36 @@ func (s *ProviderAdminService) DiagnoseAll(registry *provider.Registry) ([]Provi
 // provider; an existing enabled lifecycle is disabled until an operator
 // explicitly re-enables it after reconciliation.
 func (s *ProviderAdminService) ReconcileCapabilityState(name string, registry *provider.Registry) (ProviderDiagnostic, error) {
-	diagnostic, err := s.Diagnose(name, registry)
+	if s == nil || s.states == nil {
+		return ProviderDiagnostic{}, errors.New("provider state store is required")
+	}
+	if registry == nil {
+		return ProviderDiagnostic{}, errors.New("provider registry is required")
+	}
+	name = strings.TrimSpace(strings.ToLower(name))
+	if name == "" {
+		return ProviderDiagnostic{}, ErrProviderNotFound
+	}
+	if _, ok := s.states.Get(name); !ok {
+		return ProviderDiagnostic{}, ErrProviderNotFound
+	}
+	descriptor, err := registry.Capabilities(name)
 	if err != nil {
 		return ProviderDiagnostic{}, err
 	}
-	state := diagnostic.State
-	if diagnostic.Drifted {
-		state.Lifecycle = LifecycleDisabled
-	}
-	descriptor, err := registry.Capabilities(state.ProviderName)
+	_, err = s.states.Update(name, func(state *ProviderState) error {
+		drift := DetectCapabilityDrift(*state, descriptor)
+		if drift.Drifted() {
+			state.Lifecycle = LifecycleDisabled
+		}
+		state.Capabilities = capabilitiesFromDescriptor(descriptor)
+		state.CapabilityFingerprint = CapabilityMetadataFingerprint(descriptor)
+		return nil
+	})
 	if err != nil {
 		return ProviderDiagnostic{}, err
 	}
-	state.Capabilities = capabilitiesFromDescriptor(descriptor)
-	state.CapabilityFingerprint = CapabilityMetadataFingerprint(descriptor)
-	if err := s.states.Put(state); err != nil {
-		return ProviderDiagnostic{}, err
-	}
-	return s.Diagnose(state.ProviderName, registry)
+	return s.Diagnose(name, registry)
 }
 
 func capabilitiesFromDescriptor(descriptor provider.CapabilityDescriptor) []Capability {
