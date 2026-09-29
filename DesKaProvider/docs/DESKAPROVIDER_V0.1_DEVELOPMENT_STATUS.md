@@ -2774,3 +2774,107 @@ Scope:
 - extend deterministic parity coverage across disabled, reconciled, enabled, drifted, stale operational, and stale catalog states.
 
 No speculative RCB PPOB implementation, automatic retry/failover/resubmission, funding, ledger/treasury mutation, public API, or DesKaCash provider-specific coupling is included in #293.
+
+
+## Milestone #293 — Provider Administrative Transition / Routing Parity Audit
+
+**Date:** 2026-09-29
+
+### Scope
+
+- verify controlled lifecycle/capability transitions preserve parity between administrative route explanations and actual `Router.Select` outcomes;
+- verify reconciliation clears capability drift without independently authorizing routing;
+- verify stale operational and catalog transitions remain fail-closed and recover deterministically;
+- preserve `Router.Select` as the sole routing decision authority.
+
+### Source Finding
+
+- The existing #283/#284 parity matrices already covered static provider states, while #292 covered controlled lifecycle transition and restart/reconstruction determinism.
+- The remaining boundary was a single sequential transition fixture proving that administrative explanation and actual routing selection stay aligned as the same provider moves through disabled, enabled, drifted, reconciled, stale-operational, recovered, stale-catalog, and recovered states.
+- Existing provider-neutral sentinel errors and explanation reason codes were sufficient; no production routing change was required.
+
+### Implementation
+
+Added test-only transition coverage in `DesKaProvider/backend/routing/transition_routing_parity_test.go`:
+
+1. start with a synchronized PPOB provider in disabled lifecycle;
+2. explicitly enable it and verify both explanation and `Router.Select` become route-eligible;
+3. introduce capability fingerprint drift and verify both surfaces block routing with `ErrProviderCapabilityDrift`;
+4. reconcile capability state and verify reconciliation clears drift but keeps lifecycle disabled and non-routable;
+5. explicitly re-enable and verify routing eligibility returns;
+6. advance the router clock to create stale operational state and verify both surfaces block with `ErrOperationalSnapshotStale`;
+7. restore the operational clock/state and verify route eligibility returns;
+8. advance the router clock while keeping operational state fresh to isolate stale catalog state and verify both surfaces block with `ErrCatalogStale`;
+9. restore the terminal healthy state and verify repeated explanations remain deterministic.
+
+No production routing, provider adapter, lifecycle implementation, persistence format, transaction, or financial behavior was changed.
+
+### Changed Files
+
+- `DesKaProvider/backend/routing/transition_routing_parity_test.go`
+- `DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md`
+
+No provider credentials or external provider requests were added or executed.
+
+### Verification
+
+Implementation/test final HEAD:
+
+`4a12d36bb36144b051355faaa69b3a96e047b45b`
+
+GitHub Actions Push CI **#2954** / run **36605452403** for that exact HEAD: **GREEN**.
+
+GitHub Actions Pull Request CI **#2955** / run **36605459380** for that exact HEAD: **GREEN**.
+
+- `go test ./...`: PASS
+- `go vet ./...`: PASS
+- PostgreSQL service-backed test environment: PASS
+- `go test -race ./...`: PASS
+- IAK read-only: SKIPPED (credential-gated)
+- XP SINDONESIA read-only: SKIPPED (credential-gated)
+- Midtrans sandbox: SKIPPED (credential-gated)
+
+CI correction history:
+- Push/PR CI #2950/#2951 failed only because the new test accidentally used transition labels as provider names (`"enabled"`, `"drifted"`, etc.) instead of the registered provider name `"mock"`.
+- Push/PR CI #2952/#2953 then exposed a second test-fixture issue: the catalog/operational stores reject non-monotonic snapshot timestamps. The stale-state fixture was corrected to advance the deterministic router clock instead of writing older persisted snapshots.
+- These corrections were test-only; no production behavior was changed.
+- Final Push/PR CI #2954/#2955 are GREEN for the exact final implementation HEAD.
+
+No authorized live-provider transaction or external provider request was executed.
+
+### Safety Boundary / Invariants
+
+- administrative explanations remain observational and never authorize payment, purchase, payout, retry, failover, or resubmission;
+- reconciliation never auto-enables lifecycle;
+- capability drift remains a blocking routing condition until explicit reconciliation and subsequent lifecycle enablement;
+- stale operational and catalog conditions remain blocking routing gates and do not mutate provider state automatically;
+- state recovery to route eligibility occurs only through the existing explicit lifecycle/state boundaries;
+- `Router.Select` remains the sole routing decision authority;
+- no automatic retry, provider failover, transaction resubmission, duplicate transaction creation, provider funding, ledger mutation, customer-balance mutation, treasury movement, or public API exposure is introduced;
+- RCB remains unregistered, non-routable, and fail-closed pending an authoritative PPOB contract;
+- no DesKaCash provider-specific coupling is introduced.
+
+### Known Limitations
+
+- transition parity is deterministic/internal and does not establish external provider availability or provider contract correctness;
+- IAK, XP SINDONESIA, and Midtrans external validation remains credential-gated;
+- no authorized live-provider transaction was executed;
+- the audit covers the provider-neutral transition gates listed above; it does not replace broader provider-specific sandbox/read-only validation;
+- RCB PPOB contract acquisition remains incomplete.
+
+### Architecture Impact
+
+#293 closes the sequential transition-parity gap between administrative explanations and the actual routing authority. Lifecycle enablement, capability reconciliation, operational freshness, and catalog freshness remain independent state boundaries; administrative explanation observes them, while `Router.Select` alone decides eligibility.
+
+### Next Milestone
+
+**Milestone #294 — Provider Administrative Transition / Aggregate Error Determinism Audit**
+
+Scope:
+
+- verify aggregate `Router.Select` sentinel errors remain deterministic across sequential lifecycle/capability/operational/catalog transitions;
+- verify transition order does not introduce duplicate or contradictory sentinel membership;
+- verify administrative explanation may expose later diagnostic evidence without changing the router's authoritative aggregate error semantics;
+- preserve the existing single routing authority and all transaction/financial safety boundaries.
+
+No speculative RCB PPOB implementation, automatic retry/failover/resubmission, funding, ledger/treasury mutation, public API, or DesKaCash provider-specific coupling is included in #294.
