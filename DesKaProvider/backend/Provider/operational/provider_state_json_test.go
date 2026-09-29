@@ -211,3 +211,28 @@ func TestProviderStateStoreFailedReplacementPreservesPreviousDurableState(t *tes
 		t.Fatalf("failed replacement mutated durable state: %#v", persistence.states)
 	}
 }
+
+
+func TestJSONFileProviderStateStorePersistsOperationalCapabilityToggle(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "provider-state.json")
+	persistence, err := NewJSONFileProviderStateStore(path)
+	if err != nil { t.Fatal(err) }
+	store, err := NewPersistentProviderStateStore(persistence)
+	if err != nil { t.Fatal(err) }
+	state := ProviderState{
+		ProviderName: "mock",
+		Lifecycle: LifecycleEnabled,
+		Capabilities: []Capability{CapabilityPPOB, CapabilityBalance},
+		EnabledCapabilities: []Capability{CapabilityBalance},
+	}
+	if err := store.Put(state); err != nil { t.Fatal(err) }
+
+	reloadedPersistence, err := NewJSONFileProviderStateStore(path)
+	if err != nil { t.Fatal(err) }
+	reloaded, err := NewPersistentProviderStateStore(reloadedPersistence)
+	if err != nil { t.Fatal(err) }
+	got, ok := reloaded.Get("mock")
+	if !ok { t.Fatal("expected recovered provider state") }
+	if got.Supports(CapabilityPPOB) { t.Fatal("disabled operational capability must remain disabled after restart") }
+	if !got.Supports(CapabilityBalance) { t.Fatal("enabled operational capability must remain enabled after restart") }
+}
