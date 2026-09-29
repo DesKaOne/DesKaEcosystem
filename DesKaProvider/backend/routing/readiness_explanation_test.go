@@ -928,15 +928,17 @@ func TestExplainProviderRouteCompoundBlockingReasonsMatchJoinedRouterErrors(t *t
 
 	r, err := NewWithCatalogAndStateAndOperationalMaxAge(registry, store, nil, catalogStore, states, time.Hour)
 	if err != nil { t.Fatal(err) }
-	r.Now = func() time.Time { return now }
+	r.Now = func() time.Time { return now.Add(2 * time.Hour) }
+	for _, name := range []string{"mock", "mock2"} {
+		if err := store.Put(operational.Snapshot{
+			ProviderName: name, Balance: 100000, Currency: "IDR",
+			Health: operational.HealthHealthy, LastCheckedAt: now.Add(2 * time.Hour),
+		}); err != nil { t.Fatal(err) }
+	}
 
 	state, _ := r.ProviderState.Get("mock")
 	state.CapabilityFingerprint = "drifted"
 	if err := r.ProviderState.Put(state); err != nil { t.Fatal(err) }
-
-	if err := catalogStore.Put(catalog.Snapshot{
-		ProviderName: "mock2", Products: []provider.Product{{Code: "xld10"}}, SyncedAt: now.Add(-2 * time.Hour),
-	}); err != nil { t.Fatal(err) }
 
 	explanationDrift, err := ExplainProviderRoute(context.Background(), r, "mock", provider.CapabilityPPOB, "xld10", 100)
 	if err != nil { t.Fatal(err) }
