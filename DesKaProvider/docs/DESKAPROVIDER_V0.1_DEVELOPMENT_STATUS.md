@@ -1854,3 +1854,112 @@ Explicit non-goals:
 - no ledger/treasury mutation;
 - no public API;
 - no DesKaCash provider-specific coupling.
+
+
+## Milestone #284 — Provider Administrative Diagnostics / Explanation State Machine Deepening
+
+**Date:** 2026-09-29
+
+### Scope
+
+- deepen administrative explanation coverage for missing operational state, adapter-not-implemented, catalog absence, and mixed blocking/non-blocking readiness states;
+- verify deterministic reason composition and canonical ordering;
+- verify administrative explanations remain observational and route eligibility remains controlled by existing routing gates.
+
+### Source Finding
+
+#283 established broad parity between administrative route explanations and Router.Select. The remaining coverage gap was concentrated in less-common state transitions and mixed reason sets.
+
+The production explanation path already canonicalizes reason output through duplicate elimination and lexical ordering. The audit therefore required deterministic regression coverage rather than a new routing mechanism.
+
+The audit also confirmed that capability descriptor validation prevents an invalid enabled-but-unimplemented capability fixture from entering the registry; the final regression fixture respects that invariant while still exercising the adapter-not-implemented reason.
+
+### Implementation
+
+Added TestExplainProviderRouteDeepStateMatrix in DesKaProvider/backend/routing/readiness_explanation_test.go.
+
+Coverage includes:
+
+- missing persisted operational/provider state;
+- adapter-not-implemented capability state;
+- missing catalog snapshot;
+- mixed blocking and non-blocking reasons;
+- canonical reason ordering across repeated state composition.
+
+The mixed-state case explicitly verifies blocking operational/catalog/capability reasons and confirms configuration, test, live-validation, and ProductionReady gaps remain informational when non-blocking.
+
+No production routing or administrative behavior was changed.
+
+### Changed Files
+
+- DesKaProvider/backend/routing/readiness_explanation_test.go
+- DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md
+
+No provider credentials or external provider requests were added or executed.
+
+### Verification
+
+Implementation/test final HEAD:
+
+18091bd0ed8d4ab9ef885c47e8f4bdb3d92364ee
+
+GitHub Actions Push CI #2879 / run 36580306323 for that exact HEAD: GREEN.
+
+- test: PASS
+  - go test ./...: PASS
+  - go vet ./...: PASS
+  - PostgreSQL service-backed test environment completed successfully
+- race: PASS
+  - go test -race ./...: PASS
+- iak-read-only: SKIPPED because authorized credentials/manual provider validation were not supplied
+- xp-sindonesia-read-only: SKIPPED because authorized credentials/manual provider validation were not supplied
+- midtrans-sandbox: SKIPPED because authorized credentials/manual provider validation were not supplied
+
+CI #2877 initially failed only because the new adapter-not-implemented test fixture violated the existing capability descriptor invariant. The fixture was corrected without changing production behavior; #2879 is the final GREEN implementation/test run.
+
+No authorized live-provider transaction or external provider request was executed.
+
+### Safety Boundary / Invariants
+
+- administrative explanations remain observational and never authorize routing, payment, purchase, payout, retry, failover, or resubmission;
+- deterministic reason ordering is presentation/diagnostic behavior only and does not become a routing authority;
+- non-blocking readiness gaps remain informational;
+- blocking operational, capability, lifecycle, drift, and catalog conditions remain blocking;
+- Router.Select remains the sole routing decision path;
+- no automatic retry, provider failover, or transaction resubmission is introduced;
+- no duplicate payment/purchase creation is introduced;
+- no ledger mutation, customer balance mutation, treasury movement, or provider funding is introduced;
+- durable transaction/reference ownership, CAS/idempotency, webhook idempotency, and reconciliation boundaries remain unchanged;
+- no public API exposure is introduced;
+- RCB remains unregistered, non-routable, and fail-closed pending an authoritative PPOB contract.
+
+### Known Limitations
+
+- state-machine coverage remains deterministic/internal and does not establish external provider availability;
+- provider-specific validation remains credential-gated and was skipped in CI;
+- administrative explanation remains non-authorizing;
+- RCB PPOB contract details remain incomplete.
+
+### Architecture Impact
+
+#284 strengthens deterministic administrative observability without adding a second routing authority. Missing-state and mixed-state explanations are now explicitly regression-tested, and reason ordering remains stable across repeated evaluation.
+
+### Next Milestone
+
+**Milestone #285 — Provider Administrative Snapshot Immutability / Transition Audit**
+
+Scope:
+
+- verify administrative diagnostic and explanation calls do not mutate ProviderState, capability fingerprints, operational snapshots, catalog snapshots, or readiness metadata;
+- verify repeated diagnostics/explanations across state transitions remain deterministic;
+- verify snapshot copies cannot mutate underlying operational/provider state through returned slices or nested values;
+- preserve Router.Select as the sole routing decision path.
+
+Explicit non-goals:
+
+- no speculative RCB PPOB implementation;
+- no automatic retry/failover/resubmission;
+- no provider funding or financial mutation;
+- no ledger/treasury mutation;
+- no public API;
+- no DesKaCash provider-specific coupling.
