@@ -844,7 +844,6 @@ func TestExplainProviderRouteBlockingReasonsMapToRouterErrors(t *testing.T) {
 		{
 			name: "catalog-stale",
 			mutate: func(r *Router) {
-				c := r.Catalog.(catalog.Store)
 				r.Now = func() time.Time { return now.Add(2 * time.Hour) }
 			},
 			reason: ReasonCatalogStale,
