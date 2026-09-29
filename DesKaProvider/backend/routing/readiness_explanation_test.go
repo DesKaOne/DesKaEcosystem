@@ -214,12 +214,20 @@ func TestRouterReadinessStatesDoNotBypassCapabilityAndOperationalGates(t *testin
 	}
 
 	for _, tc := range states {
-		t.Run(tc.name+"-disabled-capability", func(t *testing.T) {
+		t.Run(tc.name+"-operational-capability-gate", func(t *testing.T) {
 			r := testReadinessRouter(t, tc.status, operational.LifecycleEnabled, &catalog.Snapshot{
 				ProviderName: "mock",
 				Products:     []provider.Product{{Code: "xld10"}},
 				SyncedAt:    time.Now(),
 			})
+			state, ok := r.ProviderState.Get("mock")
+			if !ok {
+				t.Fatal("expected provider state")
+			}
+			state.Capabilities = []operational.Capability{operational.CapabilityBalance}
+			if err := r.ProviderState.Put(state); err != nil {
+				t.Fatal(err)
+			}
 			explanation, err := ExplainProviderRoute(context.Background(), r, "mock", provider.CapabilityPPOB, "xld10", 100)
 			if err != nil {
 				t.Fatal(err)
@@ -228,14 +236,14 @@ func TestRouterReadinessStatesDoNotBypassCapabilityAndOperationalGates(t *testin
 			if err != nil {
 				t.Fatal(err)
 			}
-			if descriptor.Supports(provider.CapabilityPPOB) {
-				t.Fatalf("readiness state %q must not make a disabled capability routable", tc.name)
+			if tc.status.Enabled && !descriptor.Supports(provider.CapabilityPPOB) {
+				t.Fatalf("readiness state %q should remain supported by registry metadata: %#v", tc.name, descriptor)
 			}
 			if explanation.RouteEligible {
-				t.Fatalf("readiness state %q bypassed disabled capability gate: %#v", tc.name, explanation)
+				t.Fatalf("readiness state %q bypassed operational capability gate: %#v", tc.name, explanation)
 			}
 			if _, err := r.Select(context.Background(), Request{ProductCode: "xld10", Amount: 100}); !errors.Is(err, ErrNoProviderAvailable) {
-				t.Fatalf("readiness state %q bypassed Router.Select capability gate: %v", tc.name, err)
+				t.Fatalf("readiness state %q bypassed Router.Select operational capability gate: %v", tc.name, err)
 			}
 		})
 	}
