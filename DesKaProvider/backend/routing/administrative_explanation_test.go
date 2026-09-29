@@ -295,7 +295,17 @@ func TestAdministrativeDiagnosticsTransitionRestartDeterminism(t *testing.T) {
 	if len(before.Providers) != 1 {
 		t.Fatalf("expected one provider before transition, got %d", len(before.Providers))
 	}
-	if before.Providers[0].Capabilities[0].RouteEligible {
+	var beforePPOB *ProviderCapabilityRouteExplanation
+	for i := range before.Providers[0].Capabilities {
+		if before.Providers[0].Capabilities[i].Capability == provider.CapabilityPPOB {
+			beforePPOB = &before.Providers[0].Capabilities[i]
+			break
+		}
+	}
+	if beforePPOB == nil {
+		t.Fatal("expected PPOB explanation before transition")
+	}
+	if beforePPOB.RouteEligible {
 		t.Fatal("disabled lifecycle must remain non-route-eligible before transition")
 	}
 
@@ -311,11 +321,18 @@ func TestAdministrativeDiagnosticsTransitionRestartDeterminism(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !afterTransition.Providers[0].Capabilities[0].RouteEligible {
-		t.Fatalf("explicit lifecycle transition should change route eligibility: %#v", afterTransition)
+	var afterTransitionPPOB *ProviderCapabilityRouteExplanation
+	for i := range afterTransition.Providers[0].Capabilities {
+		if afterTransition.Providers[0].Capabilities[i].Capability == provider.CapabilityPPOB {
+			afterTransitionPPOB = &afterTransition.Providers[0].Capabilities[i]
+			break
+		}
+	}
+	if afterTransitionPPOB == nil || !afterTransitionPPOB.RouteEligible {
+		t.Fatalf("explicit lifecycle transition should change PPOB route eligibility: %#v", afterTransition)
 	}
 	afterTransitionGeneratedAt := afterTransition.GeneratedAt
-	afterTransitionReasons := append([]ReadinessReason(nil), afterTransition.Providers[0].Capabilities[0].Reasons...)
+	afterTransitionReasons := append([]ReadinessReason(nil), afterTransitionPPOB.Reasons...)
 
 	// Reconstruct every persisted source to model a process restart after the
 	// explicit lifecycle transition.
@@ -354,8 +371,18 @@ func TestAdministrativeDiagnosticsTransitionRestartDeterminism(t *testing.T) {
 	if !afterRestart.GeneratedAt.Equal(afterTransitionGeneratedAt) {
 		t.Fatalf("generation time changed across deterministic restart fixture: got %v want %v", afterRestart.GeneratedAt, afterTransitionGeneratedAt)
 	}
-	if !reflect.DeepEqual(afterRestart.Providers[0].Capabilities[0].Reasons, afterTransitionReasons) {
-		t.Fatalf("reason semantics changed across restart: got %#v want %#v", afterRestart.Providers[0].Capabilities[0].Reasons, afterTransitionReasons)
+	var afterRestartPPOB *ProviderCapabilityRouteExplanation
+	for i := range afterRestart.Providers[0].Capabilities {
+		if afterRestart.Providers[0].Capabilities[i].Capability == provider.CapabilityPPOB {
+			afterRestartPPOB = &afterRestart.Providers[0].Capabilities[i]
+			break
+		}
+	}
+	if afterRestartPPOB == nil || !afterRestartPPOB.RouteEligible {
+		t.Fatalf("recovered PPOB explanation lost route eligibility: %#v", afterRestart)
+	}
+	if !reflect.DeepEqual(afterRestartPPOB.Reasons, afterTransitionReasons) {
+		t.Fatalf("reason semantics changed across restart: got %#v want %#v", afterRestartPPOB.Reasons, afterTransitionReasons)
 	}
 
 	repeated, err := ExplainAllProviderRoutes(context.Background(), routerAfter)
