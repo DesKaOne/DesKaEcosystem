@@ -298,7 +298,6 @@ No automatic failover, payment resubmission, provider funding, customer ledger m
 **Date:** 2026-09-29
 
 ### Implementation
-
 - added an internal administrative route-explanation snapshot aggregating every registered provider across the canonical provider-neutral capability vocabulary;
 - reused the existing deterministic per-provider explainability engine, so aggregation does not introduce a second routing decision path;
 - preserved deterministic provider and capability ordering;
@@ -597,7 +596,6 @@ External references reviewed:
 - No RCB credentialed request was executed.
 - No provider transaction was executed.
 - No capability registration or routing behavior was changed.
-
 ### Known Limitations
 
 The current public RCB material is insufficient to safely implement the neutral PPOB adapter. A provider-issued technical integration document, sandbox credentials with documented test cases, or equivalent authoritative contract is still required before protocol implementation and live/read-only validation.
@@ -746,7 +744,6 @@ Implementation/test HEAD:
 `9aac4606ab7e3ec04cb31d10c03f731011e6623b`
 
 GitHub Actions run **#2812** for that exact implementation/test HEAD: **GREEN**.
-
 - `test`: PASS
 - `go test ./...`: PASS
 - `go vet ./...`: PASS
@@ -872,3 +869,101 @@ Scope:
 - verify lifecycle, capability metadata/drift, operational freshness/health/balance, catalog freshness/product availability, and final eligibility are represented consistently;
 - keep explanation generation observational and reuse existing router predicates where practical;
 - continue without provider-specific RCB implementation until the PPOB contract is verified.
+
+
+## Milestone #275 — Routing Explainability Candidate-Rejection Parity Matrix
+
+**Date:** 2026-09-29
+
+### Scope
+
+- build a deterministic parity matrix covering the existing Router.Select() rejection gates for the PPOB route;
+- verify lifecycle, capability state, capability drift, catalog freshness, and product availability rejection reasons are represented consistently in the administrative explanation surface;
+- verify an explanation marked route-eligible contains no blocking reason;
+- keep explanation generation observational and leave Router.Select() as the sole routing decision path;
+- continue without provider-specific RCB implementation until the PPOB contract is verified.
+
+### Source Finding
+
+The #274 audit identified one concrete operational-capability parity gap. #275 extends that work into a deterministic candidate-rejection matrix across the currently exposed readiness gates. The matrix is test coverage only; it does not duplicate or replace router selection logic.
+
+### Implementation
+
+Added `TestExplainProviderRouteCandidateRejectionParityMatrix` covering:
+
+- lifecycle disabled;
+- capability disabled;
+- capability metadata drift;
+- stale catalog;
+- unavailable product.
+
+Each case asserts the expected provider-neutral blocking reason. The test also verifies that a route-eligible explanation cannot contain a blocking reason.
+
+No production routing decision logic was changed in #275.
+
+### Changed Files
+
+- DesKaProvider/backend/routing/readiness_explanation_test.go
+- DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md
+
+### Verification
+
+Implementation/test final HEAD:
+
+`1d7a67e7e4699007f7a1755448046469e219680a`
+
+GitHub Actions run **#2824** for that exact implementation/test HEAD: **GREEN**.
+
+- `test`: PASS
+- `go test ./...`: PASS
+- `go vet ./...`: PASS
+- `race`: PASS
+- `go test -race ./...`: PASS
+- PostgreSQL service-backed test environment completed successfully
+- Midtrans sandbox: skipped because authorized credentials were not supplied to CI
+- IAK read-only: skipped because authorized credentials were not supplied to CI
+- XP SINDONESIA read-only: skipped because authorized credentials were not supplied to CI
+
+No authorized live-provider transaction was executed.
+
+### Safety Boundary / Invariants
+
+- the parity matrix is observational test coverage and does not authorize routing;
+- Router.Select() remains the sole routing decision path;
+- no automatic retry, provider failover, or transaction resubmission is introduced;
+- no duplicate payment/purchase creation is introduced;
+- no ledger mutation, customer balance mutation, treasury movement, or provider funding is introduced;
+- operational/capability readiness remains separate from Enabled, LiveTested, and ProductionReady state transitions;
+- no public API exposure is introduced;
+- RCB remains fail-closed and non-routable pending a verified PPOB contract.
+
+### Known Limitations
+
+- the matrix covers the currently identified candidate-rejection gates but does not replace the router's actual predicate evaluation;
+- provider observations can still become stale after selection, as expected for snapshot-based routing;
+- RCB PPOB contract fields remain incomplete and no RCB credentialed request was executed;
+- live-provider validation remains credential-gated and separate from deterministic CI.
+
+### Architecture Impact
+
+The routing explainability test surface now has explicit candidate-rejection parity coverage for the principal provider-neutral gates currently exercised by the PPOB router. This strengthens auditability without introducing a second routing authority or changing route-selection semantics.
+
+### Next Milestone
+
+**Milestone #276 — Routing Explainability / Operational Freshness and Balance Parity**
+
+Scope:
+
+- audit the remaining operational freshness, health, and balance rejection gates against administrative explanations;
+- add deterministic parity coverage where explanation output does not yet match Router.Select();
+- preserve observational-only explainability and the router as the sole routing decision path;
+- keep RCB fail-closed until an authoritative PPOB contract is available.
+
+Explicit non-goals:
+
+- no speculative RCB protocol implementation;
+- no automatic retry/failover/resubmission;
+- no provider funding or financial mutation;
+- no ledger/treasury mutation;
+- no public API;
+- no DesKaCash provider-specific coupling.
