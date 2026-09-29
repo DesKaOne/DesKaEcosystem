@@ -152,7 +152,7 @@ func TestProviderStateStorePersistsMultipleProvidersDeterministically(t *testing
 		if err != nil { t.Fatal(err) }
 		state.Lifecycle = LifecycleEnabled
 		state.Capabilities = []Capability{CapabilityPPOB}
-		state.CapabilityFingerprint = name + "-fingerprint"
+		state.CapabilityFingerprint = state.ProviderName + "-fingerprint"
 		if err := store.Put(state); err != nil { t.Fatal(err) }
 	}
 
