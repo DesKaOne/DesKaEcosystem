@@ -13,6 +13,7 @@ type ReadinessReasonCode string
 const (
  ReasonProviderNotRegistered ReadinessReasonCode="provider_not_registered"
  ReasonOperationalStateMissing ReadinessReasonCode="operational_state_missing"
+ ReasonOperationalCapabilityMissing ReadinessReasonCode="operational_capability_missing"
  ReasonLifecycleDisabled ReadinessReasonCode="lifecycle_disabled"
  ReasonCapabilityNotDeclared ReadinessReasonCode="capability_not_declared"
  ReasonAdapterNotImplemented ReadinessReasonCode="adapter_not_implemented"
@@ -43,7 +44,7 @@ func ExplainProviderRoute(ctx context.Context, router *Router, name string, capa
  var state operational.ProviderState
  if router.ProviderState!=nil {
   var ok bool; state,ok=router.ProviderState.Get(name)
-  if !ok { result.Reasons=append(result.Reasons,ReadinessReason{Code:ReasonOperationalStateMissing,Blocking:true}) } else if !state.Enabled() { result.Reasons=append(result.Reasons,ReadinessReason{Code:ReasonLifecycleDisabled,Blocking:true}) }
+  if !ok { result.Reasons=append(result.Reasons,ReadinessReason{Code:ReasonOperationalStateMissing,Blocking:true}) } else { if !state.Enabled() { result.Reasons=append(result.Reasons,ReadinessReason{Code:ReasonLifecycleDisabled,Blocking:true}) }; if !state.Supports(capability) { result.Reasons=append(result.Reasons,ReadinessReason{Code:ReasonOperationalCapabilityMissing,Blocking:true}) } }
  }
  if !declared { result.Reasons=append(result.Reasons,ReadinessReason{Code:ReasonCapabilityNotDeclared,Blocking:true}) } else {
   if !status.AdapterImplemented { result.Reasons=append(result.Reasons,ReadinessReason{Code:ReasonAdapterNotImplemented,Blocking:true}) }
