@@ -591,3 +591,43 @@ func TestRouterExposesBothStaleReasonsAcrossCandidates(t *testing.T) {
 		t.Fatalf("expected no-provider plus both stale reasons across candidates, got %v", err)
 	}
 }
+
+
+func TestRouterFailsClosedWhenPersistedCapabilityMetadataDrifts(t *testing.T) {
+	registry := provider.NewRegistry()
+	status := provider.CapabilityStatus{AdapterImplemented: true, Tested: true, Enabled: true}
+	if err := registry.RegisterWithCapabilities("mock", mock.New(mock.Config{
+		Products: []provider.Product{{Code: "xld10", Name: "Test"}},
+	}), provider.CapabilityDescriptor{Capabilities: map[provider.Capability]provider.CapabilityStatus{
+		provider.CapabilityPPOB: status,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	store := operational.NewMemoryStore()
+	if err := store.Put(operational.Snapshot{
+		ProviderName: "mock", Balance: 100000, Health: operational.HealthHealthy, LastCheckedAt: time.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	states := operational.NewProviderStateStore()
+	if err := states.Put(operational.ProviderState{
+		ProviderName: "mock",
+		Lifecycle: operational.LifecycleEnabled,
+		Capabilities: []operational.Capability{operational.CapabilityPPOB},
+		CapabilityFingerprint: operational.CapabilityMetadataFingerprint(provider.CapabilityDescriptor{Capabilities: map[provider.Capability]provider.CapabilityStatus{
+			provider.CapabilityPPOB: {AdapterImplemented: true, Tested: true, Enabled: false},
+		}}),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	router, err := NewWithState(registry, store, nil, states)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = router.Select(context.Background(), Request{ProductCode: "xld10", Amount: 50000})
+	if !errors.Is(err, ErrNoProviderAvailable) || !errors.Is(err, ErrProviderCapabilityDrift) {
+		t.Fatalf("expected capability drift to block routing, got %v", err)
+	}
+}
