@@ -2878,3 +2878,103 @@ Scope:
 - preserve the existing single routing authority and all transaction/financial safety boundaries.
 
 No speculative RCB PPOB implementation, automatic retry/failover/resubmission, funding, ledger/treasury mutation, public API, or DesKaCash provider-specific coupling is included in #294.
+
+## Milestone #294 — Provider Administrative Transition / Aggregate Error Determinism Audit
+
+**Date:** 2026-09-30
+
+### Scope
+
+- verify aggregate `Router.Select()` sentinel errors remain deterministic across sequential lifecycle/capability/operational/catalog transitions;
+- verify transition recovery removes only currently resolved sentinel causes and does not retain historical error membership;
+- verify aggregate ordering and `errors.Is` membership remain provider-neutral and deterministic;
+- preserve `Router.Select()` as the sole routing decision authority.
+
+### Source Finding
+
+- #290 already established deterministic aggregate sentinel ordering and duplicate-sentinel deduplication for simultaneous blocked candidates.
+- #293 established parity between administrative explanations and `Router.Select()` through sequential lifecycle/capability/operational/catalog transitions.
+- The remaining boundary was transition-time aggregate behavior: as individual causes are reconciled or recovered, the aggregate error must change exactly with the currently observed blocked candidates and never retain historical causes.
+
+### Implementation
+
+Added test-only coverage in `DesKaProvider/backend/routing/aggregate_transition_determinism_test.go`:
+
+1. construct three independent provider-neutral failure causes: capability drift, stale operational state, and stale catalog state;
+2. verify `Router.Select()` exposes all active sentinel causes in deterministic order;
+3. reconcile capability drift and verify only the drift sentinel disappears while operational/catalog stale causes remain;
+4. recover operational freshness and explicitly disable that recovered provider to isolate the remaining catalog-stale aggregate condition;
+5. verify only `ErrCatalogStale` remains and historical operational/drift sentinels are absent;
+6. recover catalog freshness and verify routing succeeds with no historical aggregate error retained;
+7. repeat the terminal routing state to verify deterministic recovery.
+
+No production routing, provider adapter, lifecycle implementation, persistence format, transaction, or financial behavior was changed.
+
+### Changed Files
+
+- `DesKaProvider/backend/routing/aggregate_transition_determinism_test.go`
+- `DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md`
+
+No provider credentials or external provider requests were added or executed.
+
+### Verification
+
+Implementation/test final HEAD:
+
+`9dec35aaacc2a70110453bc8f9cbfbd9f6b00e8f`
+
+GitHub Actions Push CI **#2964** / run **36609136369** for that exact HEAD: **GREEN**.
+
+GitHub Actions Pull Request CI **#2965** / run **36609144425** for that exact HEAD: **GREEN**.
+
+- `go test ./...`: PASS
+- `go vet ./...`: PASS
+- PostgreSQL service-backed test environment: PASS
+- `go test -race ./...`: PASS
+- IAK read-only: SKIPPED (credential-gated)
+- XP SINDONESIA read-only: SKIPPED (credential-gated)
+- Midtrans sandbox: SKIPPED (credential-gated)
+
+CI correction history:
+- Push/PR #2958/#2959 exposed a test-fixture assumption: a recovered operational provider made routing succeed, so a catalog-stale cause on another candidate was no longer an aggregate error. The fixture was corrected to explicitly disable the recovered provider before isolating the remaining catalog-stale condition.
+- Earlier Push/PR #2956/#2957 were unrelated to the final #294 implementation and were already GREEN on the preceding #293 documentation HEAD.
+- Intermediate #294 test revisions that attempted non-monotonic snapshot writes were corrected so stale fixtures are created with older timestamps from the start and recovery writes remain monotonic.
+- Final Push/PR #2964/#2965 are GREEN for the exact final implementation HEAD.
+
+No authorized live-provider transaction or external provider request was executed.
+
+### Safety Boundary / Invariants
+
+- aggregate routing errors are observational output from the existing `Router.Select()` authority and never authorize payment, purchase, retry, failover, or resubmission;
+- reconciliation clears capability drift but does not auto-enable lifecycle;
+- stale operational/catalog conditions remain blocking only where they affect the currently evaluated candidate set;
+- resolved sentinel causes are not retained after their underlying blocking condition is removed;
+- aggregate sentinel membership and ordering remain deterministic and provider-neutral;
+- no automatic retry, provider failover, transaction resubmission, duplicate transaction creation, provider funding, ledger mutation, customer-balance mutation, treasury movement, or public API exposure is introduced;
+- RCB remains unregistered, non-routable, and fail-closed pending an authoritative PPOB contract;
+- no DesKaCash provider-specific coupling is introduced.
+
+### Known Limitations
+
+- aggregate determinism is an internal routing/diagnostic invariant and does not establish external provider availability or provider contract correctness;
+- IAK, XP SINDONESIA, and Midtrans external validation remains credential-gated;
+- no authorized live-provider transaction was executed;
+- the audit covers provider-neutral aggregate sentinel behavior across the tested transitions and does not replace provider-specific sandbox/read-only validation;
+- RCB PPOB contract acquisition remains incomplete.
+
+### Architecture Impact
+
+#294 confirms that aggregate `Router.Select()` errors are a projection of the current candidate set and gate state, not persistent diagnostic state. Sequential reconciliation/recovery therefore changes aggregate membership only when the underlying routing condition changes, while deterministic ordering and `errors.Is` semantics remain stable.
+
+### Next Milestone
+
+**Milestone #295 — Provider Administrative Transition / Diagnostic-vs-Routing Authority Separation Audit**
+
+Scope:
+
+- verify administrative explanations can expose later diagnostic evidence without altering authoritative `Router.Select()` aggregate errors;
+- verify explanation-only observations remain non-mutating during the same sequential transition scenarios;
+- verify repeated explanation and routing calls do not accumulate diagnostic or routing state;
+- preserve the existing single routing authority and all transaction/financial safety boundaries.
+
+No speculative RCB PPOB implementation, automatic retry/failover/resubmission, funding, ledger/treasury mutation, public API, or DesKaCash provider-specific coupling is included in #295.
