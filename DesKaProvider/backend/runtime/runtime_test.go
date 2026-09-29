@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -6247,3 +6248,74 @@ func operationalMustSyncServiceForRuntimeTest(t *testing.T, registry *provider.R
 	if err != nil { t.Fatal(err) }
 	return svc
 }
+
+func TestNewFromEnvironmentContextPreservesProviderLifecycleAcrossRestart(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("DESKAPROVIDER_OPERATIONAL_STORE_PATH", filepath.Join(dir, "operational.json"))
+	t.Setenv("DESKAPROVIDER_PROVIDER_STATE_STORE_PATH", filepath.Join(dir, "provider-state.json"))
+	t.Setenv("DESKAPROVIDER_TRANSACTION_STORE_PATH", filepath.Join(dir, "transactions.json"))
+	t.Setenv("DESKAPROVIDER_CATALOG_STORE_PATH", filepath.Join(dir, "catalog.json"))
+	t.Setenv("DESKAPROVIDER_CATALOG_SYNC_STATUS_STORE_PATH", filepath.Join(dir, "catalog-status.json"))
+	t.Setenv("DESKAPROVIDER_OPERATIONAL_STORE_DRIVER", "json")
+	t.Setenv("DESKAPROVIDER_TRANSACTION_STORE_DRIVER", "json")
+	t.Setenv("DESKAPROVIDER_AUDIT_STORE_DRIVER", "memory")
+	t.Setenv("DESKAPROVIDER_POSTGRES_DSN", "")
+	t.Setenv("MIDTRANS_SERVER_KEY", "runtime-test-midtrans-key")
+	t.Setenv("IAK_USERNAME", "")
+	t.Setenv("IAK_API_KEY", "")
+	t.Setenv("XP_SINDONESIA_ID", "")
+	t.Setenv("XP_SINDONESIA_KEY", "")
+	t.Setenv("XP_SINDONESIA_API", "")
+	t.Setenv("DIGIFLAZZ_USERNAME", "")
+	t.Setenv("DIGIFLAZZ_API_KEY", "")
+
+	first, err := NewFromEnvironment(http.DefaultClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	midtransState, ok := first.providerState.Get("midtrans")
+	if !ok {
+		t.Fatal("expected Midtrans provider state")
+	}
+	if midtransState.Enabled() {
+		t.Fatal("provider must remain disabled by default")
+	}
+	if !midtransState.Supports(operational.CapabilityPayment) || !midtransState.Supports(operational.CapabilityWebhook) {
+		t.Fatalf("expected synchronized Midtrans capabilities, got %#v", midtransState.Capabilities)
+	}
+
+	admin, err := operational.NewProviderAdminService(first.providerState)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := admin.Enable("midtrans"); err != nil {
+		t.Fatal(err)
+	}
+	if err := first.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	second, err := NewFromEnvironment(http.DefaultClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer second.Close()
+
+	recovered, ok := second.providerState.Get("midtrans")
+	if !ok {
+		t.Fatal("expected recovered Midtrans provider state")
+	}
+	if !recovered.Enabled() {
+		t.Fatal("provider lifecycle must survive runtime restart")
+	}
+	if !recovered.Supports(operational.CapabilityPayment) || !recovered.Supports(operational.CapabilityWebhook) {
+		t.Fatalf("capability synchronization must survive restart, got %#v", recovered.Capabilities)
+	}
+
+	descriptor, err := second.purchaseService.Router.Capabilities("midtrans")
+	_ = descriptor
+	if err == nil {
+		t.Fatal("router should not expose an inferred registry capability through a lifecycle accessor")
+	}
+}
+\n
