@@ -157,7 +157,7 @@ func TestExplainProviderRouteOperationalFreshnessHealthBalanceParity(t *testing.
 				Products:     []provider.Product{{Code: "xld10"}},
 				SyncedAt:     now,
 			})
-			r.Now = func() time.Time { return now }
+			r.Now = func() time.Time { return now.Add(2 * time.Hour) }
 
 			reader, ok := r.OperationalInput.(*StoreOperationalInputReader)
 			if !ok {
@@ -1019,7 +1019,7 @@ func TestExplainProviderRouteAggregateReasonsMatchRouterJoinedErrorGates(t *test
 	}
 	if err := store.Put(operational.Snapshot{
 		ProviderName: "drift", Balance: 100000, Currency: "IDR",
-		Health: operational.HealthHealthy, LastCheckedAt: now.Add(-2 * time.Hour),
+		Health: operational.HealthHealthy, LastCheckedAt: now,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -1028,7 +1028,7 @@ func TestExplainProviderRouteAggregateReasonsMatchRouterJoinedErrorGates(t *test
 	// catalog must therefore not contribute catalog-stale for this provider.
 	if err := store.Put(operational.Snapshot{
 		ProviderName: "operational-stale", Balance: 100000, Currency: "IDR",
-		Health: operational.HealthHealthy, LastCheckedAt: now.Add(-2 * time.Hour),
+		Health: operational.HealthHealthy, LastCheckedAt: now,
 	}); err != nil {
 		t.Fatal(err)
 	}
