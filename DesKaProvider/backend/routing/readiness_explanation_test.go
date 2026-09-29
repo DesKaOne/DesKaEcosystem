@@ -845,11 +845,7 @@ func TestExplainProviderRouteBlockingReasonsMapToRouterErrors(t *testing.T) {
 			name: "catalog-stale",
 			mutate: func(r *Router) {
 				c := r.Catalog.(catalog.Store)
-				if err := c.Put(catalog.Snapshot{
-					ProviderName: "mock", Products: []provider.Product{{Code: "xld10"}},
-					SyncedAt: now.Add(-2 * time.Hour),
-				}); err != nil { t.Fatal(err) }
-				r.Now = func() time.Time { return now }
+				r.Now = func() time.Time { return now.Add(2 * time.Hour) }
 			},
 			reason: ReasonCatalogStale,
 			routerErr: ErrCatalogStale,
@@ -902,10 +898,7 @@ func TestExplainProviderRouteCompoundBlockingReasonsMatchJoinedRouterErrors(t *t
 	s.CapabilityFingerprint = "drifted"
 	if err := r.ProviderState.Put(s); err != nil { t.Fatal(err) }
 	c := r.Catalog.(catalog.Store)
-	if err := c.Put(catalog.Snapshot{
-		ProviderName: "mock", Products: []provider.Product{{Code: "xld10"}},
-		SyncedAt: now.Add(-2 * time.Hour),
-	}); err != nil { t.Fatal(err) }
+	r.Now = func() time.Time { return now.Add(2 * time.Hour) }
 
 	explanation, err := ExplainProviderRoute(context.Background(), r, "mock", provider.CapabilityPPOB, "xld10", 100)
 	if err != nil { t.Fatal(err) }
