@@ -224,7 +224,11 @@ func TestRouterReadinessStatesDoNotBypassCapabilityAndOperationalGates(t *testin
 			if err != nil {
 				t.Fatal(err)
 			}
-			if r.Registry.Supports("mock", provider.CapabilityPPOB) {
+			descriptor, err := r.Registry.Capabilities("mock")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if descriptor.Supports(provider.CapabilityPPOB) {
 				t.Fatalf("readiness state %q must not make a disabled capability routable", tc.name)
 			}
 			if explanation.RouteEligible {
