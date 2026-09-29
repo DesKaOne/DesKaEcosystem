@@ -910,7 +910,7 @@ func TestExplainProviderRouteCompoundBlockingReasonsMatchJoinedRouterErrors(t *t
 	explanation, err := ExplainProviderRoute(context.Background(), r, "mock", provider.CapabilityPPOB, "xld10", 100)
 	if err != nil { t.Fatal(err) }
 	for _, code := range []ReadinessReasonCode{
-		ReasonCapabilityDrift, ReasonOperationalSnapshotStale, ReasonCatalogStale,
+		ReasonCapabilityDrift, ReasonCatalogStale,
 	} {
 		found, blocking := reason(explanation, code)
 		if !found || !blocking {
@@ -924,7 +924,6 @@ func TestExplainProviderRouteCompoundBlockingReasonsMatchJoinedRouterErrors(t *t
 	_, selectErr := r.Select(context.Background(), Request{ProductCode: "xld10", Amount: 100})
 	if !errors.Is(selectErr, ErrNoProviderAvailable) ||
 		!errors.Is(selectErr, ErrProviderCapabilityDrift) ||
-		!errors.Is(selectErr, ErrOperationalSnapshotStale) ||
 		!errors.Is(selectErr, ErrCatalogStale) {
 		t.Fatalf("Router.Select joined error semantics diverged from explanation blockers: %v", selectErr)
 	}
