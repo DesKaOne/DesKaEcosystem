@@ -36,3 +36,77 @@ func TestExplainProviderRouteMatchesOperationalCapabilityGate(t *testing.T) {
 		t.Fatalf("Router.Select should reject the provider at the same gate, got %v", err)
 	}
 }
+
+
+func TestExplainProviderRouteCandidateRejectionParityMatrix(t *testing.T) {
+	tests := []struct {
+		name    string
+		status  provider.CapabilityStatus
+		life    operational.Lifecycle
+		cat     *catalog.Snapshot
+		mutate  func(*Router)
+		reason  ReadinessReasonCode
+		blocking bool
+	}{
+		{
+			name: "lifecycle-disabled",
+			status: provider.CapabilityStatus{AdapterImplemented: true, Enabled: true, Tested: true},
+			life: operational.LifecycleDisabled,
+			cat: &catalog.Snapshot{ProviderName: "mock", Products: []provider.Product{{Code: "xld10"}}, SyncedAt: time.Now()},
+			reason: ReasonLifecycleDisabled, blocking: true,
+		},
+		{
+			name: "capability-disabled",
+			status: provider.CapabilityStatus{AdapterImplemented: true, Enabled: false, Tested: true},
+			life: operational.LifecycleEnabled,
+			cat: &catalog.Snapshot{ProviderName: "mock", Products: []provider.Product{{Code: "xld10"}}, SyncedAt: time.Now()},
+			reason: ReasonCapabilityDisabled, blocking: true,
+		},
+		{
+			name: "capability-drift",
+			status: provider.CapabilityStatus{AdapterImplemented: true, Enabled: true, Tested: true},
+			life: operational.LifecycleEnabled,
+			cat: &catalog.Snapshot{ProviderName: "mock", Products: []provider.Product{{Code: "xld10"}}, SyncedAt: time.Now()},
+			mutate: func(r *Router) {
+				state, _ := r.ProviderState.Get("mock")
+				state.CapabilityFingerprint = "drifted"
+				if err := r.ProviderState.Put(state); err != nil { t.Fatal(err) }
+			},
+			reason: ReasonCapabilityDrift, blocking: true,
+		},
+		{
+			name: "catalog-stale",
+			status: provider.CapabilityStatus{AdapterImplemented: true, Enabled: true, Tested: true},
+			life: operational.LifecycleEnabled,
+			cat: &catalog.Snapshot{ProviderName: "mock", Products: []provider.Product{{Code: "xld10"}}, SyncedAt: time.Now().Add(-2 * time.Hour)},
+			reason: ReasonCatalogStale, blocking: true,
+		},
+		{
+			name: "product-unavailable",
+			status: provider.CapabilityStatus{AdapterImplemented: true, Enabled: true, Tested: true},
+			life: operational.LifecycleEnabled,
+			cat: &catalog.Snapshot{ProviderName: "mock", Products: []provider.Product{{Code: "other"}}, SyncedAt: time.Now()},
+			reason: ReasonProductUnavailable, blocking: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := testReadinessRouter(t, tt.status, tt.life, tt.cat)
+			if tt.mutate != nil { tt.mutate(r) }
+			e, err := ExplainProviderRoute(context.Background(), r, "mock", provider.CapabilityPPOB, "xld10", 100)
+			if err != nil { t.Fatal(err) }
+			found, blocking := reason(e, tt.reason)
+			if !found || blocking != tt.blocking {
+				t.Fatalf("expected reason %q blocking=%v, got %#v", tt.reason, tt.blocking, e)
+			}
+			if !e.RouteEligible {
+				return
+			}
+			for _, rr := range e.Reasons {
+				if rr.Blocking {
+					t.Fatalf("route explanation marked eligible despite blocking reason: %#v", e)
+				}
+			}
+		})
+	}
+}
