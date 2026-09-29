@@ -16209,3 +16209,65 @@ Scope:
 - preserve the separation between diagnostics, operational state, routing eligibility, and ProductionReady.
 
 No automatic failover, payment resubmission, provider funding, customer ledger mutation, treasury movement, duplicate purchase creation, or public API exposure is included in #266.
+## Milestone #266 — Provider Capability Drift Observability / Administrative Recovery
+
+**Date:** 2026-09-29
+
+### Implementation
+
+- added provider-neutral internal diagnostics combining persisted ProviderState with deterministic registry capability drift;
+- added deterministic Diagnose and DiagnoseAll administrative inspection paths without mutating lifecycle or capability state;
+- added explicit ReconcileCapabilityState recovery that synchronizes implemented capabilities and metadata fingerprint while disabling a previously drifted lifecycle;
+- added runtime internal inspection/recovery surfaces for provider diagnostics, capability reconciliation, and explicit lifecycle enablement;
+- verified recovery sequence drift -> disabled -> reconcile -> explicit enable;
+- verified explicit enable changes only operational lifecycle and does not promote LiveTested or ProductionReady;
+- kept diagnostics and recovery internal/provider-neutral; no public API exposure was introduced.
+
+### Changed Files
+
+- DesKaProvider/backend/Provider/operational/provider_diagnostics.go
+- DesKaProvider/backend/Provider/operational/provider_diagnostics_test.go
+- DesKaProvider/backend/runtime/runtime.go
+- DesKaProvider/backend/runtime/provider_diagnostics_test.go
+
+### Safety Boundary / Invariants
+
+- diagnostics are observational and never authorize payment, purchase, or routing;
+- reconciliation never auto-enables a provider;
+- a drifted provider remains disabled until explicit lifecycle re-enablement;
+- explicit re-enable does not mutate registry capability readiness or promote LiveTested / ProductionReady;
+- routing remains independently guarded by operational lifecycle and registry capability eligibility;
+- no automatic retry, provider failover, or transaction resubmission is introduced;
+- no duplicate payment/purchase creation is introduced;
+- no ledger mutation, customer balance mutation, treasury movement, or provider funding is introduced;
+- durable transaction/reference ownership, CAS/idempotency, webhook idempotency, and reconciliation boundaries remain unchanged;
+- no public API exposure is introduced.
+
+### Verification
+
+Implementation/test final HEAD:
+
+7fbf4b39c4288370a9a8f6e2032804e784e7e892
+
+Pull Request CI #2757 / run 36504080758: GREEN
+
+- test: PASS
+- race: PASS
+- midtrans-sandbox: skipped as expected
+- iak-read-only: skipped as expected
+- xp-sindonesia-read-only: skipped as expected
+
+No authorized live-provider transaction was executed by this milestone.
+
+### Next Milestone
+
+**Milestone #267 — Provider Capability Readiness / Routing Explainability**
+
+Scope:
+
+- add provider-neutral internal explanations for why a capability/provider is not route-eligible;
+- distinguish disabled lifecycle, missing implementation, failed tests, missing configuration, live validation state, stale operational state, catalog staleness, and capability drift;
+- verify explanations are deterministic and do not expose provider credentials or provider-specific protocol details;
+- preserve routing behavior while improving internal diagnostics.
+
+No automatic failover, payment resubmission, provider funding, customer ledger mutation, treasury movement, duplicate purchase creation, or public API exposure is included in #267.
