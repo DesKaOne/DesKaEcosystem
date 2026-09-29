@@ -4,6 +4,9 @@ import (
 	"errors"
 	"sync"
 	"testing"
+
+	provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
+	mock "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/Mock"
 )
 
 func TestProviderAdminServiceMutatesLifecycleOnly(t *testing.T) {
@@ -180,6 +183,6 @@ func TestProviderAdminServiceReconcilePreservesExplicitCapabilityDisable(t *test
 
 func providerRegistryForTest(descriptor provider.CapabilityDescriptor) *provider.Registry {
 	r := provider.NewRegistry()
-	_ = r.RegisterWithCapabilities("mock", testPPOBProvider{}, descriptor)
+	_ = r.RegisterWithCapabilities("mock", mock.New(mock.Config{}), descriptor)
 	return r
 }
