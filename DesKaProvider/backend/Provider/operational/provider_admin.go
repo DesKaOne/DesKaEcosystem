@@ -8,6 +8,7 @@ import (
 var (
 	ErrProviderNotFound = errors.New("provider not found")
 	ErrInvalidLifecycle = errors.New("invalid provider lifecycle")
+	ErrCapabilityNotAvailable = errors.New("provider capability is not available")
 )
 
 // ProviderAdminService is the internal control-plane boundary for provider lifecycle changes.
@@ -56,4 +57,55 @@ func (s *ProviderAdminService) Enable(name string) (ProviderState, error) {
 
 func (s *ProviderAdminService) Disable(name string) (ProviderState, error) {
 	return s.SetLifecycle(name, LifecycleDisabled)
+}
+
+
+func (s *ProviderAdminService) SetCapabilityEnabled(name string, capability Capability, enabled bool) (ProviderState, error) {
+	if s == nil || s.states == nil {
+		return ProviderState{}, errors.New("provider state store is required")
+	}
+	name = strings.TrimSpace(strings.ToLower(name))
+	if name == "" {
+		return ProviderState{}, ErrProviderNotFound
+	}
+	state, ok := s.states.Get(name)
+	if !ok {
+		return ProviderState{}, ErrProviderNotFound
+	}
+	implemented := false
+	for _, value := range state.Capabilities {
+		if value == capability {
+			implemented = true
+			break
+		}
+	}
+	if !implemented {
+		return ProviderState{}, ErrCapabilityNotAvailable
+	}
+	if state.EnabledCapabilities == nil {
+		state.EnabledCapabilities = append([]Capability(nil), state.Capabilities...)
+	}
+	result := state.EnabledCapabilities[:0]
+	for _, value := range state.EnabledCapabilities {
+		if value != capability {
+			result = append(result, value)
+		}
+	}
+	if enabled {
+		result = append(result, capability)
+	}
+	state.EnabledCapabilities = result
+	if err := s.states.Put(state); err != nil {
+		return ProviderState{}, err
+	}
+	updated, _ := s.states.Get(name)
+	return updated, nil
+}
+
+func (s *ProviderAdminService) EnableCapability(name string, capability Capability) (ProviderState, error) {
+	return s.SetCapabilityEnabled(name, capability, true)
+}
+
+func (s *ProviderAdminService) DisableCapability(name string, capability Capability) (ProviderState, error) {
+	return s.SetCapabilityEnabled(name, capability, false)
 }
