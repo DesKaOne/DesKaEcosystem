@@ -174,7 +174,7 @@ func TestAdministrativeTransitionRoutingParity(t *testing.T) {
 	assertParity("reconciled-enabled", true, nil)
 
 	// Fresh operational state -> stale operational snapshot.
-	putOperational(now.Add(-2*time.Minute), operational.HealthHealthy, 100000)
+	router.Now = func() time.Time { return now.Add(2 * time.Minute) }
 	staleOperational, err := ExplainProviderRoute(
 		context.Background(), router, "mock", provider.CapabilityPPOB, "xld10", 100,
 	)
@@ -186,11 +186,13 @@ func TestAdministrativeTransitionRoutingParity(t *testing.T) {
 	}
 	assertParity("operational-stale", false, ErrOperationalSnapshotStale)
 
-	putOperational(now, operational.HealthHealthy, 100000)
+	router.Now = func() time.Time { return now }
 	assertParity("operational-recovered", true, nil)
 
-	// Fresh operational state with stale catalog -> catalog-blocked.
-	putCatalog(now.Add(-2 * time.Minute))
+	// Fresh operational state with stale catalog -> catalog-blocked. Advance
+	// the router clock while keeping the persisted catalog timestamp monotonic.
+	putOperational(now.Add(2*time.Minute), operational.HealthHealthy, 100000)
+	router.Now = func() time.Time { return now.Add(2 * time.Minute) }
 	staleCatalog, err := ExplainProviderRoute(
 		context.Background(), router, "mock", provider.CapabilityPPOB, "xld10", 100,
 	)
@@ -202,7 +204,8 @@ func TestAdministrativeTransitionRoutingParity(t *testing.T) {
 	}
 	assertParity("catalog-stale", false, ErrCatalogStale)
 
-	putCatalog(now)
+	router.Now = func() time.Time { return now }
+	putOperational(now, operational.HealthHealthy, 100000)
 	assertParity("catalog-recovered", true, nil)
 
 	// Repeat the terminal healthy state to prove the transition sequence does
