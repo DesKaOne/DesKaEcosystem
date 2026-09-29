@@ -39,7 +39,7 @@ func TestProviderStateStoreSeparatesLifecycleFromCapabilities(t *testing.T) {
 	if !got.Supports(CapabilityPPOB) || !got.Supports(CapabilityBalance) || !got.Supports(CapabilityWebhook) || !got.Supports(CapabilityCatalog) || !got.Supports(CapabilityPayout) {
 		t.Fatalf("expected capabilities to be preserved: %#v", got.Capabilities)
 	}
-	if got.Supports(CapabilityPayout) {
+	if got.Supports(Capability("future")) {
 		t.Fatal("unsupported capability must remain absent")
 	}
 
