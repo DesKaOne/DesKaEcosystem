@@ -1084,3 +1084,121 @@ Explicit non-goals:
 - no ledger/treasury mutation;
 - no public API;
 - no DesKaCash provider-specific coupling.
+
+
+## Milestone #277 — Provider Validation Readiness / Credential-Gated Execution Audit
+
+**Date:** 2026-09-29
+
+### Scope
+
+- inspect the existing provider-validation harness and explicit credential gates for IAK, XP SINDONESIA, and Midtrans;
+- verify available validation paths are constrained to their intended safety class;
+- verify provider-specific endpoints and credentials remain inside DesKaProvider;
+- execute provider validation only when authorized credentials and an explicitly verified safe test contract are available;
+- keep credential-gated skips distinct from PASS;
+- reassess RCB contract intake independently from the existing payment-gateway material.
+
+### Source Finding
+
+The current DesKaProvider workflow uses explicit manual dispatch for provider validation jobs. The normal push/PR path runs deterministic test, vet, and race jobs while the provider validation jobs remain skipped.
+
+The three provider gates are materially different:
+
+- IAK: explicit read-only validation checks balance and price-list endpoints only;
+- XP SINDONESIA: explicit read-only validation checks the balance endpoint only;
+- Midtrans: explicit sandbox payment lifecycle validation creates one sandbox payment, reads its status, and validates the webhook contract against that same sandbox transaction identity. This is not a read-only check, but the workflow constrains it to Midtrans sandbox hosts and requires an explicit server-key secret and manual dispatch.
+
+The common integration safety layer requires:
+- global live-integration switch enabled;
+- exact provider selection;
+- HTTPS endpoint validation;
+- explicit hostname allowlisting;
+- no implicit authorization from a provider hostname alone.
+
+The existing deterministic integration tests also verify that a wrong provider gate or disabled global gate cannot authorize a live integration path.
+
+No authorized provider credentials were available for this milestone's current execution context, so no external provider request was executed.
+
+RCB remains separate: the repository still lacks an authoritative PPOB contract. Existing RCB payment-gateway material is insufficient to establish safe PPOB product, inquiry, purchase, status, webhook, idempotency, error, balance, or sandbox semantics.
+
+### Implementation
+
+No runtime/provider adapter code was changed in #277 because the audit found the existing credential-gated validation boundary already enforces the required separation.
+
+The milestone records the verified validation contract and preserves the distinction between:
+- deterministic CI PASS;
+- provider validation SKIPPED because credentials/manual dispatch are absent;
+- provider validation PASS only after an explicitly authorized and safe execution;
+- no validation state being promoted implicitly to LiveTested or ProductionReady.
+
+### Changed Files
+
+- DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md
+
+No provider credentials, secrets, or live-test output were added to source control.
+
+### Verification
+
+Current branch HEAD before documentation closure:
+
+331f48337d3684520e360ddbfe00ac03bd671378
+
+GitHub Actions run #2830 for that exact HEAD: GREEN.
+
+- test: PASS
+- go test ./...: PASS
+- go vet ./...: PASS
+- race: PASS
+- go test -race ./...: PASS
+- PostgreSQL service-backed test environment completed successfully
+- midtrans-sandbox: SKIPPED because this was not an explicit manual provider-validation dispatch with authorized credentials
+- iak-read-only: SKIPPED because authorized credentials were not supplied
+- xp-sindonesia-read-only: SKIPPED because authorized credentials were not supplied
+
+No authorized live-provider transaction or external provider request was executed by this milestone.
+
+### Safety Boundary / Invariants
+
+- provider validation remains explicitly credential-gated and provider-selected;
+- endpoint allowlisting cannot be bypassed by path text, embedded credentials, HTTP, or fragments;
+- IAK and XP SINDONESIA validation remains read-only;
+- Midtrans validation remains sandbox-only and explicitly creates a sandbox payment only when manually authorized;
+- validation skips are never represented as PASS;
+- provider validation does not automatically promote Configured, Tested, LiveTested, or ProductionReady;
+- no automatic retry, provider failover, or transaction resubmission is introduced;
+- no duplicate payment/purchase creation is introduced outside the explicitly authorized Midtrans sandbox validation lifecycle;
+- no provider funding, customer ledger mutation, treasury movement, or financial reconciliation mutation is introduced;
+- no public API exposure is introduced;
+- RCB remains unregistered, non-routable, and fail-closed pending an authoritative PPOB contract.
+
+### Known Limitations
+
+- authorized IAK, XP SINDONESIA, and Midtrans validation was not executed in the current context because the required credentials/manual validation dispatch were unavailable;
+- deterministic CI cannot prove external provider availability or live/sandbox contract compatibility;
+- Midtrans sandbox validation is a payment-creation test and therefore must remain clearly separated from the read-only validation class;
+- RCB PPOB contract details remain incomplete.
+
+### Architecture Impact
+
+#277 confirms the existing provider-validation boundary is suitable for credential-gated execution without adding another authorization path. DesKaProvider remains responsible for provider-specific credentials, endpoints, allowlists, and validation behavior; consumers remain provider-neutral.
+
+### Next Milestone
+
+**Milestone #278 — Provider Validation Evidence / Readiness State Promotion Audit**
+
+Scope:
+
+- audit how validation evidence maps to Configured, Tested, LiveTested, and ProductionReady;
+- verify a successful deterministic or provider validation cannot implicitly promote a stronger readiness state;
+- add deterministic state-transition coverage if any promotion boundary is ambiguous;
+- preserve credential-gated execution and the distinction between skipped, passed, and unavailable external validation.
+
+Explicit non-goals:
+
+- no speculative RCB PPOB implementation;
+- no automatic retry/failover/resubmission;
+- no provider funding or financial mutation;
+- no ledger/treasury mutation;
+- no public API;
+- no DesKaCash provider-specific coupling.
