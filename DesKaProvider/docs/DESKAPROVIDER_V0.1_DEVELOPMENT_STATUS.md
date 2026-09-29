@@ -3445,3 +3445,85 @@ No authorized live-provider transaction or external provider request was execute
 ### Next Step
 
 No automatic production milestone is opened from #299. The remaining v0.1 readiness gaps are external verification/activation evidence for the intended providers and acquisition of an authoritative RCB PPOB contract. Any next production milestone should be opened only when one of those gaps yields a concrete repository-level architectural requirement.
+
+
+## Milestone #300 — Provider Operational Capability Restart Preservation
+
+**Date:** 2026-09-30
+
+### Scope
+
+- verify that an explicitly disabled operational provider capability survives a full runtime shutdown/startup cycle;
+- verify runtime initialization does not restore an administrator-disabled capability from registry metadata;
+- verify lifecycle state remains independent from capability enablement across restart;
+- verify unrelated operational capabilities remain enabled.
+
+### Source Finding
+
+- #299 introduced persisted EnabledCapabilities as the operational capability control-plane state separate from implemented registry capability metadata;
+- store-level persistence coverage already proved the field survives JSON persistence;
+- the remaining internal boundary was runtime bootstrap: NewFromEnvironmentContext reconstructs provider state from registry metadata and therefore must preserve an explicit capability disable rather than treating it as a missing legacy state.
+
+### Implementation
+
+Test-only regression coverage was added to the existing runtime restart scenario:
+
+1. initialize the configured Midtrans provider;
+2. explicitly enable its lifecycle;
+3. explicitly disable the payment capability;
+4. verify lifecycle remains enabled and webhook capability remains operationally enabled;
+5. shut down the runtime;
+6. initialize a second runtime from the same persisted provider-state store;
+7. verify payment remains disabled, webhook remains enabled, and lifecycle remains enabled;
+8. verify registry capability readiness remains independent and is not promoted by the restart.
+
+### Changed Files
+
+- DesKaProvider/backend/runtime/runtime_test.go
+
+No production behavior, provider adapter, provider contract, credential, or external request was added.
+
+### Verification
+
+Final implementation/test HEAD:
+
+baae730eab5c076828e0d7a42a609c3abc922fab
+
+- Push CI #3026 / run 36628210531: GREEN
+  - test: PASS
+  - vet: PASS
+  - race: PASS
+  - IAK read-only: SKIPPED (credential-gated)
+  - XP SINDONESIA read-only: SKIPPED (credential-gated)
+  - Midtrans sandbox: SKIPPED (credential-gated)
+- Pull Request CI #3027 / run 36628219479: GREEN
+- An earlier revision of this test temporarily failed because an old assertion contradicted the new explicit-disable expectation; it was corrected in test-only commit baae730eab5c076828e0d7a42a609c3abc922fab. No production code was changed.
+
+No authorized live-provider transaction or external provider request was executed.
+
+### Safety Boundary / Invariants
+
+- explicit operational capability disable survives runtime restart;
+- provider lifecycle remains independently controlled;
+- registry capability metadata remains verification/implementation state and is not mutated by the administrative disable;
+- restart does not promote Enabled, LiveTested, or ProductionReady state;
+- unrelated capabilities remain operationally available;
+- Router.Select() remains the sole routing decision authority;
+- no automatic retry, provider failover, transaction resubmission, duplicate transaction creation, provider funding, ledger mutation, customer-balance mutation, treasury movement, or public API exposure is introduced;
+- RCB remains unregistered, non-routable, and fail-closed pending an authoritative PPOB contract;
+- no DesKaCash provider-specific coupling is introduced.
+
+### Known Limitations
+
+- this milestone proves internal runtime restart preservation only; it does not establish external provider availability or contract correctness;
+- IAK, XP SINDONESIA, and Midtrans external validation remains credential-gated;
+- no authorized live-provider transaction was executed;
+- RCB PPOB contract acquisition remains incomplete.
+
+### Architecture Impact
+
+#300 closes the runtime-bootstrap half of the operational capability control boundary established by #299. Administrative capability disablement is now covered from control-plane mutation through persistence and runtime reconstruction without promoting registry readiness or lifecycle state.
+
+### Next Step
+
+No automatic production milestone is opened from #300. Remaining Provider v0.1 gaps continue to be external verification/activation evidence for the intended providers and acquisition of an authoritative RCB PPOB contract. A further internal milestone should only be opened if repository inspection identifies another concrete architectural boundary.
