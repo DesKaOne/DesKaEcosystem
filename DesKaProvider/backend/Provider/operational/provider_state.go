@@ -24,7 +24,6 @@ const (
 	CapabilityBalance = provider.CapabilityBalance
 	CapabilityWebhook = provider.CapabilityWebhook
 	CapabilityCatalog = provider.CapabilityCatalog
-	CapabilityPayout  = provider.CapabilityPayout
 )
 
 type ProviderState struct {
