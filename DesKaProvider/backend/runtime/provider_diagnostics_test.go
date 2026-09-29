@@ -1,6 +1,8 @@
 package runtime
 
 import (
+	"context"
+	"errors"
 	"testing"
 
 	provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
@@ -46,6 +48,10 @@ func TestProviderDiagnosticsRecoveryKeepsReadinessSeparate(t *testing.T) {
 	if err != nil { t.Fatal(err) }
 	if reconciled.Drifted || reconciled.State.Enabled() {
 		t.Fatalf("reconciliation must clear drift without enabling lifecycle: %#v", reconciled)
+	}
+
+	if _, err := router.Select(context.Background(), routing.Request{ProductCode: "xld10", Amount: 1000}); !errors.Is(err, routing.ErrNoProviderAvailable) {
+		t.Fatalf("reconciled-but-disabled provider must remain non-routable, got %v", err)
 	}
 
 	enabled, err := service.EnableProvider("mock")
