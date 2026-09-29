@@ -107,6 +107,76 @@ func (s *ProviderStateStore) Get(name string) (ProviderState, bool) {
 	return state, ok
 }
 
+func (s *ProviderStateStore) Update(name string, mutate func(*ProviderState) error) (ProviderState, error) {
+	if s == nil {
+		return ProviderState{}, errors.New("provider state store is required")
+	}
+	name = strings.TrimSpace(strings.ToLower(name))
+	if name == "" {
+		return ProviderState{}, errors.New("provider name is required")
+	}
+	if mutate == nil {
+		return ProviderState{}, errors.New("provider state mutation is required")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	current, ok := s.states[name]
+	if !ok {
+		return ProviderState{}, errors.New("provider not found")
+	}
+	current.Capabilities = append([]Capability(nil), current.Capabilities...)
+	current.EnabledCapabilities = append([]Capability(nil), current.EnabledCapabilities...)
+	if err := mutate(&current); err != nil {
+		return ProviderState{}, err
+	}
+	current.ProviderName = name
+	if err := validateAndNormalizeState(&current); err != nil {
+		return ProviderState{}, err
+	}
+
+	next := make(map[string]ProviderState, len(s.states))
+	for key, value := range s.states {
+		value.Capabilities = append([]Capability(nil), value.Capabilities...)
+		value.EnabledCapabilities = append([]Capability(nil), value.EnabledCapabilities...)
+		next[key] = value
+	}
+	next[name] = current
+	if s.persistence != nil {
+		states := make([]ProviderState, 0, len(next))
+		for _, value := range next {
+			value.Capabilities = append([]Capability(nil), value.Capabilities...)
+			value.EnabledCapabilities = append([]Capability(nil), value.EnabledCapabilities...)
+			states = append(states, value)
+		}
+		sort.Slice(states, func(i, j int) bool { return states[i].ProviderName < states[j].ProviderName })
+		if err := s.persistence.Save(states); err != nil {
+			return ProviderState{}, err
+		}
+	}
+	s.states = next
+	return current, nil
+}
+
+func validateAndNormalizeState(state *ProviderState) error {
+	if state == nil {
+		return errors.New("provider state is required")
+	}
+	state.ProviderName = strings.TrimSpace(strings.ToLower(state.ProviderName))
+	if state.ProviderName == "" {
+		return errors.New("provider name is required")
+	}
+	switch state.Lifecycle {
+	case LifecycleEnabled, LifecycleDisabled:
+	default:
+		return errors.New("invalid provider lifecycle")
+	}
+	sort.Slice(state.Capabilities, func(i, j int) bool { return state.Capabilities[i] < state.Capabilities[j] })
+	sort.Slice(state.EnabledCapabilities, func(i, j int) bool { return state.EnabledCapabilities[i] < state.EnabledCapabilities[j] })
+	return nil
+}
+
 func (s *ProviderStateStore) putMemory(state ProviderState) error {
 	state.ProviderName = strings.TrimSpace(strings.ToLower(state.ProviderName))
 	if state.ProviderName == "" {
@@ -129,20 +199,9 @@ func (s *ProviderStateStore) putMemory(state ProviderState) error {
 
 func (s *ProviderStateStore) Put(state ProviderState) error {
 	state.ProviderName = strings.TrimSpace(strings.ToLower(state.ProviderName))
-	if state.ProviderName == "" {
-		return errors.New("provider name is required")
+	if err := validateAndNormalizeState(&state); err != nil {
+		return err
 	}
-	switch state.Lifecycle {
-	case LifecycleEnabled, LifecycleDisabled:
-	default:
-		return errors.New("invalid provider lifecycle")
-	}
-	capabilities := append([]Capability(nil), state.Capabilities...)
-	sort.Slice(capabilities, func(i, j int) bool { return capabilities[i] < capabilities[j] })
-	state.Capabilities = capabilities
-	enabledCapabilities := append([]Capability(nil), state.EnabledCapabilities...)
-	sort.Slice(enabledCapabilities, func(i, j int) bool { return enabledCapabilities[i] < enabledCapabilities[j] })
-	state.EnabledCapabilities = enabledCapabilities
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -165,18 +224,4 @@ func (s *ProviderStateStore) Put(state ProviderState) error {
 	}
 	s.states = next
 	return nil
-}
-
-
-func (s *ProviderStateStore) All() []ProviderState {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	result := make([]ProviderState, 0, len(s.states))
-	for _, state := range s.states {
-		state.Capabilities = append([]Capability(nil), state.Capabilities...)
-		state.EnabledCapabilities = append([]Capability(nil), state.EnabledCapabilities...)
-		result = append(result, state)
-	}
-	sort.Slice(result, func(i, j int) bool { return result[i].ProviderName < result[j].ProviderName })
-	return result
 }
