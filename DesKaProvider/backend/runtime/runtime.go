@@ -235,7 +235,25 @@ if e != nil { return nil, e }
 statePersistence,e:=operational.NewJSONFileProviderStateStore(cfg.ProviderStateStorePath);if e!=nil{return nil,e}
 stateStore,e:=operational.NewPersistentProviderStateStore(statePersistence);if e!=nil{return nil,e}
 if e:=runRuntimeInitializationFailureHook("after-provider-state-store", ownership); e!=nil { return nil,e }
-for _, name:=range registry.Names(){state,ok:=stateStore.Get(name);if !ok{state,e=operational.NewProviderState(name);if e!=nil{return nil,e}};descriptor,e:=registry.Capabilities(name);if e!=nil{return nil,e};state.Capabilities=capabilitiesFromDescriptor(descriptor);if e=stateStore.Put(state);e!=nil{return nil,e}} // persist provider lifecycle/capability state from explicit registry metadata before router construction
+for _, name := range registry.Names() {
+		state, ok := stateStore.Get(name)
+		if !ok {
+			state, e = operational.NewProviderState(name)
+			if e != nil { return nil, e }
+		}
+		descriptor, e := registry.Capabilities(name)
+		if e != nil { return nil, e }
+		drift := operational.DetectCapabilityDrift(state, descriptor)
+		if drift.Drifted() {
+			// Drift invalidates the persisted lifecycle gate. The current
+			// registry metadata is synchronized, but explicit re-enablement is
+			// required before routing can use the provider again.
+			state.Lifecycle = operational.LifecycleDisabled
+		}
+		state.Capabilities = capabilitiesFromDescriptor(descriptor)
+		state.CapabilityFingerprint = operational.CapabilityMetadataFingerprint(descriptor)
+		if e = stateStore.Put(state); e != nil { return nil, e }
+	} // persist synchronized provider lifecycle/capability state before router construction
 router,e:=routing.NewWithCatalogAndStateAndOperationalMaxAge(registry,store,nil,catalogStore,stateStore,cfg.OperationalSnapshotMaxAge);if e!=nil{return nil,e}
 if e:=runRuntimeInitializationFailureHook("after-router", ownership); e!=nil { return nil,e }
 purchaseService,e:=routing.NewServiceWithStoreContextAndAudit(ctx,router,transactionStore,auditStore);if e!=nil{return nil,e}
