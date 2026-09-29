@@ -137,7 +137,7 @@ func TestAdministrativeSnapshotsRemainConsistentWithRoutingAcrossTransitions(t *
 	}
 
 	initial := assertSnapshotAndRoute(t, "beta", nil)
-	if !providerCapabilityEligible(initial, "alpha", provider.CapabilityPPOB) {
+	if providerCapabilityEligible(initial, "alpha", provider.CapabilityPPOB) {
 		t.Fatal("disabled alpha unexpectedly appeared route-eligible")
 	}
 	if !providerCapabilityEligible(initial, "beta", provider.CapabilityPPOB) {
