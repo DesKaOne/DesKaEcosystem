@@ -87,10 +87,7 @@ func TestRouterAggregateErrorsRemainDeterministicAcrossTransitions(t *testing.T)
 				t.Fatalf("%s: missing %v: %v", label, target, err)
 			}
 		}
-		const expectedOrder = "no provider available
-provider operational snapshot is stale
-provider catalog is stale
-provider capability metadata drift detected"
+		const expectedOrder = "no provider available\nprovider operational snapshot is stale\nprovider catalog is stale\nprovider capability metadata drift detected"
 		if len(want) == 3 && err.Error() != expectedOrder {
 			t.Fatalf("%s: aggregate order changed: %q", label, err.Error())
 		}
