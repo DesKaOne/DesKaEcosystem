@@ -1494,7 +1494,11 @@ func TestCombineRuntimeShutdownErrorPreservesDeterministicErrorOrder(t *testing.
 		audit,
 	)
 
-	want := "primary shutdown error\nworker shutdown error\ncatalog shutdown error\ntransaction close error\naudit close error"
+	want := "primary shutdown error
+worker shutdown error
+catalog shutdown error
+transaction close error
+audit close error"
 	if err == nil || err.Error() != want {
 		t.Fatalf("unexpected deterministic shutdown error order: got %q want %q", err, want)
 	}
@@ -1572,7 +1576,11 @@ func TestServiceRunShutdownPreservesCompletionOrderingAndAllErrorIdentity(t *tes
 	if !errors.Is(runErr, auditErr) {
 		t.Fatalf("expected audit close error identity, got %v", runErr)
 	}
-	wantErr := "context canceled\nbalance shutdown failed\ncatalog shutdown failed\nclose transaction database: transaction close failed\nclose audit database: audit close failed"
+	wantErr := "context canceled
+balance shutdown failed
+catalog shutdown failed
+close transaction database: transaction close failed
+close audit database: audit close failed"
 	if runErr == nil || runErr.Error() != wantErr {
 		t.Fatalf("unexpected shutdown error precedence: got %q want %q", runErr, wantErr)
 	}
@@ -3582,7 +3590,11 @@ func TestServiceRunShutdownCancellationVsLifecycleCompletionPrecedence(t *testin
 			t.Fatalf("expected composed shutdown error identity %v, got %v", want, runErr)
 		}
 	}
-	wantErr := "context canceled\nbalance completion deadline\ncatalog completion cancellation\nclose transaction database: transaction cleanup after cancellation\nclose audit database: audit cleanup after cancellation"
+	wantErr := "context canceled
+balance completion deadline
+catalog completion cancellation
+close transaction database: transaction cleanup after cancellation
+close audit database: audit cleanup after cancellation"
 	if runErr == nil || runErr.Error() != wantErr {
 		t.Fatalf("unexpected shutdown error precedence: got %q want %q", runErr, wantErr)
 	}
@@ -6317,4 +6329,4 @@ func TestNewFromEnvironmentContextPreservesProviderLifecycleAcrossRestart(t *tes
 	status, ok := descriptor.Status(provider.CapabilityPayment)
 	if !ok || !status.AdapterImplemented || status.Enabled { t.Fatalf("runtime restart must not promote registry readiness: %+v", status) }
 }
-\n
+
