@@ -189,6 +189,16 @@ func (s *Service) EnableProvider(name string) (operational.ProviderState, error)
 	return admin.Enable(name)
 }
 
+// ProviderRouteExplainabilitySnapshot returns a deterministic administrative snapshot
+// across every registered provider and the canonical capability vocabulary. It is
+// observational only and never authorizes provider execution.
+func (s *Service) ProviderRouteExplainabilitySnapshot(ctx context.Context) (routing.AdministrativeRouteExplanationSnapshot, error) {
+	if s == nil || s.purchaseService == nil || s.purchaseService.Router == nil {
+		return routing.AdministrativeRouteExplanationSnapshot{}, errors.New("provider runtime is not initialized")
+	}
+	return routing.ExplainAllProviderRoutes(ctx, s.purchaseService.Router)
+}
+
 // ExplainProviderRoute returns deterministic internal routing/readiness diagnostics.
 // It is observational only and never authorizes provider execution.
 func (s *Service) ExplainProviderRoute(ctx context.Context, name string, capability provider.Capability, productCode string, amount int64) (routing.ProviderRouteExplanation, error) {
