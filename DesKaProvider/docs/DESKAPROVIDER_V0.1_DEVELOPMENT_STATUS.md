@@ -2978,3 +2978,85 @@ Scope:
 - preserve the existing single routing authority and all transaction/financial safety boundaries.
 
 No speculative RCB PPOB implementation, automatic retry/failover/resubmission, funding, ledger/treasury mutation, public API, or DesKaCash provider-specific coupling is included in #295.
+
+
+## Milestone #295 — Provider Administrative Transition / Diagnostic-vs-Routing Authority Separation Audit
+
+**Date:** 2026-09-30
+
+### Scope
+
+- verify administrative explanations can expose later diagnostic evidence without altering authoritative `Router.Select()` aggregate errors;
+- verify explanation-only observations remain non-mutating during the same sequential transition scenarios;
+- verify repeated explanation and routing calls do not accumulate diagnostic or routing state;
+- preserve `Router.Select()` as the sole routing decision authority.
+
+### Source Finding
+
+- #294 established that aggregate routing errors are a projection of the current candidate set and gate state, not persistent diagnostic state.
+- The remaining boundary was to prove that the broader administrative explanation surface may observe gates that the router short-circuits for routing purposes without feeding those observations back into routing state or error membership.
+- The existing implementation already performs explanation reads through registry/provider-state/operational/catalog inspection and does not call `Router.Select()` or mutate those stores.
+
+### Implementation
+
+Added test-only coverage in `DesKaProvider/backend/routing/diagnostic_routing_authority_separation_test.go`.
+
+The regression scenario:
+
+1. create a provider with explicit PPOB capability metadata, a disabled lifecycle, a stale operational snapshot, and a stale catalog;
+2. verify authoritative `Router.Select()` returns only `ErrNoProviderAvailable`, because the disabled lifecycle prevents the provider from becoming a routing candidate;
+3. run the administrative explanation repeatedly and verify deterministic equality;
+4. verify the explanation still exposes the later diagnostic evidence for lifecycle-disabled, stale operational, and stale catalog state;
+5. capture provider lifecycle/capability state, operational state, and catalog state before diagnostics and verify deep equality afterward;
+6. call `Router.Select()` again and verify its aggregate error is byte-for-byte unchanged from the pre-diagnostic routing result.
+
+No production routing, provider adapter, lifecycle implementation, persistence format, transaction, or financial behavior was changed.
+
+### Changed Files
+
+- `DesKaProvider/backend/routing/diagnostic_routing_authority_separation_test.go`
+- `DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md`
+
+No provider credentials or external provider requests were added or executed.
+
+### Verification
+
+Implementation/test HEAD:
+
+`786d4e897f793f870d3e564a1c61f3f9734b6ed5`
+
+CI verification is pending for this implementation HEAD.
+
+### Safety Boundary / Invariants
+
+- administrative explanations remain observational and do not authorize payment, purchase, retry, failover, or resubmission;
+- `Router.Select()` remains the sole routing decision authority;
+- diagnostic evidence that is not reachable as a routing candidate is not promoted into routing sentinel membership;
+- repeated diagnostics do not mutate lifecycle, capability metadata, operational state, catalog state, or routing state;
+- no automatic retry, provider failover, transaction resubmission, duplicate transaction creation, provider funding, ledger mutation, customer-balance mutation, treasury movement, or public API exposure is introduced;
+- RCB remains unregistered, non-routable, and fail-closed pending an authoritative PPOB contract;
+- no DesKaCash provider-specific coupling is introduced.
+
+### Known Limitations
+
+- this audit proves internal authority separation and non-mutation; it does not establish external provider availability or provider contract correctness;
+- IAK, XP SINDONESIA, and Midtrans external validation remains credential-gated;
+- no authorized live-provider transaction was executed;
+- RCB PPOB contract acquisition remains incomplete.
+
+### Architecture Impact
+
+#295 closes the diagnostic-vs-routing authority boundary for the tested transition shape: administrative explanations can expose additional blocked-state evidence that `Router.Select()` intentionally does not aggregate after candidate elimination, while repeated diagnostics leave authoritative routing behavior and persisted source state unchanged.
+
+### Next Milestone
+
+**Milestone #296 — Provider Administrative Transition / Diagnostic Snapshot Idempotence Audit**
+
+Scope:
+
+- verify repeated administrative snapshots across mixed provider transitions remain observationally idempotent;
+- verify diagnostic freshness/generation metadata remains deterministic under repeated reads;
+- verify transition recovery changes explanations only through underlying persisted state changes;
+- preserve the single routing authority and all transaction/financial safety boundaries.
+
+No speculative RCB PPOB implementation, automatic retry/failover/resubmission, funding, ledger/treasury mutation, public API, or DesKaCash provider-specific coupling is included in #296.
