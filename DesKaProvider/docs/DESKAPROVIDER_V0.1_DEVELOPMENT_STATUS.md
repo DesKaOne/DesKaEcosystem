@@ -3527,3 +3527,72 @@ No authorized live-provider transaction or external provider request was execute
 ### Next Step
 
 No automatic production milestone is opened from #300. Remaining Provider v0.1 gaps continue to be external verification/activation evidence for the intended providers and acquisition of an authoritative RCB PPOB contract. A further internal milestone should only be opened if repository inspection identifies another concrete architectural boundary.
+
+## Post-Milestone #300 — Internal Boundary Audit / Candidate #301 Rejected
+
+**Date:** 2026-09-30
+
+### Audit Scope
+
+After #300, the repository was reviewed for another concrete internal Provider v0.1 architectural boundary before opening a new production milestone.
+
+The audit covered:
+
+- provider lifecycle and operational capability state persistence;
+- runtime bootstrap/restart reconstruction;
+- registry capability metadata and readiness separation;
+- Router.Select() aggregate gating and diagnostic separation;
+- runtime shutdown/database ownership paths;
+- provider-state JSON persistence durability.
+
+### Finding
+
+A candidate boundary was identified around concurrent control-plane mutations using a read-modify-write pattern (Get -> modify -> Put) across lifecycle, capability, and reconciliation paths.
+
+A test implementation was intentionally attempted as a bounded engineering experiment. The resulting branch revisions produced CI failures, including the race job. The available GitHub connector did not expose the failing job logs sufficiently to establish a safe root cause.
+
+Therefore the candidate was not promoted into Provider v0.1 production architecture.
+
+All experimental source changes were reverted to the previously verified green behavior. No unverified concurrency semantics were retained.
+
+### Verification
+
+The restored branch was verified at:
+
+`d5ce33b6ec0c6e9bd47402e8f4fdd0fd96501b56`
+
+GitHub Actions Push CI #3049 / run 36636579348: GREEN.
+
+- test: PASS
+- vet: PASS
+- race: PASS
+- PostgreSQL service-backed test environment: PASS
+- IAK read-only: SKIPPED (credential-gated)
+- XP SINDONESIA read-only: SKIPPED (credential-gated)
+- Midtrans sandbox: SKIPPED (credential-gated)
+
+Pull Request CI #3048 / run 36636572553: GREEN.
+
+No provider credential was used for an authorized live transaction and no external provider transaction was executed.
+
+### Decision
+
+No new production milestone is opened from this audit.
+
+The repository remains at the #300 architectural baseline. The remaining Provider v0.1 readiness gaps are:
+
+- external verification/activation evidence for IAK;
+- external verification/activation evidence for XP SINDONESIA;
+- external verification/activation evidence for Midtrans;
+- authoritative RCB PPOB contract acquisition.
+
+A new internal milestone should only be opened when one of these readiness gaps, or a fresh repository inspection, yields a concrete architectural requirement that can be implemented and verified without inventing provider behavior.
+
+### Safety Boundary
+
+- no speculative provider contract was introduced;
+- no automatic retry, failover, resubmission, duplicate transaction, ledger mutation, balance mutation, treasury movement, or provider funding was introduced;
+- Router.Select() remains the sole routing decision authority;
+- administrative diagnostics remain observational;
+- RCB remains unregistered, non-routable, and fail-closed;
+- no DesKaCash provider-specific coupling was introduced.
