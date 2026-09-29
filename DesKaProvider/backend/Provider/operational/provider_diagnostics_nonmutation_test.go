@@ -34,6 +34,7 @@ func TestProviderAdminDiagnosticsReturnedDriftCopiesAreIsolated(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	expected := first
 	if len(first.Drift.Added) == 0 {
 		t.Fatalf("expected drift fixture to expose an added capability: %#v", first.Drift)
 	}
@@ -67,7 +68,7 @@ func TestProviderAdminDiagnosticsReturnedDriftCopiesAreIsolated(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(repeated, first) {
-		t.Fatalf("diagnostics must be deterministic and isolated from caller mutation: first=%#v repeated=%#v", first, repeated)
+	if !reflect.DeepEqual(repeated, expected) {
+		t.Fatalf("diagnostics must be deterministic and isolated from caller mutation: expected=%#v repeated=%#v", expected, repeated)
 	}
 }
