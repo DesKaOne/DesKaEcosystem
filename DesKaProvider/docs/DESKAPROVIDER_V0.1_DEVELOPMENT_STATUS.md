@@ -16083,4 +16083,65 @@ Scope:
 - add deterministic persistence/recovery coverage for capability state.
 
 No automatic failover, payment resubmission, provider funding, customer ledger mutation, treasury movement, duplicate purchase creation, or public API exposure is included in #264.
+## Milestone #264 — Provider Capability Operational State Synchronization
+
+**Date:** 2026-09-29
+
+### Implementation
+
+- preserved provider lifecycle state across runtime restart using the existing persistent ProviderStateStore;
+- synchronized operational capability state from explicit registry capability metadata during runtime initialization;
+- expanded operational provider-state capability aliases to cover the complete provider-neutral capability vocabulary, including catalog and payout;
+- verified lifecycle enablement survives restart without promoting registry capability readiness;
+- verified registry Enabled remains explicit and independent from operational lifecycle state;
+- verified provider-state capability slices remain defensive copies and unknown capabilities remain absent;
+- kept persistence/recovery deterministic and provider-neutral.
+
+### Changed Files
+
+- DesKaProvider/backend/Provider/operational/provider_state.go
+- DesKaProvider/backend/Provider/operational/provider_state_test.go
+- DesKaProvider/backend/runtime/runtime_test.go
+
+### Safety Boundary / Invariants
+
+- persisted operational lifecycle state never promotes registry capability readiness;
+- capability state is synchronized only from explicit registry metadata;
+- operational lifecycle and registry capability enablement remain separate gates;
+- restart/recovery does not infer unsupported capabilities or live validation;
+- no automatic retry, provider failover, or transaction resubmission is introduced;
+- no duplicate payment/purchase creation is introduced;
+- no ledger mutation, customer balance mutation, treasury movement, or provider funding is introduced;
+- durable transaction/reference ownership, CAS/idempotency, webhook idempotency, and reconciliation boundaries remain unchanged;
+- no public API exposure is introduced.
+
+### Verification
+
+Final implementation/test HEAD:
+
+098524d7b17b7c7ca9863d9fa04a74dec8665ea3
+
+- Push CI #2716 / run 36501670000: GREEN
+  - test: PASS
+  - race: PASS
+  - credential-gated provider validation jobs: skipped as expected
+- Pull Request CI #2717 / run 36501673593: GREEN
+  - test: PASS
+  - race: PASS
+  - credential-gated provider validation jobs: skipped as expected
+
+No authorized live-provider transaction was executed by this milestone.
+
+### Next Milestone
+
+**Milestone #265 — Provider Operational State / Capability Drift Detection**
+
+Scope:
+
+- detect deterministic drift between registered capability metadata and persisted operational provider state;
+- prevent stale lifecycle/capability combinations from silently becoming route-eligible;
+- add explicit diagnostics for removed, newly added, or changed provider capabilities across restart;
+- preserve separation between operational state, routing eligibility, and ProductionReady.
+
+No automatic failover, payment resubmission, provider funding, customer ledger mutation, treasury movement, duplicate purchase creation, or public API exposure is included in #265.
 
