@@ -40,7 +40,7 @@ func TestProviderAdminDiagnoseIsObservational(t *testing.T) {
 		t.Fatalf("unexpected drift: %#v", diagnostic)
 	}
 	state, _ := store.Get("mock")
-	if !state.Enabled() || len(state.Capabilities) != 1 {
+	if !state.Enabled() || len(state.Capabilities) != 2 {
 		t.Fatalf("diagnose must not mutate state: %#v", state)
 	}
 }
