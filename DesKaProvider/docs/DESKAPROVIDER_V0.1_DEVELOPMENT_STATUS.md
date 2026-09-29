@@ -967,3 +967,120 @@ Explicit non-goals:
 - no ledger/treasury mutation;
 - no public API;
 - no DesKaCash provider-specific coupling.
+
+
+## Milestone #276 — Routing Explainability / Operational Freshness and Balance Parity
+
+**Date:** 2026-09-29
+
+### Scope
+
+- audit operational freshness rejection against the actual `Router.Select()` gate;
+- audit provider health rejection against the actual `Router.Select()` gate;
+- audit provider balance rejection against the actual `Router.Select()` gate;
+- add deterministic parity regression coverage for these operational gates;
+- preserve observational-only administrative explanation and keep `Router.Select()` as the sole routing decision authority.
+
+### Source Finding
+
+The source audit confirmed that `Router.Select()` reads the provider operational snapshot through the read-only `OperationalInputReader`, then rejects a candidate when:
+
+- operational health is not `HealthHealthy`;
+- operational balance is below the requested amount;
+- the operational snapshot is outside the configured freshness window.
+
+`ExplainProviderRoute()` already exposed provider-neutral blocking reasons for these same conditions:
+
+- `operational_snapshot_stale`;
+- `operational_health_unhealthy`;
+- `insufficient_balance`.
+
+Before #276, these reason codes existed but there was no deterministic regression matrix proving that each administrative explanation matched the corresponding router rejection gate.
+
+### Implementation
+
+Added `TestExplainProviderRouteOperationalFreshnessHealthBalanceParity`.
+
+The deterministic matrix fixes the router clock and covers:
+
+1. stale operational snapshot;
+2. unhealthy provider;
+3. insufficient provider balance.
+
+For every case the test verifies:
+
+- the expected provider-neutral explanation reason is present and blocking;
+- `RouteEligible` is false;
+- `Router.Select()` rejects the same provider;
+- the stale case additionally preserves the router's `ErrOperationalSnapshotStale` aggregate error.
+
+No routing production logic was changed in #276.
+
+### Changed Files
+
+- DesKaProvider/backend/routing/readiness_explanation_test.go
+- DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md
+
+### Verification
+
+Implementation/test final HEAD:
+
+`4699383ff555c3bc6faafb001ff78504b5a82eff`
+
+GitHub Actions run **#2828** for that exact implementation/test HEAD: **GREEN**.
+
+- `test`: PASS
+- `go test ./...`: PASS
+- `go vet ./...`: PASS
+- `race`: PASS
+- `go test -race ./...`: PASS
+- PostgreSQL service-backed test environment completed successfully
+- Midtrans sandbox: skipped because authorized credentials were not supplied
+- IAK read-only: skipped because authorized credentials were not supplied
+- XP SINDONESIA read-only: skipped because authorized credentials were not supplied
+
+No authorized live-provider transaction was executed.
+
+### Safety Boundary / Invariants
+
+- administrative explanation remains observational and does not authorize transactions;
+- `Router.Select()` remains the sole routing decision authority;
+- no second routing implementation was introduced;
+- no automatic retry, provider failover, or transaction resubmission was introduced;
+- no duplicate payment/purchase creation was introduced;
+- no ledger mutation, customer balance mutation, treasury movement, or provider funding was introduced;
+- operational health, balance, and freshness remain observational prerequisites for route eligibility and do not imply `Enabled`, `LiveTested`, or `ProductionReady`;
+- no public API exposure was introduced;
+- RCB remains unregistered, non-routable, and fail-closed pending an authoritative PPOB contract.
+
+### Known Limitations
+
+- provider validation jobs remain credential-gated and were skipped in CI #2828;
+- no authorized IAK read-only, XP SINDONESIA read-only, or Midtrans sandbox validation was executed in this milestone;
+- the parity test covers the current operational freshness/health/balance gates but does not replace the router implementation;
+- RCB PPOB protocol details remain incomplete and no RCB request was executed.
+
+### Architecture Impact
+
+Routing explainability now has deterministic parity coverage for the remaining operational readiness gates in the #275 sequence. The change strengthens auditability without adding a routing policy or authorization path and preserves the existing operational-to-routing read-only boundary.
+
+### Next Milestone
+
+**Milestone #277 — Provider Validation Readiness / Credential-Gated Execution Audit**
+
+Scope:
+
+- inspect the existing provider-validation harness and its credential gates for IAK, XP SINDONESIA, and Midtrans;
+- verify that available validation paths remain read-only/sandbox-safe and provider-specific details stay inside DesKaProvider;
+- execute only validations for which authorized credentials and an explicitly verified safe test contract are available;
+- keep skipped credential-gated validation explicitly distinguished from PASS;
+- reassess RCB contract intake separately; do not infer PPOB semantics from the existing RCB payment-gateway material.
+
+Explicit non-goals:
+
+- no speculative RCB PPOB implementation;
+- no automatic retry/failover/resubmission;
+- no provider funding or financial mutation;
+- no ledger/treasury mutation;
+- no public API;
+- no DesKaCash provider-specific coupling.
