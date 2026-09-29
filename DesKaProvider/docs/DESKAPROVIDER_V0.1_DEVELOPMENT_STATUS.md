@@ -1735,3 +1735,122 @@ Explicit non-goals:
 - no public API;
 - no DesKaCash provider-specific coupling.
 
+
+
+## Milestone #283 — Provider Administrative / Routing State Consistency Audit
+
+**Date:** 2026-09-29
+
+### Scope
+
+- audit parity between provider-neutral routing explanations and Router.Select() across the complete operational/recovery state matrix;
+- verify an eligible route has no blocking administrative reason;
+- verify disabled, drifted, operational-stale, unhealthy, insufficient-balance, catalog-stale, and product-unavailable states remain consistently non-route-eligible;
+- preserve administrative diagnostics as observational and Router.Select() as the sole routing decision path.
+
+### Source Finding
+
+The existing explainability suite already covered individual lifecycle, capability, drift, operational, and catalog rejection gates, while #282 covered the explicit drift-recovery lifecycle sequence. The remaining coverage gap was a single deterministic matrix proving the same state is interpreted consistently by the administrative explanation and the actual router decision.
+
+The audit also confirmed that non-blocking readiness gaps such as missing configuration, missing live validation, and missing ProductionReady evidence may coexist with RouteEligible=true; only blocking reasons must force route ineligibility.
+
+### Implementation
+
+Added TestExplainProviderRouteParityAcrossAdministrativeRoutingStateMatrix in DesKaProvider/backend/routing/readiness_explanation_test.go.
+
+The matrix covers:
+
+- recovered and explicitly enabled provider;
+- lifecycle-disabled provider;
+- capability-drifted provider;
+- stale operational snapshot;
+- unhealthy operational state;
+- insufficient balance;
+- stale catalog;
+- unavailable product.
+
+For each state the test compares:
+
+- ExplainProviderRoute(...).RouteEligible;
+- the success/failure outcome of Router.Select();
+- the expected provider-neutral blocking reason where applicable.
+
+No production routing, administrative diagnostics, persistence, or provider adapter behavior was changed.
+
+### Changed Files
+
+- DesKaProvider/backend/routing/readiness_explanation_test.go
+- DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md
+
+No provider credentials or external provider requests were added or executed.
+
+### Verification
+
+Implementation/test final HEAD:
+
+bfe7dff4c0d9f855a3bc5f69b79631dd3249fbb2
+
+GitHub Actions Push CI #2873 / run 36579264773 for that exact HEAD: GREEN.
+
+- test: PASS
+  - go test ./...: PASS
+  - go vet ./...: PASS
+  - PostgreSQL service-backed test environment completed successfully
+- race: PASS
+  - go test -race ./...: PASS
+- iak-read-only: SKIPPED because authorized credentials/manual provider validation were not supplied
+- xp-sindonesia-read-only: SKIPPED because authorized credentials/manual provider validation were not supplied
+- midtrans-sandbox: SKIPPED because authorized credentials/manual provider validation were not supplied
+
+Earlier CI failures during #283 were test-fixture/assertion issues only and were corrected before the final implementation HEAD:
+
+- #2867: fixed a clock fixture mismatch that made the eligible case appear catalog-stale;
+- #2869: fixed the fixture clock but the eligible case assertion incorrectly rejected non-blocking readiness reasons;
+- #2873: final corrected matrix is GREEN.
+
+No authorized live-provider transaction or external provider request was executed.
+
+### Safety Boundary / Invariants
+
+- administrative explanations remain observational and never authorize routing, payment, purchase, payout, retry, failover, or resubmission;
+- RouteEligible is derived from the existing provider-neutral routing gates and does not become a new routing authority;
+- non-blocking readiness gaps do not become artificial routing blockers;
+- blocking lifecycle, capability, drift, operational, and catalog reasons remain reflected consistently with Router.Select();
+- Router.Select remains the sole routing decision path;
+- no automatic retry, provider failover, or transaction resubmission is introduced;
+- no duplicate payment/purchase creation is introduced;
+- no ledger mutation, customer balance mutation, treasury movement, or provider funding is introduced;
+- durable transaction/reference ownership, CAS/idempotency, webhook idempotency, and reconciliation boundaries remain unchanged;
+- no public API exposure is introduced;
+- RCB remains unregistered, non-routable, and fail-closed pending an authoritative PPOB contract.
+
+### Known Limitations
+
+- the parity matrix is deterministic and internal; it does not establish external provider availability;
+- provider-specific validation remains credential-gated and was skipped in CI;
+- administrative explainability still does not itself perform routing selection or authorization;
+- RCB PPOB contract details remain incomplete.
+
+### Architecture Impact
+
+#283 strengthens the boundary between administrative observability and routing authority. The same provider state is now deterministically checked through both explanation and actual selection, while non-blocking readiness information remains informational rather than being promoted into a routing gate.
+
+### Next Milestone
+
+**Milestone #284 — Provider Administrative Diagnostics / Explanation State Machine Deepening**
+
+Scope:
+
+- deepen parity coverage around missing operational state, missing provider state, undeclared capability, adapter-not-implemented, configuration/test/live-validation readiness gaps, and catalog absence;
+- verify deterministic reason composition/order remains stable across mixed blocking and non-blocking conditions;
+- verify administrative snapshots remain observational across state transitions and do not mutate routing inputs;
+- preserve the single routing decision path and all existing safety boundaries.
+
+Explicit non-goals:
+
+- no speculative RCB PPOB implementation;
+- no automatic retry/failover/resubmission;
+- no provider funding or financial mutation;
+- no ledger/treasury mutation;
+- no public API;
+- no DesKaCash provider-specific coupling.
