@@ -6450,6 +6450,7 @@ func TestServiceProviderRouteExplainabilitySnapshotIsDeterministic(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
+	router.Now = func() time.Time { return now.Add(30 * time.Second) }
 	service := &Service{purchaseService: purchaseService}
 
 	first, err := service.ProviderRouteExplainabilitySnapshot(context.Background())
