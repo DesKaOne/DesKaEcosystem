@@ -151,3 +151,35 @@ func TestProviderAdminServiceRejectsUnavailableCapability(t *testing.T) {
 		t.Fatalf("expected ErrCapabilityNotAvailable, got %v", err)
 	}
 }
+
+
+func TestProviderAdminServiceReconcilePreservesExplicitCapabilityDisable(t *testing.T) {
+	store := NewProviderStateStore()
+	state := ProviderState{
+		ProviderName: "mock",
+		Lifecycle: LifecycleEnabled,
+		Capabilities: []Capability{CapabilityPPOB, CapabilityBalance},
+		EnabledCapabilities: []Capability{CapabilityBalance},
+	}
+	if err := store.Put(state); err != nil { t.Fatal(err) }
+	admin, err := NewProviderAdminService(store)
+	if err != nil { t.Fatal(err) }
+	descriptor := provider.CapabilityDescriptor{Capabilities: map[provider.Capability]provider.CapabilityStatus{
+		provider.CapabilityPPOB: {AdapterImplemented: true, Enabled: true},
+		provider.CapabilityBalance: {AdapterImplemented: true, Enabled: true},
+	}}
+	updated, err := admin.ReconcileCapabilityState("mock", providerRegistryForTest(descriptor))
+	if err != nil { t.Fatal(err) }
+	if updated.State.Supports(CapabilityPPOB) {
+		t.Fatal("reconciliation must not re-enable an explicitly disabled capability")
+	}
+	if !updated.State.Supports(CapabilityBalance) {
+		t.Fatal("reconciliation must preserve unrelated enabled capability")
+	}
+}
+
+func providerRegistryForTest(descriptor provider.CapabilityDescriptor) *provider.Registry {
+	r := provider.NewRegistry()
+	_ = r.RegisterWithCapabilities("mock", testPPOBProvider{}, descriptor)
+	return r
+}
