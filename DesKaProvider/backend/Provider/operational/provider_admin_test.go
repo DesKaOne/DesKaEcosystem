@@ -123,7 +123,6 @@ func TestProviderAdminServiceConcurrentLifecycleMutation(t *testing.T) {
 }
 
 
-
 func TestProviderAdminServiceControlsCapabilitiesIndependentlyOfLifecycle(t *testing.T) {
 	store := NewProviderStateStore()
 	state := ProviderState{
