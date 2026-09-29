@@ -3557,11 +3557,13 @@ All experimental source changes were reverted to the previously verified green b
 
 ### Verification
 
-The restored branch was verified at:
+The repository was subsequently restored through the bounded candidate-#301 experiment rollback and re-verified on the exact current branch HEAD:
 
-`d5ce33b6ec0c6e9bd47402e8f4fdd0fd96501b56`
+`5bac9cfb97520d56a07f05d1dcdd098ad9357fb9`
 
-GitHub Actions Push CI #3049 / run 36636579348: GREEN.
+This commit restores the previously verified green Provider v0.1 behavior after the rejected persistence/concurrency experiment. It is the current branch HEAD and supersedes the earlier audit snapshot `d5ce33b6ec0c6e9bd47402e8f4fdd0fd96501b56` as the latest verification point.
+
+GitHub Actions Push CI **#3054** / run **36640783842** for exact HEAD: **GREEN**.
 
 - test: PASS
 - vet: PASS
@@ -3571,7 +3573,7 @@ GitHub Actions Push CI #3049 / run 36636579348: GREEN.
 - XP SINDONESIA read-only: SKIPPED (credential-gated)
 - Midtrans sandbox: SKIPPED (credential-gated)
 
-Pull Request CI #3048 / run 36636572553: GREEN.
+GitHub Actions Pull Request CI **#3055** / run **36640784311** for exact HEAD: **GREEN**.
 
 No provider credential was used for an authorized live transaction and no external provider transaction was executed.
 
