@@ -205,8 +205,8 @@ func TestAdministrativeSnapshotsRemainConsistentWithRoutingAcrossTransitions(t *
 	if !reflect.DeepEqual(beforeRepeat, afterRepeat) {
 		t.Fatalf("repeated terminal explanation changed around routing call: before=%#v after=%#v", beforeRepeat, afterRepeat)
 	}
-	if routeErr.Error() != ErrNoProviderAvailable.Error() {
-		t.Fatalf("unexpected terminal routing error: %q", routeErr.Error())
+	if !errors.Is(routeErr, ErrNoProviderAvailable) || !errors.Is(routeErr, ErrProviderCapabilityDrift) {
+		t.Fatalf("unexpected terminal aggregate routing error: %v", routeErr)
 	}
 }
 
