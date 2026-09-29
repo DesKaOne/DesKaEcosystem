@@ -86,7 +86,7 @@ func TestAdministrativeDiagnosticsRemainObservationalAndSeparateFromRoutingAutho
 		t.Fatal("expected catalog snapshot")
 	}
 
-	selectBefore, err := router.Select(context.Background(), Request{ProductCode: "xld10", Amount: 100})
+	_, err := router.Select(context.Background(), Request{ProductCode: "xld10", Amount: 100})
 	if err == nil {
 		t.Fatal("expected routing to remain blocked")
 	}
@@ -98,7 +98,7 @@ func TestAdministrativeDiagnosticsRemainObservationalAndSeparateFromRoutingAutho
 		t.Fatalf("disabled lifecycle must prevent stale-source sentinels from becoming routing causes: %v", err)
 	}
 	if selectBeforeErr != ErrNoProviderAvailable.Error() {
-		t.Fatalf("unexpected authoritative routing error: %q", selectBefore.Error())
+		t.Fatalf("unexpected authoritative routing error: %q", selectBeforeErr)
 	}
 
 	first, err := ExplainAllProviderRoutes(context.Background(), router)
@@ -165,14 +165,15 @@ func TestAdministrativeDiagnosticsRemainObservationalAndSeparateFromRoutingAutho
 		t.Fatalf("administrative explanation mutated catalog state: before=%#v after=%#v", beforeCatalog, afterCatalog)
 	}
 
-	selectAfter, err := router.Select(context.Background(), Request{ProductCode: "xld10", Amount: 100})
+	_, err = router.Select(context.Background(), Request{ProductCode: "xld10", Amount: 100})
 	if err == nil {
 		t.Fatal("expected routing to remain blocked after diagnostics")
 	}
-	if selectAfterErr != selectBefore.Error() {
+	selectAfterErr := err.Error()
+	if selectAfterErr != selectBeforeErr {
 		t.Fatalf("administrative diagnostics altered authoritative routing error: before=%q after=%q", selectBeforeErr, selectAfterErr)
 	}
 	if !errors.Is(err, ErrNoProviderAvailable) {
-		t.Fatalf("routing lost no-provider sentinel after diagnostics: %v", selectAfter)
+		t.Fatalf("routing lost no-provider sentinel after diagnostics: %v", err)
 	}
 }
