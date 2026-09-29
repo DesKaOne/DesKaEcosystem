@@ -34,7 +34,10 @@ func TestProviderAdminDiagnosticsReturnedDriftCopiesAreIsolated(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	expected := first
+	expected, err := admin.Diagnose("mock", registry)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(first.Drift.Added) == 0 {
 		t.Fatalf("expected drift fixture to expose an added capability: %#v", first.Drift)
 	}
