@@ -217,3 +217,42 @@ jobs:
             exit 1
           fi
           go test ./Provider/XPSindonesia -run '^TestLiveReadOnlyBalance$' -count=1
+
+  digiflazz-validation:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: DesKaProvider/backend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.1"
+          cache: true
+          cache-dependency-path: DesKaProvider/backend/go.mod
+
+      - name: Run authorized DigiFlazz validation
+        env:
+          DIGIFLAZZ_USERNAME: ${{ secrets.DIGIFLAZZ_USERNAME }}
+          DIGIFLAZZ_API_KEY: ${{ secrets.DIGIFLAZZ_API_KEY }}
+          DIGIFLAZZ_ENDPOINT: https://api.digiflazz.com/v1/transaction
+          DIGIFLAZZ_BALANCE_ENDPOINT: https://api.digiflazz.com/v1/cek-saldo
+          DIGIFLAZZ_PRICE_LIST_ENDPOINT: https://api.digiflazz.com/v1/price-list
+          DIGIFLAZZ_INQUIRY_PLN_ENDPOINT: https://api.digiflazz.com/v1/inquiry-pln
+          DIGIFLAZZ_INTEGRATION: "1"
+          DESKAPROVIDER_LIVE_INTEGRATION: "1"
+          DESKAPROVIDER_LIVE_INTEGRATION_PROVIDER: digiflazz
+          DESKAPROVIDER_LIVE_INTEGRATION_ALLOWED_HOSTS: api.digiflazz.com
+          DIGIFLAZZ_INTEGRATION_REFERENCE_ID: ""
+        run: |
+          if [ -z "$DIGIFLAZZ_USERNAME" ] || [ -z "$DIGIFLAZZ_API_KEY" ]; then
+            echo "DIGIFLAZZ_USERNAME and DIGIFLAZZ_API_KEY are required for the explicit validation run."
+            exit 1
+          fi
+          go test ./Provider/DigiFlazz -run '^(TestLiveCSFailureCase|TestLiveReadOnlyBalance)$' -count=1

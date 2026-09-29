@@ -806,6 +806,7 @@ The parity audit found one concrete mismatch: when ProviderState existed, Router
 - DesKaProvider/backend/routing/readiness_explanation.go
 - DesKaProvider/backend/routing/readiness_explanation_test.go
 - DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md
+- .github/workflows/deskaprovider.yml
 
 ### Verification
 
@@ -3654,6 +3655,8 @@ Credential-gated DigiFlazz validation:
 - valid DIGIFLAZZ_USERNAME and DIGIFLAZZ_API_KEY
 
 The transaction validation is intentionally limited to the provider-supplied test tuple and testing=true; no arbitrary production top-up is introduced.
+
+The repository workflow now exposes this validation only through manual workflow dispatch with GitHub Actions secrets; normal push/pull-request CI remains credential-free.
 
 ### Safety Boundary / Invariants
 
