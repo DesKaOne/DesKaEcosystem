@@ -1,6 +1,7 @@
 package operational
 
 import (
+	"sort"
 	"errors"
 	"strings"
 
@@ -93,6 +94,6 @@ func capabilitiesFromDescriptor(descriptor provider.CapabilityDescriptor) []Capa
 			result = append(result, capability)
 		}
 	}
-	sortCapabilities(result)
+	sort.Slice(result, func(i, j int) bool { return result[i] < result[j] })
 	return result
 }
