@@ -156,6 +156,40 @@ func (l *catalogWorkerLifecycle) Shutdown() {
 
 type Service struct{syncService *operational.SyncService;purchaseService *routing.Service;catalogSync *catalog.SyncService;providerState *operational.ProviderStateStore;databaseOwnership *runtimeDatabaseOwnership;balanceLifecycle *operational.SyncWorkerLifecycle;catalogLifecycle *catalogWorkerLifecycle;interval,catalogInterval time.Duration;catalogStart func(context.Context) (context.Context,error);balanceStart func(context.Context) error;balanceShutdown func(context.Context) error;catalogShutdown func() error;balanceShutdownCompleted bool;catalogShutdownCompleted bool;shutdownMu sync.Mutex}
 
+// ProviderDiagnostics exposes provider-neutral administrative diagnostics to
+// internal runtime callers. It never authorizes provider execution.
+func (s *Service) ProviderDiagnostics() ([]operational.ProviderDiagnostic, error) {
+	if s == nil || s.providerState == nil || s.purchaseService == nil || s.purchaseService.Router == nil {
+		return nil, errors.New("provider runtime is not initialized")
+	}
+	admin, err := operational.NewProviderAdminService(s.providerState)
+	if err != nil { return nil, err }
+	return admin.DiagnoseAll(s.purchaseService.Router.Registry)
+}
+
+// ReconcileProviderCapabilities synchronizes persisted capability metadata
+// after an explicit administrative drift investigation. It never enables a
+// provider; callers must explicitly enable the lifecycle afterward.
+func (s *Service) ReconcileProviderCapabilities(name string) (operational.ProviderDiagnostic, error) {
+	if s == nil || s.providerState == nil || s.purchaseService == nil || s.purchaseService.Router == nil {
+		return operational.ProviderDiagnostic{}, errors.New("provider runtime is not initialized")
+	}
+	admin, err := operational.NewProviderAdminService(s.providerState)
+	if err != nil { return operational.ProviderDiagnostic{}, err }
+	return admin.ReconcileCapabilityState(name, s.purchaseService.Router.Registry)
+}
+
+// EnableProvider explicitly changes only the operational lifecycle gate.
+func (s *Service) EnableProvider(name string) (operational.ProviderState, error) {
+	if s == nil || s.providerState == nil {
+		return operational.ProviderState{}, errors.New("provider runtime is not initialized")
+	}
+	admin, err := operational.NewProviderAdminService(s.providerState)
+	if err != nil { return operational.ProviderState{}, err }
+	return admin.Enable(name)
+}
+
+
 func (s *Service) CatalogSyncStatusPersistenceError() error {
 	if s == nil || s.catalogSync == nil {
 		return nil
