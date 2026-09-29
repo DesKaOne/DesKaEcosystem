@@ -1963,3 +1963,99 @@ Explicit non-goals:
 - no ledger/treasury mutation;
 - no public API;
 - no DesKaCash provider-specific coupling.
+
+
+## Milestone #285 — Provider Administrative Snapshot Immutability / Transition Audit
+
+**Date:** 2026-09-29
+
+### Scope
+
+Audit administrative diagnostics and routing explanations for observational immutability and deterministic behavior across provider-state transitions.
+
+### Source Finding
+
+- `ProviderAdminService.Diagnose` reads persisted `ProviderState` through the store and computes capability drift without mutating the source state.
+- `ProviderAdminService.DiagnoseAll` builds a deterministic result from sorted persisted provider state and returns diagnostic values independent from the underlying store.
+- `ProviderStateStore.Get` and `All` already return defensive copies of the mutable capability slice.
+- Administrative reconciliation is the explicit mutation boundary; diagnostics themselves do not reconcile, enable, retry, fail over, resubmit, fund, or otherwise authorize.
+- Routing explanation remains observational and does not become a second routing authority.
+
+### Implementation
+
+Test-only coverage was added for:
+
+1. **Returned-state immutability**
+   - mutate the `Capabilities` slice returned by `Diagnose`;
+   - verify persisted `ProviderState` remains unchanged;
+   - mutate the `Capabilities` slice returned by `DiagnoseAll`;
+   - verify persisted `ProviderState` remains unchanged.
+
+2. **Deterministic transition sequence**
+   - repeated clean diagnostics are identical;
+   - capability-fingerprint drift produces identical repeated drift diagnostics;
+   - explicit reconciliation clears drift but keeps lifecycle disabled;
+   - reconciliation result matches an immediate subsequent diagnosis;
+   - explicit lifecycle enable restores only the lifecycle gate;
+   - repeated enabled diagnostics remain identical and drift-free.
+
+No production routing, provider adapter, authorization, or financial behavior was changed.
+
+### Changed Files
+
+- `DesKaProvider/backend/Provider/operational/provider_diagnostics_test.go`
+- `DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md`
+
+### Verification
+
+Implementation/test commit:
+
+`20fe1d82b11a446dcd760329afd83a02f635f23b`
+
+GitHub Actions:
+
+- Push CI #2882 / run `36581177171`: **GREEN**
+  - test: PASS
+  - race: PASS
+  - IAK read-only: skipped (credential-gated)
+  - Midtrans sandbox: skipped (credential-gated)
+  - XP SINDONESIA read-only: skipped (credential-gated)
+
+Previous branch HEAD before #285, `48890119846150d105c9070d4f1b4e1f6e1e23c3`, also had CI #2881 / run `36580645638`: **GREEN**.
+
+No authorized live-provider transaction was executed.
+
+### Safety Boundary / Invariants
+
+- `Diagnose` and `DiagnoseAll` remain observational and do not mutate provider state.
+- Returned diagnostic provider-state capability slices cannot mutate the underlying persisted state.
+- Repeated diagnostics remain deterministic for the same state.
+- State transitions remain explicit: drift is detected, reconciliation may disable lifecycle, and only explicit enable restores lifecycle.
+- Diagnostics do not authorize payment, purchase, payout, routing, retry, failover, resubmission, funding, ledger mutation, treasury movement, or duplicate transaction creation.
+- `Router.Select` remains the sole routing decision path.
+- Readiness evidence remains separate from operational lifecycle and routing eligibility.
+- RCB remains unregistered/non-routable/fail-closed pending an authoritative PPOB contract.
+- No public API or DesKaCash provider-specific coupling is introduced.
+
+### Known Limitations
+
+- Coverage is deterministic/internal and does not establish external provider availability.
+- IAK, XP SINDONESIA, and Midtrans external validation remain credential-gated; no authorized live transaction was executed.
+- RCB PPOB contract acquisition remains incomplete.
+
+### Architecture Impact
+
+Administrative diagnostics now have explicit immutability and transition-determinism coverage, reinforcing the boundary between observation, explicit operational mutation, readiness evidence, and routing authority.
+
+### Next Milestone
+
+**Milestone #286 — Provider Administrative / Routing Explanation Transition Parity**
+
+Scope:
+
+- verify `ExplainProviderRoute` remains observational across lifecycle, capability, drift, operational, and catalog transitions;
+- verify repeated explanations remain deterministic before and after explicit reconciliation/enablement;
+- prove explanation state transitions remain aligned with `Router.Select` without introducing a second routing authority;
+- preserve all existing safety boundaries.
+
+No speculative RCB PPOB implementation, automatic retry/failover/resubmission, funding, ledger/treasury mutation, public API, or DesKaCash provider-specific coupling is included.
