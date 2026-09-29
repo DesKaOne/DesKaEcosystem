@@ -23,7 +23,7 @@ func TestProviderStateStoreSeparatesLifecycleFromCapabilities(t *testing.T) {
 	state := ProviderState{
 		ProviderName: "mock",
 		Lifecycle:    LifecycleEnabled,
-		Capabilities: []Capability{CapabilityWebhook, CapabilityPPOB, CapabilityBalance},
+		Capabilities: []Capability{CapabilityWebhook, CapabilityPPOB, CapabilityBalance, CapabilityCatalog, CapabilityPayout},
 	}
 	if err := store.Put(state); err != nil {
 		t.Fatal(err)
@@ -36,7 +36,7 @@ func TestProviderStateStoreSeparatesLifecycleFromCapabilities(t *testing.T) {
 	if !got.Enabled() {
 		t.Fatal("expected enabled lifecycle")
 	}
-	if !got.Supports(CapabilityPPOB) || !got.Supports(CapabilityBalance) || !got.Supports(CapabilityWebhook) {
+	if !got.Supports(CapabilityPPOB) || !got.Supports(CapabilityBalance) || !got.Supports(CapabilityWebhook) || !got.Supports(CapabilityCatalog) || !got.Supports(CapabilityPayout) {
 		t.Fatalf("expected capabilities to be preserved: %#v", got.Capabilities)
 	}
 	if got.Supports(CapabilityPayout) {
