@@ -1425,3 +1425,33 @@ Explicit non-goals:
 - no ledger/treasury mutation;
 - no public API;
 - no DesKaCash provider-specific coupling.
+
+### #279 Verification Amendment
+
+After the initial #279 implementation verification, the documentation-only closure commit exposed an existing timing-sensitive runtime race test:
+
+TestServiceRunShutdownTimeoutKeepsDatabaseOwnershipUntilWorkerStops
+
+The test used a 100ms parent deadline and intermittently returned a nil shutdown error under CI scheduling. The runtime shutdown contract itself was not changed. The test-only deadline window was widened to 500ms so the assertion remains deterministic while preserving the same ownership/deadline semantics.
+
+Final #279 implementation/test HEAD:
+
+b0bd1b2d9932978083ecf818fe17e2b23d6c659d
+
+GitHub Actions run #2846 for that exact HEAD: GREEN.
+
+- test: PASS
+- go test ./...: PASS
+- go vet ./...: PASS
+- race: PASS
+- go test -race ./...: PASS
+- PostgreSQL service-backed environment: PASS
+- IAK read-only: SKIPPED
+- XP SINDONESIA read-only: SKIPPED
+- Midtrans sandbox: SKIPPED
+
+Changed by the amendment:
+
+- DesKaProvider/backend/runtime/runtime_test.go — test-only timing stabilization; no production runtime behavior change.
+
+No provider credentials or external provider requests were executed.
