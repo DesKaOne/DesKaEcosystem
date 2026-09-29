@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
-	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/Mock"
+	"mock "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/Mock"
 	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/operational"
 	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/routing"
 )
@@ -14,7 +14,7 @@ func TestProviderDiagnosticsRecoveryKeepsReadinessSeparate(t *testing.T) {
 	descriptor := provider.CapabilityDescriptor{Capabilities: map[provider.Capability]provider.CapabilityStatus{
 		provider.CapabilityPPOB: {Verified: true, Configured: true, AdapterImplemented: true, Tested: true, Enabled: true, LiveTested: false},
 	}}
-	if err := registry.RegisterWithCapabilities("mock", Mock.New(Mock.Config{Products: []provider.Product{{Code: "xld10", Name: "Test"}}}), descriptor); err != nil {
+	if err := registry.RegisterWithCapabilities("mock", mock.New(Mock.Config{Products: []provider.Product{{Code: "xld10", Name: "Test"}}}), descriptor); err != nil {
 		t.Fatal(err)
 	}
 	operationalStore := operational.NewMemoryStore()
