@@ -128,6 +128,9 @@ func TestRouterAggregateErrorsRemainDeterministicAcrossTransitions(t *testing.T)
 	}); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := admin.Disable("operational-stale"); err != nil {
+		t.Fatal(err)
+	}
 	err = join()
 	assertAggregate("after-operational-recovery", err, ErrCatalogStale)
 
