@@ -10,7 +10,7 @@ import (
 	"context"
 	"errors"
 
-	provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/backend/Provider"
+	provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
 )
 
 var ErrNotImplemented = errors.New("RCB adapter operation is not implemented")
