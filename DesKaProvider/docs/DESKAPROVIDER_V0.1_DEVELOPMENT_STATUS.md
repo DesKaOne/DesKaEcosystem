@@ -16403,3 +16403,117 @@ Scope:
 - preserve the observational/non-authorizing boundary.
 
 No automatic failover, payment resubmission, provider funding, customer ledger mutation, treasury movement, duplicate purchase creation, or public API exposure is included in #269.
+
+
+## Milestone #269 — Provider Administrative Snapshot Freshness / Drift Coverage
+
+**Date:** 2026-09-29
+
+### Scope
+
+- add explicit administrative snapshot-generation time;
+- add deterministic source freshness metadata for operational and catalog observations;
+- make capability drift explicitly auditable in the administrative snapshot;
+- add restart/recovery coverage by reconstructing administrative observations from persisted provider-state, operational, and catalog sources;
+- preserve the observational/non-authorizing boundary and existing route eligibility behavior.
+
+### Implementation
+
+- added `GeneratedAt` to `AdministrativeRouteExplanationSnapshot`, sourced once from the existing router clock;
+- added provider-level `ProviderAdministrativeFreshness` metadata containing operational presence/last-checked time/freshness, catalog presence/sync time/freshness, and explicit capability-drift state;
+- reused existing operational freshness evaluation, catalog freshness rules, and capability-drift detector rather than introducing parallel routing policy;
+- kept freshness metadata observational; it does not mutate provider state, capability metadata, operational snapshots, catalog snapshots, or transactions;
+- added deterministic coverage for fresh sources and explicit drift audit;
+- added restart/recovery coverage that reconstructs provider-state, operational snapshots, and catalog snapshots from their existing JSON persistence and verifies administrative freshness metadata survives reconstruction;
+- froze administrative snapshot generation time in deterministic service tests so the new timestamp does not alter the existing deterministic inspection contract.
+
+### Changed Files
+
+- `DesKaProvider/backend/routing/administrative_explanation.go`
+- `DesKaProvider/backend/routing/administrative_freshness.go`
+- `DesKaProvider/backend/routing/administrative_explanation_test.go`
+- `DesKaProvider/backend/runtime/runtime_test.go`
+- `DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md`
+
+### Verification
+
+Final implementation/test HEAD before documentation update:
+
+`4cbe0f4da1008c48b647e320180a2865d3280022`
+
+GitHub Actions run #2794 for that exact HEAD:
+
+- `test`: PASS
+- `go vet ./...`: PASS
+- `race`: PASS
+- PostgreSQL service-backed integration environment: executed by CI
+- Midtrans sandbox validation: skipped as expected
+- IAK read-only validation: skipped as expected
+- XP SINDONESIA read-only validation: skipped as expected
+- no authorized live-provider transaction was executed
+
+During implementation, intermediate CI failures were corrected before closure:
+
+- missing `context` import in the new freshness helper;
+- missing `filepath` import in recovery tests;
+- existing deterministic snapshot test updated to freeze the new generation timestamp;
+- recovery fixture corrected to satisfy the existing healthy operational timestamp invariant.
+
+No production routing policy was changed to resolve those test failures.
+
+### Safety Boundary / Invariants
+
+- administrative aggregation and freshness metadata remain observational only;
+- snapshot generation time is metadata, not authorization;
+- operational freshness remains separate from route eligibility and does not promote provider capability readiness;
+- catalog freshness remains separate from route eligibility policy and does not authorize catalog use;
+- capability drift remains diagnostic and does not trigger automatic failover or retry;
+- administrative snapshot generation never mutates provider lifecycle, capability metadata, operational state, catalog state, or transaction state;
+- router remains the sole routing decision path;
+- no payment/purchase/payout authorization is introduced;
+- no automatic retry, provider failover, or transaction resubmission is introduced;
+- no provider funding, customer ledger mutation, customer balance mutation, or treasury movement is introduced;
+- no public API exposure is introduced.
+
+### Known Limitations
+
+- administrative snapshots are reconstructed observational views; `GeneratedAt` intentionally changes for each new snapshot generation;
+- live provider validation remains credential-gated and was not executed by #269;
+- RCB still has no implemented adapter; repository coverage remains a placeholder state;
+- XP SINDONESIA PPOB remains partial;
+- payout adapter remains absent;
+- production routing policy remains non-final;
+- DesKaCash end-to-end integration remains incomplete;
+- reconciliation end-to-end remains incomplete.
+
+### Architecture Impact
+
+The administrative explainability layer now has explicit temporal provenance for its own snapshot and explicit source-observation freshness without becoming a second routing authority. Restart/recovery can reconstruct the same provider-neutral freshness/drift evidence from persisted operational sources. The routing boundary remains unchanged.
+
+### Next Milestone
+
+**Milestone #270 — RCB Adapter Foundation / Capability Boundary**
+
+Source-based rationale:
+
+- current runtime composition has no implemented RCB adapter;
+- RCB is represented only as a placeholder state in administrative explainability coverage;
+- the capability matrix already provides the correct provider-neutral boundary for introducing a concrete adapter;
+- completing the adapter foundation is therefore a concrete implementation boundary before attempting to classify RCB as live-validated or ProductionReady.
+
+Scope candidate:
+
+- define the provider-neutral RCB adapter foundation from verified provider contract documentation;
+- register only capabilities actually implemented and deterministically tested;
+- add configuration/credential gating without committing credentials;
+- add deterministic adapter contract tests;
+- keep live validation explicitly gated and separate from implementation/test readiness.
+
+Explicit non-goals:
+
+- no ProductionReady promotion from adapter implementation alone;
+- no automatic retry/failover;
+- no provider funding;
+- no ledger/customer-balance/treasury mutation;
+- no public API;
+- no DesKaCash provider-specific coupling.
