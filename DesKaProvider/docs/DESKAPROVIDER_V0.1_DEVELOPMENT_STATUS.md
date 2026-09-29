@@ -2481,3 +2481,103 @@ Scope:
 - retain all existing safety boundaries.
 
 No speculative RCB PPOB implementation, automatic retry/failover/resubmission, funding, ledger/treasury mutation, public API, or DesKaCash provider-specific coupling is included.
+
+
+## Milestone #290 — Provider Administrative Explanation / Aggregate Reason Consistency Audit
+
+**Date:** 2026-09-29
+
+### Scope
+
+Compare aggregate provider explanation blockers with Router.Select joined-error membership across a mixed multi-provider matrix, and verify that earlier routing gates do not contribute later aggregate sentinels.
+
+### Source Finding
+
+- Router.Select evaluates routing gates sequentially for each candidate.
+- Capability drift is checked before operational input; an operationally stale candidate is rejected before catalog evaluation.
+- Catalog staleness is evaluated only after operational gates pass.
+- Therefore a single candidate that fails an earlier gate cannot contribute a later router aggregate sentinel.
+- ExplainProviderRoute is intentionally observational and evaluates administrative state independently; it may report multiple blockers for the same provider, including later-state blockers that Router.Select would never reach for that candidate.
+- The correct parity boundary is therefore aggregate evidence across providers plus gate-specific Router.Select error membership, not a requirement that explanation reasons equal the exact router error list for one provider.
+
+### Implementation
+
+Added TestExplainProviderRouteAggregateReasonsMatchRouterJoinedErrorGates to DesKaProvider/backend/routing/readiness_explanation_test.go.
+
+The deterministic matrix covers:
+- capability drift with an intentionally stale operational snapshot;
+- operational snapshot stale with fresh catalog state;
+- catalog stale after fresh operational state;
+- insufficient balance as an administrative-only blocking reason because Router.Select has no dedicated insufficient-balance aggregate sentinel.
+
+The test verifies:
+- each provider's explanation exposes its relevant blocking reason;
+- administrative explanation may expose later blockers without becoming a routing authority;
+- isolated capability-drift routing contributes capability drift but not operational-stale or catalog-stale aggregate errors;
+- isolated operational-stale routing contributes operational-stale but not catalog-stale or capability-drift aggregate errors;
+- isolated catalog-stale routing contributes catalog-stale without inventing unrelated aggregate errors;
+- aggregate error semantics remain provider-neutral and are checked with errors.Is.
+
+Two test-fixture corrections were required during CI:
+1. the catalog memory store rejects backwards timestamp replacement, so the stale catalog is created stale at initial fixture construction;
+2. the first assertion incorrectly required administrative explanation to suppress later blockers. It was corrected to explicitly test the intended distinction between observational explanation and sequential Router.Select gating.
+
+No production routing or explanation logic changed.
+
+### Changed Files
+
+- DesKaProvider/backend/routing/readiness_explanation_test.go
+- DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md
+
+### Verification
+
+Final implementation/test HEAD:
+
+812812ea04d9d1a74344fdec2f0b2a934106983a
+
+GitHub Actions:
+- Earlier Push/PR runs #2918/#2919 and #2920/#2921 exposed and corrected test-only fixture/semantic issues.
+- Final Push CI #2922 / run 36596634584: **GREEN**
+  - test: PASS
+  - vet: PASS
+  - PostgreSQL service-backed integration: PASS
+  - race: PASS
+  - IAK read-only: SKIPPED (credential-gated)
+  - XP SINDONESIA read-only: SKIPPED (credential-gated)
+  - Midtrans sandbox: SKIPPED (credential-gated)
+
+No authorized live-provider transaction or external provider request was executed.
+
+### Safety Boundary / Invariants
+
+- Router.Select remains the sole routing decision authority.
+- Administrative explanation remains observational and may contain more diagnostic evidence than the router's reached gates.
+- Aggregate router errors remain descriptive and do not authorize payment, purchase, payout, retry, failover, resubmission, funding, or duplicate transaction creation.
+- No readiness promotion or lifecycle enablement is inferred from explanation or joined errors.
+- No ledger, customer balance, or treasury mutation is introduced.
+- RCB remains unregistered, non-routable, and fail-closed pending an authoritative PPOB contract.
+- No public API or DesKaCash provider-specific coupling is introduced.
+
+### Known Limitations
+
+- Coverage is deterministic/internal and does not establish external provider availability.
+- IAK, XP SINDONESIA, and Midtrans external validation remains credential-gated.
+- No authorized live-provider transaction was executed.
+- RCB PPOB contract acquisition remains incomplete.
+- The test validates current provider-neutral sentinel membership, not provider-specific external error payloads.
+
+### Architecture Impact
+
+#290 clarifies the boundary between administrative explanation and routing error semantics: explanation is an observational aggregate of provider state, while Router.Select remains sequential and authoritative. This prevents accidental creation of a second routing authority while still providing deterministic aggregate diagnostics.
+
+### Next Milestone
+
+**Milestone #291 — Provider Administrative Snapshot / Diagnostic Non-Mutation Audit**
+
+Scope:
+- verify Diagnose, DiagnoseAll, and ExplainProviderRoute do not mutate provider state, capability fingerprints, operational snapshots, catalog snapshots, readiness metadata, or routing state;
+- verify repeated diagnostics before and after controlled state transitions remain deterministic and isolated;
+- verify returned diagnostic/explanation data cannot mutate underlying state through shared slices or nested references;
+- preserve Router.Select as the sole routing authority.
+
+No speculative RCB PPOB implementation, automatic retry/failover/resubmission, funding, ledger/treasury mutation, public API, or DesKaCash provider-specific coupling is included.
