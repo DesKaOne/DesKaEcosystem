@@ -189,6 +189,33 @@ func (s *Service) EnableProvider(name string) (operational.ProviderState, error)
 	return admin.Enable(name)
 }
 
+func (s *Service) DisableProvider(name string) (operational.ProviderState, error) {
+	if s == nil || s.providerState == nil {
+		return operational.ProviderState{}, errors.New("provider runtime is not initialized")
+	}
+	admin, err := operational.NewProviderAdminService(s.providerState)
+	if err != nil { return operational.ProviderState{}, err }
+	return admin.Disable(name)
+}
+
+func (s *Service) EnableProviderCapability(name string, capability provider.Capability) (operational.ProviderState, error) {
+	if s == nil || s.providerState == nil {
+		return operational.ProviderState{}, errors.New("provider runtime is not initialized")
+	}
+	admin, err := operational.NewProviderAdminService(s.providerState)
+	if err != nil { return operational.ProviderState{}, err }
+	return admin.EnableCapability(name, operational.Capability(capability))
+}
+
+func (s *Service) DisableProviderCapability(name string, capability provider.Capability) (operational.ProviderState, error) {
+	if s == nil || s.providerState == nil {
+		return operational.ProviderState{}, errors.New("provider runtime is not initialized")
+	}
+	admin, err := operational.NewProviderAdminService(s.providerState)
+	if err != nil { return operational.ProviderState{}, err }
+	return admin.DisableCapability(name, operational.Capability(capability))
+}
+
 // ProviderRouteExplainabilitySnapshot returns a deterministic administrative snapshot
 // across every registered provider and the canonical capability vocabulary. It is
 // observational only and never authorizes provider execution.
@@ -301,7 +328,13 @@ for _, name := range registry.Names() {
 			// required before routing can use the provider again.
 			state.Lifecycle = operational.LifecycleDisabled
 		}
+		previousEnabled := append([]operational.Capability(nil), state.EnabledCapabilities...)
 		state.Capabilities = capabilitiesFromDescriptor(descriptor)
+		if previousEnabled == nil {
+			state.EnabledCapabilities = enabledCapabilitiesFromDescriptor(descriptor)
+		} else {
+			state.EnabledCapabilities = retainEnabledCapabilities(previousEnabled, descriptor)
+		}
 		state.CapabilityFingerprint = operational.CapabilityMetadataFingerprint(descriptor)
 		if e = stateStore.Put(state); e != nil { return nil, e }
 	} // persist synchronized provider lifecycle/capability state before router construction
@@ -315,6 +348,34 @@ if e:=runRuntimeInitializationFailureHook("before-ownership-transfer", ownership
 if err := checkRuntimeInitializationContext(ctx); err != nil { return nil, err }
 ownership.transferToService()
 return service,nil
+}
+
+func enabledCapabilitiesFromDescriptor(descriptor provider.CapabilityDescriptor) []operational.Capability {
+	capabilities := make([]operational.Capability, 0, len(descriptor.Capabilities))
+	for capability, status := range descriptor.Capabilities {
+		if status.AdapterImplemented && status.Enabled {
+			capabilities = append(capabilities, operational.Capability(capability))
+		}
+	}
+	sort.Slice(capabilities, func(i, j int) bool { return capabilities[i] < capabilities[j] })
+	return capabilities
+}
+
+func retainEnabledCapabilities(previous []operational.Capability, descriptor provider.CapabilityDescriptor) []operational.Capability {
+	allowed := make(map[provider.Capability]struct{}, len(descriptor.Capabilities))
+	for capability, status := range descriptor.Capabilities {
+		if status.AdapterImplemented && status.Enabled {
+			allowed[capability] = struct{}{}
+		}
+	}
+	result := make([]operational.Capability, 0, len(previous))
+	for _, capability := range previous {
+		if _, ok := allowed[provider.Capability(capability)]; ok {
+			result = append(result, capability)
+		}
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i] < result[j] })
+	return result
 }
 
 func capabilitiesFromDescriptor(descriptor provider.CapabilityDescriptor) []operational.Capability {
