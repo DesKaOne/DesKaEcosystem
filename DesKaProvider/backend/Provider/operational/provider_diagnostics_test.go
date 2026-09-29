@@ -1,6 +1,7 @@
 package operational
 
 import (
+	"reflect"
 	"testing"
 
 	provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
@@ -96,5 +97,149 @@ func TestProviderAdminDiagnoseAllIsDeterministic(t *testing.T) {
 	if err != nil { t.Fatal(err) }
 	if len(diagnostics) != 2 || diagnostics[0].State.ProviderName != "alpha" || diagnostics[1].State.ProviderName != "zeta" {
 		t.Fatalf("diagnostics must be deterministic: %#v", diagnostics)
+	}
+}
+
+
+func TestProviderAdminDiagnosticsDoNotMutateStateThroughReturnedCopies(t *testing.T) {
+	registry := diagnosticRegistry(t)
+	store := NewProviderStateStore()
+	descriptor, err := registry.Capabilities("mock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := ProviderState{
+		ProviderName:          "mock",
+		Lifecycle:             LifecycleEnabled,
+		Capabilities:          []Capability{CapabilityPPOB, CapabilityWebhook},
+		CapabilityFingerprint: CapabilityMetadataFingerprint(descriptor),
+	}
+	if err := store.Put(original); err != nil {
+		t.Fatal(err)
+	}
+
+	admin, err := NewProviderAdminService(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	diagnostic, err := admin.Diagnose("mock", registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	diagnostic.State.Capabilities[0] = CapabilityPayment
+	diagnostic.State.Capabilities = append(diagnostic.State.Capabilities, CapabilityPayout)
+
+	current, ok := store.Get("mock")
+	if !ok {
+		t.Fatal("expected provider state")
+	}
+	if !reflect.DeepEqual(current, original) {
+		t.Fatalf("mutating Diagnose result must not mutate stored state: got %#v want %#v", current, original)
+	}
+
+	all, err := admin.DiagnoseAll(registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 1 {
+		t.Fatalf("expected one diagnostic, got %#v", all)
+	}
+	all[0].State.Capabilities[0] = CapabilityPayment
+
+	current, ok = store.Get("mock")
+	if !ok {
+		t.Fatal("expected provider state")
+	}
+	if !reflect.DeepEqual(current, original) {
+		t.Fatalf("mutating DiagnoseAll result must not mutate stored state: got %#v want %#v", current, original)
+	}
+}
+
+func TestProviderAdminDiagnosticsRemainDeterministicAcrossStateTransitions(t *testing.T) {
+	registry := diagnosticRegistry(t)
+	store := NewProviderStateStore()
+	descriptor, err := registry.Capabilities("mock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fingerprint := CapabilityMetadataFingerprint(descriptor)
+	if err := store.Put(ProviderState{
+		ProviderName:          "mock",
+		Lifecycle:             LifecycleEnabled,
+		Capabilities:          []Capability{CapabilityPPOB, CapabilityWebhook},
+		CapabilityFingerprint: fingerprint,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	admin, err := NewProviderAdminService(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cleanA, err := admin.Diagnose("mock", registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleanB, err := admin.Diagnose("mock", registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(cleanA, cleanB) {
+		t.Fatalf("repeated clean diagnostics must be deterministic: %#v %#v", cleanA, cleanB)
+	}
+
+	driftedState, ok := store.Get("mock")
+	if !ok {
+		t.Fatal("expected provider state")
+	}
+	driftedState.CapabilityFingerprint = "drifted"
+	if err := store.Put(driftedState); err != nil {
+		t.Fatal(err)
+	}
+	driftA, err := admin.Diagnose("mock", registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	driftB, err := admin.Diagnose("mock", registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(driftA, driftB) || !driftA.Drifted {
+		t.Fatalf("repeated drift diagnostics must be deterministic: %#v %#v", driftA, driftB)
+	}
+
+	reconciledA, err := admin.ReconcileCapabilityState("mock", registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reconciledB, err := admin.Diagnose("mock", registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(reconciledA, reconciledB) {
+		t.Fatalf("reconciliation result and immediate diagnosis must agree: %#v %#v", reconciledA, reconciledB)
+	}
+	if reconciledA.Drifted || reconciledA.State.Enabled() {
+		t.Fatalf("reconciliation must clear drift without enabling lifecycle: %#v", reconciledA)
+	}
+
+	if _, err := admin.Enable("mock"); err != nil {
+		t.Fatal(err)
+	}
+	enabledA, err := admin.Diagnose("mock", registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	enabledB, err := admin.Diagnose("mock", registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(enabledA, enabledB) {
+		t.Fatalf("repeated enabled diagnostics must be deterministic: %#v %#v", enabledA, enabledB)
+	}
+	if enabledA.Drifted || !enabledA.State.Enabled() {
+		t.Fatalf("explicit enable should only restore lifecycle after reconciliation: %#v", enabledA)
 	}
 }
