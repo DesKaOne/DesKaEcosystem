@@ -993,8 +993,12 @@ func TestExplainProviderRouteAggregateReasonsMatchRouterJoinedErrorGates(t *test
 		}); err != nil {
 			t.Fatal(err)
 		}
+		syncedAt := now
+		if name == "catalog-stale" {
+			syncedAt = now.Add(-2 * time.Hour)
+		}
 		if err := catalogStore.Put(catalog.Snapshot{
-			ProviderName: name, Products: []provider.Product{{Code: "xld10"}}, SyncedAt: now,
+			ProviderName: name, Products: []provider.Product{{Code: "xld10"}}, SyncedAt: syncedAt,
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -1025,15 +1029,6 @@ func TestExplainProviderRouteAggregateReasonsMatchRouterJoinedErrorGates(t *test
 	if err := store.Put(operational.Snapshot{
 		ProviderName: "operational-stale", Balance: 100000, Currency: "IDR",
 		Health: operational.HealthHealthy, LastCheckedAt: now.Add(-2 * time.Hour),
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	// Catalog stale is reached after operational freshness and must contribute
-	// the catalog-stale aggregate sentinel.
-	if err := catalogStore.Put(catalog.Snapshot{
-		ProviderName: "catalog-stale", Products: []provider.Product{{Code: "xld10"}},
-		SyncedAt: now.Add(-2 * time.Hour),
 	}); err != nil {
 		t.Fatal(err)
 	}
