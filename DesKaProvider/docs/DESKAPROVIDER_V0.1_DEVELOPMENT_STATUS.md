@@ -3765,3 +3765,91 @@ External DigiFlazz validation remains explicit and credential-gated. No provider
 ### Next Concrete Milestone
 
 After DigiFlazz confirms the API IP allowlist, run the credential-gated Go validation for the official CS test tuple and read-only balance. If the provider returns the documented test result, record the external evidence without promoting ProductionReady automatically.
+
+
+## Post-Milestone #303 — Provider v0.1 Readiness Audit
+
+**Audit date:** 2026-09-30
+
+### Actual Repository State
+
+- branch: `dev/deskaprovider-v0.1`
+- audit HEAD before this documentation checkpoint: `4666f3dec16c178bf0c7de167003a20712d97a75`
+- latest source commits after #303 are limited to DigiFlazz Buyer hardening and the credential-gated validation workflow already recorded above;
+- the rejected post-#300 concurrent control-plane mutation experiment remains reverted and is not being reactivated.
+
+### Exact-HEAD CI
+
+At audit time, HEAD `4666f3dec16c178bf0c7de167003a20712d97a75` had:
+
+- Push CI #3063 / run `36646029499`: GREEN
+- Pull Request CI #3064 / run `36646035077`: GREEN
+- unit/integration test suite: PASS
+- vet: PASS
+- race suite: PASS
+- PostgreSQL service-backed tests: PASS
+- credential-gated IAK / XP SINDONESIA / Midtrans / DigiFlazz validation: not executed as part of normal CI
+
+### Provider Readiness Audit
+
+**DigiFlazz**
+- business/legal readiness: Buyer onboarding/KYC complete and PKS signed via Privy;
+- technical integration: implemented and deterministic-test covered;
+- external validation: BLOCKED until DigiFlazz IP allowlisting is confirmed;
+- observed Python `rc=45` remains evidence of the IP allowlist blocker only;
+- LiveTested: NOT PROMOTED;
+- ProductionReady: NOT PROMOTED.
+
+**IAK**
+- adapter/capability implementation exists;
+- balance/catalog/webhook paths exist;
+- authorized external read-only evidence is still missing;
+- LiveTested / ProductionReady: NOT PROMOTED.
+
+**XP SINDONESIA**
+- partial PPOB plus balance/webhook implementation exists;
+- unsupported operations remain fail-closed;
+- authorized external read-only evidence is still missing;
+- LiveTested / ProductionReady: NOT PROMOTED.
+
+**Midtrans**
+- payment/webhook implementation and sandbox validation harness exist;
+- authorized sandbox evidence is still missing;
+- ProductionReady: NOT PROMOTED.
+
+**RCB**
+- remains payment-gateway-only in the verified repository model;
+- PPOB H2H contract remains unavailable/unverified;
+- remains unregistered, non-routable, and fail-closed for PPOB.
+
+### Internal Architecture Finding
+
+The audit did not identify a sufficiently evidenced repository-level defect that justifies another production milestone at this point.
+
+The following boundaries remain intact:
+
+- `Router.Select()` is the routing authority;
+- administrative explanation is observational;
+- operational `EnabledCapabilities` remains separate from registry metadata and lifecycle state;
+- capability drift fails closed;
+- restart/recovery preserves explicit operational disables;
+- provider adapters do not mutate ledger, customer balance, treasury, or provider funding;
+- no automatic retry, transaction failover, or transaction resubmission is introduced;
+- provider-specific vocabulary remains inside provider boundaries;
+- credential presence does not promote readiness;
+- deterministic tests do not promote LiveTested;
+- LiveTested does not automatically promote ProductionReady.
+
+### Decision
+
+**No new numbered milestone is opened by this audit.**
+
+The next concrete readiness step is external evidence, in this order:
+
+1. confirm DigiFlazz IP allowlisting and run the existing credential-gated official test tuple plus read-only balance validation;
+2. run authorized IAK read-only validation;
+3. run authorized XP SINDONESIA read-only balance validation;
+4. run authorized Midtrans sandbox lifecycle validation;
+5. reassess explicit ProductionReady evidence only after the applicable external validation results exist.
+
+No provider production transaction is authorized or executed by this audit.
