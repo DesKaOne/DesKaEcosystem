@@ -93,3 +93,64 @@ func TestCapabilityMatrixIsProviderNeutralSnapshot(t *testing.T) {
 		t.Fatal("matrix must be a defensive snapshot")
 	}
 }
+
+
+func TestCapabilityStatusReadinessEvidenceDoesNotImplicitlyPromoteLiveValidation(t *testing.T) {
+	cases := []struct {
+		name  string
+		state CapabilityStatus
+		want  CapabilityState
+	}{
+		{
+			name:  "configured and verified only",
+			state: CapabilityStatus{Verified: true, Configured: true, AdapterImplemented: true, Enabled: true},
+			want:  CapabilityImplemented,
+		},
+		{
+			name:  "tested without live validation",
+			state: CapabilityStatus{Verified: true, Configured: true, AdapterImplemented: true, Tested: true, Enabled: true},
+			want:  CapabilityTested,
+		},
+		{
+			name:  "production flag without live validation",
+			state: CapabilityStatus{Verified: true, Configured: true, AdapterImplemented: true, Tested: true, Enabled: true, ProductionReady: true},
+			want:  CapabilityTested,
+		},
+		{
+			name:  "live validation is the explicit promotion boundary",
+			state: CapabilityStatus{Verified: true, Configured: true, AdapterImplemented: true, Tested: true, Enabled: true, LiveTested: true},
+			want:  CapabilityLiveValidated,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			before := tc.state
+			if got := tc.state.State(); got != tc.want {
+				t.Fatalf("State() = %q, want %q", got, tc.want)
+			}
+			if tc.state != before {
+				t.Fatalf("State() mutated readiness evidence: before=%#v after=%#v", before, tc.state)
+			}
+		})
+	}
+}
+
+func TestCapabilityStatusProductionReadyRequiresLiveValidationEvidence(t *testing.T) {
+	status := CapabilityStatus{
+		Verified: true, Configured: true, AdapterImplemented: true,
+		Tested: true, Enabled: true, ProductionReady: true,
+	}
+	if err := status.Validate(); err == nil {
+		t.Fatal("ProductionReady must require explicit LiveTested evidence")
+	}
+}
+
+func TestCapabilityStatusLiveValidationRequiresExplicitEnablement(t *testing.T) {
+	status := CapabilityStatus{
+		Verified: true, Configured: true, AdapterImplemented: true,
+		Tested: true, Enabled: false, LiveTested: true,
+	}
+	if err := status.Validate(); err == nil {
+		t.Fatal("LiveTested must require explicit Enabled state")
+	}
+}
