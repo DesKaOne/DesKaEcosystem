@@ -279,3 +279,145 @@ func TestRouterReadinessStatesDoNotBypassCapabilityAndOperationalGates(t *testin
 		}
 	})
 }
+
+
+func TestExplainProviderRouteParityAcrossAdministrativeRoutingStateMatrix(t *testing.T) {
+	now := time.Date(2026, 9, 29, 12, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name       string
+		status     provider.CapabilityStatus
+		lifecycle  operational.Lifecycle
+		catalog    *catalog.Snapshot
+		mutate     func(*Router)
+		reason     ReadinessReasonCode
+		shouldRoute bool
+	}{
+		{
+			name: "recovered-and-explicitly-enabled",
+			status: provider.CapabilityStatus{AdapterImplemented: true, Enabled: true, Tested: true},
+			lifecycle: operational.LifecycleEnabled,
+			catalog: &catalog.Snapshot{ProviderName: "mock", Products: []provider.Product{{Code: "xld10"}}, SyncedAt: now},
+			shouldRoute: true,
+		},
+		{
+			name: "lifecycle-disabled",
+			status: provider.CapabilityStatus{AdapterImplemented: true, Enabled: true, Tested: true},
+			lifecycle: operational.LifecycleDisabled,
+			catalog: &catalog.Snapshot{ProviderName: "mock", Products: []provider.Product{{Code: "xld10"}}, SyncedAt: now},
+			reason: ReasonLifecycleDisabled,
+		},
+		{
+			name: "capability-drifted",
+			status: provider.CapabilityStatus{AdapterImplemented: true, Enabled: true, Tested: true},
+			lifecycle: operational.LifecycleEnabled,
+			catalog: &catalog.Snapshot{ProviderName: "mock", Products: []provider.Product{{Code: "xld10"}}, SyncedAt: now},
+			mutate: func(r *Router) {
+				state, _ := r.ProviderState.Get("mock")
+				state.CapabilityFingerprint = "drifted"
+				if err := r.ProviderState.Put(state); err != nil {
+					t.Fatal(err)
+				}
+			},
+			reason: ReasonCapabilityDrift,
+		},
+		{
+			name: "operational-stale",
+			status: provider.CapabilityStatus{AdapterImplemented: true, Enabled: true, Tested: true},
+			lifecycle: operational.LifecycleEnabled,
+			catalog: &catalog.Snapshot{ProviderName: "mock", Products: []provider.Product{{Code: "xld10"}}, SyncedAt: now},
+			mutate: func(r *Router) {
+				reader := r.OperationalInput.(*StoreOperationalInputReader)
+				if err := reader.Store.Put(operational.Snapshot{
+					ProviderName: "mock", Balance: 100000, Currency: "IDR",
+					Health: operational.HealthHealthy, LastCheckedAt: now.Add(-2 * time.Hour),
+				}); err != nil {
+					t.Fatal(err)
+				}
+				r.Now = func() time.Time { return now }
+			},
+			reason: ReasonOperationalSnapshotStale,
+		},
+		{
+			name: "operational-unhealthy",
+			status: provider.CapabilityStatus{AdapterImplemented: true, Enabled: true, Tested: true},
+			lifecycle: operational.LifecycleEnabled,
+			catalog: &catalog.Snapshot{ProviderName: "mock", Products: []provider.Product{{Code: "xld10"}}, SyncedAt: now},
+			mutate: func(r *Router) {
+				reader := r.OperationalInput.(*StoreOperationalInputReader)
+				if err := reader.Store.Put(operational.Snapshot{
+					ProviderName: "mock", Balance: 100000, Currency: "IDR",
+					Health: operational.HealthUnhealthy, LastCheckedAt: now,
+				}); err != nil {
+					t.Fatal(err)
+				}
+				r.Now = func() time.Time { return now }
+			},
+			reason: ReasonOperationalHealthUnhealthy,
+		},
+		{
+			name: "insufficient-balance",
+			status: provider.CapabilityStatus{AdapterImplemented: true, Enabled: true, Tested: true},
+			lifecycle: operational.LifecycleEnabled,
+			catalog: &catalog.Snapshot{ProviderName: "mock", Products: []provider.Product{{Code: "xld10"}}, SyncedAt: now},
+			mutate: func(r *Router) {
+				reader := r.OperationalInput.(*StoreOperationalInputReader)
+				if err := reader.Store.Put(operational.Snapshot{
+					ProviderName: "mock", Balance: 50, Currency: "IDR",
+					Health: operational.HealthHealthy, LastCheckedAt: now,
+				}); err != nil {
+					t.Fatal(err)
+				}
+				r.Now = func() time.Time { return now }
+			},
+			reason: ReasonInsufficientBalance,
+		},
+		{
+			name: "catalog-stale",
+			status: provider.CapabilityStatus{AdapterImplemented: true, Enabled: true, Tested: true},
+			lifecycle: operational.LifecycleEnabled,
+			catalog: &catalog.Snapshot{ProviderName: "mock", Products: []provider.Product{{Code: "xld10"}}, SyncedAt: now.Add(-2 * time.Hour)},
+			mutate: func(r *Router) { r.Now = func() time.Time { return now } },
+			reason: ReasonCatalogStale,
+		},
+		{
+			name: "product-unavailable",
+			status: provider.CapabilityStatus{AdapterImplemented: true, Enabled: true, Tested: true},
+			lifecycle: operational.LifecycleEnabled,
+			catalog: &catalog.Snapshot{ProviderName: "mock", Products: []provider.Product{{Code: "other"}}, SyncedAt: now},
+			mutate: func(r *Router) { r.Now = func() time.Time { return now } },
+			reason: ReasonProductUnavailable,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := testReadinessRouter(t, tt.status, tt.lifecycle, tt.catalog)
+			if tt.mutate != nil {
+				tt.mutate(r)
+			}
+
+			explanation, err := ExplainProviderRoute(context.Background(), r, "mock", provider.CapabilityPPOB, "xld10", 100)
+			if err != nil {
+				t.Fatal(err)
+			}
+			selected, selectErr := r.Select(context.Background(), Request{ProductCode: "xld10", Amount: 100})
+			routeSucceeded := selectErr == nil
+
+			if routeSucceeded != explanation.RouteEligible {
+				t.Fatalf("administrative explanation/router parity mismatch: selected=%q err=%v explanation=%#v", selected, selectErr, explanation)
+			}
+			if routeSucceeded != tt.shouldRoute {
+				t.Fatalf("unexpected routing result: selected=%q err=%v explanation=%#v", selected, selectErr, explanation)
+			}
+
+			if tt.reason != "" {
+				found, blocking := reason(explanation, tt.reason)
+				if !found || !blocking {
+					t.Fatalf("expected blocking reason %q: %#v", tt.reason, explanation)
+				}
+			} else if len(explanation.Reasons) != 0 {
+				t.Fatalf("eligible route must have no blocking administrative reason: %#v", explanation)
+			}
+		})
+	}
+}
