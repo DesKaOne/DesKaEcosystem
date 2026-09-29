@@ -18,6 +18,7 @@ import (
 	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/catalog"
 	mock "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/Mock"
 	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/operational"
+	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/routing"
 )
 
 type balanceMock struct {
