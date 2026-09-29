@@ -1634,13 +1634,97 @@ No authorized live-provider transaction or external provider request was execute
 
 ### Next Milestone
 
-**Milestone #282 — Provider State Persistence / Drift Recovery Integration Audit**
+## Milestone #282 — Provider State Persistence / Drift Recovery Integration Audit
+
+**Date:** 2026-09-29
+
+### Scope
+
+- verify the complete deterministic recovery sequence across persisted ProviderState, capability drift detection, administrative diagnostics, reconciliation, and explicit lifecycle re-enable;
+- prove a recovered drifted provider remains blocked before reconciliation and remains blocked after reconciliation until explicit lifecycle enablement;
+- prove explicit re-enable restores route eligibility without promoting capability readiness;
+- preserve the observational/non-authorizing diagnostics boundary and Router.Select as the sole routing decision path.
+
+### Source Finding
+
+Milestones #265/#266 already provided deterministic capability drift detection, provider-neutral diagnostics, explicit reconciliation, and explicit lifecycle enablement. The remaining integration gap was an end-to-end assertion tying those states directly to route eligibility.
+
+The correct recovery sequence is therefore: persisted drift detected → route blocked → explicit reconciliation clears metadata drift but keeps lifecycle disabled → route remains blocked → explicit lifecycle enablement → existing router gates may make the provider eligible. Reconciliation itself must never authorize routing.
+
+### Implementation
+
+Extended `DesKaProvider/backend/runtime/provider_diagnostics_test.go` with deterministic routing-boundary assertions in `TestProviderDiagnosticsRecoveryKeepsReadinessSeparate`:
+
+- after drift is observed, reconciliation clears the drift but the provider remains disabled;
+- a reconciled-but-disabled provider is explicitly asserted to remain non-routable;
+- after explicit `EnableProvider`, the same provider is asserted to become route-eligible for the valid product/amount fixture;
+- existing assertions verify `LiveTested` and `ProductionReady` remain false throughout the recovery sequence.
+
+No production routing or recovery logic was changed.
+
+### Changed Files
+
+- DesKaProvider/backend/runtime/provider_diagnostics_test.go
+- DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md
+
+No provider credentials or external provider requests were added or executed.
+
+### Verification
+
+Implementation/test final HEAD:
+
+`0b1a9c5c980f8971ceccbc1950c701ab4d2f0e7d`
+
+GitHub Actions Push CI **#2863** / run **36577282614** for that exact HEAD: **GREEN**.
+
+- `test`: PASS
+  - `go test ./...`: PASS
+  - `go vet ./...`: PASS
+  - PostgreSQL service-backed test environment completed successfully
+- `race`: PASS
+  - `go test -race ./...`: PASS
+- `iak-read-only`: SKIPPED because authorized credentials/manual provider validation were not supplied
+- `xp-sindonesia-read-only`: SKIPPED because authorized credentials/manual provider validation were not supplied
+- `midtrans-sandbox`: SKIPPED because authorized credentials/manual provider validation were not supplied
+
+No authorized live-provider transaction or external provider request was executed.
+
+### Safety Boundary / Invariants
+
+- diagnostics remain observational and cannot authorize routing or provider execution;
+- reconciliation synchronizes capability membership/fingerprint but never auto-enables lifecycle;
+- a reconciled-but-disabled provider remains non-routable;
+- explicit lifecycle enablement changes only the operational lifecycle gate;
+- explicit lifecycle enablement does not promote Verified, Configured, Tested, LiveTested, or ProductionReady evidence;
+- Router.Select remains the sole routing decision path and continues applying operational health, balance, freshness, catalog, capability, and drift gates;
+- no automatic retry, provider failover, or transaction resubmission is introduced;
+- no duplicate payment/purchase creation is introduced;
+- no ledger mutation, customer balance mutation, treasury movement, or provider funding is introduced;
+- durable transaction/reference ownership, CAS/idempotency, webhook idempotency, and reconciliation boundaries remain unchanged;
+- no public API exposure is introduced;
+- RCB remains unregistered, non-routable, and fail-closed pending an authoritative PPOB contract.
+
+### Known Limitations
+
+- recovery proof is deterministic and does not establish external provider availability;
+- provider-specific validation remains credential-gated and was skipped in CI;
+- route eligibility after explicit enablement still depends on the existing operational and catalog gates;
+- RCB PPOB contract details remain incomplete.
+
+### Architecture Impact
+
+#282 closes the integration gap between administrative capability recovery and routing safety. The recovery sequence is now explicitly proven to remain fail-closed until an independent lifecycle enablement step, while readiness evidence remains separate from routing authority.
+
+### Next Milestone
+
+**Milestone #283 — Provider Administrative / Routing State Consistency Audit**
 
 Scope:
 
-- verify the complete recovery sequence across persisted ProviderState, capability drift detection, administrative diagnostics, and explicit lifecycle re-enable;
-- add an end-to-end deterministic regression proving a recovered drifted provider remains blocked until explicit reconciliation and re-enable;
-- preserve read-only diagnostics and the existing fail-closed routing boundary.
+- audit consistency between administrative diagnostics/explanations and Router.Select across the complete provider lifecycle/recovery state machine;
+- verify diagnostics cannot report a route-eligible state when the router blocks the same provider for an observable operational reason;
+- add deterministic parity coverage for recovered, disabled, drifted, stale, unhealthy, insufficient-balance, and catalog-blocked states where needed;
+- preserve observational diagnostics and the single routing decision path.
 
 Explicit non-goals:
 
