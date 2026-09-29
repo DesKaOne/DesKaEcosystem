@@ -120,3 +120,94 @@ func TestJSONFileProviderStateStoreRecoveryPreservesDriftEvidence(t *testing.T) 
 		t.Fatal("recovered fingerprint must remain available")
 	}
 }
+
+
+type sequenceProviderStatePersistence struct {
+	states   []ProviderState
+	failSave bool
+}
+
+func (p *sequenceProviderStatePersistence) Load() ([]ProviderState, error) {
+	states := make([]ProviderState, len(p.states))
+	copy(states, p.states)
+	return states, nil
+}
+
+func (p *sequenceProviderStatePersistence) Save(states []ProviderState) error {
+	if p.failSave {
+		return errors.New("persistence failed")
+	}
+	p.states = make([]ProviderState, len(states))
+	copy(p.states, states)
+	return nil
+}
+
+func TestProviderStateStorePersistsMultipleProvidersDeterministically(t *testing.T) {
+	persistence := &sequenceProviderStatePersistence{}
+	store, err := NewPersistentProviderStateStore(persistence)
+	if err != nil { t.Fatal(err) }
+
+	for _, name := range []string{"Zulu", "alpha", "midtrans"} {
+		state, err := NewProviderState(name)
+		if err != nil { t.Fatal(err) }
+		state.Lifecycle = LifecycleEnabled
+		state.Capabilities = []Capability{CapabilityPPOB}
+		state.CapabilityFingerprint = name + "-fingerprint"
+		if err := store.Put(state); err != nil { t.Fatal(err) }
+	}
+
+	persisted := persistence.states
+	if len(persisted) != 3 {
+		t.Fatalf("expected three persisted providers, got %d", len(persisted))
+	}
+	for i, want := range []string{"alpha", "midtrans", "zulu"} {
+		if persisted[i].ProviderName != want {
+			t.Fatalf("persisted provider order[%d] = %q, want %q", i, persisted[i].ProviderName, want)
+		}
+	}
+
+	recovered, err := NewPersistentProviderStateStore(persistence)
+	if err != nil { t.Fatal(err) }
+	states := recovered.All()
+	for i, want := range []string{"alpha", "midtrans", "zulu"} {
+		if states[i].ProviderName != want {
+			t.Fatalf("recovered provider order[%d] = %q, want %q", i, states[i].ProviderName, want)
+		}
+	}
+	for _, state := range states {
+		if state.CapabilityFingerprint != state.ProviderName+"-fingerprint" {
+			t.Fatalf("recovered fingerprint for %q = %q", state.ProviderName, state.CapabilityFingerprint)
+		}
+	}
+}
+
+func TestProviderStateStoreFailedReplacementPreservesPreviousDurableState(t *testing.T) {
+	persistence := &sequenceProviderStatePersistence{}
+	store, err := NewPersistentProviderStateStore(persistence)
+	if err != nil { t.Fatal(err) }
+
+	original, _ := NewProviderState("mock")
+	original.Lifecycle = LifecycleEnabled
+	original.Capabilities = []Capability{CapabilityPPOB}
+	original.CapabilityFingerprint = "original"
+	if err := store.Put(original); err != nil { t.Fatal(err) }
+
+	persistence.failSave = true
+	replacement := original
+	replacement.Lifecycle = LifecycleDisabled
+	replacement.CapabilityFingerprint = "replacement"
+	if err := store.Put(replacement); err == nil {
+		t.Fatal("expected replacement persistence failure")
+	}
+
+	memory, ok := store.Get("mock")
+	if !ok {
+		t.Fatal("expected existing in-memory state after failed replacement")
+	}
+	if memory.Lifecycle != LifecycleEnabled || memory.CapabilityFingerprint != "original" {
+		t.Fatalf("failed replacement mutated memory: %#v", memory)
+	}
+	if len(persistence.states) != 1 || persistence.states[0].Lifecycle != LifecycleEnabled || persistence.states[0].CapabilityFingerprint != "original" {
+		t.Fatalf("failed replacement mutated durable state: %#v", persistence.states)
+	}
+}
