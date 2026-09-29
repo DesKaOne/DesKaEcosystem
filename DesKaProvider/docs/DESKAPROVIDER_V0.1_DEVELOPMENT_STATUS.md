@@ -16271,3 +16271,70 @@ Scope:
 - preserve routing behavior while improving internal diagnostics.
 
 No automatic failover, payment resubmission, provider funding, customer ledger mutation, treasury movement, duplicate purchase creation, or public API exposure is included in #267.
+
+
+## Milestone #267 — Provider Capability Readiness / Routing Explainability
+
+**Date:** 2026-09-29
+
+### Implementation
+
+- added deterministic provider-neutral routing/readiness explanations through an internal routing surface;
+- distinguished blocking route gates from non-blocking readiness gaps so explainability does not silently change existing routing semantics;
+- exposed explicit reasons for provider lifecycle disabled state, missing operational state, undeclared capability, missing adapter implementation, capability disabled state, capability drift, stale operational snapshot, unhealthy operational state, insufficient balance, catalog missing/stale state, and unavailable product;
+- exposed non-blocking readiness gaps for missing configuration, unverified tests, missing live validation, and missing ProductionReady state;
+- sorted and deduplicated reason codes deterministically;
+- added an internal runtime inspection method without introducing a public API or provider-specific protocol/credential details;
+- verified explainability remains observational and does not authorize payment, purchase, retry, failover, provider funding, ledger mutation, treasury movement, or duplicate transaction creation.
+
+### Changed Files
+
+- DesKaProvider/backend/routing/readiness_explanation.go
+- DesKaProvider/backend/routing/readiness_explanation_test.go
+- DesKaProvider/backend/runtime/runtime.go
+- DesKaProvider/backend/runtime/readiness_explanation_test.go
+
+### Safety Boundary / Invariants
+
+- routing behavior remains governed by the existing explicit capability/lifecycle/operational/catalog gates;
+- readiness flags such as Configured, Tested, LiveTested, and ProductionReady are reported as distinct state gaps and are not promoted implicitly;
+- capability drift remains a blocking route condition;
+- stale operational snapshots and stale catalogs remain blocking route conditions where the existing router already requires freshness;
+- explanation output contains only provider-neutral reason codes and does not expose credentials, endpoints, provider-specific protocols, or provider status codes;
+- no automatic retry, provider failover, or transaction resubmission is introduced;
+- no duplicate payment/purchase creation is introduced;
+- no ledger mutation, customer balance mutation, treasury movement, or provider funding is introduced;
+- durable transaction/reference ownership, CAS/idempotency, webhook idempotency, and reconciliation boundaries remain unchanged;
+- no public API exposure is introduced.
+
+### Verification
+
+Implementation final HEAD:
+
+42b3e1a5a5005623195fed4be6b2ffb5cab020a5
+
+- Push CI #2760 / run 36504871105: **GREEN** after rerunning the failed race job
+  - test: PASS
+  - race: PASS
+  - midtrans-sandbox: skipped as expected
+  - iak-read-only: skipped as expected
+  - xp-sindonesia-read-only: skipped as expected
+- Pull Request CI #2761 / run 36504873561: **GREEN**
+  - test: PASS
+  - race: PASS
+  - credential-gated provider validation jobs: skipped as expected
+
+The initial Push #2760 race attempt failed in an existing shutdown timing test (TestServiceRunShutdownTimeoutKeepsDatabaseOwnershipUntilWorkerStops); the same job passed on rerun without source changes. No authorized live-provider transaction was executed by this milestone.
+
+### Next Milestone
+
+**Milestone #268 — Provider Routing Explainability Hardening / Administrative Aggregation**
+
+Scope:
+
+- aggregate deterministic provider/capability route explanations into an internal administrative snapshot;
+- verify explanation coverage across Midtrans, IAK, XP SINDONESIA, DigiFlazz, and RCB placeholder states without requiring live credentials;
+- preserve exact routing behavior while making blocked-provider reasons auditable across the registry;
+- keep readiness explanations provider-neutral and non-authorizing.
+
+No automatic failover, payment resubmission, provider funding, customer ledger mutation, treasury movement, duplicate purchase creation, or public API exposure is included in #268.
