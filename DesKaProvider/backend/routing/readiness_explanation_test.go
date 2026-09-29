@@ -110,3 +110,90 @@ func TestExplainProviderRouteCandidateRejectionParityMatrix(t *testing.T) {
 		})
 	}
 }
+
+
+func TestExplainProviderRouteOperationalFreshnessHealthBalanceParity(t *testing.T) {
+	now := time.Date(2026, 9, 29, 12, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name       string
+		lastChecked time.Time
+		health     operational.Health
+		balance    int64
+		reason     ReadinessReasonCode
+		expectStale bool
+	}{
+		{
+			name:        "operational-freshness",
+			lastChecked: now.Add(-2 * time.Hour),
+			health:      operational.HealthHealthy,
+			balance:     100000,
+			reason:      ReasonOperationalSnapshotStale,
+			expectStale: true,
+		},
+		{
+			name:        "operational-health",
+			lastChecked: now,
+			health:      operational.HealthUnhealthy,
+			balance:     100000,
+			reason:      ReasonOperationalHealthUnhealthy,
+		},
+		{
+			name:        "operational-balance",
+			lastChecked: now,
+			health:      operational.HealthHealthy,
+			balance:     50,
+			reason:      ReasonInsufficientBalance,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := testReadinessRouter(t, provider.CapabilityStatus{
+				AdapterImplemented: true,
+				Enabled:            true,
+				Tested:             true,
+			}, operational.LifecycleEnabled, &catalog.Snapshot{
+				ProviderName: "mock",
+				Products:     []provider.Product{{Code: "xld10"}},
+				SyncedAt:     now,
+			})
+			r.Now = func() time.Time { return now }
+
+			reader, ok := r.OperationalInput.(*StoreOperationalInputReader)
+			if !ok {
+				t.Fatalf("expected store-backed operational input reader, got %T", r.OperationalInput)
+			}
+			if err := reader.Store.Put(operational.Snapshot{
+				ProviderName:    "mock",
+				Balance:         tt.balance,
+				Currency:        "IDR",
+				Health:          tt.health,
+				LastCheckedAt:   tt.lastChecked,
+				LastSuccessAt:   tt.lastChecked,
+				ConsecutiveFailures: 0,
+			}); err != nil {
+				t.Fatal(err)
+			}
+
+			explanation, err := ExplainProviderRoute(context.Background(), r, "mock", provider.CapabilityPPOB, "xld10", 100)
+			if err != nil {
+				t.Fatal(err)
+			}
+			found, blocking := reason(explanation, tt.reason)
+			if !found || !blocking {
+				t.Fatalf("expected blocking reason %q: %#v", tt.reason, explanation)
+			}
+			if explanation.RouteEligible {
+				t.Fatalf("explanation must reject the same operational gate as Router.Select: %#v", explanation)
+			}
+
+			_, selectErr := r.Select(context.Background(), Request{ProductCode: "xld10", Amount: 100})
+			if !errors.Is(selectErr, ErrNoProviderAvailable) {
+				t.Fatalf("Router.Select should reject the provider at %q gate, got %v", tt.reason, selectErr)
+			}
+			if tt.expectStale && !errors.Is(selectErr, ErrOperationalSnapshotStale) {
+				t.Fatalf("stale operational gate should be surfaced by Router.Select, got %v", selectErr)
+			}
+		})
+	}
+}
