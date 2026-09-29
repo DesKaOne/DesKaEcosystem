@@ -170,7 +170,7 @@ func TestExplainAllProviderRoutesReconstructsFromPersistentSources(t *testing.T)
 	now := time.Date(2026, 9, 29, 13, 0, 0, 0, time.UTC)
 	if err := operationalStore.Put(operational.Snapshot{
 		ProviderName: "mock", Balance: 1000, Currency: "IDR",
-		Health: operational.HealthHealthy, LastCheckedAt: now,
+		Health: operational.HealthHealthy, LastCheckedAt: now, LastSuccessAt: now,
 	}); err != nil { t.Fatal(err) }
 	if err := catalogStore.Put(catalog.Snapshot{
 		ProviderName: "mock", Products: []provider.Product{{Code: "xld10"}}, SyncedAt: now,
