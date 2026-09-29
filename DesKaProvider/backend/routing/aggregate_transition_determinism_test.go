@@ -40,14 +40,22 @@ func TestRouterAggregateErrorsRemainDeterministicAcrossTransitions(t *testing.T)
 		}); err != nil {
 			t.Fatal(err)
 		}
+		lastChecked := now
+		if name == "operational-stale" {
+			lastChecked = now.Add(-2 * time.Minute)
+		}
 		if err := store.Put(operational.Snapshot{
 			ProviderName: name, Balance: 100000, Currency: "IDR",
-			Health: operational.HealthHealthy, LastCheckedAt: now,
+			Health: operational.HealthHealthy, LastCheckedAt: lastChecked,
 		}); err != nil {
 			t.Fatal(err)
 		}
+		syncedAt := now
+		if name == "catalog-stale" {
+			syncedAt = now.Add(-2 * time.Minute)
+		}
 		if err := catalogs.Put(catalog.Snapshot{
-			ProviderName: name, Products: []provider.Product{{Code: "xld10"}}, SyncedAt: now,
+			ProviderName: name, Products: []provider.Product{{Code: "xld10"}}, SyncedAt: syncedAt,
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -97,8 +105,7 @@ provider capability metadata drift detected"
 	if err := states.Put(drifted); err != nil {
 		t.Fatal(err)
 	}
-	store.Put(operational.Snapshot{ProviderName: "operational-stale", Balance: 100000, Currency: "IDR", Health: operational.HealthHealthy, LastCheckedAt: now.Add(-2 * time.Minute)})
-	catalogs.Put(catalog.Snapshot{ProviderName: "catalog-stale", Products: []provider.Product{{Code: "xld10"}}, SyncedAt: now.Add(-2 * time.Minute)})
+
 
 	err = join()
 	assertAggregate("all-blocking-causes", err, ErrOperationalSnapshotStale, ErrCatalogStale, ErrProviderCapabilityDrift)
