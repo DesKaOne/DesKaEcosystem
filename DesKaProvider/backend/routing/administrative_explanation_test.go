@@ -206,3 +206,168 @@ func TestExplainAllProviderRoutesReconstructsFromPersistentSources(t *testing.T)
 		t.Fatalf("capability drift should remain clear after restart: %#v", freshness)
 	}
 }
+
+
+func TestAdministrativeDiagnosticsTransitionRestartDeterminism(t *testing.T) {
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "provider-state.json")
+	operationalPath := filepath.Join(dir, "operational.json")
+	catalogPath := filepath.Join(dir, "catalog.json")
+
+	registry := provider.NewRegistry()
+	descriptor := provider.CapabilityDescriptor{
+		Capabilities: map[provider.Capability]provider.CapabilityStatus{
+			provider.CapabilityPPOB: {
+				AdapterImplemented: true,
+				Configured:         true,
+				Tested:             true,
+				Enabled:            true,
+			},
+		},
+	}
+	if err := registry.RegisterWithCapabilities("mock", mock.New(mock.Config{
+		Products: []provider.Product{{Code: "xld10", Name: "Test"}},
+	}), descriptor); err != nil {
+		t.Fatal(err)
+	}
+	d, err := registry.Capabilities("mock")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	statePersistence, err := operational.NewJSONFileProviderStateStore(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	states, err := operational.NewPersistentProviderStateStore(statePersistence)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := states.Put(operational.ProviderState{
+		ProviderName:          "mock",
+		Lifecycle:             operational.LifecycleDisabled,
+		Capabilities:          []operational.Capability{operational.CapabilityPPOB},
+		CapabilityFingerprint: operational.CapabilityMetadataFingerprint(d),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	operationalStore, err := operational.NewJSONFileStore(operationalPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalogStore, err := catalog.NewJSONFileStore(catalogPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 9, 29, 15, 0, 0, 0, time.UTC)
+	if err := operationalStore.Put(operational.Snapshot{
+		ProviderName:  "mock",
+		Balance:       100000,
+		Currency:      "IDR",
+		Health:        operational.HealthHealthy,
+		LastCheckedAt: now,
+		LastSuccessAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := catalogStore.Put(catalog.Snapshot{
+		ProviderName: "mock",
+		Products:     []provider.Product{{Code: "xld10", Name: "Test"}},
+		SyncedAt:     now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	routerBefore, err := NewWithCatalogAndStateAndOperationalMaxAge(
+		registry, operationalStore, nil, catalogStore, states, time.Minute,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	routerBefore.CatalogMaxAge = time.Minute
+	routerBefore.Now = func() time.Time { return now }
+
+	before, err := ExplainAllProviderRoutes(context.Background(), routerBefore)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(before.Providers) != 1 {
+		t.Fatalf("expected one provider before transition, got %d", len(before.Providers))
+	}
+	if before.Providers[0].Capabilities[0].RouteEligible {
+		t.Fatal("disabled lifecycle must remain non-route-eligible before transition")
+	}
+
+	admin, err := operational.NewProviderAdminService(states)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := admin.Enable("mock"); err != nil {
+		t.Fatal(err)
+	}
+
+	afterTransition, err := ExplainAllProviderRoutes(context.Background(), routerBefore)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !afterTransition.Providers[0].Capabilities[0].RouteEligible {
+		t.Fatalf("explicit lifecycle transition should change route eligibility: %#v", afterTransition)
+	}
+	afterTransitionGeneratedAt := afterTransition.GeneratedAt
+	afterTransitionReasons := append([]ReadinessReason(nil), afterTransition.Providers[0].Capabilities[0].Reasons...)
+
+	// Reconstruct every persisted source to model a process restart after the
+	// explicit lifecycle transition.
+	recoveredStatePersistence, err := operational.NewJSONFileProviderStateStore(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recoveredStates, err := operational.NewPersistentProviderStateStore(recoveredStatePersistence)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recoveredOperational, err := operational.NewJSONFileStore(operationalPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recoveredCatalog, err := catalog.NewJSONFileStore(catalogPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	routerAfter, err := NewWithCatalogAndStateAndOperationalMaxAge(
+		registry, recoveredOperational, nil, recoveredCatalog, recoveredStates, time.Minute,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	routerAfter.CatalogMaxAge = time.Minute
+	routerAfter.Now = func() time.Time { return now }
+
+	afterRestart, err := ExplainAllProviderRoutes(context.Background(), routerAfter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(afterTransition, afterRestart) {
+		t.Fatalf("diagnostic semantics changed across restart: transition=%#v restart=%#v", afterTransition, afterRestart)
+	}
+	if !afterRestart.GeneratedAt.Equal(afterTransitionGeneratedAt) {
+		t.Fatalf("generation time changed across deterministic restart fixture: got %v want %v", afterRestart.GeneratedAt, afterTransitionGeneratedAt)
+	}
+	if !reflect.DeepEqual(afterRestart.Providers[0].Capabilities[0].Reasons, afterTransitionReasons) {
+		t.Fatalf("reason semantics changed across restart: got %#v want %#v", afterRestart.Providers[0].Capabilities[0].Reasons, afterTransitionReasons)
+	}
+
+	repeated, err := ExplainAllProviderRoutes(context.Background(), routerAfter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(afterRestart, repeated) {
+		t.Fatalf("repeated post-restart diagnostics are not deterministic: first=%#v second=%#v", afterRestart, repeated)
+	}
+
+	persistedState, ok := recoveredStates.Get("mock")
+	if !ok || !persistedState.Enabled() {
+		t.Fatalf("explicit lifecycle transition was not recovered: %#v", persistedState)
+	}
+}
