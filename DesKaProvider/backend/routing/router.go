@@ -18,6 +18,7 @@ var (
 	ErrInvalidRouteRequest = errors.New("invalid provider route request")
 	ErrCatalogStale = errors.New("provider catalog is stale")
 	ErrOperationalSnapshotStale = errors.New("provider operational snapshot is stale")
+	ErrProviderCapabilityDrift = errors.New("provider capability metadata drift detected")
 )
 
 const (
@@ -104,7 +105,7 @@ func (r *Router) Select(ctx context.Context, req Request) (string, error) {
 	}
 
 	candidates := make([]candidate, 0)
-	var staleCatalog, staleOperational bool
+	var staleCatalog, staleOperational, capabilityDrift bool
 	for _, name := range r.Registry.Names() {
 		if r.ProviderState != nil {
 			state, ok := r.ProviderState.Get(name)
@@ -123,6 +124,11 @@ func (r *Router) Select(ctx context.Context, req Request) (string, error) {
 			// have not migrated their registry entry yet. Once capability
 			// metadata exists, eligibility is strict and must explicitly require
 			// an implemented and enabled PPOB capability.
+			drift := operational.DetectCapabilityDrift(state, descriptor)
+			if drift.Drifted() {
+				capabilityDrift = true
+				continue
+			}
 			if len(descriptor.Capabilities) > 0 && !descriptor.Supports(provider.CapabilityPPOB) {
 				continue
 			}
@@ -193,6 +199,9 @@ func (r *Router) Select(ctx context.Context, req Request) (string, error) {
 		}
 		if staleCatalog {
 			errs = append(errs, ErrCatalogStale)
+		}
+		if capabilityDrift {
+			errs = append(errs, ErrProviderCapabilityDrift)
 		}
 		return "", errors.Join(errs...)
 	}
