@@ -124,10 +124,12 @@ func (r *Router) Select(ctx context.Context, req Request) (string, error) {
 			// have not migrated their registry entry yet. Once capability
 			// metadata exists, eligibility is strict and must explicitly require
 			// an implemented and enabled PPOB capability.
-			drift := operational.DetectCapabilityDrift(state, descriptor)
-			if drift.Drifted() {
-				capabilityDrift = true
-				continue
+			if len(descriptor.Capabilities) > 0 {
+				drift := operational.DetectCapabilityDrift(state, descriptor)
+				if drift.Drifted() {
+					capabilityDrift = true
+					continue
+				}
 			}
 			if len(descriptor.Capabilities) > 0 && !descriptor.Supports(provider.CapabilityPPOB) {
 				continue
