@@ -6323,3 +6323,63 @@ func TestNewFromEnvironmentContextPreservesProviderLifecycleAcrossRestart(t *tes
 	status, ok := descriptor.Status(provider.CapabilityPayment)
 	if !ok || !status.AdapterImplemented || status.Enabled { t.Fatalf("runtime restart must not promote registry readiness: %+v", status) }
 }
+
+
+func TestNewFromEnvironmentContextDisablesLifecycleWhenCapabilityMetadataDrifts(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("DESKAPROVIDER_OPERATIONAL_STORE_PATH", filepath.Join(dir, "operational.json"))
+	t.Setenv("DESKAPROVIDER_PROVIDER_STATE_STORE_PATH", filepath.Join(dir, "provider-state.json"))
+	t.Setenv("DESKAPROVIDER_TRANSACTION_STORE_PATH", filepath.Join(dir, "transactions.json"))
+	t.Setenv("DESKAPROVIDER_CATALOG_STORE_PATH", filepath.Join(dir, "catalog.json"))
+	t.Setenv("DESKAPROVIDER_CATALOG_SYNC_STATUS_STORE_PATH", filepath.Join(dir, "catalog-status.json"))
+	t.Setenv("DESKAPROVIDER_OPERATIONAL_STORE_DRIVER", "json")
+	t.Setenv("DESKAPROVIDER_TRANSACTION_STORE_DRIVER", "json")
+	t.Setenv("DESKAPROVIDER_AUDIT_STORE_DRIVER", "memory")
+	t.Setenv("DESKAPROVIDER_POSTGRES_DSN", "")
+	t.Setenv("MIDTRANS_SERVER_KEY", "runtime-drift-test-key")
+	t.Setenv("IAK_USERNAME", "")
+	t.Setenv("IAK_API_KEY", "")
+	t.Setenv("XP_SINDONESIA_ID", "")
+	t.Setenv("XP_SINDONESIA_KEY", "")
+	t.Setenv("XP_SINDONESIA_API", "")
+	for _, key := range []string{"DIGIFLAZZ_USERNAME", "DIGIFLAZZ_API_KEY"} {
+		_ = os.Unsetenv(key)
+	}
+
+	first, err := NewFromEnvironment(http.DefaultClient)
+	if err != nil { t.Fatal(err) }
+	midtrans, ok := first.providerState.Get("midtrans")
+	if !ok { t.Fatal("expected Midtrans provider state") }
+	admin, err := operational.NewProviderAdminService(first.providerState)
+	if err != nil { t.Fatal(err) }
+	if _, err := admin.Enable("midtrans"); err != nil { t.Fatal(err) }
+	if err := first.Close(); err != nil { t.Fatal(err) }
+
+	// Simulate persisted metadata from a prior generation that omitted the
+	// current Webhook capability while keeping the lifecycle enabled.
+	persisted, err := operational.NewJSONFileProviderStateStore(filepath.Join(dir, "provider-state.json"))
+	if err != nil { t.Fatal(err) }
+	store, err := operational.NewPersistentProviderStateStore(persisted)
+	if err != nil { t.Fatal(err) }
+	midtrans, ok = store.Get("midtrans")
+	if !ok { t.Fatal("expected persisted Midtrans state") }
+	midtrans.Capabilities = []operational.Capability{operational.CapabilityPayment}
+	if err := store.Put(midtrans); err != nil { t.Fatal(err) }
+
+	second, err := NewFromEnvironment(http.DefaultClient)
+	if err != nil { t.Fatal(err) }
+	defer second.Close()
+
+	recovered, ok := second.providerState.Get("midtrans")
+	if !ok { t.Fatal("expected recovered Midtrans state") }
+	if recovered.Enabled() {
+		t.Fatal("capability drift must disable persisted provider lifecycle")
+	}
+	if !recovered.Supports(operational.CapabilityPayment) || !recovered.Supports(operational.CapabilityWebhook) {
+		t.Fatalf("runtime must resynchronize current capabilities after drift: %#v", recovered.Capabilities)
+	}
+	if recovered.CapabilityFingerprint == "" {
+		t.Fatal("runtime must persist capability metadata fingerprint after synchronization")
+	}
+	_ = midtrans
+}
