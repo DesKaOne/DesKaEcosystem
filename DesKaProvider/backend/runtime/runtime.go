@@ -189,6 +189,13 @@ func (s *Service) EnableProvider(name string) (operational.ProviderState, error)
 	return admin.Enable(name)
 }
 
+// ExplainProviderRoute returns deterministic internal routing/readiness diagnostics.
+// It is observational only and never authorizes provider execution.
+func (s *Service) ExplainProviderRoute(ctx context.Context, name string, capability provider.Capability, productCode string, amount int64) (routing.ProviderRouteExplanation, error) {
+	if s == nil || s.purchaseService == nil || s.purchaseService.Router == nil { return routing.ProviderRouteExplanation{}, errors.New("provider runtime is not initialized") }
+	return routing.ExplainProviderRoute(ctx, s.purchaseService.Router, name, capability, productCode, amount)
+}
+
 
 func (s *Service) CatalogSyncStatusPersistenceError() error {
 	if s == nil || s.catalogSync == nil {
