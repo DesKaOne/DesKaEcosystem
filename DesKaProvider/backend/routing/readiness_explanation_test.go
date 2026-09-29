@@ -425,3 +425,127 @@ func TestExplainProviderRouteParityAcrossAdministrativeRoutingStateMatrix(t *tes
 		})
 	}
 }
+
+
+func TestExplainProviderRouteDeepStateMatrix(t *testing.T) {
+	t.Run("operational-state-missing", func(t *testing.T) {
+		r := testReadinessRouter(t, provider.CapabilityStatus{AdapterImplemented: true, Enabled: true, Tested: true},
+			operational.LifecycleEnabled, &catalog.Snapshot{
+				ProviderName: "mock", Products: []provider.Product{{Code: "xld10"}}, SyncedAt: time.Now(),
+			})
+		r.ProviderState = operational.NewProviderStateStore()
+
+		explanation, err := ExplainProviderRoute(context.Background(), r, "mock", provider.CapabilityPPOB, "xld10", 100)
+		if err != nil {
+			t.Fatal(err)
+		}
+		found, blocking := reason(explanation, ReasonOperationalStateMissing)
+		if !found || !blocking {
+			t.Fatalf("expected blocking operational-state-missing reason: %#v", explanation)
+		}
+		if explanation.RouteEligible {
+			t.Fatalf("missing operational state must block route: %#v", explanation)
+		}
+	})
+
+	t.Run("adapter-not-implemented", func(t *testing.T) {
+		r := testReadinessRouter(t, provider.CapabilityStatus{Enabled: true, Tested: true},
+			operational.LifecycleEnabled, &catalog.Snapshot{
+				ProviderName: "mock", Products: []provider.Product{{Code: "xld10"}}, SyncedAt: time.Now(),
+			})
+		explanation, err := ExplainProviderRoute(context.Background(), r, "mock", provider.CapabilityPPOB, "xld10", 100)
+		if err != nil {
+			t.Fatal(err)
+		}
+		found, blocking := reason(explanation, ReasonAdapterNotImplemented)
+		if !found || !blocking {
+			t.Fatalf("expected blocking adapter-not-implemented reason: %#v", explanation)
+		}
+		if explanation.RouteEligible {
+			t.Fatalf("unimplemented adapter must block route: %#v", explanation)
+		}
+	})
+
+	t.Run("catalog-missing", func(t *testing.T) {
+		r := testReadinessRouter(t, provider.CapabilityStatus{AdapterImplemented: true, Enabled: true, Tested: true},
+			operational.LifecycleEnabled, &catalog.Snapshot{
+				ProviderName: "mock", Products: []provider.Product{{Code: "xld10"}}, SyncedAt: time.Now(),
+			})
+		r.Catalog = catalog.NewMemoryStore()
+
+		explanation, err := ExplainProviderRoute(context.Background(), r, "mock", provider.CapabilityPPOB, "xld10", 100)
+		if err != nil {
+			t.Fatal(err)
+		}
+		found, blocking := reason(explanation, ReasonCatalogMissing)
+		if !found || !blocking {
+			t.Fatalf("expected blocking catalog-missing reason: %#v", explanation)
+		}
+		if explanation.RouteEligible {
+			t.Fatalf("missing catalog must block route: %#v", explanation)
+		}
+	})
+
+	t.Run("reason-order-is-canonical-with-mixed-blocking-and-nonblocking", func(t *testing.T) {
+		r := testReadinessRouter(t, provider.CapabilityStatus{
+			AdapterImplemented: true,
+			Enabled:            false,
+			Tested:             false,
+			LiveTested:         false,
+			ProductionReady:   false,
+		}, operational.LifecycleDisabled, &catalog.Snapshot{
+			ProviderName: "mock",
+			Products:     []provider.Product{{Code: "other"}},
+			SyncedAt:     time.Now().Add(-2 * time.Hour),
+		})
+		r.Now = time.Now
+		reader := r.OperationalInput.(*StoreOperationalInputReader)
+		now := r.NowTime()
+		if err := reader.Store.Put(operational.Snapshot{
+			ProviderName: "mock",
+			Balance:      1,
+			Currency:     "IDR",
+			Health:       operational.HealthUnhealthy,
+			LastCheckedAt: now.Add(-2 * time.Hour),
+		}); err != nil {
+			t.Fatal(err)
+		}
+
+		explanation, err := ExplainProviderRoute(context.Background(), r, "mock", provider.CapabilityPPOB, "xld10", 100)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if explanation.RouteEligible {
+			t.Fatalf("mixed blocking state must be ineligible: %#v", explanation)
+		}
+		for i := 1; i < len(explanation.Reasons); i++ {
+			if explanation.Reasons[i-1].Code > explanation.Reasons[i].Code {
+				t.Fatalf("reasons are not canonically ordered: %#v", explanation.Reasons)
+			}
+		}
+		for _, code := range []ReadinessReasonCode{
+			ReasonCapabilityDisabled,
+			ReasonCatalogStale,
+			ReasonProductUnavailable,
+			ReasonOperationalHealthUnhealthy,
+			ReasonInsufficientBalance,
+			ReasonOperationalSnapshotStale,
+		} {
+			found, blocking := reason(explanation, code)
+			if !found || !blocking {
+				t.Fatalf("expected blocking mixed-state reason %q: %#v", code, explanation)
+			}
+		}
+		for _, code := range []ReadinessReasonCode{
+			ReasonConfigurationMissing,
+			ReasonTestsNotVerified,
+			ReasonLiveValidationMissing,
+			ReasonProductionReadinessMissing,
+		} {
+			found, blocking := reason(explanation, code)
+			if !found || blocking {
+				t.Fatalf("expected non-blocking readiness reason %q: %#v", code, explanation)
+			}
+		}
+	})
+}
