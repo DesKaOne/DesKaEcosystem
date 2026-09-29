@@ -3598,3 +3598,99 @@ A new internal milestone should only be opened when one of these readiness gaps,
 - administrative diagnostics remain observational;
 - RCB remains unregistered, non-routable, and fail-closed;
 - no DesKaCash provider-specific coupling was introduced.
+
+
+## Milestone #302 — DigiFlazz Buyer API Integration Hardening / External Validation Gate
+
+**Date:** 2026-09-30
+
+### Scope
+
+- complete the DigiFlazz Buyer API adapter boundary for the verified Buyer account and signed PKS;
+- preserve structured DigiFlazz transaction responses even when the provider returns a non-2xx HTTP status;
+- make the official DigiFlazz CS test tuple (xld10 + 087800001232, testing=true) an explicit credential-gated integration validation;
+- add a separate credential-gated read-only balance validation;
+- enforce the existing HTTPS host allowlist and provider-specific integration gate;
+- keep normal CI credential-free and prevent live validation from becoming an implicit routing/production-readiness transition.
+
+### External Evidence
+
+- The DigiFlazz Buyer PKS has been signed through Privy, according to the current business/provider onboarding status.
+- A direct Python Buyer API test reached DigiFlazz and returned a structured HTTP 400 response with provider code 45 and a message indicating that the caller IP was not recognized. This establishes a concrete provider-side IP-allowlist blocker; it does not establish successful transaction validation.
+- The CS validation tuple remains buyer_sku_code=xld10 and customer_no=087800001232 with testing=true. The repository does not promote LiveTested until that external result is actually observed through the gated Go integration test.
+
+### Implementation
+
+- hardened Provider/DigiFlazz transaction decoding so a structured provider result is preserved even when DigiFlazz responds with HTTP 4xx/5xx;
+- added a deterministic regression test for the observed structured HTTP 400/IP-block response shape (rc=45);
+- hardened the DigiFlazz live integration test with explicit endpoint validation and configurable reference IDs;
+- added a read-only live balance validation test;
+- added explicit DigiFlazz integration environment variables to .env.example;
+- kept all credentials out of the repository.
+
+### Changed Files
+
+- DesKaProvider/backend/Provider/DigiFlazz/digiflazz.go
+- DesKaProvider/backend/Provider/DigiFlazz/digiflazz_test.go
+- DesKaProvider/backend/Provider/DigiFlazz/digiflazz_integration_test.go
+- DesKaProvider/backend/.env.example
+- DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md
+
+### Verification Plan
+
+Normal CI must remain credential-free:
+
+- go test ./...
+- go vet ./...
+- go test -race ./...
+- PostgreSQL service-backed integration tests
+
+Credential-gated DigiFlazz validation:
+
+- DIGIFLAZZ_INTEGRATION=1
+- DESKAPROVIDER_LIVE_INTEGRATION=1
+- DESKAPROVIDER_LIVE_INTEGRATION_PROVIDER=digiflazz
+- DESKAPROVIDER_LIVE_INTEGRATION_ALLOWED_HOSTS=api.digiflazz.com
+- valid DIGIFLAZZ_USERNAME and DIGIFLAZZ_API_KEY
+
+The transaction validation is intentionally limited to the provider-supplied test tuple and testing=true; no arbitrary production top-up is introduced.
+
+### Safety Boundary / Invariants
+
+- DigiFlazz-specific credentials, signing, endpoints, status codes, and payload mapping remain inside the DigiFlazz adapter;
+- structured non-2xx provider responses are normalized rather than discarded as opaque HTTP errors;
+- no automatic retry, provider failover, transaction resubmission, duplicate purchase creation, provider funding, ledger mutation, customer-balance mutation, or treasury movement is introduced;
+- Router.Select() remains the sole routing decision authority;
+- Enabled, LiveTested, and ProductionReady remain explicit independent state transitions;
+- the live integration gate never mutates capability metadata or operational state automatically;
+- no public API exposure or DesKaCash provider-specific coupling is introduced;
+- RCB remains unregistered, non-routable, and fail-closed pending an authoritative PPOB contract.
+
+### Current DigiFlazz Readiness
+
+- Business/onboarding: PKS signed
+- Adapter implementation: implemented
+- Deterministic tests: covered
+- Credential configuration: supported
+- External transaction validation: BLOCKED pending DigiFlazz IP allowlisting
+- Read-only balance validation: BLOCKED pending DigiFlazz IP allowlisting
+- LiveTested: not promoted
+- ProductionReady: not promoted
+
+### Known Limitations
+
+- the current external evidence does not prove the CS test result rc=02; the observed response was rc=45 because the caller IP was not recognized;
+- the Go integration test remains credential-gated and must only be enabled after the provider-side IP allowlist is confirmed;
+- this milestone does not change the provider registry to LiveTested or ProductionReady;
+- IAK and XP SINDONESIA external validation remain credential-gated;
+- Midtrans sandbox validation remains credential-gated;
+- RCB PPOB contract acquisition remains incomplete;
+- DesKaCash end-to-end integration remains incomplete.
+
+### Architecture Impact
+
+#302 turns the DigiFlazz onboarding evidence into a concrete, provider-neutral integration boundary: the adapter is ready for controlled validation, the observed provider-side IP failure is preserved as actionable diagnostic information, and external validation remains an explicit gate rather than being inferred from PKS/KYC or deterministic unit tests.
+
+### Next Step
+
+After DigiFlazz confirms the API IP allowlist, run the gated Go validation for the official CS test tuple and read-only balance. If both pass, record the exact CI run and HEAD as external validation evidence and then evaluate the explicit LiveTested transition. Do not promote ProductionReady solely from the test transaction.

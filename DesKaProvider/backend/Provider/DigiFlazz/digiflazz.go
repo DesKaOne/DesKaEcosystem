@@ -193,14 +193,49 @@ func (c *Client) HandleWebhook(_ context.Context, req provider.WebhookRequest) (
 }
 
 func (c *Client) transaction(ctx context.Context, req transactionRequest) (transactionResponse, error) {
-	body, err := json.Marshal(req); if err != nil { return transactionResponse{}, fmt.Errorf("encode DigiFlazz request: %w", err) }
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint, strings.NewReader(string(body))); if err != nil { return transactionResponse{}, fmt.Errorf("create DigiFlazz request: %w", err) }
+	body, err := json.Marshal(req)
+	if err != nil {
+		return transactionResponse{}, fmt.Errorf("encode DigiFlazz request: %w", err)
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint, strings.NewReader(string(body)))
+	if err != nil {
+		return transactionResponse{}, fmt.Errorf("create DigiFlazz request: %w", err)
+	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	resp, err := c.httpClient.Do(httpReq); if err != nil { return transactionResponse{}, fmt.Errorf("DigiFlazz request failed: %w", err) }
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return transactionResponse{}, fmt.Errorf("DigiFlazz request failed: %w", err)
+	}
 	defer resp.Body.Close()
-	respBody, err := io.ReadAll(resp.Body); if err != nil { return transactionResponse{}, fmt.Errorf("read DigiFlazz response: %w", err) }
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 { return transactionResponse{}, fmt.Errorf("DigiFlazz HTTP status %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody))) }
-	var decoded transactionResponse; if err := json.Unmarshal(respBody, &decoded); err != nil { return transactionResponse{}, fmt.Errorf("decode DigiFlazz response: %w", err) }
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return transactionResponse{}, fmt.Errorf("read DigiFlazz response: %w", err)
+	}
+
+	var decoded transactionResponse
+	if err := json.Unmarshal(respBody, &decoded); err != nil {
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			return transactionResponse{}, fmt.Errorf("DigiFlazz HTTP status %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+		}
+		return transactionResponse{}, fmt.Errorf("decode DigiFlazz response: %w", err)
+	}
+
+	// DigiFlazz can return a structured transaction result together with a
+	// non-2xx HTTP status (for example an IP allowlist rejection). Preserve the
+	// provider result so callers can inspect the normalized status and RC.
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		if decoded.Data.ReferenceID == "" &&
+			decoded.Data.CustomerNo == "" &&
+			decoded.Data.BuyerSKUCode == "" &&
+			decoded.Data.Message == "" &&
+			decoded.Data.Status == "" &&
+			decoded.Data.RC == "" {
+			return transactionResponse{}, fmt.Errorf("DigiFlazz HTTP status %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+		}
+	}
+
 	return decoded, nil
 }
 

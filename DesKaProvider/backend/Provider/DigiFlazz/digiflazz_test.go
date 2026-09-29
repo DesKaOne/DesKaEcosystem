@@ -53,6 +53,50 @@ func TestPurchaseBuildsOfficialBuyerRequestAndMapsResponse(t *testing.T) {
 	}
 }
 
+
+func TestPurchaseMapsStructuredProviderErrorFromHTTP400(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{
+				"ref_id": "ref-ip-block",
+				"customer_no": "087800001232",
+				"buyer_sku_code": "xld10",
+				"message": "IP Anda tidak kami kenali",
+				"status": "Gagal",
+				"rc": "45",
+			},
+		})
+	}))
+	defer server.Close()
+
+	c, err := New(config.DigiFlazzConfig{
+		Username: "buyer",
+		APIKey: "secret",
+		Endpoint: server.URL,
+	}, server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := c.Purchase(context.Background(), provider.PurchaseRequest{
+		ProductCode: "xld10",
+		CustomerNo:  "087800001232",
+		ReferenceID: "ref-ip-block",
+		Testing:     true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != provider.StatusFailed || got.ProviderCode != "45" {
+		t.Fatalf("unexpected structured HTTP 400 mapping: %#v", got)
+	}
+	if got.Message == "" {
+		t.Fatal("expected provider error message to be preserved")
+	}
+}
+
 func TestDigiFlazzGetBalanceUsesOfficialDepositEndpoint(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/cek-saldo" {
