@@ -113,7 +113,7 @@ func TestExplainProviderRouteCandidateRejectionParityMatrix(t *testing.T) {
 
 
 func TestExplainProviderRouteOperationalFreshnessHealthBalanceParity(t *testing.T) {
-	now := time.Date(2026, 9, 29, 12, 0, 0, 0, time.UTC)
+	now := time.Now()
 	tests := []struct {
 		name       string
 		lastChecked time.Time
