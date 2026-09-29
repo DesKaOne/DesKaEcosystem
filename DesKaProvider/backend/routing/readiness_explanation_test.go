@@ -1019,7 +1019,7 @@ func TestExplainProviderRouteAggregateReasonsMatchRouterJoinedErrorGates(t *test
 	}
 	if err := store.Put(operational.Snapshot{
 		ProviderName: "drift", Balance: 100000, Currency: "IDR",
-		Health: operational.HealthHealthy, LastCheckedAt: now,
+		Health: operational.HealthHealthy, LastCheckedAt: now.Add(-2 * time.Hour),
 	}); err != nil {
 		t.Fatal(err)
 	}
