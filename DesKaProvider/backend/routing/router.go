@@ -96,10 +96,7 @@ func (r *Router) Select(ctx context.Context, req Request) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	now := time.Now()
-	if r.Now != nil {
-		now = r.Now()
-	}
+	now := r.NowTime()
 	if req.ProductCode == "" || req.Amount <= 0 {
 		return "", fmt.Errorf("%w: product code and positive amount are required", ErrInvalidRouteRequest)
 	}
