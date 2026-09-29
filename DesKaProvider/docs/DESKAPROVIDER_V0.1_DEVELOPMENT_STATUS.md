@@ -997,8 +997,7 @@ Completed:
 - CI run #137 for commit `57079560eeb4fe8291c74c9c53d3013e52d17a46` is **success** and was verified before this milestone.
 - The durable transaction-state implementation commits are:
   - `e1a1e879ae788f63f7669f85100c09ccd66899ba`
-  - `cfca16a84cb965094d68dfec745f45880784de96`
-  - `5ff980f9de690894ec3ec3ea7695faab7f2ecebf`
+  - `cfca16a84cb965094d68dfec745f45880784de96`  - `5ff980f9de690894ec3ec3ea7695faab7f2ecebf`
   - `15fa727fac4b04b75cea715e31ab17e79e559ad7`
   - `8da3eecce2e511aa47dd2d68d576cc3e605bd466`
 - CI #149 exposed a test-build regression in `service_test.go` (missing `filepath` import and reconciliation test helper). Fixed in commit `0cec25cc6791f0fdf1093c984ec56d3640b1511b`. The milestone remains pending until the subsequent CI run is green.
@@ -1998,7 +1997,6 @@ Public catalog data is sufficient to confirm XP is a relevant PPOB product sourc
 - CI #317 — **GREEN**;
 - official API navigation — **confirmed**;
 - official API contract content — **not yet retrievable / insufficient for implementation**.
-
 ### Next Milestone
 
 Proceed only when the current XP API contract is obtained from the provider's API documentation or provider-issued integration material. Then implement the minimum existing `PPOBProvider` mapping with deterministic HTTP tests and credential-gated read-only integration checks where supported.
@@ -2996,7 +2994,6 @@ Next milestone:
 1. wire explicit initialization context into the production-facing startup composition boundary;
 2. add PostgreSQL integration coverage for startup read failure and cancellation behavior;
 3. keep retry/failover deferred until startup and reconciliation recovery are unambiguous.
-
 
 ### 84. Milestone Update — Production Startup Context Wiring
 
@@ -3997,7 +3994,6 @@ Milestone #99: runtime ownership transfer and initialization/shutdown lifecycle 
 - the re-entry boundary is deterministic and covers the owned balance lifecycle path; future independently owned workers may require their own coordination rules;
 - lifecycle observability remains internal with no separate structured diagnostic stream;
 - process termination and network-partition behavior remain outside the deterministic test boundary.
-
 ### Next Milestone
 
 **#109 — Runtime Context Cancellation & Shutdown Boundary Review**: inspect the remaining cancellation/shutdown edges after lifecycle idempotency is established, with emphasis on context ownership and shutdown timeout behavior, without changing business or financial semantics.
@@ -4997,8 +4993,7 @@ Completed:
 
 ### Safety Boundary
 
-- reconciliation conflict recovery is a persistence-integrity property only;
-- reloading an identical terminal result cannot authorize provider retry, failover, resubmission, customer-ledger mutation, treasury movement, or provider funding;
+- reconciliation conflict recovery is a persistence-integrity property only;- reloading an identical terminal result cannot authorize provider retry, failover, resubmission, customer-ledger mutation, treasury movement, or provider funding;
 - divergent durable results remain conflicts and do not get overwritten;
 - operational and audit evidence remain non-authoritative for transaction state.
 
@@ -5998,7 +5993,6 @@ Completed:
 
 - test implementation commit: `ce861e6b79292e02e059f4fff9733b629617f590`;
 - exact branch HEAD after this status documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before this milestone is considered closed.
-
 ### Known Limitations
 
 - the test locks the current append-only behavior for repeated identical payloads; it does not define idempotency for semantically equivalent but differently encoded or timestamped events;
@@ -6997,8 +6991,7 @@ Completed:
 - verified every concurrent transaction snapshot remained identical to the durable baseline and the transaction row was never observed as missing or partially mutated;
 - verified the concurrent cross-domain read workload introduces no audit/transaction write side effects;
 - fixed the integration test imports required by the concurrency coverage after CI identified the missing `fmt` and `sync` dependencies;
-- no production audit-store or transaction-store implementation change was required;
-- no cross-domain locking, transaction authority, provider submission authority, retry/failover behavior, ledger mutation, treasury movement, or provider funding behavior was broadened.
+- no production audit-store or transaction-store implementation change was required;- no cross-domain locking, transaction authority, provider submission authority, retry/failover behavior, ledger mutation, treasury movement, or provider funding behavior was broadened.
 
 ### Safety Boundary
 
@@ -7997,7 +7990,6 @@ c663af280ef2917d3a00c06f8be4039c7d5dbfaf
 ### Safety boundary
 
 Shutdown coverage remains observational and lifecycle-only. Cleanup errors are surfaced and preserved; no cleanup failure triggers transaction resubmission, provider retry/failover, ledger mutation, treasury movement, customer-balance mutation, or synthetic transaction/audit reconstruction.
-
 ### Known limitations
 
 - The worker failure path remains constrained by the current SyncService.Run contract, which returns context cancellation on normal worker shutdown and does not expose an injectable worker failure source.
@@ -8998,7 +8990,6 @@ Completed:
   - `go vet ./...` — PASS
   - PostgreSQL service-backed integration tests — PASS
   - `go test -race ./...` — PASS
-
 ### Safety Boundary
 
 This milestone is limited to runtime error composition and closed-state identity. Error joining preserves observable infrastructure/lifecycle failures but does not assign financial or provider authority to any of them.
@@ -9997,7 +9988,6 @@ Completed:
 This milestone is test-only hardening of existing runtime error composition. It does not alter provider execution, transaction recovery authority, audit authority, ledger state, treasury/funding behavior, or retry/failover behavior.
 
 ### Known Limitations
-
 - the production catalog lifecycle completion API remains void-returning; catalog completion errors remain available only through the internal test seam;
 - PostgreSQL integration coverage requires `DESKAPROVIDER_POSTGRES_DSN` and is skipped when unavailable;
 - database close remains non-context-aware;
@@ -10997,7 +10987,6 @@ Completed:
 ### Safety Boundary
 
 This milestone remains limited to Service startup failure attribution, ownership cleanup, and lifecycle-start gating. It adds no provider retry/failover, transaction recovery, ledger mutation, customer-balance mutation, treasury movement, provider funding, or financial authorization.
-
 ### Known Limitations
 
 - the startup failure is injected through the internal `balanceStart` test seam rather than reproducing every worker implementation failure mode;
@@ -11998,7 +11987,6 @@ This distinction is intentional: a provider being commercially verified or confi
 | XP SINDONESIA | PPOB + balance + webhook flows | No | Not yet runtime-registered | No | No |
 | RCB | No production adapter established by this milestone | No | Not claimed | No | No |
 | Midtrans | No production adapter established by this milestone | No | Not claimed | No | No |
-
 No row above is a claim of live provider connectivity. `LiveTested=false` remains the safe default until an actual credential-backed runtime test is performed.
 
 ### Invariants
@@ -12998,7 +12986,6 @@ Harden transaction correlation/idempotency against persistence interruptions and
 - go test -race ./...: PASS
 - PostgreSQL integration: PASS
 - CI verification includes the PostgreSQL service container and the new atomic-claim integration test.
-
 ### Invariants
 - A transaction reference remains immutable and is the durable correlation key.
 - Original request identity must match an existing reference before reuse.
@@ -13997,7 +13984,6 @@ The previous Milestone #243 verification also remained GREEN before this milesto
 Midtrans Snap returns a payment token during creation, while the Midtrans status endpoint can return a transaction ID. The reconciliation path therefore uses the durable order/reference ID for status lookup rather than treating the Snap token as a status lookup identifier. When status returns the authoritative provider transaction reference, it replaces the initiation-time provider reference in durable payment state.
 
 This milestone does not introduce scheduled/background reconciliation. It provides the safe service boundary that a future caller, webhook/reconciliation worker, or administrative recovery flow can invoke.
-
 No live Midtrans payment or status request was executed; verification is deterministic test-based validation only.
 
 ### Architecture Impact
@@ -14998,7 +14984,6 @@ The cached balance remains an operational snapshot and is not promoted to transa
 The existing synchronization lifecycle remains responsible for obtaining provider balance observations. Health failure state is now handed to the explicit observation boundary, which persists the resulting operational snapshot.
 
 The existing JSON operational store provides atomic replacement semantics and can reconstruct persisted snapshots on restart. #253 adds regression coverage that:
-
 1. applies an unhealthy observation;
 2. reconstructs the store from the persisted file;
 3. verifies the observation state survives restart;
@@ -15997,8 +15982,7 @@ GitHub Actions for that exact HEAD are **GREEN**:
 - live validation cannot be asserted without tested + enabled implementation;
 - ProductionReady cannot be asserted without verified + configured + tested + enabled + live-validated capability state;
 - capability metadata remains provider-neutral and contains no provider credentials or protocol details;
-- no automatic retry, provider failover, or transaction resubmission is introduced;
-- no duplicate payment/purchase creation is introduced;
+- no automatic retry, provider failover, or transaction resubmission is introduced;- no duplicate payment/purchase creation is introduced;
 - no ledger mutation, customer balance mutation, treasury movement, or provider funding is introduced;
 - durable transaction/reference ownership, CAS/idempotency, webhook idempotency, and reconciliation boundaries remain unchanged;
 - no public API exposure is introduced;
@@ -16515,5 +16499,87 @@ Explicit non-goals:
 - no automatic retry/failover;
 - no provider funding;
 - no ledger/customer-balance/treasury mutation;
+- no public API;
+- no DesKaCash provider-specific coupling.
+
+## Milestone #270 — RCB Adapter Foundation / Capability Boundary
+
+**Date:** 2026-09-29
+
+### Implementation
+
+- added the provider-neutral RCB adapter foundation at `DesKaProvider/backend/Provider/RCB/adapter.go`;
+- added explicit `ErrNotImplemented` behavior for `GetProducts`, `Inquiry`, `Purchase`, `GetStatus`, and `HandleWebhook`;
+- added compile-time conformance to the existing `provider.PPOBProvider` contract;
+- added deterministic tests proving every unverified RCB operation fails closed with `ErrNotImplemented`;
+- added a test proving the foundation does not claim capability readiness merely by satisfying the interface;
+- deliberately did not add credentials, endpoints, request/response schemas, signing algorithms, provider status mappings, transaction mappings, registry activation, or live-validation claims because the repository does not contain a verified RCB provider contract for those details.
+
+### Changed Files
+
+- `DesKaProvider/backend/Provider/RCB/adapter.go`
+- `DesKaProvider/backend/Provider/RCB/adapter_test.go`
+- `DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md`
+
+### Safety Boundary / Invariants
+
+- the RCB foundation is fail-closed and cannot submit a provider transaction;
+- no RCB capability is registered or promoted to route eligibility by this milestone;
+- adapter interface conformance is not equivalent to implementation readiness, live validation, or ProductionReady;
+- no provider credentials, endpoint details, protocol/signature assumptions, or undocumented status semantics are introduced;
+- no automatic retry, provider failover, transaction resubmission, provider funding, customer-ledger mutation, treasury movement, or public API exposure is introduced;
+- DesKaCash remains isolated from provider-specific RCB details;
+- router remains the sole routing decision path.
+
+### Verification
+
+Final implementation/test HEAD before this documentation update:
+
+`af3e025bc673f4074134b659695efd94ed584702`
+
+GitHub Actions run **#2802** for that exact HEAD is **GREEN**:
+
+- `test`: PASS, including `go test ./...` and `go vet ./...`;
+- `race`: PASS, including `go test -race ./...`;
+- `xp-sindonesia-read-only`: skipped as expected;
+- `iak-read-only`: skipped as expected;
+- `midtrans-sandbox`: skipped as expected;
+- no authorized live RCB/provider transaction was executed.
+
+The implementation commits for this milestone are:
+
+- `1411441b1d858720db63e505949eb6d1241b2040` — initial RCB foundation;
+- `a3660291960c24daccff90948759483bed7fde22` — canonical provider import correction;
+- `af3e025bc673f4074134b659695efd94ed584702` — deterministic foundation tests.
+
+### Known Limitations
+
+- RCB has no concrete production adapter yet;
+- RCB provider contract details remain unverified in the repository;
+- no RCB live/read-only validation is available;
+- no RCB capability is runtime-registered or route-eligible;
+- the foundation therefore represents an integration boundary only, not provider readiness.
+
+### Architecture Impact
+
+The repository now has an explicit fail-closed location for future RCB implementation without forcing provider-specific assumptions into the neutral domain contract. This preserves the capability/routing boundary and makes the absence of a verified RCB protocol explicit in source code and tests.
+
+### Next Milestone
+
+**Milestone #271 — RCB Provider Contract Acquisition / Implementation Gate**
+
+Scope:
+
+- obtain and verify the current RCB provider-issued/API integration contract before implementing protocol behavior;
+- verify only the minimum fields required by the existing neutral `PPOBProvider` contract;
+- if a verified contract becomes available, implement deterministic HTTP contract tests before any credential-gated validation;
+- if the contract remains unavailable, keep the RCB foundation fail-closed and do not register capabilities or alter routing behavior.
+
+Explicit non-goals:
+
+- no speculative RCB endpoint, authentication, signing, status mapping, webhook schema, or balance API;
+- no ProductionReady promotion;
+- no automatic retry/failover/resubmission;
+- no provider funding or financial mutation;
 - no public API;
 - no DesKaCash provider-specific coupling.
