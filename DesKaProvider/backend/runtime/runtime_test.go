@@ -1494,11 +1494,7 @@ func TestCombineRuntimeShutdownErrorPreservesDeterministicErrorOrder(t *testing.
 		audit,
 	)
 
-	want := "primary shutdown error
-worker shutdown error
-catalog shutdown error
-transaction close error
-audit close error"
+	want := "primary shutdown error\nworker shutdown error\ncatalog shutdown error\ntransaction close error\naudit close error"
 	if err == nil || err.Error() != want {
 		t.Fatalf("unexpected deterministic shutdown error order: got %q want %q", err, want)
 	}
@@ -1576,11 +1572,7 @@ func TestServiceRunShutdownPreservesCompletionOrderingAndAllErrorIdentity(t *tes
 	if !errors.Is(runErr, auditErr) {
 		t.Fatalf("expected audit close error identity, got %v", runErr)
 	}
-	wantErr := "context canceled
-balance shutdown failed
-catalog shutdown failed
-close transaction database: transaction close failed
-close audit database: audit close failed"
+	wantErr := "context canceled\nbalance shutdown failed\ncatalog shutdown failed\nclose transaction database: transaction close failed\nclose audit database: audit close failed"
 	if runErr == nil || runErr.Error() != wantErr {
 		t.Fatalf("unexpected shutdown error precedence: got %q want %q", runErr, wantErr)
 	}
@@ -3590,11 +3582,7 @@ func TestServiceRunShutdownCancellationVsLifecycleCompletionPrecedence(t *testin
 			t.Fatalf("expected composed shutdown error identity %v, got %v", want, runErr)
 		}
 	}
-	wantErr := "context canceled
-balance completion deadline
-catalog completion cancellation
-close transaction database: transaction cleanup after cancellation
-close audit database: audit cleanup after cancellation"
+	wantErr := "context canceled\nbalance completion deadline\ncatalog completion cancellation\nclose transaction database: transaction cleanup after cancellation\nclose audit database: audit cleanup after cancellation"
 	if runErr == nil || runErr.Error() != wantErr {
 		t.Fatalf("unexpected shutdown error precedence: got %q want %q", runErr, wantErr)
 	}
@@ -6330,3 +6318,55 @@ func TestNewFromEnvironmentContextPreservesProviderLifecycleAcrossRestart(t *tes
 	if !ok || !status.AdapterImplemented || status.Enabled { t.Fatalf("runtime restart must not promote registry readiness: %+v", status) }
 }
 
+func TestNewFromEnvironmentContextPreservesProviderLifecycleAcrossRestart(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("DESKAPROVIDER_OPERATIONAL_STORE_PATH", filepath.Join(dir, "operational.json"))
+	t.Setenv("DESKAPROVIDER_PROVIDER_STATE_STORE_PATH", filepath.Join(dir, "provider-state.json"))
+	t.Setenv("DESKAPROVIDER_TRANSACTION_STORE_PATH", filepath.Join(dir, "transactions.json"))
+	t.Setenv("DESKAPROVIDER_CATALOG_STORE_PATH", filepath.Join(dir, "catalog.json"))
+	t.Setenv("DESKAPROVIDER_CATALOG_SYNC_STATUS_STORE_PATH", filepath.Join(dir, "catalog-status.json"))
+	t.Setenv("DESKAPROVIDER_OPERATIONAL_STORE_DRIVER", "json")
+	t.Setenv("DESKAPROVIDER_TRANSACTION_STORE_DRIVER", "json")
+	t.Setenv("DESKAPROVIDER_AUDIT_STORE_DRIVER", "memory")
+	t.Setenv("DESKAPROVIDER_POSTGRES_DSN", "")
+	t.Setenv("MIDTRANS_SERVER_KEY", "runtime-test-midtrans-key")
+	t.Setenv("IAK_USERNAME", "")
+	t.Setenv("IAK_API_KEY", "")
+	t.Setenv("XP_SINDONESIA_ID", "")
+	t.Setenv("XP_SINDONESIA_KEY", "")
+	t.Setenv("XP_SINDONESIA_API", "")
+	t.Setenv("DIGIFLAZZ_USERNAME", "")
+	t.Setenv("DIGIFLAZZ_API_KEY", "")
+
+	first, err := NewFromEnvironment(http.DefaultClient)
+	if err != nil { t.Fatal(err) }
+	midtransState, ok := first.providerState.Get("midtrans")
+	if !ok { t.Fatal("expected Midtrans provider state") }
+	if midtransState.Enabled() { t.Fatal("provider must remain disabled by default") }
+	if !midtransState.Supports(operational.CapabilityPayment) || !midtransState.Supports(operational.CapabilityWebhook) {
+		t.Fatalf("expected synchronized Midtrans capabilities, got %#v", midtransState.Capabilities)
+	}
+
+	admin, err := operational.NewProviderAdminService(first.providerState)
+	if err != nil { t.Fatal(err) }
+	if _, err := admin.Enable("midtrans"); err != nil { t.Fatal(err) }
+	if err := first.Close(); err != nil { t.Fatal(err) }
+
+	second, err := NewFromEnvironment(http.DefaultClient)
+	if err != nil { t.Fatal(err) }
+	defer second.Close()
+
+	recovered, ok := second.providerState.Get("midtrans")
+	if !ok { t.Fatal("expected recovered Midtrans provider state") }
+	if !recovered.Enabled() { t.Fatal("provider lifecycle must survive runtime restart") }
+	if !recovered.Supports(operational.CapabilityPayment) || !recovered.Supports(operational.CapabilityWebhook) {
+		t.Fatalf("capability synchronization must survive restart, got %#v", recovered.Capabilities)
+	}
+
+	descriptor, err := second.purchaseService.Router.Registry.Capabilities("midtrans")
+	if err != nil { t.Fatal(err) }
+	status, ok := descriptor.Status(provider.CapabilityPayment)
+	if !ok || !status.AdapterImplemented || status.Enabled {
+		t.Fatalf("runtime restart must not promote registry readiness: %+v", status)
+	}
+}
