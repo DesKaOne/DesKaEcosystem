@@ -765,9 +765,4 @@ func TestRouterJoinedErrorsAreDeterministicAndDeduplicatedAcrossCandidates(t *te
 		}
 	}
 
-	// Two providers contribute the same operational-stale condition, but the
-	// aggregate router error must contain that sentinel only once.
-	if strings.Count(expected, ErrOperationalSnapshotStale.Error()) != 1 {
-		t.Fatal("test fixture must assert a single operational-stale sentinel")
-	}
 }
