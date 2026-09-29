@@ -3168,3 +3168,97 @@ Scope:
 - preserve all transaction, financial, and public-API safety boundaries.
 
 No speculative RCB PPOB implementation, automatic retry/failover/resubmission, funding, ledger/treasury mutation, public API, or DesKaCash provider-specific coupling is included in #297.
+
+## Milestone #297 — Provider Administrative Snapshot / Routing Re-read Consistency Audit
+
+**Date:** 2026-09-30
+
+### Scope
+
+- verify interleaved administrative snapshots and `Router.Select()` calls remain consistent across controlled provider transitions;
+- verify administrative re-reads do not alter routing outcomes or aggregate sentinel membership;
+- verify each persisted transition is reflected consistently by both observational and authoritative routing surfaces without introducing a second routing authority;
+- preserve all transaction, financial, and public-API safety boundaries.
+
+### Source Finding
+
+- #296 established repeated administrative snapshot idempotence across lifecycle and capability transitions.
+- #295 established that diagnostic observations do not mutate routing authority or persisted source state.
+- The remaining boundary was interleaving administrative snapshot reads with authoritative routing reads while lifecycle and capability state change, including terminal aggregate-error recovery behavior.
+
+### Implementation
+
+Added test-only coverage in `DesKaProvider/backend/routing/diagnostic_snapshot_routing_consistency_test.go`.
+
+The regression scenario:
+
+1. initialize two provider-neutral mock providers with explicit PPOB capability metadata, deterministic healthy operational snapshots, and deterministic catalog snapshots;
+2. keep `alpha` disabled and `beta` enabled, then interleave `ExplainAllProviderRoutes()` and `Router.Select()` and verify `beta` remains the authoritative selected provider while disabled `alpha` is not route-eligible;
+3. explicitly enable `alpha` and verify the same interleaved read pattern observes `alpha` as route-eligible and `Router.Select()` selects `alpha`;
+4. introduce capability metadata drift for `alpha`, verify the administrative snapshot exposes the drift while `Router.Select()` moves back to `beta`;
+5. explicitly disable `beta`, leaving no eligible provider, and verify administrative reads expose both `alpha` capability drift and `beta` lifecycle-disabled evidence while routing returns the authoritative aggregate containing `ErrNoProviderAvailable` and `ErrProviderCapabilityDrift`;
+6. repeat the terminal administrative snapshot around a routing call and require deep equality, proving re-reads do not accumulate diagnostic or routing state.
+
+The initial test revision contained a reversed assertion for the intentionally disabled `alpha` provider; this was corrected in test-only commit `6620415f9c6dac1734b3472183e215a8cf5830d1`. No production behavior was changed.
+
+### Changed Files
+
+- `DesKaProvider/backend/routing/diagnostic_snapshot_routing_consistency_test.go`
+- `DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md`
+
+No provider credentials or external provider requests were added or executed.
+
+### Verification
+
+Implementation/test final HEAD:
+
+`6620415f9c6dac1734b3472183e215a8cf5830d1`
+
+GitHub Actions Push CI **#2993** / run **36622917437** for that exact HEAD: **GREEN**.
+
+GitHub Actions Pull Request CI **#2994** / run **36622925629** for that exact HEAD: **GREEN**.
+
+- test: PASS
+- vet: PASS
+- race: PASS
+- PostgreSQL service-backed test environment: PASS
+- IAK read-only: SKIPPED (credential-gated)
+- XP SINDONESIA read-only: SKIPPED (credential-gated)
+- Midtrans sandbox: SKIPPED (credential-gated)
+
+No authorized live-provider transaction or external provider request was executed.
+
+### Safety Boundary / Invariants
+
+- administrative snapshots remain observational and do not authorize payment, purchase, retry, failover, or resubmission;
+- `Router.Select()` remains the sole routing decision authority;
+- interleaved diagnostic re-reads do not mutate lifecycle, capability metadata, operational state, catalog state, or routing state;
+- capability drift remains a blocking routing condition until the existing explicit reconciliation/lifecycle boundaries resolve it;
+- aggregate sentinel membership remains a projection of the current routing candidate set and gate state, not persistent diagnostic state;
+- no automatic retry, provider failover, transaction resubmission, duplicate transaction creation, provider funding, ledger mutation, customer-balance mutation, treasury movement, or public API exposure is introduced;
+- RCB remains unregistered, non-routable, and fail-closed pending an authoritative PPOB contract;
+- no DesKaCash provider-specific coupling is introduced.
+
+### Known Limitations
+
+- this audit proves internal consistency between administrative re-reads and authoritative routing decisions under controlled transitions; it does not establish external provider availability or provider contract correctness;
+- IAK, XP SINDONESIA, and Midtrans external validation remains credential-gated;
+- no authorized live-provider transaction was executed;
+- RCB PPOB contract acquisition remains incomplete.
+
+### Architecture Impact
+
+#297 closes the interleaved snapshot/routing re-read consistency boundary: administrative snapshots and `Router.Select()` observe the same underlying provider state transitions without sharing or creating a second routing authority. Diagnostic evidence can become richer as state changes, while routing outcomes and aggregate sentinel membership change only when the underlying routing gates change.
+
+### Next Milestone
+
+**Milestone #298 — Provider Administrative Snapshot / Routing Aggregate Membership Re-read Audit**
+
+Scope:
+
+- verify repeated interleaved administrative snapshots and `Router.Select()` calls preserve exact aggregate sentinel membership across terminal blocked states and controlled recovery;
+- verify repeated re-reads do not retain historical sentinel causes or introduce duplicate aggregate membership;
+- preserve deterministic `errors.Is` semantics and aggregate ordering while keeping administrative explanation observational;
+- preserve all transaction, financial, and public-API safety boundaries.
+
+No speculative RCB PPOB implementation, automatic retry/failover/resubmission, funding, ledger/treasury mutation, public API, or DesKaCash provider-specific coupling is included in #298.
