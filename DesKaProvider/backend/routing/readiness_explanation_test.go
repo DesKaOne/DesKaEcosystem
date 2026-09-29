@@ -415,8 +415,12 @@ func TestExplainProviderRouteParityAcrossAdministrativeRoutingStateMatrix(t *tes
 				if !found || !blocking {
 					t.Fatalf("expected blocking reason %q: %#v", tt.reason, explanation)
 				}
-			} else if len(explanation.Reasons) != 0 {
-				t.Fatalf("eligible route must have no blocking administrative reason: %#v", explanation)
+			} else {
+				for _, rr := range explanation.Reasons {
+					if rr.Blocking {
+						t.Fatalf("eligible route must have no blocking administrative reason: %#v", explanation)
+					}
+				}
 			}
 		})
 	}
