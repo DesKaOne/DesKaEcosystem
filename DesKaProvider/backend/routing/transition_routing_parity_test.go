@@ -89,17 +89,17 @@ func TestAdministrativeTransitionRoutingParity(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	assertParity := func(name string, wantEligible bool, wantErr error) {
+	assertParity := func(label string, wantEligible bool, wantErr error) {
 		t.Helper()
 		explanation, err := ExplainProviderRoute(
-			context.Background(), router, name, provider.CapabilityPPOB, "xld10", 100,
+			context.Background(), router, "mock", provider.CapabilityPPOB, "xld10", 100,
 		)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if explanation.RouteEligible != wantEligible {
 			t.Fatalf("%s: explanation RouteEligible=%v want %v reasons=%#v",
-				name, explanation.RouteEligible, wantEligible, explanation.Reasons)
+				label, explanation.RouteEligible, wantEligible, explanation.Reasons)
 		}
 
 		selected, selectErr := router.Select(context.Background(), Request{
@@ -109,17 +109,17 @@ func TestAdministrativeTransitionRoutingParity(t *testing.T) {
 		if wantEligible {
 			if selectErr != nil || selected != "mock" {
 				t.Fatalf("%s: eligible explanation must match Router.Select success: selected=%q err=%v explanation=%#v",
-					name, selected, selectErr, explanation)
+					label, selected, selectErr, explanation)
 			}
 			return
 		}
 		if selectErr == nil {
 			t.Fatalf("%s: blocked explanation must match Router.Select rejection: selected=%q explanation=%#v",
-				name, selected, explanation)
+				label, selected, explanation)
 		}
 		if wantErr != nil && !errors.Is(selectErr, wantErr) {
 			t.Fatalf("%s: Router.Select error=%v does not expose expected sentinel %v; explanation=%#v",
-				name, selectErr, wantErr, explanation)
+				label, selectErr, wantErr, explanation)
 		}
 	}
 
