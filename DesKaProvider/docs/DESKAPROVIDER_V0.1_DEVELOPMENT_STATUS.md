@@ -2683,3 +2683,94 @@ Scope:
 - preserve the observational diagnostic boundary and `Router.Select` as the sole routing authority.
 
 No speculative RCB PPOB implementation, automatic retry/failover/resubmission, funding, ledger/treasury mutation, public API, or DesKaCash provider-specific coupling is included in #292.
+
+
+## Milestone #292 — Provider Administrative Diagnostic Transition / Restart Determinism Audit
+
+**Date:** 2026-09-29
+
+### Scope
+
+- verify administrative diagnostic output remains deterministic across reconstructed persistent provider-state, operational, and catalog sources;
+- verify an explicit lifecycle state transition persists and remains semantically identical after restart/recovery;
+- preserve diagnostics as observational and `Router.Select` as the sole routing authority.
+
+### Source Finding
+
+- The existing JSON-backed ProviderStateStore, operational store, and catalog store already provide deterministic persistence/recovery primitives.
+- `ExplainAllProviderRoutes` already reconstructs freshness/drift metadata from those persisted sources.
+- The source did not demonstrate a production invariant violation requiring new runtime logic.
+- The missing regression boundary was an explicit controlled lifecycle transition followed by reconstruction of all persisted diagnostic sources and comparison of the resulting administrative explanation.
+
+### Implementation
+
+Test-only coverage was added:
+
+1. Start with a persisted provider whose PPOB lifecycle is explicitly disabled while capability metadata, operational state, and catalog are synchronized.
+2. Capture the administrative explanation before transition.
+3. Explicitly enable the provider through `ProviderAdminService.Enable`.
+4. Capture the post-transition administrative explanation and verify PPOB becomes route-eligible only because of that explicit lifecycle mutation.
+5. Reconstruct ProviderState, operational state, and catalog from their JSON persistence files, modeling a process restart.
+6. Verify the post-restart administrative explanation is deeply identical to the post-transition explanation.
+7. Verify generation time, PPOB reasons, route eligibility, and persisted lifecycle state remain deterministic after restart.
+8. Verify repeated post-restart diagnostics remain deeply identical.
+
+No production routing, provider adapter, lifecycle implementation, readiness, persistence format, transaction, or financial behavior was changed.
+
+### Changed Files
+
+- `DesKaProvider/backend/routing/administrative_explanation_test.go`
+- `DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md`
+
+### Verification
+
+Implementation/test HEAD:
+
+`ba246176f4611435dfb03b6082c29513b10e7822`
+
+GitHub Actions Push CI #2946 / run `36601556195`: **GREEN**
+- `go test ./...`: PASS
+- `go vet ./...`: PASS
+- PostgreSQL service-backed integration: PASS as part of the CI test/race jobs
+- `go test -race ./...`: PASS
+- IAK read-only: SKIPPED (credential-gated)
+- XP SINDONESIA read-only: SKIPPED (credential-gated)
+- Midtrans sandbox: SKIPPED (credential-gated)
+
+The race job completed successfully after the full race suite. No authorized live-provider transaction or external provider request was executed.
+
+### Safety Boundary / Invariants
+
+- explicit lifecycle transition is the only mutation exercised by this milestone;
+- restart/recovery restores the persisted lifecycle state without promoting capability readiness;
+- diagnostics do not reconcile, enable, disable, or otherwise mutate provider state;
+- capability fingerprints remain unchanged by diagnostics;
+- operational and catalog source observations remain unchanged by diagnostics;
+- repeated diagnostics under unchanged reconstructed state remain deterministic;
+- `Router.Select` remains the sole routing decision authority;
+- no automatic retry, provider failover, transaction resubmission, duplicate transaction creation, provider funding, ledger mutation, customer-balance mutation, treasury movement, or public API exposure is introduced;
+- RCB remains unregistered, non-routable, and fail-closed pending an authoritative PPOB contract;
+- no DesKaCash provider-specific coupling is introduced.
+
+### Known Limitations
+
+- This milestone validates deterministic internal persistence/recovery semantics; it does not establish external provider availability or live-provider correctness.
+- IAK, XP SINDONESIA, and Midtrans external validation remains credential-gated.
+- No authorized live-provider transaction was executed.
+- The restart audit uses the existing JSON persistence implementations; PostgreSQL persistence has separate integration coverage but is not changed by this milestone.
+- RCB PPOB contract acquisition remains incomplete.
+
+### Architecture Impact
+
+#292 closes the controlled-transition/restart determinism gap for administrative diagnostics. The architecture remains single-authority: explicit lifecycle APIs mutate lifecycle state, persistence recovers that state, administrative diagnostics observe it, and `Router.Select` alone decides routing.
+
+### Next Milestone
+
+**Milestone #293 — Provider Administrative Transition / Routing Parity Audit**
+
+Scope:
+- verify controlled lifecycle/capability transitions preserve exact parity between administrative explanations and actual `Router.Select` outcomes;
+- verify transition sequences do not introduce a second routing authority;
+- extend deterministic parity coverage across disabled, reconciled, enabled, drifted, stale operational, and stale catalog states.
+
+No speculative RCB PPOB implementation, automatic retry/failover/resubmission, funding, ledger/treasury mutation, public API, or DesKaCash provider-specific coupling is included in #293.
