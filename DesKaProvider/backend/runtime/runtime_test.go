@@ -6298,6 +6298,22 @@ func TestNewFromEnvironmentContextPreservesProviderLifecycleAcrossRestart(t *tes
 	if _, err := admin.Enable("midtrans"); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := admin.DisableCapability("midtrans", operational.CapabilityPayment); err != nil {
+		t.Fatal(err)
+	}
+	beforeRestart, ok := first.providerState.Get("midtrans")
+	if !ok {
+		t.Fatal("expected Midtrans state before restart")
+	}
+	if !beforeRestart.Enabled() {
+		t.Fatal("capability control must not change provider lifecycle")
+	}
+	if beforeRestart.Supports(operational.CapabilityPayment) {
+		t.Fatal("explicitly disabled capability must be blocked before restart")
+	}
+	if !beforeRestart.Supports(operational.CapabilityWebhook) {
+		t.Fatal("unrelated capability must remain enabled before restart")
+	}
 	if err := first.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -6314,6 +6330,12 @@ func TestNewFromEnvironmentContextPreservesProviderLifecycleAcrossRestart(t *tes
 	}
 	if !recovered.Enabled() {
 		t.Fatal("provider lifecycle must survive runtime restart")
+	}
+	if recovered.Supports(operational.CapabilityPayment) {
+		t.Fatal("explicitly disabled capability must remain disabled after runtime restart")
+	}
+	if !recovered.Supports(operational.CapabilityWebhook) {
+		t.Fatal("unrelated capability must remain enabled after runtime restart")
 	}
 	if !recovered.Supports(operational.CapabilityPayment) || !recovered.Supports(operational.CapabilityWebhook) {
 		t.Fatalf("capability synchronization must survive restart, got %#v", recovered.Capabilities)
