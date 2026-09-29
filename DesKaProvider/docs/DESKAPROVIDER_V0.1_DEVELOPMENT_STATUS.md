@@ -2581,3 +2581,94 @@ Scope:
 - preserve Router.Select as the sole routing authority.
 
 No speculative RCB PPOB implementation, automatic retry/failover/resubmission, funding, ledger/treasury mutation, public API, or DesKaCash provider-specific coupling is included.
+
+
+## Milestone #291 — Provider Administrative Snapshot / Diagnostic Non-Mutation Audit
+
+**Date:** 2026-09-29
+
+### Scope
+
+Verify that `Diagnose`, `DiagnoseAll`, `ExplainProviderRoute`, and aggregate administrative explanation snapshots remain observational, deterministic, and isolated from provider/routing source state.
+
+### Source Finding
+
+- `ProviderAdminService.Diagnose` reads persisted `ProviderState` and computes capability drift without reconciling or enabling state.
+- `ProviderAdminService.DiagnoseAll` consumes the provider-state store's sorted snapshots and returns diagnostic values; `ProviderStateStore.Get` and `All` defensively copy mutable capability slices.
+- Capability drift evidence is value-oriented but contains mutable slices; the implementation computes fresh drift slices per diagnosis, so caller-side mutation does not feed back into persisted state.
+- `ExplainProviderRoute` constructs a fresh explanation and fresh reason slice on every invocation.
+- `ExplainAllProviderRoutes` constructs fresh provider/capability snapshots and copies explanation reason slices into the aggregate result.
+- Routing explanations and diagnostics only read operational/catalog/provider-state inputs. The audit found no production mutation path from these administrative calls into those sources or into routing eligibility.
+- `Router.Select` remains the only routing decision authority.
+
+### Implementation
+
+Test-only regression coverage was added for the remaining non-mutation gaps:
+
+1. **Diagnostic drift-copy isolation**
+   - mutate `Diagnose().Drift.Added`;
+   - mutate `Diagnose().State.Capabilities`;
+   - mutate `DiagnoseAll()` returned drift/state slices;
+   - verify persisted `ProviderState` is unchanged;
+   - verify repeated diagnosis remains deterministic.
+
+2. **Administrative source-state isolation**
+   - capture provider state, capability metadata, operational snapshot, and catalog snapshot;
+   - run `ExplainProviderRoute` and `ExplainAllProviderRoutes`;
+   - mutate returned explanation reason slices, including nested aggregate snapshot reasons;
+   - verify all source snapshots and capability metadata remain unchanged;
+   - verify `Router.Select` returns the same route before and after diagnostics;
+   - verify repeated explanations remain deeply equal under a fixed router clock.
+
+No production routing, provider adapter, lifecycle, readiness, persistence, or financial behavior was changed.
+
+### Changed Files
+
+- `DesKaProvider/backend/Provider/operational/provider_diagnostics_nonmutation_test.go`
+- `DesKaProvider/backend/routing/diagnostic_nonmutation_test.go`
+- `DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md`
+
+### Verification
+
+Implementation/test commits:
+
+- `6c2a8896d3ed3166da24263693a4c795f9882780` — diagnostic copy-isolation regression tests
+- `1fd26e77c4428d536b639da0ed8c98d2436c2f84` — routing/source-isolation regression tests
+
+GitHub Actions verification is pending for the final branch HEAD after documentation closure.
+
+No authorized live-provider transaction or external provider request was executed.
+
+### Safety Boundary / Invariants
+
+- `Diagnose` and `DiagnoseAll` remain observational and cannot mutate persisted provider state through returned slices.
+- `ExplainProviderRoute` and `ExplainAllProviderRoutes` remain observational and cannot mutate operational snapshots, catalog snapshots, capability metadata, readiness metadata, or routing state through returned reason slices.
+- Repeated diagnostics/explanations remain deterministic for unchanged source state.
+- Explicit reconciliation and lifecycle enablement remain the only intended operational mutation boundaries.
+- `Router.Select` remains the sole routing decision authority.
+- No automatic retry, provider failover, transaction resubmission, duplicate transaction creation, provider funding, ledger mutation, customer-balance mutation, treasury movement, or public API exposure is introduced.
+- RCB remains unregistered, non-routable, and fail-closed pending an authoritative PPOB contract.
+- No DesKaCash provider-specific coupling is introduced.
+
+### Known Limitations
+
+- Coverage is deterministic/internal and does not establish external provider availability.
+- IAK, XP SINDONESIA, and Midtrans external validation remains credential-gated.
+- No authorized live-provider transaction was executed.
+- The audit proves source/result isolation through the tested public internal store and administrative surfaces; it does not establish external provider correctness.
+- RCB PPOB contract acquisition remains incomplete.
+
+### Architecture Impact
+
+#291 closes the diagnostic snapshot non-mutation audit without changing production behavior. Administrative diagnostics now have explicit regression coverage for defensive result isolation across provider-state drift evidence, operational state, catalog state, capability metadata, and routing outcomes. The routing architecture remains single-authority: diagnostics observe; `Router.Select` decides.
+
+### Next Milestone
+
+**Milestone #292 — Provider Administrative Diagnostic Transition / Restart Determinism Audit**
+
+Scope:
+- verify diagnostic output remains deterministic across reconstructed persistent provider-state, operational, and catalog sources;
+- verify controlled state transitions followed by restart/recovery do not change diagnostic semantics unexpectedly;
+- preserve the observational diagnostic boundary and `Router.Select` as the sole routing authority.
+
+No speculative RCB PPOB implementation, automatic retry/failover/resubmission, funding, ledger/treasury mutation, public API, or DesKaCash provider-specific coupling is included in #292.
