@@ -1,5 +1,5 @@
 package routing
-import("context";"errors";"testing";"time";provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider";mock "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/Mock";"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/operational";"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/catalog")
+import("context";"errors";"reflect";"testing";"time";provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider";mock "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/Mock";"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/operational";"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/catalog")
 func testReadinessRouter(t *testing.T,status provider.CapabilityStatus,lifecycle operational.Lifecycle,cat *catalog.Snapshot)*Router{t.Helper();r:=provider.NewRegistry();if err:=r.RegisterWithCapabilities("mock",mock.New(mock.Config{Products:[]provider.Product{{Code:"xld10"}}}),provider.CapabilityDescriptor{Capabilities:map[provider.Capability]provider.CapabilityStatus{provider.CapabilityPPOB:status}});err!=nil{t.Fatal(err)};states:=operational.NewProviderStateStore();d,_:=r.Capabilities("mock");if err:=states.Put(operational.ProviderState{ProviderName:"mock",Lifecycle:lifecycle,Capabilities:[]operational.Capability{operational.CapabilityPPOB},CapabilityFingerprint:operational.CapabilityMetadataFingerprint(d)});err!=nil{t.Fatal(err)};store:=operational.NewMemoryStore();if err:=store.Put(operational.Snapshot{ProviderName:"mock",Balance:100000,Currency:"IDR",Health:operational.HealthHealthy,LastCheckedAt:time.Now()});err!=nil{t.Fatal(err)};var cs catalog.Store;if cat!=nil{c:=catalog.NewMemoryStore();if err:=c.Put(*cat);err!=nil{t.Fatal(err)};cs=c};router,err:=NewWithCatalogAndStateAndOperationalMaxAge(r,store,nil,cs,states,time.Hour);if err!=nil{t.Fatal(err)};return router}
 func reason(e ProviderRouteExplanation,c ReadinessReasonCode)(bool,bool){for _,v:=range e.Reasons{if v.Code==c{return true,v.Blocking}};return false,false}
 func TestExplainProviderRouteSeparatesReadinessFromRouting(t *testing.T){r:=testReadinessRouter(t,provider.CapabilityStatus{AdapterImplemented:true,Enabled:true},operational.LifecycleEnabled,&catalog.Snapshot{ProviderName:"mock",Products:[]provider.Product{{Code:"xld10"}},SyncedAt:time.Now()});e,err:=ExplainProviderRoute(context.Background(),r,"mock",provider.CapabilityPPOB,"xld10",100);if err!=nil{t.Fatal(err)};if !e.RouteEligible{t.Fatalf("explainability changed routing: %#v",e)};for _,c:=range []ReadinessReasonCode{ReasonConfigurationMissing,ReasonTestsNotVerified,ReasonLiveValidationMissing,ReasonProductionReadinessMissing}{found,blocking:=reason(e,c);if !found||blocking{t.Fatalf("expected non-blocking %q: %#v",c,e)}}}
@@ -643,4 +643,158 @@ func TestExplainProviderRouteTransitionParityWithRouterSelect(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertParity("explicitly-enabled", true, "")
+}
+
+
+func TestExplainProviderRouteReturnedReasonsAreCopyIsolated(t *testing.T) {
+	now := time.Date(2026, 9, 29, 12, 0, 0, 0, time.UTC)
+	r := testReadinessRouter(t, provider.CapabilityStatus{
+		AdapterImplemented: true,
+		Enabled: true,
+		Tested: true,
+	}, operational.LifecycleEnabled, &catalog.Snapshot{
+		ProviderName: "mock",
+		Products:     []provider.Product{{Code: "xld10"}},
+		SyncedAt:     now,
+	})
+	r.Now = func() time.Time { return now }
+
+	first, err := ExplainProviderRoute(context.Background(), r, "mock", provider.CapabilityPPOB, "xld10", 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := append([]ReadinessReason(nil), first.Reasons...)
+	if len(first.Reasons) == 0 {
+		t.Fatal("expected explanation reasons")
+	}
+
+	first.Reasons[0] = ReadinessReason{Code: ReadinessReasonCode("caller_mutated"), Blocking: true}
+	first.Reasons = append(first.Reasons, ReadinessReason{Code: ReadinessReasonCode("caller_appended"), Blocking: true})
+
+	second, err := ExplainProviderRoute(context.Background(), r, "mock", provider.CapabilityPPOB, "xld10", 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(second.Reasons) != len(original) {
+		t.Fatalf("caller mutation changed subsequent explanation length: got %d want %d", len(second.Reasons), len(original))
+	}
+	for i := range original {
+		if second.Reasons[i] != original[i] {
+			t.Fatalf("caller mutation leaked into subsequent explanation: got %#v want %#v", second.Reasons, original)
+		}
+	}
+}
+
+func TestExplainProviderRouteSnapshotResultIsolatedFromLaterStateChanges(t *testing.T) {
+	now := time.Date(2026, 9, 29, 12, 0, 0, 0, time.UTC)
+	r := testReadinessRouter(t, provider.CapabilityStatus{
+		AdapterImplemented: true,
+		Enabled: true,
+		Tested:             true,
+	}, operational.LifecycleEnabled, &catalog.Snapshot{
+		ProviderName: "mock",
+		Products:     []provider.Product{{Code: "xld10"}},
+		SyncedAt:     now,
+	})
+	r.Now = func() time.Time { return now }
+
+	reader, ok := r.OperationalInput.(*StoreOperationalInputReader)
+	if !ok {
+		t.Fatalf("expected store-backed operational input reader, got %T", r.OperationalInput)
+	}
+	if err := reader.Store.Put(operational.Snapshot{
+		ProviderName:  "mock",
+		Balance:       100000,
+		Currency:      "IDR",
+		Health:        operational.HealthHealthy,
+		LastCheckedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	before, err := ExplainProviderRoute(context.Background(), r, "mock", provider.CapabilityPPOB, "xld10", 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !before.RouteEligible {
+		t.Fatalf("expected initial route eligibility: %#v", before)
+	}
+
+	if err := reader.Store.Put(operational.Snapshot{
+		ProviderName:  "mock",
+		Balance:       50,
+		Currency:      "IDR",
+		Health:        operational.HealthUnhealthy,
+		LastCheckedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	catalogStore, ok := r.Catalog.(catalog.Store)
+	if !ok {
+		t.Fatalf("expected catalog store")
+	}
+	if err := catalogStore.Put(catalog.Snapshot{
+		ProviderName: "mock",
+		Products:     []provider.Product{{Code: "other"}},
+		SyncedAt:     now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if !before.RouteEligible {
+		t.Fatalf("previous explanation was mutated by later source changes: %#v", before)
+	}
+	after, err := ExplainProviderRoute(context.Background(), r, "mock", provider.CapabilityPPOB, "xld10", 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.RouteEligible {
+		t.Fatalf("new explanation must observe changed operational/catalog state: %#v", after)
+	}
+	for _, code := range []ReadinessReasonCode{ReasonOperationalHealthUnhealthy, ReasonInsufficientBalance, ReasonProductUnavailable} {
+		found, blocking := reason(after, code)
+		if !found || !blocking {
+			t.Fatalf("expected blocking reason %q after state change: %#v", code, after)
+		}
+	}
+}
+
+func TestExplainProviderRouteRepeatedCallsRemainDeterministicAfterCallerMutation(t *testing.T) {
+	now := time.Date(2026, 9, 29, 12, 0, 0, 0, time.UTC)
+	r := testReadinessRouter(t, provider.CapabilityStatus{
+		AdapterImplemented: true,
+		Enabled: false,
+		Tested: false,
+	}, operational.LifecycleDisabled, &catalog.Snapshot{
+		ProviderName: "mock",
+		Products:     []provider.Product{{Code: "other"}},
+		SyncedAt:     now.Add(-2 * time.Hour),
+	})
+	r.Now = func() time.Time { return now }
+
+	first, err := ExplainProviderRoute(context.Background(), r, "mock", provider.CapabilityPPOB, "xld10", 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first.Reasons = append(first.Reasons, ReadinessReason{
+		Code:    ReadinessReasonCode("caller_mutated"),
+		Blocking: true,
+	})
+
+	second, err := ExplainProviderRoute(context.Background(), r, "mock", provider.CapabilityPPOB, "xld10", 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	third, err := ExplainProviderRoute(context.Background(), r, "mock", provider.CapabilityPPOB, "xld10", 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(second, third) {
+		t.Fatalf("repeated explanations diverged after caller mutation: %#v %#v", second, third)
+	}
+	for _, rr := range second.Reasons {
+		if rr.Code == ReadinessReasonCode("caller_mutated") {
+			t.Fatalf("caller-mutated reason leaked into subsequent explanation: %#v", second)
+		}
+	}
 }
