@@ -997,8 +997,7 @@ Completed:
 - CI run #137 for commit `57079560eeb4fe8291c74c9c53d3013e52d17a46` is **success** and was verified before this milestone.
 - The durable transaction-state implementation commits are:
   - `e1a1e879ae788f63f7669f85100c09ccd66899ba`
-  - `cfca16a84cb965094d68dfec745f45880784de96`  - `5ff980f9de690894ec3ec3ea7695faab7f2ecebf`  - `15fa727fac4b04b75cea715e31ab17e79e559ad7`
-  - `8da3eecce2e511aa47dd2d68d576cc3e605bd466`
+  - `cfca16a84cb965094d68dfec745f45880784de96`  - `5ff980f9de690894ec3ec3ea7695faab7f2ecebf`  - `15fa727fac4b04b75cea715e31ab17e79e559ad7`  - `8da3eecce2e511aa47dd2d68d576cc3e605bd466`
 - CI #149 exposed a test-build regression in `service_test.go` (missing `filepath` import and reconciliation test helper). Fixed in commit `0cec25cc6791f0fdf1093c984ec56d3640b1511b`. The milestone remains pending until the subsequent CI run is green.
 
 ### Safety Boundary
@@ -1998,7 +1997,6 @@ Public catalog data is sufficient to confirm XP is a relevant PPOB product sourc
 - official API contract content — **not yet retrievable / insufficient for implementation**.
 ### Next Milestone
 Proceed only when the current XP API contract is obtained from the provider's API documentation or provider-issued integration material. Then implement the minimum existing `PPOBProvider` mapping with deterministic HTTP tests and credential-gated read-only integration checks where supported.
-
 ### 56. Milestone Update — XP Configuration Contract Added
 
 **Date:** 2026-09-25
@@ -2997,7 +2995,6 @@ Next milestone:
 
 **Date:** 2026-09-25
 Completed:
-
 - added NewFromEnvironmentContext to the runtime composition boundary;
 - retained NewFromEnvironment as a compatibility wrapper using context.Background();
 - changed the production command to create its signal-aware lifecycle context before runtime construction;
@@ -3998,7 +3995,6 @@ Milestone #99: runtime ownership transfer and initialization/shutdown lifecycle 
 ### Milestone #109 — Runtime Context Cancellation & Shutdown Boundary Review
 
 **Date:** 2026-09-26
-
 ### Completed
 
 - reviewed the relationship between the parent service context and runtime-owned worker shutdown context;
@@ -4996,7 +4992,6 @@ Completed:
 ### Next Milestone
 1. continue auditing PostgreSQL reconciliation behavior for cancellation/error boundaries after durable conflict recovery;
 2. preserve the no-resubmission and no-financial-authorization invariants across all reconciliation outcomes.
-
 
 ### 39. Milestone Update — PostgreSQL Atomic Reconciliation Boundary
 
@@ -5996,7 +5991,6 @@ Completed:
 ### Next Milestone
 
 **#138 — PostgreSQL Audit Ordering & Timestamp Collision Boundary:** verify deterministic ordering when multiple audit events share the same `created_at` timestamp and ensure ordering remains observational without influencing transaction authority.
-
 
 ### 138. Milestone Update — PostgreSQL Audit Ordering & Timestamp Collision Boundary
 
@@ -6998,7 +6992,6 @@ Completed:
 - implementation/fix commit: `72aa2a9d761d18048a621c2a13149e09505d9d9d`;
 - prior test implementation commit: `31d3d83203a7597efe78b927e8fe92518495d2cf`;
 - exact branch HEAD after this status documentation update must pass both push and PR CI with `test`, `vet`, and `race` successful before this milestone is considered closed.
-
 ### Known Limitations
 
 - the test uses one PostgreSQL deployment with multiple pooled connections and repeated concurrent reads; it does not cover replica lag, cross-region topology, or distributed transaction coordinators;
@@ -7998,7 +7991,6 @@ Focus next on constructor/runtime rollback paths where the catalog lifecycle or 
 ## 179. Milestone Update — Runtime Shutdown Failure Propagation During Auxiliary Lifecycle Rollback
 
 **Date:** 2026-09-27
-
 Completed:
 
 - added real PostgreSQL service-lifecycle coverage for failure of the auxiliary catalog lifecycle after the balance worker has already started;
@@ -8997,7 +8989,6 @@ Transaction persistence remains authoritative for transaction state/idempotency;
 ### Next Milestone
 
 **#189 — Runtime Shutdown Error Retention Across Repeated Close/Re-entry**
-
 Focus next on persistence of the recorded cleanup result across repeated direct close, Run-owned shutdown, and re-entry boundaries, including mixed database cleanup failures, without introducing new provider or transaction recovery behavior.
 
 
@@ -9997,8 +9988,7 @@ Focus next on ensuring historical cleanup errors remain available through repeat
 Completed:
 
 - added deterministic regression coverage for the case where both auxiliary lifecycles remain active after the first shutdown attempt;
-- verified the first Service.Run shutdown preserves the caller cancellation plus both independent lifecycle-completion errors;
-- verified transaction/audit database ownership remains open while either lifecycle is still active;
+- verified the first Service.Run shutdown preserves the caller cancellation plus both independent lifecycle-completion errors;- verified transaction/audit database ownership remains open while either lifecycle is still active;
 - verified both lifecycles can later converge explicitly without replaying the historical shutdown errors;
 - verified a later explicit Service.Close observes only the fresh transaction/audit cleanup errors after lifecycle convergence;
 - verified transaction cleanup remains before audit cleanup and each database closes exactly once;
@@ -10998,7 +10988,6 @@ Continue from the runtime lifecycle/reliability status with the next concrete bo
 **Date:** 2026-09-27
 
 Completed:
-
 - added deterministic coverage for a catalog synchronization failure occurring immediately after the catalog lifecycle starts;
 - verified an initial catalog sync failure does not terminate Service.Run() and does not trigger premature database ownership cleanup;
 - verified the catalog lifecycle remains active after the failed initial sync so the configured periodic sync boundary can retry;
@@ -11998,7 +11987,6 @@ A capability is not considered routable merely because an adapter exists. The re
 No real provider credentials were added to source or tests.
 
 ### Known Limitations
-
 - capability verification evidence is not yet persisted as a first-class audit record;
 - capability enablement is not yet dynamically managed through a dedicated control path;
 - live-test evidence is not yet represented by a durable test result store;
@@ -12998,7 +12986,6 @@ Harden transaction correlation/idempotency against persistence interruptions and
 
 ### Architecture Impact
 The transaction path now has an explicit authorization sequence:
-
 DesKaCash → DesKaProvider transaction correlation → durable create-if-absent claim → provider submission
 
 A transaction reference is resolved from durable state before routing, and the durable claim separates “reference exists” from “this runtime owns the first external submission.” This closes the duplicate-submission window across restart and concurrent service-instance boundaries without adding retry or failover behavior.
@@ -13998,7 +13985,6 @@ The payment lifecycle is now:
         +-- durable terminal/pending state
 
 This preserves the separation:
-
 DesKaCash -> DesKaProvider -> External Providers
 
 and keeps provider-specific protocol details inside adapters.
@@ -14997,8 +14983,7 @@ GitHub Actions for this exact HEAD:
 
 - Push CI #2552 / run 36401222150: **GREEN**
 - Pull Request CI #2553 / run 36401226680: **GREEN**
-- `go test ./...`: PASS
-- `go vet ./...`: PASS
+- `go test ./...`: PASS- `go vet ./...`: PASS
 - `go test -race ./...`: PASS
 - PostgreSQL 18 service-backed test environment: PASS
 
@@ -15997,8 +15982,7 @@ No public API exposure is included in #263.
 
 - exercised the hardened capability matrix through the real registerConfiguredProviders runtime composition path;
 - verified Midtrans and XP SINDONESIA can compose independently when IAK and DigiFlazz are unconfigured;
-- verified incomplete XP SINDONESIA configuration fails before the provider is registered;
-- verified capability metadata remains explicitly disabled and never becomes LIVE_VALIDATED or ProductionReady merely from runtime configuration;
+- verified incomplete XP SINDONESIA configuration fails before the provider is registered;- verified capability metadata remains explicitly disabled and never becomes LIVE_VALIDATED or ProductionReady merely from runtime configuration;
 - verified the runtime registry snapshot is defensive: caller mutation cannot alter stored capability metadata;
 - verified XP SINDONESIA's unsupported Catalog method remains ErrUnsupportedOperation and does not create a Catalog capability entry;
 - preserved the existing explicit capability vocabulary and provider-neutral registry boundary.
@@ -16640,3 +16624,94 @@ Explicit non-goals:
 - no provider funding or financial mutation;
 - no public API;
 - no DesKaCash provider-specific coupling.
+
+## Milestone #272 — RCB Contract Intake / Adapter Specification Gate
+
+**Date:** 2026-09-29
+
+### Evidence Intake
+
+The current authoritative/public material reviewed for RCB establishes the following high-level facts:
+
+- RCB advertises an integrated Topup PPOB service covering products such as pulsa, data, PLN, e-wallet, and game vouchers;
+- RCB advertises an API Gateway for payment flows and documents API-key-based HTTP integration for checkout/order creation;
+- RCB advertises webhook-based real-time payment notification for its payment gateway;
+- RCB's public material also mentions a sandbox for payment-flow simulation.
+
+These facts do **not** establish the concrete PPOB H2H contract required by the existing DesKaProvider neutral interface.
+
+### Required Contract Fields Still Missing
+
+Before implementing RCB PPOB behavior, the following provider-issued details must be available and verified:
+
+| Contract area | Required evidence | Current state |
+|---|---|---|
+| Base URL / endpoint | exact PPOB API endpoint(s) | **Missing** |
+| Authentication | credential fields and authentication scheme | **Missing for PPOB** |
+| Signature | exact signing formula/headers if required | **Missing for PPOB** |
+| Product list | request, response, product-code semantics | **Missing** |
+| Inquiry | request, response, identity/status semantics | **Missing** |
+| Purchase | request, response, provider reference semantics | **Missing** |
+| Status | lookup request and terminal/pending mapping | **Missing** |
+| Webhook | payload, authentication, replay/idempotency semantics | **Missing for PPOB** |
+| Error model | provider codes/messages and retry safety | **Missing** |
+| Idempotency | duplicate-reference behavior | **Missing** |
+| Balance | balance endpoint and authoritative response semantics | **Missing** |
+| Sandbox | PPOB sandbox endpoint/test credentials/test cases | **Missing** |
+
+### Implementation Decision
+
+No RCB runtime code changes are made in #272.
+
+The existing #270 fail-closed foundation remains the correct implementation state until the missing contract is supplied. The payment-gateway HTTP example published by RCB is not reused as a PPOB contract because it describes order/checkout creation rather than the PPOB operations represented by `PPOBProvider`.
+
+### Safety Boundary
+
+- public marketing/API material is evidence of service availability, not authorization to infer undocumented provider protocol;
+- no endpoint, authentication, signature, status, webhook, balance, or retry semantics are guessed;
+- RCB remains unregistered and non-routable;
+- no credentials are added to source control;
+- no live RCB request is executed;
+- no provider transaction, customer ledger, treasury, or funding state is mutated;
+- no automatic retry/failover/resubmission is introduced;
+- DesKaCash remains unaware of RCB-specific details.
+
+### Changed Files
+
+- `DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md`
+
+### Verification
+
+- Repository source audit: no concrete RCB PPOB protocol contract found.
+- Public RCB material reviewed: official FAQ, public integration article, and public guide.
+- Current evidence is sufficient to keep the implementation gate explicit, but insufficient to implement the adapter.
+- No credentialed RCB request executed.
+- No runtime registry/capability/routing change made.
+
+### Architecture Impact
+
+This milestone turns the RCB blocker into an explicit contract checklist. Future implementation can be reviewed field-by-field against provider-issued evidence before any capability is registered. This prevents a payment-gateway contract from being accidentally reused as a PPOB protocol.
+
+### Known Limitations
+
+The adapter cannot progress beyond the fail-closed foundation until RCB supplies an authoritative PPOB integration specification or equivalent provider-issued technical material, including sandbox/test behavior.
+
+### Next Milestone
+
+**Milestone #273 — RCB Contract Verification or Provider-Neutral Progression Gate**
+
+If an authoritative RCB PPOB contract becomes available:
+
+1. capture the exact contract fields;
+2. implement deterministic HTTP contract tests;
+3. map verified status/error semantics into the neutral interface;
+4. add credential-gated read-only validation where the provider supports it;
+5. only then evaluate capability registration.
+
+If the contract remains unavailable, do not modify RCB runtime code; instead continue with the next provider-neutral reliability/routing boundary that is supported by the repository's verified source.
+
+External RCB references used for this gate:
+
+- https://ragaciptabersama.web.id/faq
+- https://ragaciptabersama.web.id/blog/integrasi-payment-gateway-rcb-bisnis-php-wordpress
+- https://ragaciptabersama.web.id/panduan
