@@ -3853,3 +3853,23 @@ The next concrete readiness step is external evidence, in this order:
 5. reassess explicit ProductionReady evidence only after the applicable external validation results exist.
 
 No provider production transaction is authorized or executed by this audit.
+
+## Post-Audit Candidate — Tested/Adapter Invariant Hardening Rejected
+
+**Date:** 2026-09-30
+
+A bounded internal hardening experiment attempted to make `CapabilityStatus.Validate()` reject `Tested=true` when `AdapterImplemented=false`.
+
+The exact-head CI test matrix demonstrated that this combination is intentionally used as an observational diagnostic state in the existing readiness explanation tests. The change therefore altered an established diagnostic fixture rather than closing a proven production boundary.
+
+The experiment is rejected and reverted. No provider behavior, routing authority, operational state, or readiness promotion is changed by this attempt.
+
+The verified baseline remains the previous green HEAD and the repository continues to avoid opening a numbered milestone merely to increase milestone count.
+
+### Verification Decision
+
+- the failed hardening revision is not retained;
+- no diagnostic fixture is weakened merely to satisfy the proposed invariant;
+- `Router.Select()` remains the sole routing authority;
+- diagnostics remain observational and must continue to represent partial/invalid readiness states without mutating operational authority;
+- next concrete work remains external provider evidence unless a fresh repository inspection identifies a separately evidenced internal boundary.
