@@ -6312,10 +6312,9 @@ func TestNewFromEnvironmentContextPreservesProviderLifecycleAcrossRestart(t *tes
 		t.Fatalf("capability synchronization must survive restart, got %#v", recovered.Capabilities)
 	}
 
-	descriptor, err := second.purchaseService.Router.Capabilities("midtrans")
-	_ = descriptor
-	if err == nil {
-		t.Fatal("router should not expose an inferred registry capability through a lifecycle accessor")
-	}
+	descriptor, err := second.purchaseService.Router.Registry.Capabilities("midtrans")
+	if err != nil { t.Fatal(err) }
+	status, ok := descriptor.Status(provider.CapabilityPayment)
+	if !ok || !status.AdapterImplemented || status.Enabled { t.Fatalf("runtime restart must not promote registry readiness: %+v", status) }
 }
 \n
