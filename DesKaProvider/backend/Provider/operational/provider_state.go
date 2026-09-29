@@ -30,6 +30,7 @@ type ProviderState struct {
 	ProviderName string
 	Lifecycle    Lifecycle
 	Capabilities []Capability
+	CapabilityFingerprint string
 }
 
 func NewProviderState(name string) (ProviderState, error) {
