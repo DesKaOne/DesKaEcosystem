@@ -124,7 +124,7 @@ func (s *ProviderStateStore) Update(name string, mutate func(*ProviderState) err
 
 	current, ok := s.states[name]
 	if !ok {
-		return ProviderState{}, errors.New("provider not found")
+		return ProviderState{}, ErrProviderNotFound
 	}
 	current.Capabilities = append([]Capability(nil), current.Capabilities...)
 	current.EnabledCapabilities = append([]Capability(nil), current.EnabledCapabilities...)
