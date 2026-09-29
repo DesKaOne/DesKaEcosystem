@@ -897,7 +897,6 @@ func TestExplainProviderRouteCompoundBlockingReasonsMatchJoinedRouterErrors(t *t
 	s, _ := r.ProviderState.Get("mock")
 	s.CapabilityFingerprint = "drifted"
 	if err := r.ProviderState.Put(s); err != nil { t.Fatal(err) }
-	c := r.Catalog.(catalog.Store)
 	r.Now = func() time.Time { return now.Add(2 * time.Hour) }
 
 	explanation, err := ExplainProviderRoute(context.Background(), r, "mock", provider.CapabilityPPOB, "xld10", 100)
