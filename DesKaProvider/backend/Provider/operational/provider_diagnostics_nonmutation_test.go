@@ -4,7 +4,6 @@ import (
 	"reflect"
 	"testing"
 
-	provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
 )
 
 func TestProviderAdminDiagnosticsReturnedDriftCopiesAreIsolated(t *testing.T) {
