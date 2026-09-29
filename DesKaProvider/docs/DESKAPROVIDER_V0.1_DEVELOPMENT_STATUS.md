@@ -2168,3 +2168,106 @@ Scope:
 - preserve `Router.Select` as the sole routing decision path.
 
 No speculative RCB PPOB implementation, automatic retry/failover/resubmission, funding, ledger/treasury mutation, public API, or DesKaCash provider-specific coupling is included.
+
+
+## Milestone #287 — Provider Administrative Explanation Snapshot / Copy Isolation Audit
+
+**Date:** 2026-09-29
+
+### Scope
+
+Audit `ProviderRouteExplanation` result isolation and determinism so caller-side mutation cannot affect later explanations or hidden shared state, while external operational/catalog changes are reflected only in newly generated explanations.
+
+### Source Finding
+
+- `ExplainProviderRoute` constructs a fresh `ProviderRouteExplanation` and a fresh `Reasons` slice for each invocation.
+- `uniqueSortedReasons` creates a new output slice and canonicalizes reason order.
+- `ReadinessReason` contains value fields only; there is no nested mutable provider state inside the explanation result.
+- Operational and catalog stores are read during explanation; changing those stores after an explanation does not mutate the previously returned value.
+- Existing #283–#286 coverage established routing/explanation parity and transition behavior; #287 closes the caller-side result-isolation gap.
+
+### Implementation
+
+Added deterministic test coverage in `DesKaProvider/backend/routing/readiness_explanation_test.go`:
+
+1. **Returned reason slice copy isolation**
+   - obtain an explanation;
+   - mutate an element and append to the returned `Reasons` slice;
+   - call `ExplainProviderRoute` again;
+   - verify the later result is unchanged.
+
+2. **Snapshot result isolation from later source changes**
+   - capture an eligible explanation;
+   - change the operational snapshot to unhealthy/insufficient balance;
+   - change the catalog product set;
+   - verify the previous explanation remains unchanged;
+   - verify a new explanation reflects the new blocking state.
+
+3. **Repeated deterministic explanations after caller mutation**
+   - mutate the first returned explanation;
+   - obtain two subsequent explanations from the same state;
+   - verify they are deeply equal and contain no caller-injected reason.
+
+No production routing, provider adapter, authorization, or financial behavior changed.
+
+### Changed Files
+
+- `DesKaProvider/backend/routing/readiness_explanation_test.go`
+- `DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md`
+
+### Verification
+
+Implementation/test commit:
+
+`781ce8e8001207e1ae87cae8404a0a56c999fafe`
+
+GitHub Actions Push CI #2890 / run `36582740165`: **GREEN**
+
+- test: PASS
+  - `go test ./...`: PASS
+  - `go vet ./...`: PASS
+  - PostgreSQL service-backed environment: PASS
+- race: PASS
+  - `go test -race ./...`: PASS
+- IAK read-only: SKIPPED (credential-gated)
+- XP SINDONESIA read-only: SKIPPED (credential-gated)
+- Midtrans sandbox: SKIPPED (credential-gated)
+
+No authorized live-provider transaction or external provider request was executed.
+
+### Safety Boundary / Invariants
+
+- `ProviderRouteExplanation` remains observational.
+- Caller-side mutation of returned `Reasons` cannot mutate hidden/shared routing or provider state.
+- Previous explanation results remain stable when operational/catalog source state changes later.
+- New explanations reflect current source state and remain deterministic.
+- `Router.Select` remains the sole routing decision authority.
+- Explanation does not authorize payment, purchase, payout, retry, failover, resubmission, funding, or duplicate transaction creation.
+- No ledger, customer balance, or treasury mutation is introduced.
+- No readiness promotion or lifecycle enablement is inferred from explanation output.
+- RCB remains unregistered, non-routable, and fail-closed pending an authoritative PPOB contract.
+- No public API or DesKaCash provider-specific coupling is introduced.
+
+### Known Limitations
+
+- Coverage is deterministic/internal and does not establish external provider availability.
+- IAK, XP SINDONESIA, and Midtrans external validation remains credential-gated.
+- No authorized live-provider transaction was executed.
+- RCB PPOB contract acquisition remains incomplete.
+
+### Architecture Impact
+
+#287 strengthens the immutable observational boundary of administrative routing explanations: returned explanation data is isolated from internal state, while newly generated explanations continue to reflect current operational/catalog state.
+
+### Next Milestone
+
+**Milestone #288 — Provider Administrative Explanation / Router Error Semantics Parity**
+
+Scope:
+
+- verify explanation blocking reasons map consistently to the concrete error semantics surfaced by `Router.Select`;
+- cover compound blocking states where multiple reasons coexist but routing returns joined errors;
+- ensure administrative explanation does not invent error authority or alter router error behavior;
+- preserve `Router.Select` as the sole routing decision path.
+
+No speculative RCB PPOB implementation, automatic retry/failover/resubmission, funding, ledger/treasury mutation, public API, or DesKaCash provider-specific coupling is included.
