@@ -10,6 +10,8 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"time"
 	"testing"
 
 	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/config"
@@ -208,3 +210,58 @@ func TestDigiFlazzInquiryRejectsUnsupportedProduct(t *testing.T) {
 	_, err = c.Inquiry(context.Background(), provider.InquiryRequest{ProductCode:"xld10", CustomerNo:"123"})
 	if !errors.Is(err, provider.ErrUnsupportedOperation) { t.Fatalf("expected unsupported operation, got %v", err) }
 }
+
+
+func TestGetStatusFailsClosedWithoutResubmission(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("DigiFlazz status must not resubmit the transaction endpoint")
+	}))
+	defer server.Close()
+	c, err := New(config.DigiFlazzConfig{Username: "buyer", APIKey: "secret", Endpoint: server.URL}, server.Client())
+	if err != nil { t.Fatal(err) }
+	_, err = c.GetStatus(context.Background(), provider.StatusRequest{ProductCode: "xld10", CustomerNo: "087800001232", ReferenceID: "ref-1"})
+	if !errors.Is(err, provider.ErrUnsupportedOperation) { t.Fatalf("expected unsupported status operation, got %v", err) }
+}
+
+func TestUnknownProviderStatusFailsClosed(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"ref_id": "ref-unknown", "customer_no": "087800001232", "buyer_sku_code": "xld10", "message": "unknown", "status": "Menunggu", "rc": "99", "price": 10000}})
+	}))
+	defer server.Close()
+	c, err := New(config.DigiFlazzConfig{Username: "buyer", APIKey: "secret", Endpoint: server.URL}, server.Client())
+	if err != nil { t.Fatal(err) }
+	_, err = c.Purchase(context.Background(), provider.PurchaseRequest{ProductCode: "xld10", CustomerNo: "087800001232", ReferenceID: "ref-unknown"})
+	if !errors.Is(err, ErrUnknownTransactionStatus) { t.Fatalf("expected unknown status error, got %v", err) }
+}
+
+func TestPurchaseRejectsResponseIdentityMismatch(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"ref_id": "other-ref", "customer_no": "087800001232", "buyer_sku_code": "xld10", "message": "Transaksi Sukses", "status": "Sukses", "rc": "00", "price": 10000}})
+	}))
+	defer server.Close()
+	c, err := New(config.DigiFlazzConfig{Username: "buyer", APIKey: "secret", Endpoint: server.URL}, server.Client())
+	if err != nil { t.Fatal(err) }
+	_, err = c.Purchase(context.Background(), provider.PurchaseRequest{ProductCode: "xld10", CustomerNo: "087800001232", ReferenceID: "ref-1"})
+	if err == nil || !strings.Contains(err.Error(), "identity mismatch") { t.Fatalf("expected response identity mismatch, got %v", err) }
+}
+
+func TestDigiFlazzDefaultHTTPClientHasTimeout(t *testing.T) {
+	c, err := New(config.DigiFlazzConfig{Username: "buyer", APIKey: "secret"}, nil)
+	if err != nil { t.Fatal(err) }
+	if c.httpClient.Timeout <= 0 { t.Fatalf("expected default HTTP timeout, got %s", c.httpClient.Timeout) }
+}
+
+func TestDigiFlazzHTTPTimeoutCancelsRequest(t *testing.T) {
+	transport := roundTripFunc(func(*http.Request) (*http.Response, error) {
+		<-time.After(100 * time.Millisecond)
+		return nil, context.DeadlineExceeded
+	})
+	c, err := New(config.DigiFlazzConfig{Username: "buyer", APIKey: "secret", Endpoint: "http://example.invalid", HTTPTimeout: 10 * time.Millisecond}, &http.Client{Transport: transport})
+	if err != nil { t.Fatal(err) }
+	start := time.Now()
+	_, err = c.Purchase(context.Background(), provider.PurchaseRequest{ProductCode: "xld10", CustomerNo: "087800001232", ReferenceID: "ref-timeout"})
+	if err == nil || time.Since(start) > time.Second { t.Fatalf("expected bounded HTTP timeout, err=%v elapsed=%s", err, time.Since(start)) }
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }

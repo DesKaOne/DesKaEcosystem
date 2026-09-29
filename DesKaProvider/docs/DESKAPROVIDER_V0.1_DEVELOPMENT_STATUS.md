@@ -3697,3 +3697,71 @@ The repository workflow now exposes this validation only through manual workflow
 ### Next Step
 
 After DigiFlazz confirms the API IP allowlist, run the gated Go validation for the official CS test tuple and read-only balance. If both pass, record the exact CI run and HEAD as external validation evidence and then evaluate the explicit LiveTested transition. Do not promote ProductionReady solely from the test transaction.
+
+
+## Milestone #303 — DigiFlazz Buyer Adapter Safety / Contract Boundary Hardening
+
+**Date:** 2026-09-30
+
+### Source Finding
+
+Official DigiFlazz Buyer documentation confirms:
+- transaction signing uses MD5(username + apiKey + ref_id);
+- prepaid topup responses are explicitly Sukses, Pending, or Gagal;
+- prepaid status checking is performed by repeating the topup request with the same ref_id, and DigiFlazz warns repeated calls can create race/duplicate processing;
+- webhook signatures use HMAC-SHA1 over the raw body and are delivered as X-Hub-Signature;
+- the observed external Python proof remains an IP allowlist failure (rc=45), not successful transaction validation.
+
+Because DesKaProvider forbids automatic transaction resubmission, the generic GetStatus operation cannot safely call DigiFlazz's prepaid status mechanism. It now fails closed with ErrUnsupportedOperation instead of reusing the transaction endpoint.
+
+### Implementation
+
+- added DIGIFLAZZ_BASE_URL fallback configuration while preserving explicit endpoint overrides;
+- added configurable DIGIFLAZZ_HTTP_TIMEOUT with a 15-second default and enforced timeout when the caller supplies an HTTP client without one;
+- made unknown DigiFlazz transaction statuses fail closed instead of leaking arbitrary provider status strings into the generic domain;
+- added response transaction-identity verification for purchases;
+- preserved structured non-2xx DigiFlazz responses such as the observed IP allowlist failure;
+- explicitly disabled generic status probing to prevent transaction resubmission;
+- added deterministic tests for timeout, unknown status, response identity mismatch, and non-resubmitting status behavior.
+
+### Changed Files
+
+- DesKaProvider/backend/config/config.go
+- DesKaProvider/backend/.env.example
+- DesKaProvider/backend/Provider/DigiFlazz/digiflazz.go
+- DesKaProvider/backend/Provider/DigiFlazz/digiflazz_test.go
+- DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md
+
+### Verification Boundary
+
+Normal CI remains credential-free:
+- go test ./...
+- go vet ./...
+- go test -race ./...
+- PostgreSQL service-backed tests
+
+External DigiFlazz validation remains explicit and credential-gated. No provider credential is stored in source, tests, fixtures, documentation, or CI defaults.
+
+### Safety / Invariants
+
+- no automatic retry or transaction resubmission;
+- no duplicate purchase creation;
+- Router.Select() remains the sole routing authority;
+- provider-specific DigiFlazz fields and signing remain inside the adapter;
+- webhook idempotency remains owned by the existing generic webhook/reconciliation boundary;
+- no ledger/customer-balance/treasury mutation is introduced;
+- LiveTested and ProductionReady remain explicit and unpromoted.
+
+### Current DigiFlazz Readiness
+
+- Business/legal: PKS signed / Buyer onboarding completed
+- Technical adapter: implemented and hardened
+- Deterministic tests: expanded
+- External transaction validation: still BLOCKED pending IP allowlisting
+- Read-only balance validation: still BLOCKED pending IP allowlisting
+- LiveTested: not promoted
+- ProductionReady: not promoted
+
+### Next Concrete Milestone
+
+After DigiFlazz confirms the API IP allowlist, run the credential-gated Go validation for the official CS test tuple and read-only balance. If the provider returns the documented test result, record the external evidence without promoting ProductionReady automatically.

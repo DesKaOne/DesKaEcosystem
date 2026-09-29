@@ -13,12 +13,16 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/config"
 	provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
 )
 
-var ErrInvalidWebhookSignature = errors.New("invalid DigiFlazz webhook signature")
+var (
+	ErrInvalidWebhookSignature = errors.New("invalid DigiFlazz webhook signature")
+	ErrUnknownTransactionStatus = errors.New("unknown DigiFlazz transaction status")
+)
 
 const (
 	defaultEndpoint          = "https://api.digiflazz.com/v1/transaction"
@@ -40,11 +44,19 @@ func New(cfg config.DigiFlazzConfig, httpClient *http.Client) (*Client, error) {
 	if cfg.Username == "" || cfg.APIKey == "" {
 		return nil, errors.New("DigiFlazz username and API key are required")
 	}
+	if cfg.BaseURL != "" {
+		base := strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/")
+		if cfg.Endpoint == "" { cfg.Endpoint = base + "/v1/transaction" }
+		if cfg.BalanceEndpoint == "" { cfg.BalanceEndpoint = base + "/v1/cek-saldo" }
+		if cfg.PriceListEndpoint == "" { cfg.PriceListEndpoint = base + "/v1/price-list" }
+		if cfg.InquiryPLNEndpoint == "" { cfg.InquiryPLNEndpoint = base + "/v1/inquiry-pln" }
+	}
 	if cfg.Endpoint == "" { cfg.Endpoint = defaultEndpoint }
 	if cfg.BalanceEndpoint == "" { cfg.BalanceEndpoint = defaultBalanceEndpoint }
 	if cfg.PriceListEndpoint == "" { cfg.PriceListEndpoint = defaultPriceListEndpoint }
 	if cfg.InquiryPLNEndpoint == "" { cfg.InquiryPLNEndpoint = "https://api.digiflazz.com/v1/inquiry-pln" }
-	if httpClient == nil { httpClient = http.DefaultClient }
+	if cfg.HTTPTimeout <= 0 { cfg.HTTPTimeout = 15 * time.Second }
+	if httpClient == nil { httpClient = &http.Client{Timeout: cfg.HTTPTimeout} } else if httpClient.Timeout <= 0 { copy := *httpClient; copy.Timeout = cfg.HTTPTimeout; httpClient = &copy }
 	return &Client{username: cfg.Username, apiKey: cfg.APIKey, endpoint: cfg.Endpoint, balanceEndpoint: cfg.BalanceEndpoint, priceListEndpoint: cfg.PriceListEndpoint, inquiryPLNEndpoint: cfg.InquiryPLNEndpoint, httpClient: httpClient}, nil
 }
 
@@ -162,21 +174,23 @@ func (c *Client) Inquiry(ctx context.Context, req provider.InquiryRequest) (prov
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 { return provider.InquiryResult{}, fmt.Errorf("DigiFlazz PLN inquiry HTTP status %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody))) }
 	var decoded struct { Data struct { Message string `json:"message"`; Status string `json:"status"`; RC string `json:"rc"` } `json:"data"` }
 	if err := json.Unmarshal(respBody, &decoded); err != nil { return provider.InquiryResult{}, fmt.Errorf("decode DigiFlazz PLN inquiry response: %w", err) }
-	return provider.InquiryResult{Status: mapStatus(decoded.Data.Status), ProviderCode: decoded.Data.RC, Message: decoded.Data.Message}, nil
+	status, err := mapStatus(decoded.Data.Status)
+	if err != nil { return provider.InquiryResult{}, err }
+	return provider.InquiryResult{Status: status, ProviderCode: decoded.Data.RC, Message: decoded.Data.Message}, nil
 }
 
 func (c *Client) Purchase(ctx context.Context, req provider.PurchaseRequest) (provider.PurchaseResult, error) {
 	if err := validateTransactionRequest(req.ProductCode, req.CustomerNo, req.ReferenceID); err != nil { return provider.PurchaseResult{}, err }
 	data, err := c.transaction(ctx, transactionRequest{Username:c.username, BuyerSKUCode:req.ProductCode, CustomerNo:req.CustomerNo, ReferenceID:req.ReferenceID, Sign:c.signature(req.ReferenceID), Testing:req.Testing})
 	if err != nil { return provider.PurchaseResult{}, err }
-	return mapPurchaseResult(data), nil
+	result, err := mapPurchaseResult(data)
+	if err != nil { return provider.PurchaseResult{}, err }
+	if result.ReferenceID != req.ReferenceID || result.CustomerNo != req.CustomerNo || result.ProductCode != req.ProductCode { return provider.PurchaseResult{}, errors.New("DigiFlazz purchase response transaction identity mismatch") }
+	return result, nil
 }
 
 func (c *Client) GetStatus(ctx context.Context, req provider.StatusRequest) (provider.PurchaseStatus, error) {
-	if err := validateTransactionRequest(req.ProductCode, req.CustomerNo, req.ReferenceID); err != nil { return provider.PurchaseStatus{}, err }
-	data, err := c.transaction(ctx, transactionRequest{Username:c.username, BuyerSKUCode:req.ProductCode, CustomerNo:req.CustomerNo, ReferenceID:req.ReferenceID, Sign:c.signature(req.ReferenceID)})
-	if err != nil { return provider.PurchaseStatus{}, err }
-	return mapPurchaseStatus(data), nil
+	return provider.PurchaseStatus{}, provider.ErrUnsupportedOperation
 }
 
 func (c *Client) HandleWebhook(_ context.Context, req provider.WebhookRequest) (provider.WebhookEvent, error) {
@@ -189,7 +203,9 @@ func (c *Client) HandleWebhook(_ context.Context, req provider.WebhookRequest) (
 		ReferenceID string `json:"ref_id"`; CustomerNo string `json:"customer_no"`; BuyerSKUCode string `json:"buyer_sku_code"`; Message string `json:"message"`; Status string `json:"status"`; RC string `json:"rc"`; SN string `json:"sn"`; Price int64 `json:"price"`
 	} `json:"data"` }
 	if err := json.Unmarshal(req.Body, &payload); err != nil { return provider.WebhookEvent{}, fmt.Errorf("decode DigiFlazz webhook: %w", err) }
-	return provider.WebhookEvent{ReferenceID:payload.Data.ReferenceID, CustomerNo:payload.Data.CustomerNo, ProductCode:payload.Data.BuyerSKUCode, Status:mapStatus(payload.Data.Status), ProviderCode:payload.Data.RC, Message:payload.Data.Message, SerialNumber:payload.Data.SN, Price:payload.Data.Price}, nil
+	status, err := mapStatus(payload.Data.Status)
+	if err != nil { return provider.WebhookEvent{}, err }
+	return provider.WebhookEvent{ReferenceID:payload.Data.ReferenceID, CustomerNo:payload.Data.CustomerNo, ProductCode:payload.Data.BuyerSKUCode, Status:status, ProviderCode:payload.Data.RC, Message:payload.Data.Message, SerialNumber:payload.Data.SN, Price:payload.Data.Price}, nil
 }
 
 func (c *Client) transaction(ctx context.Context, req transactionRequest) (transactionResponse, error) {
@@ -244,6 +260,6 @@ func (c *Client) balanceSignature() string { sum := md5.Sum([]byte(c.username+c.
 func (c *Client) inquiryPLNSignature(customerNo string) string { sum := md5.Sum([]byte(c.username+c.apiKey+customerNo)); return hex.EncodeToString(sum[:]) }
 func (c *Client) priceListSignature() string { sum := md5.Sum([]byte(c.username+c.apiKey+"pricelist")); return hex.EncodeToString(sum[:]) }
 func validateTransactionRequest(productCode, customerNo, referenceID string) error { if productCode=="" || customerNo=="" || referenceID=="" { return errors.New("product code, customer number, and reference ID are required") }; return nil }
-func mapPurchaseResult(data transactionResponse) provider.PurchaseResult { return provider.PurchaseResult{ReferenceID:data.Data.ReferenceID, CustomerNo:data.Data.CustomerNo, ProductCode:data.Data.BuyerSKUCode, Status:mapStatus(data.Data.Status), ProviderCode:data.Data.RC, Message:data.Data.Message, SerialNumber:data.Data.SN, Price:data.Data.Price} }
-func mapPurchaseStatus(data transactionResponse) provider.PurchaseStatus { return provider.PurchaseStatus{ReferenceID:data.Data.ReferenceID, CustomerNo:data.Data.CustomerNo, ProductCode:data.Data.BuyerSKUCode, Status:mapStatus(data.Data.Status), ProviderCode:data.Data.RC, Message:data.Data.Message, SerialNumber:data.Data.SN, Price:data.Data.Price} }
-func mapStatus(status string) provider.TransactionStatus { switch strings.ToLower(strings.TrimSpace(status)) { case "sukses": return provider.StatusSuccess; case "pending": return provider.StatusPending; case "gagal": return provider.StatusFailed; default: return provider.TransactionStatus(strings.ToLower(strings.TrimSpace(status))) } }
+func mapPurchaseResult(data transactionResponse) (provider.PurchaseResult, error) { status, err := mapStatus(data.Data.Status); if err != nil { return provider.PurchaseResult{}, err }; return provider.PurchaseResult{ReferenceID:data.Data.ReferenceID, CustomerNo:data.Data.CustomerNo, ProductCode:data.Data.BuyerSKUCode, Status:status, ProviderCode:data.Data.RC, Message:data.Data.Message, SerialNumber:data.Data.SN, Price:data.Data.Price}, nil }
+func mapPurchaseStatus(data transactionResponse) (provider.PurchaseStatus, error) { status, err := mapStatus(data.Data.Status); if err != nil { return provider.PurchaseStatus{}, err }; return provider.PurchaseStatus{ReferenceID:data.Data.ReferenceID, CustomerNo:data.Data.CustomerNo, ProductCode:data.Data.BuyerSKUCode, Status:status, ProviderCode:data.Data.RC, Message:data.Data.Message, SerialNumber:data.Data.SN, Price:data.Data.Price}, nil }
+func mapStatus(status string) (provider.TransactionStatus, error) { switch strings.ToLower(strings.TrimSpace(status)) { case "sukses": return provider.StatusSuccess, nil; case "pending": return provider.StatusPending, nil; case "gagal": return provider.StatusFailed, nil; default: return "", fmt.Errorf("%w: %q", ErrUnknownTransactionStatus, strings.TrimSpace(status)) } }
