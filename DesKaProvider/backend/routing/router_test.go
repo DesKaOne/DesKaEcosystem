@@ -429,6 +429,42 @@ func TestNewWithCatalogAndStateAndOperationalMaxAgeRejectsInvalidMaxAge(t *testi
 }
 
 
+func TestRouterSelectUsesConfiguredClockForFreshness(t *testing.T) {
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", mock.New(mock.Config{Products: []provider.Product{{Code: "xld10", Name: "Test"}}})); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 9, 29, 14, 0, 0, 0, time.UTC)
+	store := operational.NewMemoryStore()
+	if err := store.Put(operational.Snapshot{
+		ProviderName: "mock", Balance: 100000, Health: operational.HealthHealthy,
+		LastCheckedAt: now.Add(-30 * time.Second),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	states := operational.NewProviderStateStore()
+	if err := states.Put(operational.ProviderState{
+		ProviderName: "mock", Lifecycle: operational.LifecycleEnabled,
+		Capabilities: []operational.Capability{operational.CapabilityPPOB},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	catalogs := catalog.NewMemoryStore()
+	if err := catalogs.Put(catalog.Snapshot{
+		ProviderName: "mock", Products: []provider.Product{{Code: "xld10"}}, SyncedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	router, err := NewWithCatalogAndStateAndOperationalMaxAge(registry, store, nil, catalogs, states, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	router.Now = func() time.Time { return now }
+	if got, err := router.Select(context.Background(), Request{ProductCode: "xld10", Amount: 50000}); err != nil || got != "mock" {
+		t.Fatalf("configured router clock should make the operational snapshot eligible, got provider=%q err=%v", got, err)
+	}
+}
+
 func TestRouterOperationalFreshnessAcceptsExactMaxAge(t *testing.T) {
 	registry := provider.NewRegistry()
 	if err := registry.Register("mock", mock.New(mock.Config{Products: []provider.Product{{Code: "xld10", Name: "Test"}}})); err != nil {
