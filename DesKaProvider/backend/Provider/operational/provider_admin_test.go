@@ -118,3 +118,36 @@ func TestProviderAdminServiceConcurrentLifecycleMutation(t *testing.T) {
 		t.Fatalf("invalid lifecycle after concurrent mutation: %q", state.Lifecycle)
 	}
 }
+
+
+func TestProviderAdminServiceControlsCapabilitiesIndependentlyOfLifecycle(t *testing.T) {
+	store := NewProviderStateStore()
+	state := ProviderState{
+		ProviderName: "mock",
+		Lifecycle: LifecycleEnabled,
+		Capabilities: []Capability{CapabilityPPOB, CapabilityBalance},
+	}
+	if err := store.Put(state); err != nil { t.Fatal(err) }
+	admin, err := NewProviderAdminService(store)
+	if err != nil { t.Fatal(err) }
+
+	updated, err := admin.DisableCapability("mock", CapabilityPPOB)
+	if err != nil { t.Fatal(err) }
+	if !updated.Enabled() { t.Fatal("capability mutation must not change provider lifecycle") }
+	if updated.Supports(CapabilityPPOB) { t.Fatal("disabled capability must not remain operationally enabled") }
+	if !updated.Supports(CapabilityBalance) { t.Fatal("unrelated capability must remain enabled") }
+
+	updated, err = admin.EnableCapability("mock", CapabilityPPOB)
+	if err != nil { t.Fatal(err) }
+	if !updated.Enabled() || !updated.Supports(CapabilityPPOB) { t.Fatal("explicit capability enable must restore only the requested capability") }
+}
+
+func TestProviderAdminServiceRejectsUnavailableCapability(t *testing.T) {
+	store := NewProviderStateStore()
+	if err := store.Put(ProviderState{ProviderName: "mock", Lifecycle: LifecycleEnabled, Capabilities: []Capability{CapabilityPPOB}}); err != nil { t.Fatal(err) }
+	admin, err := NewProviderAdminService(store)
+	if err != nil { t.Fatal(err) }
+	if _, err := admin.EnableCapability("mock", CapabilityPayment); !errors.Is(err, ErrCapabilityNotAvailable) {
+		t.Fatalf("expected ErrCapabilityNotAvailable, got %v", err)
+	}
+}
