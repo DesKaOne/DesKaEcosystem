@@ -1317,3 +1317,111 @@ Explicit non-goals:
 - no ledger/treasury mutation;
 - no public API;
 - no DesKaCash provider-specific coupling.
+
+
+## Milestone #279 — Provider Readiness State / Routing Eligibility Cross-Audit
+
+**Date:** 2026-09-29
+
+### Scope
+
+- cross-audit canonical capability readiness states against Registry.Capabilities().Supports() and Router.Select();
+- verify TESTED, LIVE_VALIDATED, and PRODUCTION_READY evidence do not bypass operational routing gates;
+- verify disabled or unimplemented capabilities remain non-routable regardless of readiness metadata;
+- add deterministic parity coverage where readiness state and route eligibility could diverge.
+
+### Source Finding
+
+The routing architecture intentionally keeps capability readiness and routing eligibility as separate layers.
+
+CapabilityDescriptor.Supports() is limited to the provider-neutral implementation/enablement gate: a capability is supported only when its metadata explicitly says AdapterImplemented=true and Enabled=true.
+
+Router.Select() applies additional gates before a candidate can route:
+- persisted provider lifecycle must be enabled;
+- persisted operational capability must explicitly include PPOB;
+- persisted capability metadata must not drift from registry metadata;
+- operational snapshot must be available, healthy, sufficiently funded, and fresh when configured;
+- catalog must be available, fresh, and contain the requested product;
+- final candidate validation must still pass.
+
+Therefore LIVE_VALIDATED or PRODUCTION_READY are not transaction authorization and do not bypass operational state, balance, freshness, catalog, or capability-drift gates.
+
+### Implementation
+
+Added deterministic regression coverage in DesKaProvider/backend/routing/readiness_explanation_test.go:
+- readiness-state matrix covering IMPLEMENTED, TESTED, LIVE_VALIDATED, and PRODUCTION_READY;
+- operational capability gate mutation to prove even high readiness states cannot bypass routing when persisted operational capability excludes PPOB;
+- registry capability descriptor check confirming enabled readiness remains visible at the registry layer while routing remains blocked by the operational layer;
+- existing explanation/router parity assertions continue to verify the same blocking path.
+
+No production routing logic was changed.
+
+During CI, the first implementation attempt exposed a test-only API misuse (Registry.Supports does not exist); this was corrected to use Registry.Capabilities(...).Supports(...).
+
+A second test-semantic issue was corrected: LIVE_VALIDATED and PRODUCTION_READY necessarily have capability Enabled=true, so they must be tested against the operational capability gate, not mislabeled as a disabled registry capability.
+
+### Changed Files
+
+- DesKaProvider/backend/routing/readiness_explanation_test.go
+- DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md
+
+No production routing/provider adapter behavior changed.
+
+### Verification
+
+Implementation/test HEAD:
+
+e597dd050dbf437c5c2cf32280ecef3f5963d294
+
+GitHub Actions run #2842 for that exact HEAD: GREEN.
+- test: PASS
+- go test ./...: PASS
+- go vet ./...: PASS
+- race: PASS
+- go test -race ./...: PASS
+- PostgreSQL service-backed test environment completed successfully
+- IAK read-only: SKIPPED because authorized credentials were not supplied
+- XP SINDONESIA read-only: SKIPPED because authorized credentials were not supplied
+- Midtrans sandbox: SKIPPED because authorized credentials/manual provider validation were not supplied
+
+No authorized live-provider transaction or external provider request was executed.
+
+### Safety Boundary / Invariants
+
+- readiness evidence never bypasses the provider-neutral capability implementation/enablement gate;
+- readiness evidence never bypasses persisted operational capability/lifecycle gates;
+- readiness evidence never bypasses capability drift detection;
+- readiness evidence never bypasses operational health, balance, or freshness requirements;
+- readiness evidence never bypasses catalog freshness/product availability;
+- LIVE_VALIDATED and PRODUCTION_READY remain evidence states, not transaction authority;
+- no automatic retry, failover, resubmission, funding, ledger mutation, customer-balance mutation, treasury movement, or public API exposure is introduced;
+- RCB remains unregistered, non-routable, and fail-closed pending an authoritative PPOB contract.
+
+### Known Limitations
+
+- the audit is deterministic and does not establish external provider availability;
+- provider-specific validation remains credential-gated and was not executed;
+- the routing policy intentionally does not require PRODUCTION_READY for every route; route eligibility is governed by capability implementation/enablement plus operational and catalog gates;
+- RCB PPOB contract details remain incomplete.
+
+### Architecture Impact
+
+#279 confirms the separation of readiness evidence from routing authority. Registry capability metadata establishes a provider-neutral capability boundary; Router.Select remains the sole routing decision path and applies operational safeguards independently.
+
+### Next Milestone
+
+**Milestone #280 — Provider Capability Drift / Readiness Persistence Recovery Cross-Audit**
+
+Scope:
+- audit persistence/recovery of capability readiness metadata and capability fingerprints;
+- verify restart/recovery cannot silently promote stale readiness or erase drift evidence;
+- verify generation/ownership isolation preserves routing safety across provider capability updates;
+- add deterministic recovery coverage where persistence and readiness state could diverge.
+
+Explicit non-goals:
+- no speculative RCB PPOB implementation;
+- no automatic retry/failover/resubmission;
+- no provider funding or financial mutation;
+- no ledger/treasury mutation;
+- no public API;
+- no DesKaCash provider-specific coupling.
