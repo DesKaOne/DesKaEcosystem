@@ -2271,3 +2271,120 @@ Scope:
 - preserve `Router.Select` as the sole routing decision path.
 
 No speculative RCB PPOB implementation, automatic retry/failover/resubmission, funding, ledger/treasury mutation, public API, or DesKaCash provider-specific coupling is included.
+
+
+## Milestone #288 — Provider Administrative Explanation / Router Error Semantics Parity
+
+**Date:** 2026-09-29
+
+### Scope
+
+Verify that blocking reasons reported by `ExplainProviderRoute` remain semantically aligned with the concrete errors returned by `Router.Select`, including joined errors produced when multiple providers contribute different blocking conditions.
+
+### Source Finding
+
+- `Router.Select` returns `ErrNoProviderAvailable` as the base routing error and conditionally joins:
+  - `ErrOperationalSnapshotStale` when at least one candidate is rejected by stale operational state;
+  - `ErrCatalogStale` when at least one candidate is rejected by stale catalog state;
+  - `ErrProviderCapabilityDrift` when at least one candidate is rejected by capability drift.
+- Candidate-specific gates that `continue` before later checks cannot contribute every possible reason for the same provider to one joined error.
+- Therefore compound joined-error parity must be tested across multiple providers, not by inventing a same-provider joined error that the router does not currently produce.
+- `ExplainProviderRoute` remains provider-specific and observational; aggregation across providers in the test is only a verification mechanism and is not introduced as a new routing authority.
+
+### Implementation
+
+Added deterministic tests in `DesKaProvider/backend/routing/readiness_explanation_test.go`:
+
+1. **Single-provider reason → router error parity**
+   - lifecycle disabled → `lifecycle_disabled` explanation + `ErrNoProviderAvailable`;
+   - capability drift → `capability_drift` explanation + `ErrProviderCapabilityDrift`;
+   - operational snapshot stale → `operational_snapshot_stale` explanation + `ErrOperationalSnapshotStale`;
+   - catalog stale → `catalog_stale` explanation + `ErrCatalogStale`.
+
+2. **Multi-provider joined-error parity**
+   - provider `mock` contributes capability drift;
+   - provider `mock2` contributes catalog staleness;
+   - `Router.Select` must return an error satisfying `errors.Is` for:
+     - `ErrNoProviderAvailable`;
+     - `ErrProviderCapabilityDrift`;
+     - `ErrCatalogStale`.
+   - The corresponding administrative explanations independently expose the provider-specific blocking reasons.
+
+3. **Fixture correctness**
+   - catalog staleness is produced by advancing the router clock rather than attempting a backwards catalog-store write;
+   - operational snapshots are advanced with the clock where needed so unrelated operational-stale gates do not mask the intended catalog error.
+
+No production routing or error semantics changed.
+
+### Changed Files
+
+- `DesKaProvider/backend/routing/readiness_explanation_test.go`
+- `DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md`
+
+### Verification
+
+Implementation/test commit:
+
+`fe652717492b23838c7650d96ee57d4fbe314de2`
+
+GitHub Actions Push CI #2908 / run `36584450289`: **GREEN**
+
+- test: PASS
+  - `go test ./...`: PASS
+  - `go vet ./...`: PASS
+  - PostgreSQL service-backed environment: PASS
+- race: PASS
+  - `go test -race ./...`: PASS
+- IAK read-only: SKIPPED (credential-gated)
+- XP SINDONESIA read-only: SKIPPED (credential-gated)
+- Midtrans sandbox: SKIPPED (credential-gated)
+
+No authorized live-provider transaction or external provider request was executed.
+
+### CI Failure / Correction History
+
+During #288 implementation, CI failures were test-fixture-only and were corrected before closure:
+
+- #2894 / #2895: catalog fixture attempted a backwards timestamp write rejected by the catalog store; changed to clock-based staleness.
+- #2898 / #2899: unused test fixture variables after the correction; removed.
+- #2900 / #2901: same fixture correction validation cycle.
+- #2902 / #2903: compound test initially expected same-provider joined reasons that `Router.Select` cannot produce because earlier gates `continue`; replaced with correct multi-provider joined-error coverage.
+- #2906 / #2907: multi-provider fixture still attempted a backwards catalog write; replaced with clock-based staleness.
+- Final #2908: **GREEN** on exact implementation HEAD.
+
+These failures did not alter production behavior.
+
+### Safety Boundary / Invariants
+
+- `ExplainProviderRoute` remains observational and does not create or alter router errors.
+- `Router.Select` remains the sole routing decision authority.
+- `errors.Is` semantics are preserved and tested rather than matching error strings.
+- Joined routing errors remain descriptive routing outcomes; they do not authorize payment, purchase, payout, retry, failover, resubmission, funding, or duplicate transaction creation.
+- No ledger, customer balance, or treasury mutation is introduced.
+- No readiness promotion or lifecycle enablement is inferred from error/explanation output.
+- No public API or DesKaCash provider-specific coupling is introduced.
+- RCB remains unregistered, non-routable, and fail-closed pending an authoritative PPOB contract.
+
+### Known Limitations
+
+- Error parity coverage is deterministic/internal and does not establish external provider availability.
+- IAK, XP SINDONESIA, and Midtrans external validation remains credential-gated.
+- No authorized live-provider transaction was executed.
+- RCB PPOB contract acquisition remains incomplete.
+
+### Architecture Impact
+
+#288 strengthens the contract boundary between administrative explainability and routing errors without creating a second decision path. It documents and tests the actual candidate-gate ordering that determines which provider failures can participate in joined router errors.
+
+### Next Milestone
+
+**Milestone #289 — Provider Administrative Explanation / Multi-Provider Error Aggregation Audit**
+
+Scope:
+
+- verify deterministic ordering and deduplication of joined router errors across multiple blocked providers;
+- compare aggregate administrative blocking evidence with `errors.Is` membership without changing router semantics;
+- cover mixed provider states where some providers are blocked for operational reasons and others for capability drift/catalog state;
+- preserve `Router.Select` as the sole routing decision path.
+
+No speculative RCB PPOB implementation, automatic retry/failover/resubmission, funding, ledger/treasury mutation, public API, or DesKaCash provider-specific coupling is included.
