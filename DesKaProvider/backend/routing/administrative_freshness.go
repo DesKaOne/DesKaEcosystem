@@ -18,7 +18,7 @@ func administrativeFreshness(router *Router, name string, generatedAt time.Time)
 
 	if router.OperationalInput != nil {
 		input, err := router.OperationalInput.ReadOperationalInput(
-			contextWithoutCancellation(),
+			context.Background(),
 			name,
 			router.OperationalMaxAge,
 			generatedAt,
