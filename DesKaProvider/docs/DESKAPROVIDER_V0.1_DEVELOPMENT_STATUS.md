@@ -1202,3 +1202,118 @@ Explicit non-goals:
 - no ledger/treasury mutation;
 - no public API;
 - no DesKaCash provider-specific coupling.
+
+
+## Milestone #278 — Provider Validation Evidence / Readiness State Promotion Audit
+
+**Date:** 2026-09-29
+
+### Scope
+
+- audit how provider validation evidence maps to Configured, Tested, LiveTested, and ProductionReady;
+- verify deterministic tests or provider validation cannot implicitly promote a stronger readiness state;
+- add deterministic state-transition/readiness coverage where the promotion boundary needed stronger regression protection;
+- preserve credential-gated execution and the distinction between skipped, passed, and unavailable external validation.
+
+### Source Finding
+
+The provider-neutral CapabilityStatus model already separates:
+
+- commercial/provider verification (Verified);
+- runtime configuration (Configured);
+- concrete adapter implementation (AdapterImplemented);
+- deterministic test evidence (Tested);
+- operational enablement (Enabled);
+- external live validation (LiveTested);
+- production readiness (ProductionReady).
+
+The canonical State() function does not infer implementation from verification/configuration, does not infer live validation from production-readiness metadata, and reaches LIVE_VALIDATED only when the explicit LiveTested flag is present together with an implemented, tested, enabled capability.
+
+CapabilityStatus.Validate() also rejects invalid promotion combinations:
+- Enabled without an implemented adapter;
+- LiveTested without implementation, testing, and explicit enablement;
+- ProductionReady without verification, configuration, implementation, testing, enablement, and live validation.
+
+No separate runtime method was found that automatically promotes these flags from deterministic test success, provider configuration, or credential presence.
+
+### Implementation
+
+Added deterministic regression coverage in DesKaProvider/backend/Provider/capability_state_test.go:
+
+- readiness evidence matrix proving Verified/Configured do not imply live validation;
+- Tested remains TESTED until explicit LiveTested evidence exists;
+- ProductionReady metadata without live-validation evidence is rejected by Validate();
+- LiveTested without explicit enablement is rejected;
+- canonical state evaluation does not mutate readiness evidence.
+
+No production runtime/provider adapter logic was changed.
+
+### Changed Files
+
+- DesKaProvider/backend/Provider/capability_state_test.go
+- DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md
+
+No provider credentials or external validation evidence were added to source control.
+
+### Verification
+
+Implementation/test HEAD:
+
+036c724ead831f5c7ca17472126dc1c81ec96090
+
+GitHub Actions run #2834 for that exact HEAD: GREEN.
+
+- test: PASS
+- go test ./...: PASS
+- go vet ./...: PASS
+- race: PASS
+- go test -race ./...: PASS
+- PostgreSQL service-backed test environment completed successfully
+- Midtrans sandbox: SKIPPED because authorized credentials/manual provider validation were not supplied
+- IAK read-only: SKIPPED because authorized credentials were not supplied
+- XP SINDONESIA read-only: SKIPPED because authorized credentials were not supplied
+
+No authorized live-provider transaction or external provider request was executed.
+
+### Safety Boundary / Invariants
+
+- Verified and Configured never imply AdapterImplemented;
+- deterministic Tested evidence never implies LiveTested;
+- LiveTested requires explicit enablement and prior deterministic testing;
+- ProductionReady requires explicit live validation in addition to verification, configuration, implementation, testing, and enablement;
+- state inspection is observational and does not mutate readiness flags;
+- credential presence alone does not promote readiness;
+- skipped provider validation is never represented as PASS;
+- no automatic retry, failover, resubmission, provider funding, ledger mutation, customer-balance mutation, treasury movement, or public API exposure is introduced;
+- RCB remains unregistered, non-routable, and fail-closed pending an authoritative PPOB contract.
+
+### Known Limitations
+
+- external IAK, XP SINDONESIA, and Midtrans validation remains credential-gated and was not executed in #278;
+- deterministic CI verifies readiness invariants but cannot establish external provider availability or live/sandbox contract compatibility;
+- ProductionReady remains metadata that requires explicit evidence; this milestone does not introduce a new production approval workflow;
+- RCB PPOB contract details remain incomplete.
+
+### Architecture Impact
+
+#278 strengthens the provider-neutral readiness boundary without creating another authorization path. Readiness remains evidence-based and explicit: configuration, deterministic testing, operational enablement, live validation, and production readiness are distinct states.
+
+### Next Milestone
+
+**Milestone #279 — Provider Readiness State / Routing Eligibility Cross-Audit**
+
+Scope:
+
+- cross-audit canonical capability readiness states against Registry.Supports() and Router.Select();
+- verify TESTED, LIVE_VALIDATED, and PRODUCTION_READY evidence do not accidentally bypass operational routing gates;
+- verify disabled or unimplemented capabilities remain non-routable regardless of readiness metadata;
+- add deterministic parity coverage where state reporting and route eligibility could diverge.
+
+Explicit non-goals:
+
+- no speculative RCB PPOB implementation;
+- no automatic retry/failover/resubmission;
+- no provider funding or financial mutation;
+- no ledger/treasury mutation;
+- no public API;
+- no DesKaCash provider-specific coupling.
