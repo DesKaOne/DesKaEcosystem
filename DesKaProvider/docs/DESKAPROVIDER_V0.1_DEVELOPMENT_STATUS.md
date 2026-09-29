@@ -2388,3 +2388,96 @@ Scope:
 - preserve `Router.Select` as the sole routing decision path.
 
 No speculative RCB PPOB implementation, automatic retry/failover/resubmission, funding, ledger/treasury mutation, public API, or DesKaCash provider-specific coupling is included.
+
+## Milestone #289 — Provider Administrative Explanation / Multi-Provider Error Aggregation Audit
+
+**Date:** 2026-09-29
+
+### Scope
+
+Verify deterministic ordering and deduplication of joined Router.Select errors across multiple blocked providers, and compare aggregate administrative blocking evidence with errors.Is membership without changing routing semantics.
+
+### Source Finding
+
+- Router.Select aggregates only provider-neutral sentinel errors using errors.Join after all candidates are rejected.
+- Aggregation order is fixed by the router error contract: ErrNoProviderAvailable, operational snapshot stale, catalog stale, then capability drift.
+- Each aggregate condition is tracked as a boolean across candidates, so the same sentinel cannot be appended more than once even when multiple providers contribute the same blocking condition.
+- #288 already covered mixed multi-provider membership, but did not explicitly lock down deterministic textual ordering and duplicate suppression across repeated selection attempts.
+
+### Implementation
+
+Added TestRouterJoinedErrorsAreDeterministicAndDeduplicatedAcrossCandidates to DesKaProvider/backend/routing/router_test.go.
+
+The deterministic matrix contains:
+- one provider with stale catalog;
+- one provider with capability fingerprint drift;
+- two providers with stale operational snapshots, intentionally exercising duplicate contribution of the same aggregate error;
+- fresh/healthy operational and catalog state where needed so each provider reaches its intended blocking gate.
+
+The test:
+- repeats Router.Select three times against the same state;
+- verifies the joined error text has the canonical router ordering;
+- verifies errors.Is membership for ErrNoProviderAvailable, ErrOperationalSnapshotStale, ErrCatalogStale, and ErrProviderCapabilityDrift;
+- verifies duplicate operational-stale contributions collapse to one aggregate sentinel.
+
+No production routing or error-aggregation logic changed.
+
+### Changed Files
+
+- DesKaProvider/backend/routing/router_test.go
+- DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md
+
+### Verification
+
+Implementation/test HEAD:
+
+88244c5eb5c41edc1ea247c7a0382c4b1a50d507
+
+GitHub Actions:
+- Push CI #2914 / run 36595264186: **GREEN**
+  - test: PASS
+  - race: PASS
+  - IAK read-only: SKIPPED (credential-gated)
+  - Midtrans sandbox: SKIPPED (credential-gated)
+  - XP SINDONESIA read-only: SKIPPED (credential-gated)
+- Pull Request CI #2915 / run 36595268166: **GREEN**
+  - test: PASS
+  - race: PASS
+  - credential-gated provider validation jobs: SKIPPED
+
+No authorized live-provider transaction or external provider request was executed.
+
+### Safety Boundary / Invariants
+
+- Router.Select remains the sole routing decision authority.
+- Error aggregation remains descriptive routing output and does not authorize payment, purchase, payout, retry, failover, resubmission, funding, or duplicate transaction creation.
+- Administrative explanation remains observational and is not used as an alternate routing decision path.
+- errors.Is semantics are verified without changing sentinel definitions or router control flow.
+- No ledger, customer balance, or treasury mutation is introduced.
+- No readiness promotion or lifecycle enablement is inferred from joined errors.
+- RCB remains unregistered, non-routable, and fail-closed pending an authoritative PPOB contract.
+- No public API or DesKaCash provider-specific coupling is introduced.
+
+### Known Limitations
+
+- Coverage is deterministic/internal and does not establish external provider availability.
+- IAK, XP SINDONESIA, and Midtrans external validation remains credential-gated.
+- No authorized live-provider transaction was executed.
+- RCB PPOB contract acquisition remains incomplete.
+- The test locks down the current joined-error textual ordering because deterministic ordering is part of the exercised internal contract; provider-specific error strings remain excluded from the aggregation.
+
+### Architecture Impact
+
+#289 closes the multi-provider aggregation audit by proving that router-level blocking evidence is deterministic and deduplicated while remaining separate from administrative explanation and routing authority.
+
+### Next Milestone
+
+**Milestone #290 — Provider Administrative Explanation / Aggregate Reason Consistency Audit**
+
+Scope:
+- compare aggregate provider explanation blockers with router joined-error membership across a broader mixed candidate matrix;
+- verify providers that fail earlier routing gates do not incorrectly contribute later aggregate error sentinels;
+- preserve deterministic explanation ordering and router error ordering without introducing a second routing authority;
+- retain all existing safety boundaries.
+
+No speculative RCB PPOB implementation, automatic retry/failover/resubmission, funding, ledger/treasury mutation, public API, or DesKaCash provider-specific coupling is included.
