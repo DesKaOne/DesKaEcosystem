@@ -43,7 +43,7 @@ func TestProviderStateStoreSeparatesLifecycleFromCapabilities(t *testing.T) {
 		t.Fatal("unsupported capability must remain absent")
 	}
 
-	got.Capabilities[0] = CapabilityPayout
+	got.Capabilities[0] = Capability("future")
 	again, _ := store.Get("mock")
 	if again.Supports(CapabilityPayout) {
 		t.Fatal("Get must return a defensive capability copy")
