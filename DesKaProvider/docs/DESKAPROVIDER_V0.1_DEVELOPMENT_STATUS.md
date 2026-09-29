@@ -16338,3 +16338,68 @@ Scope:
 - keep readiness explanations provider-neutral and non-authorizing.
 
 No automatic failover, payment resubmission, provider funding, customer ledger mutation, treasury movement, duplicate purchase creation, or public API exposure is included in #268.
+
+
+## Milestone #268 — Provider Routing Explainability Hardening / Administrative Aggregation
+
+**Date:** 2026-09-29
+
+### Implementation
+
+- added an internal administrative route-explanation snapshot aggregating every registered provider across the canonical provider-neutral capability vocabulary;
+- reused the existing deterministic per-provider explainability engine, so aggregation does not introduce a second routing decision path;
+- preserved deterministic provider and capability ordering;
+- added runtime inspection through ProviderRouteExplainabilitySnapshot without exposing a public API;
+- added coverage for Midtrans, IAK, XP SINDONESIA, DigiFlazz, and an RCB placeholder registry state without requiring live credentials;
+- verified snapshots remain observational and do not mutate lifecycle, capability metadata, operational state, catalog state, or transaction state.
+
+### Changed Files
+
+- DesKaProvider/backend/routing/administrative_explanation.go
+- DesKaProvider/backend/routing/administrative_explanation_test.go
+- DesKaProvider/backend/runtime/runtime.go
+- DesKaProvider/backend/runtime/runtime_test.go
+
+### Safety Boundary / Invariants
+
+- aggregation is read-only and never authorizes payment, purchase, routing, retry, or failover;
+- route eligibility continues to come from the existing router gates and is not recomputed by an independent policy;
+- provider-neutral reason codes remain the only diagnostic output; credentials, endpoints, provider-specific protocols, and provider status codes are excluded;
+- capability readiness flags remain distinct and are never promoted implicitly;
+- no automatic retry, provider failover, or transaction resubmission is introduced;
+- no duplicate payment/purchase creation is introduced;
+- no ledger mutation, customer balance mutation, treasury movement, or provider funding is introduced;
+- durable transaction/reference ownership, CAS/idempotency, webhook idempotency, and reconciliation boundaries remain unchanged;
+- no public API exposure is introduced.
+
+### Verification
+
+Implementation/test final HEAD:
+
+**d805e68605c1b1e78b3ab1710fa40ec689dbacce**
+
+- Push CI #2772 / run 36512449473: **GREEN**
+  - test: PASS
+  - race: PASS
+  - midtrans-sandbox: skipped as expected
+  - iak-read-only: skipped as expected
+  - xp-sindonesia-read-only: skipped as expected
+- Pull Request CI #2773 / run 36512454765: **GREEN**
+  - test: PASS
+  - race: PASS
+  - credential-gated provider validation jobs: skipped as expected
+
+No authorized live-provider transaction was executed by this milestone.
+
+### Next Milestone
+
+**Milestone #269 — Provider Administrative Snapshot Freshness / Drift Coverage**
+
+Scope:
+
+- extend the administrative snapshot with explicit snapshot-generation time and deterministic source freshness metadata;
+- verify drift, operational freshness, and catalog freshness remain auditable without changing route eligibility;
+- add restart/recovery coverage for administrative snapshots;
+- preserve the observational/non-authorizing boundary.
+
+No automatic failover, payment resubmission, provider funding, customer ledger mutation, treasury movement, duplicate purchase creation, or public API exposure is included in #269.
