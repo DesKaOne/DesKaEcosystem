@@ -33,3 +33,10 @@ func TestCapabilityDescriptorStatusPreservesIndependentFlags(t *testing.T) {
 		t.Fatalf("unexpected status: %#v", got)
 	}
 }
+
+func TestCapabilityStatusValidateRejectsTestedWithoutAdapter(t *testing.T) {
+	status := CapabilityStatus{Tested: true}
+	if err := status.Validate(); err == nil {
+		t.Fatal("tested capability without an implemented adapter must be rejected")
+	}
+}

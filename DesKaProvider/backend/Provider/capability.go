@@ -111,13 +111,15 @@ func (m CapabilityMatrix) Status(providerName string, capability Capability) (Ca
 	return d.Status(capability)
 }
 
-
 // Validate enforces the monotonic readiness invariants used by registry
 // metadata. Commercial verification, configuration, implementation, tests,
 // enablement, live validation, and production readiness remain distinct.
 func (s CapabilityStatus) Validate() error {
 	if s.Enabled && !s.AdapterImplemented {
 		return errors.New("enabled capability must be implemented")
+	}
+	if s.Tested && !s.AdapterImplemented {
+		return errors.New("tested capability must be implemented")
 	}
 	if s.LiveTested && (!s.AdapterImplemented || !s.Tested || !s.Enabled) {
 		return errors.New("live-tested capability must be implemented, tested, and enabled")
