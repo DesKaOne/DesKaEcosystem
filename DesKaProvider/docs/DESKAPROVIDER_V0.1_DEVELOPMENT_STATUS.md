@@ -2883,6 +2883,8 @@ No speculative RCB PPOB implementation, automatic retry/failover/resubmission, f
 
 **Date:** 2026-09-30
 
+CI verification follows the final documented milestone state.
+
 ### Scope
 
 - verify aggregate `Router.Select()` sentinel errors remain deterministic across sequential lifecycle/capability/operational/catalog transitions;
