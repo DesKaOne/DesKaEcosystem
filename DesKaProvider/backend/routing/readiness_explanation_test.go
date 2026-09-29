@@ -957,3 +957,137 @@ func TestExplainProviderRouteCompoundBlockingReasonsMatchJoinedRouterErrors(t *t
 		t.Fatalf("Router.Select joined error semantics diverged from aggregated explanation blockers: %v", selectErr)
 	}
 }
+
+func TestExplainProviderRouteAggregateReasonsMatchRouterJoinedErrorGates(t *testing.T) {
+	now := time.Date(2026, 9, 29, 12, 0, 0, 0, time.UTC)
+	registry := provider.NewRegistry()
+	for _, name := range []string{"drift", "operational-stale", "catalog-stale", "healthy-blocked"} {
+		if err := registry.RegisterWithCapabilities(name, mock.New(mock.Config{
+			Products: []provider.Product{{Code: "xld10"}},
+		}), provider.CapabilityDescriptor{Capabilities: map[provider.Capability]provider.CapabilityStatus{
+			provider.CapabilityPPOB: {AdapterImplemented: true, Enabled: true, Tested: true},
+		}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	states := operational.NewProviderStateStore()
+	store := operational.NewMemoryStore()
+	catalogStore := catalog.NewMemoryStore()
+	for _, name := range []string{"drift", "operational-stale", "catalog-stale", "healthy-blocked"} {
+		d, err := registry.Capabilities(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := states.Put(operational.ProviderState{
+			ProviderName:          name,
+			Lifecycle:             operational.LifecycleEnabled,
+			Capabilities:          []operational.Capability{operational.CapabilityPPOB},
+			CapabilityFingerprint: operational.CapabilityMetadataFingerprint(d),
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.Put(operational.Snapshot{
+			ProviderName: name, Balance: 100000, Currency: "IDR",
+			Health: operational.HealthHealthy, LastCheckedAt: now,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if err := catalogStore.Put(catalog.Snapshot{
+			ProviderName: name, Products: []provider.Product{{Code: "xld10"}}, SyncedAt: now,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	r, err := NewWithCatalogAndStateAndOperationalMaxAge(registry, store, nil, catalogStore, states, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Now = func() time.Time { return now }
+
+	// Drift is an early routing gate. Its stale operational snapshot must not
+	// contribute an operational-stale aggregate error for the same provider.
+	driftState, _ := states.Get("drift")
+	driftState.CapabilityFingerprint = "drifted"
+	if err := states.Put(driftState); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Put(operational.Snapshot{
+		ProviderName: "drift", Balance: 100000, Currency: "IDR",
+		Health: operational.HealthHealthy, LastCheckedAt: now.Add(-2 * time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Operational stale is an earlier gate than catalog evaluation. Its fresh
+	// catalog must therefore not contribute catalog-stale for this provider.
+	if err := store.Put(operational.Snapshot{
+		ProviderName: "operational-stale", Balance: 100000, Currency: "IDR",
+		Health: operational.HealthHealthy, LastCheckedAt: now.Add(-2 * time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Catalog stale is reached after operational freshness and must contribute
+	// the catalog-stale aggregate sentinel.
+	if err := catalogStore.Put(catalog.Snapshot{
+		ProviderName: "catalog-stale", Products: []provider.Product{{Code: "xld10"}},
+		SyncedAt: now.Add(-2 * time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// This provider reaches product availability but has insufficient balance;
+	// the current Router.Select contract does not aggregate a dedicated
+	// insufficient-balance sentinel, so explanation evidence must remain
+	// observational and must not invent one.
+	if err := store.Put(operational.Snapshot{
+		ProviderName: "healthy-blocked", Balance: 1, Currency: "IDR",
+		Health: operational.HealthHealthy, LastCheckedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	type expected struct {
+		name   string
+		reason ReadinessReasonCode
+	}
+	for _, tt := range []expected{
+		{name: "drift", reason: ReasonCapabilityDrift},
+		{name: "operational-stale", reason: ReasonOperationalSnapshotStale},
+		{name: "catalog-stale", reason: ReasonCatalogStale},
+		{name: "healthy-blocked", reason: ReasonInsufficientBalance},
+	} {
+		explanation, err := ExplainProviderRoute(context.Background(), r, tt.name, provider.CapabilityPPOB, "xld10", 100)
+		if err != nil {
+			t.Fatal(err)
+		}
+		found, blocking := reason(explanation, tt.reason)
+		if !found || !blocking {
+			t.Fatalf("%s: expected blocking explanation reason %q: %#v", tt.name, tt.reason, explanation)
+		}
+	}
+
+	driftExplanation, _ := ExplainProviderRoute(context.Background(), r, "drift", provider.CapabilityPPOB, "xld10", 100)
+	if found, _ := reason(driftExplanation, ReasonOperationalSnapshotStale); found {
+		t.Fatalf("drift provider must not report later operational-stale gate: %#v", driftExplanation)
+	}
+	operationalExplanation, _ := ExplainProviderRoute(context.Background(), r, "operational-stale", provider.CapabilityPPOB, "xld10", 100)
+	if found, _ := reason(operationalExplanation, ReasonCatalogStale); found {
+		t.Fatalf("operational-stale provider must not report later catalog-stale gate: %#v", operationalExplanation)
+	}
+
+	_, selectErr := r.Select(context.Background(), Request{ProductCode: "xld10", Amount: 100})
+	if !errors.Is(selectErr, ErrNoProviderAvailable) ||
+		!errors.Is(selectErr, ErrOperationalSnapshotStale) ||
+		!errors.Is(selectErr, ErrCatalogStale) {
+		t.Fatalf("aggregate router errors missing expected joined sentinels: %v", selectErr)
+	}
+	if errors.Is(selectErr, ErrProviderCapabilityDrift) {
+		// The drift provider is intentionally also operational-stale, but Router.Select
+		// stops at capability drift, so capability drift must still be represented.
+	} else {
+		t.Fatalf("aggregate router errors missing capability-drift sentinel: %v", selectErr)
+	}
+}
