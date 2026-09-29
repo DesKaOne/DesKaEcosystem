@@ -123,6 +123,65 @@ func TestProviderAdminServiceConcurrentLifecycleMutation(t *testing.T) {
 }
 
 
+
+func TestProviderAdminServiceConcurrentLifecycleAndCapabilityMutationsPreserveIndependentFields(t *testing.T) {
+	store := NewProviderStateStore()
+	if err := store.Put(ProviderState{
+		ProviderName: "mock",
+		Lifecycle: LifecycleDisabled,
+		Capabilities: []Capability{CapabilityPPOB, CapabilityBalance},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	admin, err := NewProviderAdminService(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(3)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 100; i++ {
+			if _, err := admin.Enable("mock"); err != nil {
+				t.Error(err)
+				return
+			}
+			if _, err := admin.Disable("mock"); err != nil {
+				t.Error(err)
+				return
+			}
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		if _, err := admin.DisableCapability("mock", CapabilityPPOB); err != nil {
+			t.Error(err)
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		if _, err := admin.EnableCapability("mock", CapabilityBalance); err != nil {
+			t.Error(err)
+		}
+	}()
+	wg.Wait()
+
+	state, ok := store.Get("mock")
+	if !ok {
+		t.Fatal("provider state disappeared")
+	}
+	if state.Supports(CapabilityPPOB) {
+		t.Fatal("capability disable was lost during concurrent lifecycle mutation")
+	}
+	if !state.Supports(CapabilityBalance) {
+		t.Fatal("unrelated capability was lost during concurrent lifecycle mutation")
+	}
+	if state.Lifecycle != LifecycleEnabled && state.Lifecycle != LifecycleDisabled {
+		t.Fatalf("invalid lifecycle after concurrent mutation: %q", state.Lifecycle)
+	}
+}
+
 func TestProviderAdminServiceControlsCapabilitiesIndependentlyOfLifecycle(t *testing.T) {
 	store := NewProviderStateStore()
 	state := ProviderState{
