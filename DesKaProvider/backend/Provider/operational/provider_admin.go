@@ -121,7 +121,7 @@ func reconcileEnabledCapabilities(previous []Capability, descriptor provider.Cap
 	}
 	result := make([]Capability, 0, len(descriptor.Capabilities))
 	for capability, status := range descriptor.Capabilities {
-		if !status.AdapterImplemented || !status.Enabled {
+		if !status.AdapterImplemented {
 			continue
 		}
 		if _, ok := previousSet[capability]; ok {
@@ -131,7 +131,7 @@ func reconcileEnabledCapabilities(previous []Capability, descriptor provider.Cap
 	if previous == nil {
 		result = result[:0]
 		for capability, status := range descriptor.Capabilities {
-			if status.AdapterImplemented && status.Enabled {
+			if status.AdapterImplemented {
 				result = append(result, capability)
 			}
 		}
