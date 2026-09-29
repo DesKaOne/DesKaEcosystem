@@ -798,3 +798,134 @@ func TestExplainProviderRouteRepeatedCallsRemainDeterministicAfterCallerMutation
 		}
 	}
 }
+
+
+func TestExplainProviderRouteBlockingReasonsMapToRouterErrors(t *testing.T) {
+	now := time.Date(2026, 9, 29, 12, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name string
+		mutate func(*Router)
+		reason ReadinessReasonCode
+		routerErr error
+	}{
+		{
+			name: "lifecycle-disabled",
+			mutate: func(r *Router) {
+				s, _ := r.ProviderState.Get("mock")
+				s.Lifecycle = operational.LifecycleDisabled
+				if err := r.ProviderState.Put(s); err != nil { t.Fatal(err) }
+			},
+			reason: ReasonLifecycleDisabled,
+			routerErr: ErrNoProviderAvailable,
+		},
+		{
+			name: "capability-drift",
+			mutate: func(r *Router) {
+				s, _ := r.ProviderState.Get("mock")
+				s.CapabilityFingerprint = "drifted"
+				if err := r.ProviderState.Put(s); err != nil { t.Fatal(err) }
+			},
+			reason: ReasonCapabilityDrift,
+			routerErr: ErrProviderCapabilityDrift,
+		},
+		{
+			name: "operational-stale",
+			mutate: func(r *Router) {
+				reader := r.OperationalInput.(*StoreOperationalInputReader)
+				if err := reader.Store.Put(operational.Snapshot{
+					ProviderName: "mock", Balance: 100000, Currency: "IDR",
+					Health: operational.HealthHealthy, LastCheckedAt: now.Add(-2 * time.Hour),
+				}); err != nil { t.Fatal(err) }
+				r.Now = func() time.Time { return now }
+			},
+			reason: ReasonOperationalSnapshotStale,
+			routerErr: ErrOperationalSnapshotStale,
+		},
+		{
+			name: "catalog-stale",
+			mutate: func(r *Router) {
+				c := r.Catalog.(catalog.Store)
+				if err := c.Put(catalog.Snapshot{
+					ProviderName: "mock", Products: []provider.Product{{Code: "xld10"}},
+					SyncedAt: now.Add(-2 * time.Hour),
+				}); err != nil { t.Fatal(err) }
+				r.Now = func() time.Time { return now }
+			},
+			reason: ReasonCatalogStale,
+			routerErr: ErrCatalogStale,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := testReadinessRouter(t, provider.CapabilityStatus{
+				AdapterImplemented: true, Enabled: true, Tested: true,
+			}, operational.LifecycleEnabled, &catalog.Snapshot{
+				ProviderName: "mock", Products: []provider.Product{{Code: "xld10"}}, SyncedAt: now,
+			})
+			r.Now = func() time.Time { return now }
+			reader := r.OperationalInput.(*StoreOperationalInputReader)
+			if err := reader.Store.Put(operational.Snapshot{
+				ProviderName: "mock", Balance: 100000, Currency: "IDR",
+				Health: operational.HealthHealthy, LastCheckedAt: now,
+			}); err != nil { t.Fatal(err) }
+			tt.mutate(r)
+
+			explanation, err := ExplainProviderRoute(context.Background(), r, "mock", provider.CapabilityPPOB, "xld10", 100)
+			if err != nil { t.Fatal(err) }
+			found, blocking := reason(explanation, tt.reason)
+			if !found || !blocking {
+				t.Fatalf("expected blocking explanation reason %q: %#v", tt.reason, explanation)
+			}
+			_, selectErr := r.Select(context.Background(), Request{ProductCode: "xld10", Amount: 100})
+			if !errors.Is(selectErr, tt.routerErr) {
+				t.Fatalf("expected Router.Select error %v for explanation reason %q, got %v", tt.routerErr, tt.reason, selectErr)
+			}
+		})
+	}
+}
+
+func TestExplainProviderRouteCompoundBlockingReasonsMatchJoinedRouterErrors(t *testing.T) {
+	now := time.Date(2026, 9, 29, 12, 0, 0, 0, time.UTC)
+	r := testReadinessRouter(t, provider.CapabilityStatus{
+		AdapterImplemented: true, Enabled: true, Tested: true,
+	}, operational.LifecycleEnabled, &catalog.Snapshot{
+		ProviderName: "mock", Products: []provider.Product{{Code: "xld10"}}, SyncedAt: now,
+	})
+	r.Now = func() time.Time { return now }
+	reader := r.OperationalInput.(*StoreOperationalInputReader)
+	if err := reader.Store.Put(operational.Snapshot{
+		ProviderName: "mock", Balance: 100000, Currency: "IDR",
+		Health: operational.HealthHealthy, LastCheckedAt: now.Add(-2 * time.Hour),
+	}); err != nil { t.Fatal(err) }
+	s, _ := r.ProviderState.Get("mock")
+	s.CapabilityFingerprint = "drifted"
+	if err := r.ProviderState.Put(s); err != nil { t.Fatal(err) }
+	c := r.Catalog.(catalog.Store)
+	if err := c.Put(catalog.Snapshot{
+		ProviderName: "mock", Products: []provider.Product{{Code: "xld10"}},
+		SyncedAt: now.Add(-2 * time.Hour),
+	}); err != nil { t.Fatal(err) }
+
+	explanation, err := ExplainProviderRoute(context.Background(), r, "mock", provider.CapabilityPPOB, "xld10", 100)
+	if err != nil { t.Fatal(err) }
+	for _, code := range []ReadinessReasonCode{
+		ReasonCapabilityDrift, ReasonOperationalSnapshotStale, ReasonCatalogStale,
+	} {
+		found, blocking := reason(explanation, code)
+		if !found || !blocking {
+			t.Fatalf("expected compound blocking reason %q: %#v", code, explanation)
+		}
+	}
+	if explanation.RouteEligible {
+		t.Fatalf("compound blocking state must be ineligible: %#v", explanation)
+	}
+
+	_, selectErr := r.Select(context.Background(), Request{ProductCode: "xld10", Amount: 100})
+	if !errors.Is(selectErr, ErrNoProviderAvailable) ||
+		!errors.Is(selectErr, ErrProviderCapabilityDrift) ||
+		!errors.Is(selectErr, ErrOperationalSnapshotStale) ||
+		!errors.Is(selectErr, ErrCatalogStale) {
+		t.Fatalf("Router.Select joined error semantics diverged from explanation blockers: %v", selectErr)
+	}
+}
