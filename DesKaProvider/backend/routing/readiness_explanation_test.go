@@ -449,7 +449,7 @@ func TestExplainProviderRouteDeepStateMatrix(t *testing.T) {
 	})
 
 	t.Run("adapter-not-implemented", func(t *testing.T) {
-		r := testReadinessRouter(t, provider.CapabilityStatus{Enabled: true, Tested: true},
+		r := testReadinessRouter(t, provider.CapabilityStatus{Enabled: false, Tested: true},
 			operational.LifecycleEnabled, &catalog.Snapshot{
 				ProviderName: "mock", Products: []provider.Product{{Code: "xld10"}}, SyncedAt: time.Now(),
 			})
