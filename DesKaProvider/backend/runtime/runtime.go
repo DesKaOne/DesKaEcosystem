@@ -353,7 +353,7 @@ return service,nil
 func enabledCapabilitiesFromDescriptor(descriptor provider.CapabilityDescriptor) []operational.Capability {
 	capabilities := make([]operational.Capability, 0, len(descriptor.Capabilities))
 	for capability, status := range descriptor.Capabilities {
-		if status.AdapterImplemented && status.Enabled {
+		if status.AdapterImplemented {
 			capabilities = append(capabilities, operational.Capability(capability))
 		}
 	}
@@ -364,7 +364,7 @@ func enabledCapabilitiesFromDescriptor(descriptor provider.CapabilityDescriptor)
 func retainEnabledCapabilities(previous []operational.Capability, descriptor provider.CapabilityDescriptor) []operational.Capability {
 	allowed := make(map[provider.Capability]struct{}, len(descriptor.Capabilities))
 	for capability, status := range descriptor.Capabilities {
-		if status.AdapterImplemented && status.Enabled {
+		if status.AdapterImplemented {
 			allowed[capability] = struct{}{}
 		}
 	}
