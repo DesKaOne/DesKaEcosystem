@@ -1064,25 +1064,55 @@ func TestExplainProviderRouteAggregateReasonsMatchRouterJoinedErrorGates(t *test
 		}
 	}
 
+	// Administrative explanation is observational and may report later
+	// blockers for the same provider. Router.Select, however, must stop at the
+	// first blocking routing gate for that candidate. Prove that distinction by
+	// isolating each provider's contribution to the aggregate router error.
 	driftExplanation, _ := ExplainProviderRoute(context.Background(), r, "drift", provider.CapabilityPPOB, "xld10", 100)
-	if found, _ := reason(driftExplanation, ReasonOperationalSnapshotStale); found {
-		t.Fatalf("drift provider must not report later operational-stale gate: %#v", driftExplanation)
-	}
-	operationalExplanation, _ := ExplainProviderRoute(context.Background(), r, "operational-stale", provider.CapabilityPPOB, "xld10", 100)
-	if found, _ := reason(operationalExplanation, ReasonCatalogStale); found {
-		t.Fatalf("operational-stale provider must not report later catalog-stale gate: %#v", operationalExplanation)
+	if found, blocking := reason(driftExplanation, ReasonOperationalSnapshotStale); !found || !blocking {
+		t.Fatalf("explanation should remain observational and expose drift provider's stale operational state: %#v", driftExplanation)
 	}
 
-	_, selectErr := r.Select(context.Background(), Request{ProductCode: "xld10", Amount: 100})
-	if !errors.Is(selectErr, ErrNoProviderAvailable) ||
-		!errors.Is(selectErr, ErrOperationalSnapshotStale) ||
-		!errors.Is(selectErr, ErrCatalogStale) {
-		t.Fatalf("aggregate router errors missing expected joined sentinels: %v", selectErr)
+	setLifecycle := func(name string, lifecycle operational.Lifecycle) {
+		t.Helper()
+		state, ok := r.ProviderState.Get(name)
+		if !ok {
+			t.Fatalf("expected provider state for %s", name)
+		}
+		state.Lifecycle = lifecycle
+		if err := r.ProviderState.Put(state); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if errors.Is(selectErr, ErrProviderCapabilityDrift) {
-		// The drift provider is intentionally also operational-stale, but Router.Select
-		// stops at capability drift, so capability drift must still be represented.
-	} else {
-		t.Fatalf("aggregate router errors missing capability-drift sentinel: %v", selectErr)
+
+	for _, name := range []string{"operational-stale", "catalog-stale", "healthy-blocked"} {
+		setLifecycle(name, operational.LifecycleDisabled)
+	}
+	_, driftErr := r.Select(context.Background(), Request{ProductCode: "xld10", Amount: 100})
+	if !errors.Is(driftErr, ErrNoProviderAvailable) || !errors.Is(driftErr, ErrProviderCapabilityDrift) {
+		t.Fatalf("isolated drift candidate must contribute capability-drift aggregate error: %v", driftErr)
+	}
+	if errors.Is(driftErr, ErrOperationalSnapshotStale) || errors.Is(driftErr, ErrCatalogStale) {
+		t.Fatalf("early capability-drift gate must not contribute later aggregate errors: %v", driftErr)
+	}
+
+	setLifecycle("drift", operational.LifecycleDisabled)
+	setLifecycle("operational-stale", operational.LifecycleEnabled)
+	_, operationalErr := r.Select(context.Background(), Request{ProductCode: "xld10", Amount: 100})
+	if !errors.Is(operationalErr, ErrNoProviderAvailable) || !errors.Is(operationalErr, ErrOperationalSnapshotStale) {
+		t.Fatalf("isolated operational-stale candidate must contribute operational-stale aggregate error: %v", operationalErr)
+	}
+	if errors.Is(operationalErr, ErrCatalogStale) || errors.Is(operationalErr, ErrProviderCapabilityDrift) {
+		t.Fatalf("early operational-stale gate must not contribute later aggregate errors: %v", operationalErr)
+	}
+
+	setLifecycle("operational-stale", operational.LifecycleDisabled)
+	setLifecycle("catalog-stale", operational.LifecycleEnabled)
+	_, catalogErr := r.Select(context.Background(), Request{ProductCode: "xld10", Amount: 100})
+	if !errors.Is(catalogErr, ErrNoProviderAvailable) || !errors.Is(catalogErr, ErrCatalogStale) {
+		t.Fatalf("isolated catalog-stale candidate must contribute catalog-stale aggregate error: %v", catalogErr)
+	}
+	if errors.Is(catalogErr, ErrProviderCapabilityDrift) || errors.Is(catalogErr, ErrOperationalSnapshotStale) {
+		t.Fatalf("catalog-stale candidate must not invent unrelated aggregate errors: %v", catalogErr)
 	}
 }
