@@ -2,6 +2,7 @@ package operational
 
 import (
 	"errors"
+	"sort"
 	"strings"
 )
 
@@ -108,4 +109,31 @@ func (s *ProviderAdminService) EnableCapability(name string, capability Capabili
 
 func (s *ProviderAdminService) DisableCapability(name string, capability Capability) (ProviderState, error) {
 	return s.SetCapabilityEnabled(name, capability, false)
+}
+
+
+func reconcileEnabledCapabilities(previous []Capability, descriptor provider.CapabilityDescriptor) []Capability {
+	previousSet := make(map[Capability]struct{}, len(previous))
+	for _, capability := range previous {
+		previousSet[capability] = struct{}{}
+	}
+	result := make([]Capability, 0, len(descriptor.Capabilities))
+	for capability, status := range descriptor.Capabilities {
+		if !status.AdapterImplemented || !status.Enabled {
+			continue
+		}
+		if _, ok := previousSet[capability]; ok {
+			result = append(result, capability)
+		}
+	}
+	if previous == nil {
+		result = result[:0]
+		for capability, status := range descriptor.Capabilities {
+			if status.AdapterImplemented && status.Enabled {
+				result = append(result, capability)
+			}
+		}
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i] < result[j] })
+	return result
 }
