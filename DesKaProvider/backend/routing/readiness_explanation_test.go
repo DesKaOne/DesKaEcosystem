@@ -549,3 +549,98 @@ func TestExplainProviderRouteDeepStateMatrix(t *testing.T) {
 		}
 	})
 }
+
+
+func TestExplainProviderRouteTransitionParityWithRouterSelect(t *testing.T) {
+	now := time.Date(2026, 9, 29, 12, 0, 0, 0, time.UTC)
+	router := testReadinessRouter(t, provider.CapabilityStatus{
+		AdapterImplemented: true,
+		Enabled:            true,
+		Tested:             true,
+	}, operational.LifecycleEnabled, &catalog.Snapshot{
+		ProviderName: "mock",
+		Products:     []provider.Product{{Code: "xld10"}},
+		SyncedAt:     now,
+	})
+	router.Now = func() time.Time { return now }
+
+	reader, ok := router.OperationalInput.(*StoreOperationalInputReader)
+	if !ok {
+		t.Fatalf("expected store-backed operational input reader, got %T", router.OperationalInput)
+	}
+	if err := reader.Store.Put(operational.Snapshot{
+		ProviderName:       "mock",
+		Balance:            100000,
+		Currency:           "IDR",
+		Health:             operational.HealthHealthy,
+		LastCheckedAt:      now,
+		LastSuccessAt:      now,
+		ConsecutiveFailures: 0,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	assertParity := func(label string, expectEligible bool, expectedReason ReadinessReasonCode) {
+		t.Helper()
+		explanation, err := ExplainProviderRoute(context.Background(), router, "mock", provider.CapabilityPPOB, "xld10", 100)
+		if err != nil {
+			t.Fatal(err)
+		}
+		selected, selectErr := router.Select(context.Background(), Request{ProductCode: "xld10", Amount: 100})
+		if expectEligible {
+			if !explanation.RouteEligible {
+				t.Fatalf("%s: explanation unexpectedly blocked: %#v", label, explanation)
+			}
+			if selectErr != nil || selected != "mock" {
+				t.Fatalf("%s: Router.Select unexpectedly rejected route: provider=%q err=%v", label, selected, selectErr)
+			}
+			return
+		}
+		if explanation.RouteEligible {
+			t.Fatalf("%s: explanation unexpectedly eligible: %#v", label, explanation)
+		}
+		found, blocking := reason(explanation, expectedReason)
+		if !found || !blocking {
+			t.Fatalf("%s: expected blocking reason %q: %#v", label, expectedReason, explanation)
+		}
+		if !errors.Is(selectErr, ErrNoProviderAvailable) {
+			t.Fatalf("%s: Router.Select unexpectedly selected provider: provider=%q err=%v", label, selected, selectErr)
+		}
+	}
+
+	assertParity("initial", true, "")
+	state, ok := router.ProviderState.Get("mock")
+	if !ok {
+		t.Fatal("expected provider state")
+	}
+	state.Lifecycle = operational.LifecycleDisabled
+	if err := router.ProviderState.Put(state); err != nil {
+		t.Fatal(err)
+	}
+	assertParity("lifecycle-disabled", false, ReasonLifecycleDisabled)
+
+	state.Lifecycle = operational.LifecycleEnabled
+	state.CapabilityFingerprint = "drifted"
+	if err := router.ProviderState.Put(state); err != nil {
+		t.Fatal(err)
+	}
+	assertParity("capability-drift", false, ReasonCapabilityDrift)
+
+	admin, err := operational.NewProviderAdminService(router.ProviderState)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reconciled, err := admin.ReconcileCapabilityState("mock", router.Registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reconciled.Drifted || reconciled.State.Enabled() {
+		t.Fatalf("reconciliation must clear drift without re-enabling lifecycle: %#v", reconciled)
+	}
+	assertParity("reconciled-but-disabled", false, ReasonLifecycleDisabled)
+
+	if _, err := admin.Enable("mock"); err != nil {
+		t.Fatal(err)
+	}
+	assertParity("explicitly-enabled", true, "")
+}
