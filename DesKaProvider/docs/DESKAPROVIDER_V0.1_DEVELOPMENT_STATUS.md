@@ -3262,3 +3262,91 @@ Scope:
 - preserve all transaction, financial, and public-API safety boundaries.
 
 No speculative RCB PPOB implementation, automatic retry/failover/resubmission, funding, ledger/treasury mutation, public API, or DesKaCash provider-specific coupling is included in #298.
+
+## Milestone #298 — Provider Administrative Snapshot / Routing Aggregate Membership Re-read Audit
+
+**Date:** 2026-09-30
+
+### Scope
+
+- verify repeated interleaved administrative snapshots and `Router.Select()` calls preserve exact aggregate sentinel membership across terminal blocked states and controlled recovery;
+- verify repeated re-reads do not retain historical sentinel causes or introduce duplicate aggregate membership;
+- preserve deterministic `errors.Is` semantics and aggregate ordering while keeping administrative explanation observational;
+- preserve all transaction, financial, and public-API safety boundaries.
+
+### Source Finding
+
+- #297 established that interleaved administrative snapshots and authoritative routing reads remain consistent across controlled lifecycle/capability transitions.
+- #294 established deterministic aggregate ordering and sentinel membership across sequential reconciliation/recovery transitions.
+- The remaining boundary was to prove that repeated administrative re-reads around `Router.Select()` neither accumulate historical aggregate causes nor duplicate/reorder active sentinel membership.
+
+### Implementation
+
+Added test-only coverage in `DesKaProvider/backend/routing/aggregate_reread_membership_test.go`.
+
+The regression scenario:
+
+1. initialize three provider-neutral mock providers with explicit PPOB capability metadata;
+2. create simultaneous operational-stale, catalog-stale, and capability-drift conditions and assert the exact aggregate error text and `errors.Is` membership;
+3. interleave `ExplainAllProviderRoutes()` before and after routing, repeat the pair three times, and require byte-for-byte aggregate stability plus deep-equal administrative snapshots;
+4. reconcile capability drift and verify only the capability-drift sentinel disappears;
+5. recover operational freshness and explicitly disable that provider so its historical operational-stale cause cannot leak into the aggregate;
+6. verify only catalog-stale remains, with repeated diagnostic/routing re-reads preserving exact membership and ordering;
+7. recover catalog freshness and verify routing succeeds repeatedly without any historical aggregate sentinel leaking into the successful route.
+
+No production routing, provider adapter, lifecycle implementation, persistence format, transaction, or financial behavior was changed.
+
+### Changed Files
+
+- `DesKaProvider/backend/routing/aggregate_reread_membership_test.go`
+- `DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md`
+
+No provider credentials or external provider requests were added or executed.
+
+### Verification
+
+Implementation/test final HEAD:
+
+`81b5717aa3e96e9e50b448314b0814d3742d822c`
+
+GitHub Actions Push CI **#2997** / run **36623552864** for that exact HEAD: **GREEN**.
+
+GitHub Actions Pull Request CI **#2998** / run **36623559994** for that exact HEAD: **GREEN**.
+
+- test: PASS
+- vet: PASS
+- race: PASS
+- PostgreSQL service-backed test environment: PASS
+- IAK read-only: SKIPPED (credential-gated)
+- XP SINDONESIA read-only: SKIPPED (credential-gated)
+- Midtrans sandbox: SKIPPED (credential-gated)
+
+No authorized live-provider transaction or external provider request was executed.
+
+### Safety Boundary / Invariants
+
+- aggregate routing errors remain observational output from the existing `Router.Select()` authority and never authorize payment, purchase, retry, failover, or resubmission;
+- repeated administrative re-reads do not mutate lifecycle, capability metadata, operational state, catalog state, or routing state;
+- historical sentinel causes disappear when their underlying blocking condition is removed and are not retained in later aggregate errors;
+- aggregate sentinel membership and ordering remain deterministic and provider-neutral;
+- successful routing does not carry historical aggregate sentinel errors;
+- `Router.Select()` remains the sole routing decision authority;
+- no automatic retry, provider failover, transaction resubmission, duplicate transaction creation, provider funding, ledger mutation, customer-balance mutation, treasury movement, or public API exposure is introduced;
+- RCB remains unregistered, non-routable, and fail-closed pending an authoritative PPOB contract;
+- no DesKaCash provider-specific coupling is introduced.
+
+### Known Limitations
+
+- this audit proves internal aggregate membership/re-read determinism under controlled provider-neutral transitions; it does not establish external provider availability or provider contract correctness;
+- IAK, XP SINDONESIA, and Midtrans external validation remains credential-gated;
+- no authorized live-provider transaction was executed;
+- RCB PPOB contract acquisition remains incomplete.
+
+### Architecture Impact
+
+#298 closes the aggregate-membership re-read boundary: repeated diagnostic/routing observations do not accumulate, duplicate, reorder, or retain historical sentinel causes. Aggregate errors continue to represent the current routing candidate set and active gate state, while administrative explanation remains observational.
+
+### Next Milestone
+
+No new production milestone is opened automatically from #298. The next step should be selected from the remaining Provider v0.1 readiness gaps after reviewing the current repository state, rather than increasing the milestone number without a concrete architectural need.
+
