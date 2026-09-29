@@ -28,7 +28,7 @@ func TestProviderAdminDiagnoseIsObservational(t *testing.T) {
 	if err := store.Put(ProviderState{
 		ProviderName: "mock",
 		Lifecycle: LifecycleEnabled,
-		Capabilities: []Capability{CapabilityPPOB},
+		Capabilities: []Capability{CapabilityPPOB, CapabilityWebhook},
 		CapabilityFingerprint: CapabilityMetadataFingerprint(descriptor),
 	}); err != nil { t.Fatal(err) }
 
