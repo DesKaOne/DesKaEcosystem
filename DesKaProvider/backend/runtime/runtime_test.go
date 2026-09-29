@@ -6266,8 +6266,14 @@ func TestNewFromEnvironmentContextPreservesProviderLifecycleAcrossRestart(t *tes
 	t.Setenv("XP_SINDONESIA_ID", "")
 	t.Setenv("XP_SINDONESIA_KEY", "")
 	t.Setenv("XP_SINDONESIA_API", "")
-	t.Setenv("DIGIFLAZZ_USERNAME", "")
-	t.Setenv("DIGIFLAZZ_API_KEY", "")
+	for _, key := range []string{"DIGIFLAZZ_USERNAME", "DIGIFLAZZ_API_KEY"} {
+		value, present := os.LookupEnv(key)
+		t.Setenv(key, "")
+		_ = os.Unsetenv(key)
+		t.Cleanup(func() {
+			if present { _ = os.Setenv(key, value) } else { _ = os.Unsetenv(key) }
+		})
+	}
 
 	first, err := NewFromEnvironment(http.DefaultClient)
 	if err != nil {
