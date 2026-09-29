@@ -282,7 +282,7 @@ func TestRouterReadinessStatesDoNotBypassCapabilityAndOperationalGates(t *testin
 
 
 func TestExplainProviderRouteParityAcrossAdministrativeRoutingStateMatrix(t *testing.T) {
-	now := time.Date(2026, 9, 29, 12, 0, 0, 0, time.UTC)
+	now := time.Now()
 	tests := []struct {
 		name       string
 		status     provider.CapabilityStatus
