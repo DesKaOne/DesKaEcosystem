@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
-	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/mock"
+	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/Mock"
 )
 
 func diagnosticRegistry(t *testing.T) *provider.Registry {
