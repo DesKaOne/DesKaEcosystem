@@ -784,3 +784,91 @@ Routing selection and administrative explainability now share the same explicit 
 **Milestone #274 — Routing Decision Explainability / Selection Parity Audit**
 
 Audit whether administrative route explanations expose the same candidate rejection reasons and eligibility boundaries used by `Router.Select()`, without duplicating or becoming an alternative routing implementation. Any change must preserve deterministic ordering and the observational-only boundary.
+
+
+## Milestone #274 — Routing Decision Explainability / Selection Parity Audit
+
+**Date:** 2026-09-29
+
+### Scope
+
+- audit administrative/readiness explanations against the actual Router.Select() candidate rejection gates;
+- ensure operational lifecycle and operational capability gates are represented consistently in explanations;
+- add deterministic parity coverage without creating a second routing decision implementation;
+- preserve provider-neutral, observational-only administrative behavior.
+
+### Source Finding
+
+The parity audit found one concrete mismatch: when ProviderState existed, Router.Select() required the operational state to explicitly support the PPOB capability before considering the provider route-eligible. ExplainProviderRoute() checked lifecycle state but did not report the missing operational capability gate. This could make administrative explainability appear less restrictive than the actual router.
+
+### Implementation
+
+- added the provider-neutral operational_capability_missing readiness reason;
+- updated ExplainProviderRoute() to report a blocking operational capability reason whenever persisted ProviderState does not support the requested capability;
+- added a regression test that removes PPOB from operational capability state and verifies both explanation and Router.Select() reject the provider;
+- kept route selection itself unchanged; the router remains the sole authorization path.
+
+### Changed Files
+
+- DesKaProvider/backend/routing/readiness_explanation.go
+- DesKaProvider/backend/routing/readiness_explanation_test.go
+- DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md
+
+### Verification
+
+Implementation/test final HEAD:
+
+e45bd30d531fbb56643558de8eccb68cca71d42e
+
+GitHub Actions run #2820 for that exact HEAD: GREEN.
+
+- test: PASS
+- go test ./...: PASS
+- go vet ./...: PASS
+- race: PASS
+- go test -race ./...: PASS
+- PostgreSQL service-backed test environment executed successfully
+- Midtrans sandbox: skipped because authorized credentials were not supplied to CI
+- IAK read-only: skipped because authorized credentials were not supplied to CI
+- XP SINDONESIA read-only: skipped because authorized credentials were not supplied to CI
+
+An earlier CI attempt #2818 for the same parity change failed only because the new regression test omitted the standard Go errors import. That was corrected in e45bd30d531fbb56643558de8eccb68cca71d42e, and the exact final HEAD passed #2820.
+
+No authorized live-provider transaction was executed.
+
+### RCB Sandbox Boundary
+
+A sandbox credential was supplied for RCB testing during this milestone, but it was not persisted in source control, documentation, logs, or test fixtures.
+
+The available public RCB material confirms a sandbox mode exists, but does not provide a verified read-only PPOB sandbox endpoint/contract. The published API example is a payment-gateway order-creation POST endpoint, which is not sufficient to safely validate the neutral PPOB adapter contract without risking an unintended order/payment-side effect. Therefore no RCB sandbox transaction/request was executed in #274.
+
+### Safety Boundary / Invariants
+
+- administrative explanations remain observational and never authorize payment, purchase, retry, failover, resubmission, or provider funding;
+- no independent routing policy was introduced;
+- Router.Select() remains the sole routing decision path;
+- operational capability state remains separate from registry capability readiness and ProductionReady;
+- no ledger mutation, customer-balance mutation, treasury movement, or duplicate transaction creation was introduced;
+- no public API exposure was introduced;
+- RCB remains fail-closed and non-routable pending a verified PPOB contract.
+
+### Known Limitations
+
+- parity coverage is currently centered on the identified operational capability gate; the router still owns the final candidate evaluation and ordering logic;
+- RCB PPOB contract fields remain incomplete for product list, inquiry, purchase, status, webhook, error, idempotency, balance, and sandbox semantics;
+- the supplied RCB sandbox credential cannot by itself establish a safe, verified PPOB contract.
+
+### Architecture Impact
+
+Administrative route explanations now expose the same operational capability boundary that the router enforces, reducing diagnostic ambiguity without duplicating routing logic or creating another authorization path.
+
+### Next Milestone
+
+**Milestone #275 — Routing Explainability Candidate-Rejection Parity Matrix**
+
+Scope:
+
+- build a deterministic parity matrix covering each existing Router.Select() rejection gate for the PPOB route;
+- verify lifecycle, capability metadata/drift, operational freshness/health/balance, catalog freshness/product availability, and final eligibility are represented consistently;
+- keep explanation generation observational and reuse existing router predicates where practical;
+- continue without provider-specific RCB implementation until the PPOB contract is verified.
