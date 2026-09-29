@@ -2630,15 +2630,26 @@ No production routing, provider adapter, lifecycle, readiness, persistence, or f
 
 ### Verification
 
-Implementation/test commits:
+Final implementation/test HEAD before documentation closure:
 
-- `6c2a8896d3ed3166da24263693a4c795f9882780` — diagnostic copy-isolation regression tests
-- `1fd26e77c4428d536b639da0ed8c98d2436c2f84` — routing/source-isolation regression tests
+`5ecf4f78c6caedaef7b0060202a43e7c0aab03d3`
 
-GitHub Actions verification is pending for the final branch HEAD after documentation closure.
+GitHub Actions Push CI #2940 / run `36600331803`: **GREEN**
+- `go test ./...`: PASS
+- `go vet ./...`: PASS
+- PostgreSQL service-backed integration: PASS as part of the test/race jobs
+- `go test -race ./...`: PASS
+- IAK read-only: SKIPPED (credential-gated)
+- XP SINDONESIA read-only: SKIPPED (credential-gated)
+- Midtrans sandbox: SKIPPED (credential-gated)
+
+CI correction history for #291:
+- #2936 / #2939 exposed test-only issues: an unused import in the new diagnostic regression test and an incorrect #290 routing fixture;
+- #2938 exposed the same #290 fixture semantic mismatch after the import correction;
+- the fixtures/assertions were corrected without production-code changes;
+- #2940 is the final GREEN verification for the implementation/test HEAD.
 
 No authorized live-provider transaction or external provider request was executed.
-
 ### Safety Boundary / Invariants
 
 - `Diagnose` and `DiagnoseAll` remain observational and cannot mutate persisted provider state through returned slices.
