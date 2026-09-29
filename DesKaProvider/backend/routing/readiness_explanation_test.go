@@ -197,3 +197,73 @@ func TestExplainProviderRouteOperationalFreshnessHealthBalanceParity(t *testing.
 		})
 	}
 }
+
+
+func TestRouterReadinessStatesDoNotBypassCapabilityAndOperationalGates(t *testing.T) {
+	states := []struct {
+		name   string
+		status provider.CapabilityStatus
+	}{
+		{name: "implemented", status: provider.CapabilityStatus{AdapterImplemented: true}},
+		{name: "tested", status: provider.CapabilityStatus{AdapterImplemented: true, Tested: true}},
+		{name: "live-validated", status: provider.CapabilityStatus{AdapterImplemented: true, Tested: true, Enabled: true, LiveTested: true}},
+		{name: "production-ready", status: provider.CapabilityStatus{
+			Verified: true, Configured: true, AdapterImplemented: true,
+			Tested: true, Enabled: true, LiveTested: true, ProductionReady: true,
+		}},
+	}
+
+	for _, tc := range states {
+		t.Run(tc.name+"-disabled-capability", func(t *testing.T) {
+			r := testReadinessRouter(t, tc.status, operational.LifecycleEnabled, &catalog.Snapshot{
+				ProviderName: "mock",
+				Products:     []provider.Product{{Code: "xld10"}},
+				SyncedAt:    time.Now(),
+			})
+			explanation, err := ExplainProviderRoute(context.Background(), r, "mock", provider.CapabilityPPOB, "xld10", 100)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if r.Registry.Supports("mock", provider.CapabilityPPOB) {
+				t.Fatalf("readiness state %q must not make a disabled capability routable", tc.name)
+			}
+			if explanation.RouteEligible {
+				t.Fatalf("readiness state %q bypassed disabled capability gate: %#v", tc.name, explanation)
+			}
+			if _, err := r.Select(context.Background(), Request{ProductCode: "xld10", Amount: 100}); !errors.Is(err, ErrNoProviderAvailable) {
+				t.Fatalf("readiness state %q bypassed Router.Select capability gate: %v", tc.name, err)
+			}
+		})
+	}
+
+	t.Run("production-ready-does-not-bypass-operational-gate", func(t *testing.T) {
+		r := testReadinessRouter(t, provider.CapabilityStatus{
+			Verified: true, Configured: true, AdapterImplemented: true,
+			Tested: true, Enabled: true, LiveTested: true, ProductionReady: true,
+		}, operational.LifecycleEnabled, &catalog.Snapshot{
+			ProviderName: "mock",
+			Products:     []provider.Product{{Code: "xld10"}},
+			SyncedAt:    time.Now(),
+		})
+		reader := r.OperationalInput.(*StoreOperationalInputReader)
+		now := time.Date(2026, 9, 29, 12, 0, 0, 0, time.UTC)
+		if err := reader.Store.Put(operational.Snapshot{
+			ProviderName: "mock", Balance: 1, Currency: "IDR",
+			Health: operational.HealthUnhealthy, LastCheckedAt: now,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		r.Now = func() time.Time { return now }
+
+		explanation, err := ExplainProviderRoute(context.Background(), r, "mock", provider.CapabilityPPOB, "xld10", 100)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if explanation.RouteEligible {
+			t.Fatalf("ProductionReady must not bypass operational health/balance gates: %#v", explanation)
+		}
+		if _, err := r.Select(context.Background(), Request{ProductCode: "xld10", Amount: 100}); !errors.Is(err, ErrNoProviderAvailable) {
+			t.Fatalf("ProductionReady bypassed Router.Select operational gate: %v", err)
+		}
+	})
+}
