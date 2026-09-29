@@ -86,7 +86,7 @@ func TestAdministrativeDiagnosticsRemainObservationalAndSeparateFromRoutingAutho
 		t.Fatal("expected catalog snapshot")
 	}
 
-	_, err := router.Select(context.Background(), Request{ProductCode: "xld10", Amount: 100})
+	_, err = router.Select(context.Background(), Request{ProductCode: "xld10", Amount: 100})
 	if err == nil {
 		t.Fatal("expected routing to remain blocked")
 	}
