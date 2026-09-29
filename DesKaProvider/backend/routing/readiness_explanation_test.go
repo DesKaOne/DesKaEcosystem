@@ -1028,7 +1028,7 @@ func TestExplainProviderRouteAggregateReasonsMatchRouterJoinedErrorGates(t *test
 	// catalog must therefore not contribute catalog-stale for this provider.
 	if err := store.Put(operational.Snapshot{
 		ProviderName: "operational-stale", Balance: 100000, Currency: "IDR",
-		Health: operational.HealthHealthy, LastCheckedAt: now,
+		Health: operational.HealthHealthy, LastCheckedAt: now.Add(-2 * time.Hour),
 	}); err != nil {
 		t.Fatal(err)
 	}
