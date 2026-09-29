@@ -30,6 +30,10 @@ type ProviderState struct {
 	ProviderName string
 	Lifecycle    Lifecycle
 	Capabilities []Capability
+	// EnabledCapabilities is the operational capability gate. A nil value is
+	// retained for legacy state and is interpreted as Capabilities until runtime
+	// performs the explicit migration against current registry metadata.
+	EnabledCapabilities []Capability
 	CapabilityFingerprint string
 }
 
@@ -49,7 +53,11 @@ func (s ProviderState) Enabled() bool {
 }
 
 func (s ProviderState) Supports(capability Capability) bool {
-	for _, value := range s.Capabilities {
+	capabilities := s.Capabilities
+	if s.EnabledCapabilities != nil {
+		capabilities = s.EnabledCapabilities
+	}
+	for _, value := range capabilities {
 		if value == capability {
 			return true
 		}
@@ -95,6 +103,7 @@ func (s *ProviderStateStore) Get(name string) (ProviderState, bool) {
 	defer s.mu.RUnlock()
 	state, ok := s.states[name]
 	state.Capabilities = append([]Capability(nil), state.Capabilities...)
+	state.EnabledCapabilities = append([]Capability(nil), state.EnabledCapabilities...)
 	return state, ok
 }
 
@@ -111,6 +120,9 @@ func (s *ProviderStateStore) putMemory(state ProviderState) error {
 	capabilities := append([]Capability(nil), state.Capabilities...)
 	sort.Slice(capabilities, func(i, j int) bool { return capabilities[i] < capabilities[j] })
 	state.Capabilities = capabilities
+	enabledCapabilities := append([]Capability(nil), state.EnabledCapabilities...)
+	sort.Slice(enabledCapabilities, func(i, j int) bool { return enabledCapabilities[i] < enabledCapabilities[j] })
+	state.EnabledCapabilities = enabledCapabilities
 	s.states[state.ProviderName] = state
 	return nil
 }
@@ -128,6 +140,9 @@ func (s *ProviderStateStore) Put(state ProviderState) error {
 	capabilities := append([]Capability(nil), state.Capabilities...)
 	sort.Slice(capabilities, func(i, j int) bool { return capabilities[i] < capabilities[j] })
 	state.Capabilities = capabilities
+	enabledCapabilities := append([]Capability(nil), state.EnabledCapabilities...)
+	sort.Slice(enabledCapabilities, func(i, j int) bool { return enabledCapabilities[i] < enabledCapabilities[j] })
+	state.EnabledCapabilities = enabledCapabilities
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -140,6 +155,7 @@ func (s *ProviderStateStore) Put(state ProviderState) error {
 		states := make([]ProviderState, 0, len(next))
 		for _, value := range next {
 			value.Capabilities = append([]Capability(nil), value.Capabilities...)
+			value.EnabledCapabilities = append([]Capability(nil), value.EnabledCapabilities...)
 			states = append(states, value)
 		}
 		sort.Slice(states, func(i, j int) bool { return states[i].ProviderName < states[j].ProviderName })
@@ -158,6 +174,7 @@ func (s *ProviderStateStore) All() []ProviderState {
 	result := make([]ProviderState, 0, len(s.states))
 	for _, state := range s.states {
 		state.Capabilities = append([]Capability(nil), state.Capabilities...)
+		state.EnabledCapabilities = append([]Capability(nil), state.EnabledCapabilities...)
 		result = append(result, state)
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].ProviderName < result[j].ProviderName })
