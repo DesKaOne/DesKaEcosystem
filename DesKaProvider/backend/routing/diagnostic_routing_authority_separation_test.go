@@ -90,13 +90,14 @@ func TestAdministrativeDiagnosticsRemainObservationalAndSeparateFromRoutingAutho
 	if err == nil {
 		t.Fatal("expected routing to remain blocked")
 	}
+	selectBeforeErr := err.Error()
 	if !errors.Is(err, ErrNoProviderAvailable) {
 		t.Fatalf("expected no-provider sentinel, got %v", err)
 	}
 	if errors.Is(err, ErrOperationalSnapshotStale) || errors.Is(err, ErrCatalogStale) {
 		t.Fatalf("disabled lifecycle must prevent stale-source sentinels from becoming routing causes: %v", err)
 	}
-	if selectBefore.Error() != ErrNoProviderAvailable.Error() {
+	if selectBeforeErr != ErrNoProviderAvailable.Error() {
 		t.Fatalf("unexpected authoritative routing error: %q", selectBefore.Error())
 	}
 
@@ -168,10 +169,10 @@ func TestAdministrativeDiagnosticsRemainObservationalAndSeparateFromRoutingAutho
 	if err == nil {
 		t.Fatal("expected routing to remain blocked after diagnostics")
 	}
-	if selectAfter.Error() != selectBefore.Error() {
-		t.Fatalf("administrative diagnostics altered authoritative routing error: before=%q after=%q", selectBefore.Error(), selectAfter.Error())
+	if selectAfterErr != selectBefore.Error() {
+		t.Fatalf("administrative diagnostics altered authoritative routing error: before=%q after=%q", selectBeforeErr, selectAfterErr)
 	}
-	if !errors.Is(selectAfter, ErrNoProviderAvailable) {
+	if !errors.Is(err, ErrNoProviderAvailable) {
 		t.Fatalf("routing lost no-provider sentinel after diagnostics: %v", selectAfter)
 	}
 }
