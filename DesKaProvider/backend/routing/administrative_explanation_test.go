@@ -39,7 +39,7 @@ func TestExplainAllProviderRoutesDeterministicAndComplete(t *testing.T) {
 	for _, name := range names {
 		if err := store.Put(operational.Snapshot{
 			ProviderName: name, Balance: 100000, Currency: "IDR",
-			Health: operational.HealthHealthy, LastCheckedAt: now,
+			Health: operational.HealthHealthy, LastCheckedAt: now, LastSuccessAt: now,
 		}); err != nil { t.Fatal(err) }
 	}
 	catalogStore := catalog.NewMemoryStore()
