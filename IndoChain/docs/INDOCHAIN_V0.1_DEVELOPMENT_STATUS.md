@@ -2433,4 +2433,73 @@ Milestone ini merupakan integrasi BFT orchestration yang nyata, tetapi **bukan p
 
 Bind `RoundDriver` ke existing P2P consensus transport dan block-candidate production sehingga pipeline proposal/prevote/precommit/timeout/finality berjalan melalui transport nyata, dengan canonical execution/commit tetap berada di node boundary.
 
-**Milestone 4.51 status:** implementation completed; exact implementation CI gate pending.
+**Milestone 4.51 status:** implementation completed; exact implementation HEAD `e6d0b7c9473715bf8af28bce83490be2a22c3a7e` initially RED due to a test asserting an unsigned message could cross a transport encoder that correctly rejects missing signatures. The test was corrected in `e256011e985214e097891c93b857adf616de5559`. Exact implementation CI run `36790356111`: GREEN (Tidy/Test/Race/Vet).
+
+### 4.52 P2P Consensus Round Driver & Proposal Publication Boundary
+
+**Tanggal:** 2026-10-01
+
+**Objective**
+
+Mengikat authenticated `RoundDriver` ke transport P2P yang sudah tersedia dan menyediakan publication boundary untuk deterministic block proposal evidence tanpa membekukan canonical block wire serialization terlalu dini.
+
+**Implementation**
+
+- `IndoChain/internal/consensus/proposal_signing.go`
+  - `BuildSignedProposalMessage` memvalidasi `BlockProposal`, membentuk exact protocol/chain/epoch/height/round proposal message, dan menandatanganinya melalui consensus domain.
+  - Candidate tetap terpisah dari consensus evidence karena canonical block serialization v0.1 belum frozen.
+- `IndoChain/internal/p2p/consensus_transport.go`
+  - generalisasi `SendConsensus` / `ReceiveConsensus` agar bekerja pada `Transport` interface, bukan hanya `InMemoryTransport`.
+  - framing/decoding consensus message tetap menggunakan existing consensus codec dan transport payload limit.
+- `IndoChain/internal/p2p/consensus_round_driver.go`
+  - `ConsensusRoundDriver` mengikat P2P transport ke authenticated `consensus.RoundDriver`.
+  - `Publish` mengirim authenticated consensus evidence.
+  - `PublishBlockProposal` membangun + menandatangani deterministic proposal evidence sebelum publish.
+  - `ReceiveAndHandle` menerima tepat satu consensus message dan menyerahkannya ke authenticated runtime boundary.
+  - Driver tidak memiliki clock, retransmission, peer discovery, atau canonical storage ownership.
+- `IndoChain/internal/p2p/consensus_round_driver_test.go`
+  - remote proposal authenticated sebelum runtime mutation;
+  - tampered signature ditolak tanpa mutation;
+  - unsigned message ditolak sebelum transport enqueue;
+  - proposal signing boundary memiliki explicit signer requirement.
+
+**Locked invariants**
+
+1. Consensus message tetap exact-context sebelum runtime handling.
+2. Signature wajib tersedia sebelum consensus message dapat melewati transport encoder.
+3. Receiver tetap melakukan authority/signature verification; transport encoding bukan pengganti authentication.
+4. Tampered proposal tidak boleh memajukan round state.
+5. Proposal evidence dibangun dari deterministic block candidate hash.
+6. Canonical block serialization/wire encoding tidak dibekukan oleh milestone ini.
+7. P2P driver tidak melakukan canonical execution atau storage commit.
+
+**Production boundary**
+
+Milestone ini sudah menjadi transport/runtime integration boundary yang executable, tetapi belum merupakan full multi-node production consensus loop.
+
+Masih terbuka:
+
+- candidate block dissemination/fetch melalui canonical block/sync protocol;
+- local proposer loop dari mempool ke candidate;
+- automatic prevote/precommit emission policy;
+- peer-wide broadcast/retransmission;
+- timeout clock/failure detector;
+- multi-node multi-height commit loop;
+- validator-set lifecycle;
+- durable consensus recovery activation.
+
+**Verification**
+
+- Initial implementation HEAD: `e6d0b7c9473715bf8af28bce83490be2a22c3a7e` — CI RED due to test-boundary assertion.
+- Corrected implementation HEAD: `e256011e985214e097891c93b857adf616de5559`.
+- CI run `36790356111`: GREEN.
+- Tidy: PASS.
+- `go test ./...`: PASS.
+- `go test -race ./...`: PASS.
+- `go vet ./...`: PASS.
+
+**Next integration target**
+
+Candidate dissemination/fetch harus diikat ke existing block/sync transport sehingga node penerima dapat memperoleh candidate block berdasarkan proposal hash, memvalidasi candidate terhadap consensus context, lalu menjalankan authenticated prevote/precommit melalui `ConsensusRoundDriver`.
+
+**Milestone 4.52 status:** implementation/test completed; final documentation HEAD requires exact-head CI verification.
