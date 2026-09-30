@@ -59,14 +59,14 @@ func (d *RoundDriver) HandleMessage(msg Message) error {
 	}
 	if err := ValidateConsensusMessage(msg, MessageValidationContext{
 		Rules: ValidationRules{
-			ProtocolVersion: r.runtime.rules.ProtocolVersion,
-			ChainID: r.runtime.rules.ChainID,
-			MaxPayloadSize: r.runtime.rules.MaxPayloadSize,
+			ProtocolVersion: d.runtime.rules.ProtocolVersion,
+			ChainID: d.runtime.rules.ChainID,
+			MaxPayloadSize: d.runtime.rules.MaxPayloadSize,
 			RequireSender: true,
 			RequireSignature: true,
 		},
-		State: r.runtime.state,
-		Validators: r.runtime.validators,
+		State: d.runtime.state,
+		Validators: d.runtime.validators,
 	}); err != nil {
 		return err
 	}
