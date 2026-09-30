@@ -4296,3 +4296,34 @@ Continue the same contract audit on IAK Check Status and Top Up: verify mandator
 ### IAK Inquiry CI Fixture Correction
 
 CI #3149 correctly exposed a test-fixture assertion bug in the newly added invalid-status case: the test checked constructor error instead of inquiry error. The test has been corrected to assert the actual `Inquiry()` response validation path. Production validation logic is unchanged.
+
+
+## IAK Top Up / Check Status Contract Hardening
+
+**Date:** 2026-09-30
+
+### Source Basis
+
+IAK Prepaid Core v2 documents Top Up and Check Status responses with mandatory `ref_id`, `status`, `product_code`, `customer_id`, `price`, `message`, `balance`, `tr_id`, and `rc`. Status values are `0=PROCESS`, `1=SUCCESS`, `2=FAILED`. citeturn0search0turn0search1
+
+### Implementation
+
+- Top Up and Check Status now require a documented transaction status.
+- `rc` is mandatory and mapped through the existing IAK response-code mapper.
+- The mapped `rc` status must agree with the response `status`; conflicting combinations are rejected fail-closed instead of allowing one field to silently override the other.
+- `message`, `price`, `balance`, and `tr_id` are validated as mandatory response fields with numeric validation for numeric fields.
+- Existing request/response transaction identity checks remain in place.
+
+### Deterministic Coverage
+
+Added regression coverage for:
+
+- conflicting status/rc on Top Up;
+- conflicting status/rc on Check Status;
+- missing `balance`;
+- missing `tr_id`;
+- successful/pending fixtures updated with the documented mandatory fields.
+
+### Safety Boundary
+
+This batch only hardens provider response-contract validation. No routing, retry, failover, resubmission, refund automation, ledger mutation, customer-balance mutation, treasury movement, or provider funding behavior was introduced.
