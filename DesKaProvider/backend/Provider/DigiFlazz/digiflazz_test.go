@@ -136,6 +136,14 @@ func TestGetBalanceRejectsMissingDeposit(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "missing required deposit") { t.Fatalf("expected missing deposit rejection, got %v", err) }
 }
 
+func balanceFractionalDepositHandler(w http.ResponseWriter, _ *http.Request) {
+	_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"deposit": 1000.5}})
+}
+
+func balanceMissingDepositHandler(w http.ResponseWriter, _ *http.Request) {
+	_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{}})
+}
+
 func TestDigiFlazzGetBalanceUsesOfficialDepositEndpoint(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/cek-saldo" {
