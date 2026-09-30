@@ -4541,3 +4541,34 @@ This is response-schema validation only. No retry, failover, resubmission, refun
 ### Verification Boundary
 
 The public V2 Check Balance page could not be retrieved during this audit due to upstream documentation timeout, so no V2 endpoint or payload behavior was inferred or changed. The deterministic change above is based only on fields explicitly documented in the accessible current Prepaid contract.
+
+## IAK Transaction Price Numeric Boundary Hardening
+
+**Date:** 2026-09-30
+
+### Source Basis
+
+Current IAK Prepaid Check Status and Top Up documentation defines `price` as Double, while the DesKaProvider transaction result exposes price as int64. The documented examples use integer-valued prices, so the adapter must not silently truncate a fractional provider value at this representation boundary. citeturn0search0turn0search1
+
+### Implementation
+
+- IAK transaction-response validation now requires `price` to be an integer-valued number or integer-form numeric string before converting it to the provider-neutral `int64`.
+- IAK webhook validation uses the same integer boundary for `price`.
+- Fractional transaction prices are rejected fail-closed instead of being silently truncated.
+
+### Deterministic Coverage
+
+Added tests for:
+
+- fractional JSON-number transaction price → rejected;
+- integer JSON-number transaction price → accepted and preserved.
+
+### Safety Boundary
+
+This is response-schema representation validation only. No retry, failover, resubmission, refund automation, ledger mutation, customer-balance mutation, treasury movement, or provider funding was introduced.
+
+### Verification Boundary
+
+- Deterministic price parsing is credential-free.
+- External IAK validation remains credential-gated.
+- Final CI for the resulting HEAD must be GREEN before this batch is considered complete.
