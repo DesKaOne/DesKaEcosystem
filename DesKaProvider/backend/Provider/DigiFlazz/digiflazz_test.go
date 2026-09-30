@@ -227,6 +227,23 @@ func TestDigiFlazzGetProductsUsesOfficialPriceListEndpoint(t *testing.T) {
 	}
 }
 
+func TestDigiFlazzGetProductsRejectsIncompleteProduct(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{
+			{"product_name":"XL 10K","buyer_sku_code":"xld10","buyer_product_status":true},
+			{"product_name":"","buyer_sku_code":"xld25","buyer_product_status":true},
+		}})
+	}))
+	defer server.Close()
+
+	c, err := New(config.DigiFlazzConfig{Username:"buyer", APIKey:"secret", PriceListEndpoint:server.URL}, server.Client())
+	if err != nil { t.Fatal(err) }
+	_, err = c.GetProducts(context.Background(), provider.ProductRequest{})
+	if err == nil || !strings.Contains(err.Error(), "missing buyer SKU code or product name") {
+		t.Fatalf("expected incomplete price-list product rejection, got %v", err)
+	}
+}
+
 func TestDigiFlazzInquiryPLNUsesOfficialEndpoint(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/inquiry-pln" { t.Fatalf("unexpected path: %s", r.URL.Path) }
