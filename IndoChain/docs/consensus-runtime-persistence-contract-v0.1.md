@@ -287,3 +287,31 @@ The existing node/storage boundary remains the owner of canonical block/state co
 ### Next milestone
 
 **4.46 — Persistence Failure Injection & Recovery Harness:** exercise the 4.45 contract against a controlled persistence adapter/harness, including partial writes, checksum failures, context mismatch, sequence gaps, snapshot/WAL replay, and atomic recovery publication, while keeping production activation disabled until the crash semantics are explicitly tested.
+
+
+## 4.46 Persistence Failure Injection & Recovery Harness
+
+4.46 exercises the 4.45 persistence contract through a controlled in-memory failure-injection adapter. The harness is test-only and does not introduce production WAL/snapshot I/O.
+
+### Failure points
+
+The harness covers:
+
+- failure before append: durable sequence remains unchanged;
+- partial write: no partial record becomes durable;
+- checksum corruption: recovery rejects the corrupted record;
+- context mismatch: recovery rejects the record against the expected consensus context;
+- sequence gap: replay rejects missing sequence continuity;
+- snapshot followed by contiguous WAL: recovery replays the snapshot base and subsequent WAL records in order;
+- WAL at or before the snapshot base: replay rejects stale sequence;
+- failed recovery publication: target state remains unchanged until full validation succeeds.
+
+### Atomic publication rule
+
+Recovery is constructed into a candidate state first. The candidate is assigned to the target only after all records have passed format, sequence, context, and checksum validation. This keeps recovery failure from partially publishing runtime state.
+
+### Scope
+
+The adapter is intentionally in-memory and controlled. It does not claim filesystem durability, process-crash semantics, fsync behavior, directory durability, cross-file atomicity, or production recovery activation.
+
+The next milestone can therefore focus on defining the persistence adapter boundary and failure semantics without conflating test harness behavior with durable storage guarantees.
