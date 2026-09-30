@@ -4738,3 +4738,31 @@ This batch only hardens response-schema validation. No retry, failover, transact
 - External IAK validation remains credential-gated.
 - No undocumented provider behavior was inferred from the neutral Product contract.
 - This batch is not considered complete until the resulting HEAD has GREEN CI.
+
+
+## IAK Mandatory Message Semantic Hardening
+
+**Date:** 2026-09-30
+
+### Source Basis
+
+Current IAK prepaid transaction and callback contracts define message as a mandatory String field. The Check Status response likewise requires message. citeturn2search0turn2search1
+
+### Implementation
+
+- IAK transaction responses now trim the mandatory message before validation and reject blank/whitespace-only values.
+- Purchase Status and Purchase Result expose the validated trimmed message.
+- IAK PLN Inquiry and webhook mandatory messages use the same non-blank semantic boundary.
+- No provider-neutral interface fields were added for IAK-only optional pin or activation_code; those fields remain outside the current neutral contract because the provider interface has no corresponding representation. citeturn2search0turn2search1
+
+### Deterministic Coverage
+
+Added a credential-free regression test covering empty and whitespace-only transaction messages.
+
+### Safety Boundary
+
+No retry, failover, resubmission, refund automation, ledger mutation, customer-balance mutation, treasury movement, provider funding, or routing behavior was introduced.
+
+### Verification Boundary
+
+This batch is schema/semantic validation only. External IAK validation remains credential-gated and the batch remains open until CI for the resulting HEAD is GREEN.
