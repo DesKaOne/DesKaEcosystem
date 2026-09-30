@@ -5666,3 +5666,46 @@ CI #3429 / run `36788475038` failed in both `test` and `race` because `TestWebho
 The regression fixture was corrected to provide `Event: "update"` and `UserAgent: "Digiflazz-Hookshot"`, allowing execution to reach the intended status/RC conflict assertion. No production behavior changed.
 
 The new HEAD must receive GREEN CI before this batch is considered complete.
+
+
+## DigiFlazz Required Transaction Message Hardening
+
+**Date:** 2026-10-01
+
+### Source Basis
+
+The official DigiFlazz Buyer Topup response contract marks `message` as required alongside `ref_id`, `customer_no`, `buyer_sku_code`, `status`, `rc`, and `price`. The official Buyer Cek Tagihan contract likewise marks `message` as required for the standard postpaid inquiry response. Source: official DigiFlazz Buyer Topup and Cek Tagihan documentation.
+
+### Audit Finding
+
+The DigiFlazz adapter already validated transaction identity, status/RC consistency, and required purchase price, but a response with an empty or omitted `message` could still reach the provider-neutral result. PLN inquiry had the same response-shape gap for its documented `message` field.
+
+### Implementation
+
+- `Purchase` now rejects a mapped transaction response whose required `message` is empty after trimming.
+- PLN `Inquiry` now rejects a mapped response whose documented `message` is empty after trimming.
+- Existing status/RC mapping, identity checks, price validation, and provider-neutral interfaces remain unchanged.
+- No undocumented provider fields or fallback messages are inferred.
+
+### Deterministic Coverage
+
+Added:
+
+- `TestPurchaseRejectsMissingRequiredMessage`
+- `TestDigiFlazzInquiryRejectsMissingRequiredMessage`
+
+Both fixtures prove the adapter fails closed when the documented required message field is absent.
+
+### Safety Boundary
+
+- This is response-shape validation only.
+- No retry, resubmission, failover, duplicate purchase creation, customer-balance mutation, ledger mutation, treasury movement, or provider funding behavior was introduced.
+- No live-provider transaction was executed by this audit.
+
+### Verification Boundary
+
+Production hardening commit: `e5c395dbbf1991e0095bcb34d8764bbc3b74fd2e`.
+
+Deterministic regression commit: `67dc2843209ddb644a2a94e7e2eef732d6bb4365`.
+
+The resulting HEAD must receive GREEN Push CI for test, vet, race, and applicable service-backed validation before this batch is considered complete. Credential-gated live-provider validation may remain skipped when credentials are unavailable.
