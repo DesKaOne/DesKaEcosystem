@@ -158,6 +158,18 @@ func TestWebhookSignatureAndMapping(t *testing.T) {
 	}
 }
 
+func TestWebhookRejectsStatusRCConflict(t *testing.T) {
+	body := []byte(`{"data":{"ref_id":"ref-conflict","customer_no":"087800001233","buyer_sku_code":"xld10","message":"Konflik","status":"Sukses","rc":"03","price":10000}}`)
+	c, err := New(config.DigiFlazzConfig{Username: "buyer", APIKey: "secret"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = c.HandleWebhook(context.Background(), provider.WebhookRequest{Body: body})
+	if err == nil || !strings.Contains(err.Error(), "conflicts with rc") {
+		t.Fatalf("expected webhook status/RC conflict rejection, got %v", err)
+	}
+}
+
 func newHMAC(body []byte, secret string) string {
 	h := hmac.New(sha1.New, []byte(secret))
 	_, _ = h.Write(body)
