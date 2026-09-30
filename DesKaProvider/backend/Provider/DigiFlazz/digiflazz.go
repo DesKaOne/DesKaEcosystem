@@ -191,6 +191,7 @@ func (c *Client) Inquiry(ctx context.Context, req provider.InquiryRequest) (prov
 	}
 	status, err := mapResponseStatus(decoded.Data.Status, decoded.Data.RC)
 	if err != nil { return provider.InquiryResult{}, err }
+	if strings.TrimSpace(decoded.Data.Message) == "" { return provider.InquiryResult{}, errors.New("DigiFlazz PLN inquiry response is missing required message") }
 	return provider.InquiryResult{Status: status, ProviderCode: decoded.Data.RC, Message: decoded.Data.Message}, nil
 }
 func (c *Client) Purchase(ctx context.Context, req provider.PurchaseRequest) (provider.PurchaseResult, error) {
@@ -200,6 +201,7 @@ func (c *Client) Purchase(ctx context.Context, req provider.PurchaseRequest) (pr
 	result, err := mapPurchaseResult(data)
 	if err != nil { return provider.PurchaseResult{}, err }
 	if result.ReferenceID != req.ReferenceID || result.CustomerNo != req.CustomerNo || result.ProductCode != req.ProductCode { return provider.PurchaseResult{}, errors.New("DigiFlazz purchase response transaction identity mismatch") }
+	if strings.TrimSpace(result.Message) == "" { return provider.PurchaseResult{}, errors.New("DigiFlazz purchase response is missing required message") }
 	return result, nil
 }
 
