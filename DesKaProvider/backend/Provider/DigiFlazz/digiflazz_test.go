@@ -363,7 +363,7 @@ func TestDigiFlazzGetProductsRejectsIncompleteProduct(t *testing.T) {
 }
 
 func TestDigiFlazzInquiryPLNUsesOfficialEndpoint(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/inquiry-pln" { t.Fatalf("unexpected path: %s", r.URL.Path) }
 		var got map[string]any
 		if err := json.NewDecoder(r.Body).Decode(&got); err != nil { t.Fatal(err) }
