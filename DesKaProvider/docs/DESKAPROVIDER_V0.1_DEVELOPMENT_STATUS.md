@@ -4939,3 +4939,54 @@ The current official IAK Prepaid v2 Price List contract defines POST `api/pricel
 
 The resulting HEAD must reach GREEN CI before this batch is considered complete. Credential-gated IAK validation remains separate and is not replaced by deterministic fixtures.
 
+
+
+## Provider HTTP Client Timeout Hardening
+
+**Date:** 2026-09-30
+
+### Source Finding
+
+The XP SINDONESIA and IAK adapters were constructing clients from http.DefaultClient when callers did not supply an HTTP client. That leaves the adapter without a bounded client-level request timeout and can allow a provider request to remain blocked indefinitely when the caller context itself has no deadline.
+
+This is a transport-safety hardening boundary, not a provider protocol assumption. No provider endpoint, response schema, status mapping, or financial behavior is inferred by this change.
+
+### Implementation
+
+- XP SINDONESIA now applies a 15-second default HTTP client timeout when no client is supplied.
+- IAK now applies the same 15-second default HTTP client timeout when no client is supplied.
+- A caller-supplied http.Client with no timeout is copied and bounded to the same default without mutating the caller-owned client.
+- A caller-supplied client with an explicit timeout is preserved unchanged.
+- Added deterministic tests for default, zero-timeout, and explicit custom-timeout behavior on both adapters.
+
+### Changed Files
+
+- DesKaProvider/backend/Provider/XPSindonesia/xp_sindonesia.go
+- DesKaProvider/backend/Provider/XPSindonesia/xp_sindonesia_test.go
+- DesKaProvider/backend/Provider/IAK/iak.go
+- DesKaProvider/backend/Provider/IAK/iak_test.go
+- DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md
+
+### Safety Boundary
+
+- No retry, provider failover, transaction resubmission, duplicate transaction creation, provider funding, ledger mutation, customer-balance mutation, treasury movement, or readiness promotion was introduced.
+- Provider-specific request/response contracts remain unchanged.
+- Router.Select() remains the sole routing authority.
+- External provider validation remains credential-gated and separate from deterministic transport tests.
+
+### Verification Boundary
+
+Implementation commits:
+
+- XP SINDONESIA timeout: 1e8fbc15c30c9359f264a6b033f0841b4a082030
+- XP SINDONESIA timeout test: 5d30b83eee924b0c1b9b49dc22525cbb152eedc8
+- IAK timeout: 5f11ac6df51ab1b8cd83af3643c41dafe96425ce
+- IAK timeout test / current code HEAD before this documentation update: 36bd9a546b0e8468760588d967eea35c4085bc65
+
+GitHub Actions Pull Request CI run #3293 is currently in progress for the branch; the deterministic test job has passed, while race remains in progress. Credential-gated DigiFlazz, IAK, XP SINDONESIA, and Midtrans jobs are skipped as expected.
+
+This hardening batch is not considered GREEN-complete until the final branch HEAD receives successful test, vet, race, and service-backed validation.
+
+### Next Concrete Engineering Task
+
+After the current green gate, continue the IAK contract audit only where authoritative documentation supports deterministic mapping/validation. Do not infer undocumented V2 balance semantics or expand the provider-neutral capability surface.
