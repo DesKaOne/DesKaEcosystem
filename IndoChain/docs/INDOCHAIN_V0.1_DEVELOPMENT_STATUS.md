@@ -2333,8 +2333,8 @@ Tidak ada perubahan production consensus/storage behavior pada milestone ini; co
 
 Implementation commit: 75daf849b52466b30e1e78f15a8485f1b66fa288.
 
-CI final exact-head gate: pending.
+CI #1489 / run 36734412117: GREEN / success. Tidy, Test, Race Test, dan Vet semuanya PASS pada exact documentation HEAD.
 
 **Next milestone**
 
-Menunggu hasil exact-head CI 4.49 sebelum menentukan boundary berikutnya.
+4.49 completed after exact-head CI gate. Next milestone ditentukan setelah review status branch berikutnya.
