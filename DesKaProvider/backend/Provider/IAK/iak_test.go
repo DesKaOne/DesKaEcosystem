@@ -60,6 +60,13 @@ func TestIAKWebhookRequiresDocumentedFieldsAndState(t *testing.T) {
  }
 }
 
+func TestIAKWebhookRejectsInvalidSignature(t *testing.T) {
+ c,_:=New(config.IAKConfig{Username:"user",APIKey:"secret"},http.DefaultClient)
+ body:=[]byte(`{"ref_id":"order-1","status":1,"code":"xld25000","hp":"08123","price":25000,"balance":997061249,"tr_id":3482,"message":"SUCCESS","rc":"00","sign":"bad"}`)
+ _,err:=c.HandleWebhook(context.Background(),provider.WebhookRequest{Body:body,SignatureSecret:"secret"})
+ if err==nil { t.Fatal("expected invalid callback signature error") }
+}
+
 func TestIAKWebhookAcceptsDocumentedFailedState(t *testing.T) {
  c,_:=New(config.IAKConfig{Username:"user",APIKey:"secret"},http.DefaultClient)
  body:=[]byte(`{"ref_id":"order-1","status":2,"code":"xld25000","hp":"08123","price":25000,"balance":997061249,"tr_id":3482,"message":"FAILED","rc":"07","sign":"sig"}`)
