@@ -21,9 +21,11 @@ type persistenceVector struct {
 	Round uint64 `json:"round"`
 	Phase Phase `json:"phase"`
 	Validators []persistenceValidator `json:"validators"`
-	Threshold QuorumThreshold `json:"threshold"`
+	Threshold persistenceThreshold `json:"threshold"`
 	ProposerPolicy string `json:"proposer_policy"`
 }
+
+type persistenceThreshold struct { Numerator uint64 `json:"numerator"`; Denominator uint64 `json:"denominator"` }
 
 type persistenceValidator struct {
 	ID []byte `json:"id"`
@@ -32,7 +34,7 @@ type persistenceValidator struct {
 }
 
 func persistenceVectorFixture() persistenceVector {
-	return persistenceVector{Version:persistenceVectorVersion, ProtocolVersion:1, ChainID:1001, Epoch:7, Height:42, Round:3, Phase:PhasePrecommit, Validators:[]persistenceValidator{{ID:[]byte("validator-a"), PublicKey:[]byte("pubkey-a"), VotingPower:3},{ID:[]byte("validator-b"), PublicKey:[]byte("pubkey-b"), VotingPower:2}}, Threshold:QuorumThreshold{Numerator:2, Denominator:3}, ProposerPolicy:"round-robin-v0-dev"}
+	return persistenceVector{Version:persistenceVectorVersion, ProtocolVersion:1, ChainID:1001, Epoch:7, Height:42, Round:3, Phase:PhasePrecommit, Validators:[]persistenceValidator{{ID:[]byte("validator-a"), PublicKey:[]byte("pubkey-a"), VotingPower:3},{ID:[]byte("validator-b"), PublicKey:[]byte("pubkey-b"), VotingPower:2}}, Threshold:persistenceThreshold{Numerator:2, Denominator:3}, ProposerPolicy:"round-robin-v0-dev"}
 }
 
 func TestConsensusPersistenceVectorDeterministic(t *testing.T) {
@@ -41,7 +43,7 @@ func TestConsensusPersistenceVectorDeterministic(t *testing.T) {
 	second, err := json.Marshal(vector); if err != nil { t.Fatal(err) }
 	if !bytes.Equal(first, second) { t.Fatal("same semantic persistence state produced different bytes") }
 	sum := sha256.Sum256(first)
-	const wantDigest = "REPLACE_ME"
+	const wantDigest = "86fe3cd5f16c8e42697a34041fc1635c6246473646c13b81b870323305f1b8c3"
 	if got := hex.EncodeToString(sum[:]); got != wantDigest { t.Fatalf("vector digest = %s, want %s; serialized=%s", got, wantDigest, first) }
 }
 
