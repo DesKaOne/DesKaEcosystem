@@ -129,3 +129,61 @@ Those require separate protocol decisions and tests.
 ## Current implementation boundary
 
 As of milestone 4.43, production runtime reconstruction uses existing constructor inputs and intentionally restores only state/configuration that the current API can validate. Ephemeral proposal/vote evidence is not implicitly restored. Production durable consensus persistence remains unimplemented.
+
+
+## 4.44 Design Review Findings
+
+### Storage compatibility
+
+The existing `storage.ChainStore` owns canonical block/state persistence through `CommitBlockState`. This boundary is separate from `ValidatorRuntime` state and must remain so.
+
+The development `FileStore` uses a gob-encoded `fileSnapshot` and atomically replaces the file through temporary-file write, sync, close, and rename. Its own source documentation states that gob is an implementation format, not canonical protocol encoding. Therefore consensus persistence must not reuse gob as a protocol serialization format.
+
+### Consensus context compatibility
+
+`RoundState` already carries protocol version, chain ID, epoch, height, round, and phase. `ValidatorRuntime` additionally depends on immutable validator membership, voting power, quorum threshold, and a `ProposerSelector`.
+
+The current proposer implementation is `RoundRobinProposer`, explicitly a deterministic development policy. A persisted context therefore records a policy/version identifier rather than pretending that the current selector is a production proposer policy.
+
+Validator authority is currently represented through `StaticValidatorAuthority` as an immutable public-key snapshot. A future durable representation must serialize validator identity plus the authoritative public key and revalidate it before accepting authenticated evidence.
+
+### Durable vs ephemeral boundary
+
+The review confirms:
+
+- **durable consensus context:** protocol/chain/epoch/height/round/phase, validator membership/authority, voting power, quorum threshold, proposer policy/version;
+- **authenticated safety evidence:** LockProof and FinalityCertificate, only after complete context/signature/quorum validation;
+- **ephemeral evidence:** proposal bytes, vote aggregation, transient timeout messages, transport ordering, peer/network state;
+- **canonical state:** block/state execution and commit owned by node/storage.
+
+Restoring a `RoundState` alone must therefore never imply restoration of proposal, votes, lock, or finality.
+
+### Serialization/versioning boundary
+
+Milestone 4.44 adds contract-level deterministic serialization vectors in `IndoChain/internal/consensus/persistence_vectors_test.go`.
+
+The vector uses a versioned, explicit field schema with ordered validator entries and a deterministic SHA-256 test vector. It verifies:
+
+1. identical semantic context produces identical serialized bytes;
+2. serialized context round-trips to the same semantic representation.
+
+This is a **test vector for the persistence contract**, not yet a production wire/storage format. No WAL or snapshot reader/writer is introduced by this milestone.
+
+### Atomic recovery ordering
+
+The required future recovery ordering is:
+
+1. decode/version-check;
+2. validate protocol/chain/epoch/height/round/phase;
+3. validate validator authority and voting power;
+4. validate quorum threshold and proposer policy/version;
+5. validate persisted LockProof/FinalityCertificate, if present;
+6. rebuild fresh runtime aggregators;
+7. publish recovered runtime only after all checks succeed.
+
+Canonical block/state commit remains outside this sequence.
+
+### Review decision
+
+The contract is sufficiently explicit for deterministic serialization test vectors, but **not yet sufficient to activate production WAL/snapshot recovery**. Crash/fsync semantics, record format, snapshot lifecycle, WAL ordering, durable atomicity across consensus and canonical state, and distributed recovery coordination still require a separate design step.
+
