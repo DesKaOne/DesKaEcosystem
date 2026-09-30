@@ -5657,3 +5657,12 @@ Implementation commit: `2db5e1d85dfaa172e477cc0f07853dce83635e19`.
 Deterministic regression commit: `9b4daef15c6a88ce094e7226349dc3604f5b203a`.
 
 The resulting HEAD must receive GREEN Push and PR CI, including test, vet, race, and applicable service-backed validation. Credential-gated live-provider validation may remain skipped when credentials are unavailable.
+
+
+## CI Follow-up — 2026-10-01 — Webhook Metadata Fixture Correction
+
+CI #3429 / run `36788475038` failed in both `test` and `race` because `TestWebhookRejectsStatusRCConflict` still invoked `HandleWebhook` without the newly required prepaid event/User-Agent metadata. The production hardening was therefore behaving as intended; the deterministic fixture was incomplete.
+
+The regression fixture was corrected to provide `Event: "update"` and `UserAgent: "Digiflazz-Hookshot"`, allowing execution to reach the intended status/RC conflict assertion. No production behavior changed.
+
+The new HEAD must receive GREEN CI before this batch is considered complete.
