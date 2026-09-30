@@ -1601,3 +1601,82 @@ Multi-round timeout evidence sekarang memiliki adoption semantics yang eksplisit
 **4.38 — Production BFT Boundary Audit & Round Driver:** audit source code untuk gap production proposer/validator loop, network-wide round synchronization, validator-set lifecycle, persistent consensus state/recovery, dan adversarial multi-node round-change testing sebelum menambah execution-layer/EVM work.
 
 **Milestone 4.37 final status:** GREEN hanya berdasarkan exact implementation/test HEAD `5e598f33bc35a2867bb8af0ee4fee029d7603623` dan CI #1368 PASS. Documentation-only commit berikutnya wajib diverifikasi ulang pada exact HEAD-nya.
+
+### 4.38 Production BFT Boundary Audit & Round Driver
+
+**Tanggal:** 2026-09-30
+
+**Objective**
+
+Audit source code setelah authenticated multi-round finality untuk menentukan gap nyata menuju production BFT, tanpa membuat scheduler/network loop semu atau mengklaim production readiness sebelum algorithm dan operational boundaries benar-benar tersedia.
+
+**Audit findings**
+
+- `ValidatorRuntime` sudah menyediakan deterministic state transitions untuk proposal, prevote, precommit, timeout/round change, LockProof adoption, dan authenticated finality.
+- `RoundRobinProposer` adalah deterministic development proposer policy. Source code sendiri mendokumentasikan bahwa ia belum memodelkan voting-power priority, randomness, slashing, atau production proposer policy.
+- `BlockProducer`/`BlockProductionContext` sudah menjadi boundary terpisah untuk candidate block construction dan consensus context validation; transaction selection, fee policy, execution, dan persistence tidak dimasukkan ke consensus proposer primitive.
+- `ValidatorSet` tetap hanya membership boundary. Validator lifecycle, activation/deactivation, registration, stake/delegation, dan slashing belum menjadi production consensus state.
+- `AdvanceRoundWithTimeoutEvidence` dan authenticated timeout/LockProof path sudah atomic pada runtime, tetapi belum ada production timeout scheduler dan network-wide round-change driver yang mengkoordinasikan node-node nyata.
+- P2P saat ini menyediakan deterministic transport/test boundary, bukan production network consensus loop dengan peer discovery, retransmission, failure detection, message gossip, atau network-wide round synchronization.
+- `Node.OpenDevnet` sudah melakukan history/hash/state consistency validation untuk recovery chain state, tetapi persistent consensus round/lock/certificate state belum dibekukan sebagai durable consensus WAL/snapshot boundary.
+- `CommitRuntimeFinalizedBlock` memisahkan finality handoff dari execution/commit, sehingga consensus certificate tidak langsung menjadi canonical state tanpa node-side context, validator authority, transaction authority, execution, dan durable commit validation.
+
+**Regression tests**
+
+`IndoChain/internal/consensus/production_bft_boundary_test.go` mengunci:
+
+- deterministic proposer selection across rounds;
+- block production context rejection untuk wrong height, previous hash, dan proposer;
+- round change membersihkan proposal dan precommit evidence yang round-local;
+- existing lock tetap menjadi constraint setelah round change;
+- conflicting proposal tetap ditolak setelah lock dibawa ke round berikutnya;
+- runtime tetap menjadi state/evidence boundary dan tidak mengarang production network scheduler.
+
+**Production code impact**
+
+Tidak ada production consensus algorithm baru pada milestone ini. Keputusan ini disengaja: menambahkan scheduler, gossip, failure detector, atau persistent consensus recovery tanpa protocol specification yang lengkap akan menciptakan pseudo-production BFT dan berisiko mengaburkan safety boundary.
+
+**Consensus invariants locked**
+
+1. Proposer selection tetap deterministic dan explicit sebagai policy boundary.
+2. Candidate block harus cocok dengan protocol version, chain, height, previous hash, dan proposer sebelum menjadi consensus proposal.
+3. Round-local proposal/vote evidence tidak bocor ke round berikutnya.
+4. Lock tetap membatasi proposal berikutnya sampai adoption rule yang sah mengubahnya.
+5. Timeout/LockProof authentication tetap terpisah dari network transport.
+6. Authenticated finality tetap memerlukan explicit precommit evidence.
+7. Canonical execution/commit tetap berada di node handoff, bukan di consensus message handler.
+
+**Safety boundary**
+
+Milestone ini **bukan production BFT completion**. Tidak ada klaim bahwa IndoChain sudah memiliki production proposer algorithm, production timeout scheduler, network-wide round synchronization, persistent consensus recovery, validator-set lifecycle, adversarial network resilience, atau formal BFT safety/liveness proof.
+
+**Known limitations / next gaps**
+
+- production proposer/validator algorithm;
+- network-wide round synchronization and timeout scheduling;
+- validator-set lifecycle and authority registry persistence;
+- durable consensus state/recovery semantics;
+- real multi-node consensus driver;
+- adversarial message/network failure testing;
+- block production loop yang mengikat mempool → execution → proposal → consensus → finalized commit;
+- security hardening and formal/protocol-level BFT analysis.
+
+**Architecture impact**
+
+Consensus foundation sekarang memiliki boundary yang lebih jelas antara evidence/state machine dan orchestration/operations. Runtime tidak lagi dipaksa menjadi network driver; node execution tidak mengambil alih consensus; dan production BFT gaps terdokumentasi sebagai pekerjaan protocol/operational layer tersendiri.
+
+**Verification**
+
+- Implementation/test HEAD: `7e979d23a852ccec6859b1e1b20088da1fa35841`
+- CI #1374, run `36715766095`: PASS
+- Tidy: PASS
+- `go test ./...`: PASS
+- `go test -race ./...`: PASS
+- `go vet ./...`: PASS
+- PostgreSQL: tidak relevan.
+
+**Next milestone**
+
+**4.39 — Production Round Driver Specification & Adversarial Multi-Node Harness:** definisikan state-machine orchestration contract untuk proposal/prevote/precommit/timeout/LockProof/finality, lalu bangun deterministic multi-node adversarial harness sebelum production scheduler atau persistent consensus state.
+
+**Milestone 4.38 status:** implementation/test HEAD `7e979d23a852ccec6859b1e1b20088da1fa35841` GREEN pada CI #1374. Documentation follow-up ini wajib diverifikasi kembali pada exact documentation HEAD sebelum milestone dinyatakan final GREEN.
