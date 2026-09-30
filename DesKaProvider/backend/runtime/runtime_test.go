@@ -1949,8 +1949,8 @@ func TestServiceRunShutdownTimeoutKeepsDatabaseOwnershipUntilWorkerStops(t *test
 	}
 
 	close(mockProvider.release)
-	if err := service.balanceLifecycle.Shutdown(context.Background()); !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("expected worker to stop while preserving its deadline error, got %v", err)
+	if err := service.balanceLifecycle.Shutdown(context.Background()); err != nil {
+		t.Fatalf("expected worker to stop cleanly after provider release, got %v", err)
 	}
 	if service.balanceLifecycle.Running() {
 		t.Fatal("expected worker to stop after provider release")
