@@ -492,3 +492,42 @@ func TestIAKTransactionAcceptsIntegerTrID(t *testing.T) {
  got, err := c.GetStatus(context.Background(), provider.StatusRequest{ReferenceID:"order-1", CustomerNo:"08123", ProductCode:"xld25000"})
  if err != nil || got.Status != provider.StatusSuccess { t.Fatalf("status=%#v err=%v", got, err) }
 }
+
+
+func TestIAKBalanceRejectsOutOfRangeJSONNumber(t *testing.T) {
+ for _, raw := range []string{`9223372036854775808`, `-9223372036854775809`} {
+  t.Run(raw, func(t *testing.T) {
+   srv, client := newIAKJSONServer(`{"data":{"balance":`+raw+`}}`)
+   defer srv.Close()
+   c, err := New(iakTestConfig(srv.URL), client)
+   if err != nil { t.Fatal(err) }
+   _, err = c.GetBalance(context.Background())
+   if err == nil { t.Fatal("expected out-of-range IAK balance to be rejected") }
+  })
+ }
+}
+
+func TestIAKTransactionRejectsOutOfRangePrice(t *testing.T) {
+ srv, client := newIAKJSONServer(`{"data":{"ref_id":"order-1","status":1,"product_code":"xld25000","customer_id":"08123","price":9223372036854775808,"balance":997061249,"tr_id":3482,"message":"SUCCESS","rc":"00"}}`)
+ defer srv.Close()
+ c, err := New(iakTestConfig(srv.URL), client)
+ if err != nil { t.Fatal(err) }
+ _, err = c.GetStatus(context.Background(), provider.StatusRequest{ReferenceID:"order-1", CustomerNo:"08123", ProductCode:"xld25000"})
+ if err == nil { t.Fatal("expected out-of-range transaction price to be rejected") }
+}
+
+func TestIAKWebhookRejectsOutOfRangePrice(t *testing.T) {
+ c, _ := New(config.IAKConfig{Username:"user", APIKey:"secret"}, http.DefaultClient)
+ body := []byte(`{"ref_id":"order-1","status":1,"code":"xld25000","hp":"08123","price":"9223372036854775808","balance":"997061249","tr_id":"3482","message":"SUCCESS","rc":"00","sign":"sig"}`)
+ _, err := c.HandleWebhook(context.Background(), provider.WebhookRequest{Body:body})
+ if err == nil { t.Fatal("expected out-of-range webhook price to be rejected") }
+}
+
+func TestIAKTransactionAcceptsInt64BoundaryPrice(t *testing.T) {
+ srv, client := newIAKJSONServer(`{"data":{"ref_id":"order-1","status":1,"product_code":"xld25000","customer_id":"08123","price":9223372036854775807,"balance":997061249,"tr_id":3482,"message":"SUCCESS","rc":"00"}}`)
+ defer srv.Close()
+ c, err := New(iakTestConfig(srv.URL), client)
+ if err != nil { t.Fatal(err) }
+ got, err := c.GetStatus(context.Background(), provider.StatusRequest{ReferenceID:"order-1", CustomerNo:"08123", ProductCode:"xld25000"})
+ if err != nil || got.Price != 9223372036854775807 { t.Fatalf("status=%#v err=%v", got, err) }
+}
