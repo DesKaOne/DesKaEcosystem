@@ -2246,3 +2246,56 @@ Test boundary menggunakan fake in-memory committer. Test tidak mengaktifkan prod
 **4.48 — Canonical Commit Failure-Atomicity Regression Matrix:** perluas regression matrix di node/storage boundary untuk memverifikasi bahwa canonical commit failure tidak memajukan head/state dan tidak menghasilkan partial publication pada implementasi store yang diuji, tetap tanpa mengaktifkan WAL production.
 
 **Milestone 4.47 status:** implementation/design completed and implementation/test HEAD verified GREEN. Implementation/test HEAD `839a624ffcf00ded714d25b61711752c78e1e865`; CI #1465 / run `36728091994`: GREEN. Final documentation HEAD still requires its own exact-head CI gate.
+
+
+### 4.48 Canonical Commit Failure-Atomicity Regression Matrix
+
+**Tanggal:** 2026-09-30
+
+**Objective**
+
+Memverifikasi bahwa kegagalan pada canonical `ChainStore.CommitBlockState` tidak memajukan canonical head/state dan tidak mempublikasikan partial snapshot pada `FileStore` yang sedang digunakan.
+
+**Implementation**
+
+- `IndoChain/internal/storage/commit_failure_atomicity_test.go`
+  - `FileStore`: successful initial commit, injected rename failure, in-memory head/state unchanged, persisted snapshot unchanged after reopen.
+  - `MemoryStore`: regression untuk successful block/state publication.
+- `IndoChain/docs/consensus-canonical-commit-failure-atomicity-v0.1.md`
+  - regression matrix, atomicity ordering, scope, relationship dengan 4.47, dan limitations.
+
+**Locked invariants**
+
+1. Candidate snapshot dibangun sebelum publication.
+2. `FileStore.data` hanya dipublish setelah temporary file berhasil di-sync, close, dan atomic rename.
+3. Rename failure tidak boleh mengubah in-memory canonical head/state.
+4. Rename failure tidak boleh mengubah persisted canonical snapshot.
+5. Canonical commit failure tetap merupakan error dan tidak boleh diperlakukan sebagai successful publication.
+
+**Production code impact**
+
+Tidak ada perubahan production storage behavior. Milestone ini menambah regression coverage terhadap implementasi `FileStore` yang sudah ada dan tidak mengaktifkan WAL/snapshot recovery production.
+
+**Verification**
+
+Implementation/test HEAD: `c066032081824fceb6bf9997c21c02891bd557a5`.
+
+CI #1477 / run `36732898863`: **GREEN**.
+
+`go mod tidy` ✅  
+`go test ./...` ✅  
+`go test -race ./...` belum menjadi gate final milestone karena status doc belum diperbarui setelah test HEAD; final documentation commit wajib menjalani exact-head CI gate lengkap.
+
+**Known limitations**
+
+- Failure injection menggunakan test-only redirect terhadap file target; tidak menambahkan fault injection API ke production.
+- `MemoryStore` belum memiliki injectable failure point setelah block publication dan sebelum state publication.
+- Process-crash/disk-power-loss semantics belum diuji.
+- WAL/snapshot recovery production belum diaktifkan.
+- Production BFT tetap belum selesai.
+
+**Next milestone**
+
+**4.49 — Canonical Commit ↔ Consensus Publication Ordering Regression:** uji ordering end-to-end pada boundary node agar consensus/runtime state tidak maju sebelum canonical storage commit berhasil, tetap tanpa mengaktifkan WAL production.
+
+**Milestone 4.48 status:** implementation/test completed; final documentation HEAD requires exact-head GREEN CI gate.
