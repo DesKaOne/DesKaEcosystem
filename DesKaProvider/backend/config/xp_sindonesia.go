@@ -13,6 +13,7 @@ type XPSindonesiaConfig struct {
 	HargaEndpoint string
 	DaftarHargaEndpoint string
 	OrderEndpoint string
+	CallbackURL string
 }
 
 func LoadXPSindonesiaConfig() (XPSindonesiaConfig, error) {
@@ -24,6 +25,7 @@ func LoadXPSindonesiaConfig() (XPSindonesiaConfig, error) {
 		HargaEndpoint: os.Getenv("XP_SINDONESIA_HARGA_ENDPOINT"),
 		DaftarHargaEndpoint: os.Getenv("XP_SINDONESIA_DAFTAR_HARGA_ENDPOINT"),
 		OrderEndpoint: os.Getenv("XP_SINDONESIA_ORDER_ENDPOINT"),
+		CallbackURL: os.Getenv("XP_SINDONESIA_CALLBACK_URL"),
 	}
 	if cfg.SaldoEndpoint == "" { cfg.SaldoEndpoint = "https://xp.sindonesia.net/api/saldo.php" }
 	if cfg.HargaEndpoint == "" { cfg.HargaEndpoint = "https://xp.sindonesia.net/api/harga.php" }
