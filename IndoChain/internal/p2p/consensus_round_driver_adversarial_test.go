@@ -7,6 +7,7 @@ import (
 
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/consensus"
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/crypto"
+	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/types"
 )
 
 type adversarialNode struct {
@@ -199,7 +200,7 @@ func adversarialNodes(
 
 func adversarialRuntimeFixture(
 	t *testing.T,
-	height uint64,
+	height types.Height,
 ) (
 	consensus.RoundState,
 	consensus.ValidatorSet,
