@@ -80,7 +80,7 @@ type transactionResponse struct {
 		RC string `json:"rc"`
 		SN string `json:"sn"`
 		BuyerLastSaldo float64 `json:"buyer_last_saldo"`
-		Price int64 `json:"price"`
+		Price *int64 `json:"price"`
 	} `json:"data"`
 }
 
@@ -272,8 +272,8 @@ func (c *Client) balanceSignature() string { sum := md5.Sum([]byte(c.username+c.
 func (c *Client) inquiryPLNSignature(customerNo string) string { sum := md5.Sum([]byte(c.username+c.apiKey+customerNo)); return hex.EncodeToString(sum[:]) }
 func (c *Client) priceListSignature() string { sum := md5.Sum([]byte(c.username+c.apiKey+"pricelist")); return hex.EncodeToString(sum[:]) }
 func validateTransactionRequest(productCode, customerNo, referenceID string) error { if productCode=="" || customerNo=="" || referenceID=="" { return errors.New("product code, customer number, and reference ID are required") }; return nil }
-func mapPurchaseResult(data transactionResponse) (provider.PurchaseResult, error) { status, err := mapResponseStatus(data.Data.Status, data.Data.RC); if err != nil { return provider.PurchaseResult{}, err }; return provider.PurchaseResult{ReferenceID:data.Data.ReferenceID, CustomerNo:data.Data.CustomerNo, ProductCode:data.Data.BuyerSKUCode, Status:status, ProviderCode:data.Data.RC, Message:data.Data.Message, SerialNumber:data.Data.SN, Price:data.Data.Price}, nil }
-func mapPurchaseStatus(data transactionResponse) (provider.PurchaseStatus, error) { status, err := mapResponseStatus(data.Data.Status, data.Data.RC); if err != nil { return provider.PurchaseStatus{}, err }; return provider.PurchaseStatus{ReferenceID:data.Data.ReferenceID, CustomerNo:data.Data.CustomerNo, ProductCode:data.Data.BuyerSKUCode, Status:status, ProviderCode:data.Data.RC, Message:data.Data.Message, SerialNumber:data.Data.SN, Price:data.Data.Price}, nil }
+func mapPurchaseResult(data transactionResponse) (provider.PurchaseResult, error) { status, err := mapResponseStatus(data.Data.Status, data.Data.RC); if err != nil { return provider.PurchaseResult{}, err }; if data.Data.Price == nil { return provider.PurchaseResult{}, errors.New("DigiFlazz purchase response is missing required price") }; return provider.PurchaseResult{ReferenceID:data.Data.ReferenceID, CustomerNo:data.Data.CustomerNo, ProductCode:data.Data.BuyerSKUCode, Status:status, ProviderCode:data.Data.RC, Message:data.Data.Message, SerialNumber:data.Data.SN, Price:*data.Data.Price}, nil }
+func mapPurchaseStatus(data transactionResponse) (provider.PurchaseStatus, error) { status, err := mapResponseStatus(data.Data.Status, data.Data.RC); if err != nil { return provider.PurchaseStatus{}, err }; if data.Data.Price == nil { return provider.PurchaseStatus{}, errors.New("DigiFlazz status response is missing required price") }; return provider.PurchaseStatus{ReferenceID:data.Data.ReferenceID, CustomerNo:data.Data.CustomerNo, ProductCode:data.Data.BuyerSKUCode, Status:status, ProviderCode:data.Data.RC, Message:data.Data.Message, SerialNumber:data.Data.SN, Price:*data.Data.Price}, nil }
 func mapResponseCode(rc string) (provider.TransactionStatus, error) {
 	switch strings.TrimSpace(rc) {
 	case "00":
