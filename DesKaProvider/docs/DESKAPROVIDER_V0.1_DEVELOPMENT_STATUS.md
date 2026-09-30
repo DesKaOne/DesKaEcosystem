@@ -5274,3 +5274,36 @@ Correction commit: `1762b9361274dd9aaa288c2f2281ce46d86c1a3f`.
 ### Verification Boundary
 
 Push #3350 for the previous HEAD was GREEN, but PR #3351 was RED in race. The resulting new HEAD must receive GREEN Push and PR CI before this correction is considered complete.
+
+
+## IAK Callback Final Status / RC Audit
+
+**Date:** 2026-09-30
+
+### Source Basis
+
+The official IAK Callback documentation states that callbacks sent to the configured callback URL are only final success/failed responses, while the documented status field still enumerates `0:PROCESS`, `1:SUCCESS`, and `2:FAILED`. The official response-code documentation defines RC `39` and `201` as pending and RC `00` as success. Sources:
+- https://api.iak.id/api/prepaid/callback
+- https://api.iak.id/api/prepaid/response-code
+
+### Audit Finding
+
+The current IAK `HandleWebhook()` implementation already enforces this contract:
+
+- callback status must resolve to provider-neutral SUCCESS or FAILED; PROCESS is rejected;
+- the callback RC is mapped through the documented prepaid response-code table;
+- the mapped RC status must equal the callback status, so pending RCs such as `39` / `201` cannot be accepted as final callbacks;
+- required callback fields and the documented signature path remain validated;
+- the existing FAILED-callback serial-number constraint remains enforced.
+
+Deterministic regression coverage already includes PROCESS callback rejection and status/RC conflict rejection in `TestIAKWebhookRequiresDocumentedFieldsAndState`.
+
+### Implementation Boundary
+
+No production code change is required for this audit. Expanding the provider-neutral event surface for IAK-only `pin` or `activation_code` remains intentionally out of scope because the current neutral interface has no corresponding fields.
+
+No retry, resubmission, failover, duplicate transaction creation, refund automation, ledger/customer-balance mutation, treasury movement, provider funding, routing change, or readiness promotion was introduced.
+
+### Verification Boundary
+
+This audit is documentation-only after confirming the existing implementation and deterministic coverage. The resulting HEAD must still receive GREEN Push and PR CI before the audit batch is considered complete.
