@@ -4115,3 +4115,17 @@ Continue provider contract completion with the remaining adapter-specific gaps, 
 ### Next Concrete Engineering Task
 
 Continue XP SINDONESIA contract completion only where the authoritative repository documentation supports deterministic behavior. The next review target is the documented balance/order error handling and callback boundary; do not infer undocumented `daftar_harga.php` response fields or invent provider status codes.
+
+
+## XP SINDONESIA Callback Contract Hardening
+
+**Date:** 2026-09-30
+
+- Callback handling now accepts only the two callback statuses explicitly documented by XP SINDONESIA: `sukses` and `gagal`.
+- Order API responses continue to map `proses` and `lambat` to Pending; those states are not accepted as callback states because the source documentation says callback responses are only success or failure.
+- Added deterministic coverage proving an unsupported callback status is rejected.
+- No retry, callback replay, transaction resubmission, or financial-state mutation was introduced.
+
+### Next Concrete Engineering Task
+
+Continue the XP SINDONESIA audit against the documented Cek Saldo / Cek Harga / List Harga response contracts. Implement only response fields and operations that fit the existing provider interface without inventing undocumented semantics; preserve explicit `ErrUnsupportedOperation` where the interface cannot represent the documented API safely.
