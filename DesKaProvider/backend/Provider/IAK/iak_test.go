@@ -531,3 +531,13 @@ func TestIAKTransactionAcceptsInt64BoundaryPrice(t *testing.T) {
  got, err := c.GetStatus(context.Background(), provider.StatusRequest{ReferenceID:"order-1", CustomerNo:"08123", ProductCode:"xld25000"})
  if err != nil || got.Price != 9223372036854775807 { t.Fatalf("status=%#v err=%v", got, err) }
 }
+
+
+func TestIAKTransactionRejectsOutOfRangeTrID(t *testing.T) {
+ srv, client := newIAKJSONServer(`{"data":{"ref_id":"order-1","status":1,"product_code":"xld25000","customer_id":"08123","price":25000,"balance":997061249,"tr_id":"9223372036854775808","message":"SUCCESS","rc":"00"}}`)
+ defer srv.Close()
+ c, err := New(iakTestConfig(srv.URL), client)
+ if err != nil { t.Fatal(err) }
+ _, err = c.GetStatus(context.Background(), provider.StatusRequest{ReferenceID:"order-1", CustomerNo:"08123", ProductCode:"xld25000"})
+ if err == nil { t.Fatal("expected out-of-range transaction ID to be rejected") }
+}
