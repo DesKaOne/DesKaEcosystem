@@ -2245,4 +2245,4 @@ Test boundary menggunakan fake in-memory committer. Test tidak mengaktifkan prod
 
 **4.48 — Canonical Commit Failure-Atomicity Regression Matrix:** perluas regression matrix di node/storage boundary untuk memverifikasi bahwa canonical commit failure tidak memajukan head/state dan tidak menghasilkan partial publication pada implementasi store yang diuji, tetap tanpa mengaktifkan WAL production.
 
-**Milestone 4.47 status:** implementation/design completed; exact-head CI gate wajib GREEN sebelum milestone dinyatakan selesai.
+**Milestone 4.47 status:** implementation/design completed and implementation/test HEAD verified GREEN. Implementation/test HEAD `839a624ffcf00ded714d25b61711752c78e1e865`; CI #1465 / run `36728091994`: GREEN. Final documentation HEAD still requires its own exact-head CI gate.
