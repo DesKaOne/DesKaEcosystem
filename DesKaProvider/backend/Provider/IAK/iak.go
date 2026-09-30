@@ -59,10 +59,18 @@ func (c *Client) Inquiry(ctx context.Context, req provider.InquiryRequest)(provi
  customerID:=strings.TrimSpace(str(x,"customer_id"))
  if customerID=="" { return provider.InquiryResult{}, errors.New("IAK inquiry response is missing data.customer_id") }
  if customerID!=strings.TrimSpace(req.CustomerNo) { return provider.InquiryResult{}, errors.New("IAK inquiry response customer ID mismatch") }
- status,statusErr:=mapResponseStatus(rawStatus,str(x,"rc")); message:=str(x,"message")
- if statusErr!=nil { return provider.InquiryResult{}, statusErr }
+ for _, field := range []string{"meter_no","subscriber_id","name","segment_power"} {
+  if strings.TrimSpace(str(x,field))=="" { return provider.InquiryResult{}, fmt.Errorf("IAK inquiry response is missing data.%s", field) }
+ }
+ rc:=strings.TrimSpace(str(x,"rc"))
+ if rc=="" { return provider.InquiryResult{}, errors.New("IAK inquiry response is missing data.rc") }
+ mapped, mapErr:=mapResponseCode(rc)
+ if mapErr!=nil { return provider.InquiryResult{}, mapErr }
+ status,_:=transactionStatus(rawStatus)
+ if mapped!=status { return provider.InquiryResult{}, fmt.Errorf("IAK inquiry response status %q conflicts with rc %q", status, rc) }
+ message:=str(x,"message")
  if message=="" { return provider.InquiryResult{}, errors.New("IAK inquiry response is missing data.message") }
- return provider.InquiryResult{Status:status,ProviderCode:str(x,"rc"),Message:message},nil
+ return provider.InquiryResult{Status:status,ProviderCode:rc,Message:message},nil
 }
 
 func (c *Client) Purchase(ctx context.Context, req provider.PurchaseRequest)(provider.PurchaseResult,error) {
