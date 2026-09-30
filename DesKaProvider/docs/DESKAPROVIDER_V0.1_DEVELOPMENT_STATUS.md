@@ -5617,3 +5617,43 @@ The adapter previously used a separate `/v1/inquiry-pln` endpoint and generated 
 ### Verification Boundary
 
 The resulting HEAD must receive GREEN Push CI for test, vet, race, and applicable service-backed validation before this batch is considered complete. Credential-gated live-provider validation may remain skipped when credentials are unavailable.
+
+## DigiFlazz Prepaid Webhook Metadata Boundary Hardening
+
+**Date:** 2026-10-01
+
+### Source Basis
+
+The official DigiFlazz Buyer webhook contract documents `X-Digiflazz-Event` and `User-Agent` as special delivery headers. It defines `create` and `update` for normal prepaid/postpaid transaction events, and identifies `Digiflazz-Hookshot` as the User-Agent for prepaid webhooks. citeturn1view0
+
+### Audit Finding
+
+The prepaid adapter previously validated these headers only when present. That allowed a webhook with missing event metadata or missing User-Agent metadata to reach payload status mapping, even though the documented delivery headers are part of the provider webhook contract and the adapter is specifically scoped to prepaid traffic.
+
+### Implementation
+
+- Require `X-Digiflazz-Event` metadata through the provider-neutral `WebhookRequest.Event` field.
+- Accept only documented prepaid transaction events `create` and `update`.
+- Require `User-Agent` metadata through `WebhookRequest.UserAgent`.
+- Accept only the documented prepaid User-Agent `Digiflazz-Hookshot`.
+- Preserve the existing optional HMAC-SHA1 verification when a webhook secret is configured.
+- Preserve existing status/RC consistency validation and payload mapping.
+
+### Deterministic Coverage
+
+Added `TestWebhookRequiresPrepaidMetadata` for missing event and missing User-Agent cases, and updated the successful webhook fixture to provide the documented prepaid metadata.
+
+### Safety Boundary
+
+- This hardens webhook source/type validation only.
+- No webhook is promoted into financial authority, customer-balance mutation, ledger mutation, treasury movement, retry, duplicate purchase creation, or provider funding behavior.
+- Postpaid and hotel webhook metadata remain rejected by this prepaid adapter.
+- No live provider transaction was executed by this audit.
+
+### Verification Boundary
+
+Implementation commit: `2db5e1d85dfaa172e477cc0f07853dce83635e19`.
+
+Deterministic regression commit: `9b4daef15c6a88ce094e7226349dc3604f5b203a`.
+
+The resulting HEAD must receive GREEN Push and PR CI, including test, vet, race, and applicable service-backed validation. Credential-gated live-provider validation may remain skipped when credentials are unavailable.
