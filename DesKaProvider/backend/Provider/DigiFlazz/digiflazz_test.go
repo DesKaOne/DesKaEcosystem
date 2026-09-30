@@ -225,13 +225,13 @@ func TestGetStatusFailsClosedWithoutResubmission(t *testing.T) {
 
 func TestUnknownProviderStatusFailsClosed(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"ref_id": "ref-unknown", "customer_no": "087800001232", "buyer_sku_code": "xld10", "message": "unknown", "status": "Menunggu", "rc": "99", "price": 10000}})
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"ref_id": "ref-unknown", "customer_no": "087800001232", "buyer_sku_code": "xld10", "message": "unknown", "status": "Menunggu", "rc": "999", "price": 10000}})
 	}))
 	defer server.Close()
 	c, err := New(config.DigiFlazzConfig{Username: "buyer", APIKey: "secret", Endpoint: server.URL}, server.Client())
 	if err != nil { t.Fatal(err) }
 	_, err = c.Purchase(context.Background(), provider.PurchaseRequest{ProductCode: "xld10", CustomerNo: "087800001232", ReferenceID: "ref-unknown"})
-	if !errors.Is(err, ErrUnknownTransactionStatus) { t.Fatalf("expected unknown status error, got %v", err) }
+	if !errors.Is(err, ErrUnknownResponseCode) { t.Fatalf("expected unknown status error, got %v", err) }
 }
 
 func TestPurchaseRejectsResponseIdentityMismatch(t *testing.T) {
