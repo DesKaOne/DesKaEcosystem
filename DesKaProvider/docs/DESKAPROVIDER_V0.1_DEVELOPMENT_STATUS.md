@@ -4514,3 +4514,30 @@ Continue the IAK audit for remaining already-supported response/request boundari
 CI run #3195 exposed that an older deterministic mapper test still expected legacy/undocumented IAK response codes, while the newly aligned mapper correctly rejected them. The test fixture was corrected to the current documented Prepaid response-code table, and code 05 was removed from the generic mapper because it is not present in the current official table.
 
 The failed run is not the completion gate. The corrected HEAD must reach GREEN CI before this batch is closed.
+
+
+## IAK Transaction ID Numeric Boundary Hardening
+
+**Date:** 2026-09-30
+
+### Source Basis
+
+Current IAK Prepaid Check Status and Top Up documentation defines `tr_id` as an Integer, while `price` and `balance` are documented as Double. citeturn7search1turn7search3
+
+### Implementation
+
+- IAK transaction-response validation now requires `tr_id` to be an integer-valued number or integer-form numeric string.
+- Webhook validation uses the same integer boundary for `tr_id`.
+- Fractional transaction IDs are rejected fail-closed.
+
+### Deterministic Coverage
+
+Added tests for rejection of fractional JSON-number `tr_id` and acceptance of an integer `tr_id` in Check Status fixtures.
+
+### Safety Boundary
+
+This is response-schema validation only. No retry, failover, resubmission, refund automation, ledger mutation, customer-balance mutation, or treasury movement was introduced.
+
+### Verification Boundary
+
+The public V2 Check Balance page could not be retrieved during this audit due to upstream documentation timeout, so no V2 endpoint or payload behavior was inferred or changed. The deterministic change above is based only on fields explicitly documented in the accessible current Prepaid contract.
