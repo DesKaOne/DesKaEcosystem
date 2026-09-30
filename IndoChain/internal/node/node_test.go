@@ -813,6 +813,103 @@ func TestCommitRuntimeFinalizedBlockCrossesExplicitHandoff(t *testing.T) {
 	recipientAccount, ok := n.State.Get(recipient); if !ok || recipientAccount.Balance != 20 { t.Fatalf("recipient balance = %d, want 20", recipientAccount.Balance) }
 }
 
+func TestCommitRuntimeFinalizedBlockStoreFailureDoesNotPublishCanonicalNodeState(t *testing.T) {
+	store := &failingCommitStore{MemoryStore: storage.NewMemoryStore()}
+	n, ctx, candidate, _, validatorResolver, senderResolver, _ := finalizedBlockFixture(t, store)
+	validatorID := append([]byte(nil), candidate.Header.Proposer...)
+	validators, err := consensus.NewValidatorSet([][]byte{validatorID})
+	if err != nil { t.Fatal(err) }
+	power, err := consensus.NewVotingPowerSet([]consensus.ValidatorVotingPower{{ValidatorID: validatorID, Power: 1}})
+	if err != nil { t.Fatal(err) }
+	runtime, err := consensus.NewValidatorRuntime(consensus.RuntimeConfig{
+		Rules: consensus.ValidationRules{ProtocolVersion: ctx.State.ProtocolVersion, ChainID: ctx.State.ChainID, RequireSender: true},
+		State: ctx.State, Validators: validators, VotingPower: power,
+		Threshold: consensus.QuorumThreshold{Numerator: 1, Denominator: 1}, Proposer: consensus.RoundRobinProposer{},
+	})
+	if err != nil { t.Fatal(err) }
+	proposal, err := consensus.NewBlockProposal(ctx, candidate)
+	if err != nil { t.Fatal(err) }
+	if err := runtime.AcceptBlockProposal(proposal); err != nil { t.Fatal(err) }
+	vote := consensus.Message{
+		ProtocolVersion: ctx.State.ProtocolVersion, ChainID: ctx.State.ChainID,
+		Epoch: ctx.State.Epoch, Height: ctx.State.Height, Round: ctx.State.Round,
+		Sender: validatorID, Type: consensus.MessageTypePrevote, Payload: proposal.Payload[:],
+	}
+	if err := runtime.AddVote(vote); err != nil { t.Fatal(err) }
+	precommit := vote
+	precommit.Type = consensus.MessageTypePrecommit
+	precommit, err = precommit.Sign(mustTestSigner(t, 23))
+	if err != nil { t.Fatal(err) }
+	if err := runtime.AddVote(precommit); err != nil { t.Fatal(err) }
+	if _, err := runtime.FinalizeProposal(validatorResolver); err != nil { t.Fatal(err) }
+
+	beforeHead, beforeHash, beforeRoot := n.Head, n.HeadHash, n.State.Root()
+	storedBeforeHead, storedBeforeHash, err := store.Head()
+	if err != nil { t.Fatal(err) }
+	storedBeforeState, err := store.LoadState()
+	if err != nil { t.Fatal(err) }
+
+	store.failCommit = true
+	if err := n.CommitRuntimeFinalizedBlock(ctx, candidate, runtime, validators, power, validatorResolver, senderResolver); !errors.Is(err, errCommitFailed) {
+		t.Fatalf("error = %v, want %v", err, errCommitFailed)
+	}
+	if !reflect.DeepEqual(n.Head, beforeHead) || n.HeadHash != beforeHash || n.State.Root() != beforeRoot {
+		t.Fatal("node canonical state advanced before successful storage commit")
+	}
+	storedAfterHead, storedAfterHash, err := store.Head()
+	if err != nil { t.Fatal(err) }
+	storedAfterState, err := store.LoadState()
+	if err != nil { t.Fatal(err) }
+	if !reflect.DeepEqual(storedAfterHead, storedBeforeHead) || storedAfterHash != storedBeforeHash {
+		t.Fatal("storage canonical head advanced despite commit failure")
+	}
+	if storedAfterState.Root() != storedBeforeState.Root() {
+		t.Fatal("storage canonical state advanced despite commit failure")
+	}
+	certificate, err := runtime.FinalizedCertificate()
+	if err != nil { t.Fatal(err) }
+	if len(certificate.Payload) == 0 {
+		t.Fatal("runtime finality evidence disappeared after canonical commit failure")
+	}
+}
+
+func TestCommitRuntimeFinalizedBlockPublishesCanonicalStateOnlyAfterSuccessfulCommit(t *testing.T) {
+	n, ctx, candidate, _, validatorResolver, senderResolver, recipient := finalizedBlockFixture(t, storage.NewMemoryStore())
+	validatorID := append([]byte(nil), candidate.Header.Proposer...)
+	validators, err := consensus.NewValidatorSet([][]byte{validatorID})
+	if err != nil { t.Fatal(err) }
+	power, err := consensus.NewVotingPowerSet([]consensus.ValidatorVotingPower{{ValidatorID: validatorID, Power: 1}})
+	if err != nil { t.Fatal(err) }
+	runtime, err := consensus.NewValidatorRuntime(consensus.RuntimeConfig{
+		Rules: consensus.ValidationRules{ProtocolVersion: ctx.State.ProtocolVersion, ChainID: ctx.State.ChainID, RequireSender: true},
+		State: ctx.State, Validators: validators, VotingPower: power,
+		Threshold: consensus.QuorumThreshold{Numerator: 1, Denominator: 1}, Proposer: consensus.RoundRobinProposer{},
+	})
+	if err != nil { t.Fatal(err) }
+	proposal, err := consensus.NewBlockProposal(ctx, candidate)
+	if err != nil { t.Fatal(err) }
+	if err := runtime.AcceptBlockProposal(proposal); err != nil { t.Fatal(err) }
+	vote := consensus.Message{ProtocolVersion: ctx.State.ProtocolVersion, ChainID: ctx.State.ChainID, Epoch: ctx.State.Epoch, Height: ctx.State.Height, Round: ctx.State.Round, Sender: validatorID, Type: consensus.MessageTypePrevote, Payload: proposal.Payload[:]}
+	if err := runtime.AddVote(vote); err != nil { t.Fatal(err) }
+	precommit := vote
+	precommit.Type = consensus.MessageTypePrecommit
+	precommit, err = precommit.Sign(mustTestSigner(t, 23))
+	if err != nil { t.Fatal(err) }
+	if err := runtime.AddVote(precommit); err != nil { t.Fatal(err) }
+	if _, err := runtime.FinalizeProposal(validatorResolver); err != nil { t.Fatal(err) }
+	if n.Head.Header.Height != 0 { t.Fatal("node advanced before canonical handoff") }
+	if err := n.CommitRuntimeFinalizedBlock(ctx, candidate, runtime, validators, power, validatorResolver, senderResolver); err != nil { t.Fatal(err) }
+	if n.Head.Header.Height != candidate.Header.Height { t.Fatalf("head height = %d, want %d", n.Head.Header.Height, candidate.Header.Height) }
+	if n.HeadHash == (types.Hash{}) { t.Fatal("canonical head hash is empty after successful commit") }
+	if got, ok := n.State.Get(recipient); !ok || got.Balance != 20 { t.Fatalf("recipient balance = %d, want 20", got.Balance) }
+	storedHead, storedHash, err := n.Store.Head()
+	if err != nil { t.Fatal(err) }
+	if !reflect.DeepEqual(storedHead, n.Head) || storedHash != n.HeadHash { t.Fatal("node publication diverged from canonical storage") }
+	storedState, err := n.Store.LoadState()
+	if err != nil { t.Fatal(err) }
+	if storedState.Root() != n.State.Root() { t.Fatal("node state publication diverged from canonical storage") }
+}
+
 func mustTestSigner(t *testing.T, seed byte) crypto.Signer {
 	t.Helper()
 	seedBytes := make([]byte, 32); seedBytes[0] = seed
