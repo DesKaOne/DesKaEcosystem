@@ -148,14 +148,12 @@ func (c *Client) HandleWebhook(_ context.Context, req provider.WebhookRequest)(p
   return provider.WebhookEvent{}, errors.New("IAK webhook response is missing transaction identity")
  }
  if rc == "" { return provider.WebhookEvent{}, errors.New("IAK webhook response is missing rc") }
- if bodySign == "" && strings.TrimSpace(req.Signature) == "" {
+ if bodySign == "" {
   return provider.WebhookEvent{}, errors.New("IAK webhook response is missing sign")
  }
- got:=strings.TrimSpace(req.Signature)
- if got=="" { got=bodySign }
  if req.SignatureSecret!="" {
   want:=signature(req.SignatureSecret,c.username,ref)
-  if subtle.ConstantTimeCompare([]byte(got),[]byte(want))!=1{return provider.WebhookEvent{},errors.New("invalid IAK webhook signature")}
+  if subtle.ConstantTimeCompare([]byte(bodySign),[]byte(want))!=1{return provider.WebhookEvent{},errors.New("invalid IAK webhook signature")}
  }
 
  rawStatus:=fmt.Sprint(p["status"])
