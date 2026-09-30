@@ -86,6 +86,24 @@ func TestIAKImplementsProviderCapabilities(t *testing.T) {
 	if _, ok := any(c).(provider.BalanceProvider); !ok { t.Fatal("IAK client must implement BalanceProvider") }
 }
 
+func TestIAKProductListRejectsDocumentedFailedResponseCode(t *testing.T) {
+ srv, client := newIAKJSONServer(`{"data":{"pricelist":[],"rc":"20","message":"CODE NOT FOUND"}}`)
+ defer srv.Close()
+ c, err := New(iakTestConfig(srv.URL), client)
+ if err != nil { t.Fatal(err) }
+ _, err = c.GetProducts(context.Background(), provider.ProductRequest{})
+ if err == nil { t.Fatal("expected documented failed pricelist response code error") }
+}
+
+func TestIAKProductListRejectsUnknownResponseCode(t *testing.T) {
+ srv, client := newIAKJSONServer(`{"data":{"pricelist":[],"rc":"999","message":"UNKNOWN"}}`)
+ defer srv.Close()
+ c, err := New(iakTestConfig(srv.URL), client)
+ if err != nil { t.Fatal(err) }
+ _, err = c.GetProducts(context.Background(), provider.ProductRequest{})
+ if err == nil { t.Fatal("expected unknown pricelist response code error") }
+}
+
 func TestIAKProductListRequiresPricelist(t *testing.T) {
 	srv, client := newIAKJSONServer(`{"data":{"message":"FAILED","rc":"XX"}}`)
 	defer srv.Close()
