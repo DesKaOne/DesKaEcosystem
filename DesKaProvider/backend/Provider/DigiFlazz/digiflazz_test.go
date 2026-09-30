@@ -115,9 +115,7 @@ func TestPurchaseMapsStructuredProviderErrorFromHTTP400(t *testing.T) {
 }
 
 func TestGetBalanceRejectsFractionalDeposit(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r) {
-		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"deposit": 1000.5}})
-	}))
+	server := httptest.NewServer(http.HandlerFunc(balanceFractionalDepositHandler))
 	defer server.Close()
 	client, err := New(config.DigiFlazzConfig{Username: "buyer", APIKey: "secret", BalanceEndpoint: server.URL}, server.Client())
 	if err != nil { t.Fatal(err) }
@@ -126,9 +124,7 @@ func TestGetBalanceRejectsFractionalDeposit(t *testing.T) {
 }
 
 func TestGetBalanceRejectsMissingDeposit(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r) {
-		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{}})
-	}))
+	server := httptest.NewServer(http.HandlerFunc(balanceMissingDepositHandler))
 	defer server.Close()
 	client, err := New(config.DigiFlazzConfig{Username: "buyer", APIKey: "secret", BalanceEndpoint: server.URL}, server.Client())
 	if err != nil { t.Fatal(err) }
