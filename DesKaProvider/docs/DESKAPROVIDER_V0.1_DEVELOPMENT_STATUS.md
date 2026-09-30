@@ -4697,3 +4697,44 @@ This is callback/response representation validation only. No retry, failover, re
 - Deterministic tests are credential-free.
 - External IAK callback validation remains credential-gated.
 - Final CI for the resulting HEAD must be GREEN before this batch is considered complete.
+
+
+## IAK Price List Response Contract Hardening
+
+**Date:** 2026-09-30
+
+### Source Basis
+
+The current IAK Prepaid v2 Price List contract marks pricelist, message, and rc as mandatory, and marks each product item's product_code, product_description, product_details, product_nominal, product_price, product_type, active_period, status, icon_url, and product_category as mandatory. Product status is documented as active or non active. citeturn0search0
+
+### Implementation
+
+- IAK Price List now requires the documented response message.
+- Each pricelist item is validated for all documented mandatory fields before being mapped to the provider-neutral Product.
+- product_price is validated as a finite numeric value using the existing numeric parser, without adding provider-specific pricing fields to the neutral contract.
+- Item status is restricted to the documented active / non active values before the existing ProductRequest.Active filter is applied.
+- Existing category and active filtering behavior remains unchanged after provider-contract validation.
+
+### Deterministic Coverage
+
+Added regression coverage for:
+
+- missing top-level Price List message;
+- incomplete documented product items;
+- missing product_price;
+- missing status;
+- missing product_category;
+- undocumented item status.
+
+The existing successful Price List fixture was expanded to contain the documented mandatory item fields.
+
+### Safety Boundary
+
+This batch only hardens response-schema validation. No retry, failover, transaction resubmission, refund automation, ledger mutation, customer-balance mutation, treasury movement, provider funding, or routing behavior was introduced.
+
+### Verification Boundary
+
+- Deterministic Price List contract tests are credential-free.
+- External IAK validation remains credential-gated.
+- No undocumented provider behavior was inferred from the neutral Product contract.
+- This batch is not considered complete until the resulting HEAD has GREEN CI.
