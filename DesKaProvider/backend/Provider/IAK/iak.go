@@ -103,7 +103,7 @@ func (c *Client) GetStatus(ctx context.Context, req provider.StatusRequest)(prov
 func (c *Client) GetBalance(ctx context.Context)(int64,error) {
  var d map[string]any
  if err:=c.do(ctx,c.balanceEndpoint,map[string]string{"username":c.username,"sign":c.sig("bl")},&d);err!=nil{return 0,err}; x:=obj(d,"data"); raw,ok:=x["balance"]; if !ok{return 0,errors.New("IAK balance response is missing data.balance")}; switch v:=raw.(type){case float64:
- if math.Trunc(v)!=v || v < -math.Exp2(63) || v >= math.Exp2(63) { return 0,fmt.Errorf("invalid IAK balance: value outside int64 range or non-integer %v",v) }
+ if math.Trunc(v)!=v || v <= -math.Exp2(63) || v >= math.Exp2(63) { return 0,fmt.Errorf("invalid IAK balance: value outside int64 range or non-integer %v",v) }
  return int64(v),nil;case string:n,err:=strconv.ParseInt(strings.TrimSpace(v),10,64);if err!=nil{return 0,fmt.Errorf("invalid IAK balance: %w",err)};return n,nil;default:return 0,fmt.Errorf("invalid IAK balance type %T",raw)}
 }
 
