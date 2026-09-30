@@ -59,9 +59,10 @@ func TestConsensusRoundDriverRejectsUnsignedMessageAtTransportBoundary(t *testin
 	_ = signer
 	state := a.Runtime().State()
 	msg := consensus.Message{ProtocolVersion: state.ProtocolVersion, ChainID: state.ChainID, Epoch: state.Epoch, Height: state.Height, Round: state.Round, Sender: []byte("validator-a"), Type: consensus.MessageTypeProposal, Payload: []byte("candidate-hash")}
-	if err := a.Publish(PeerID("node-b"), msg); err != nil { t.Fatal(err) }
 	before := b.Runtime().State()
-	if _, err := b.ReceiveAndHandle(); !errors.Is(err, consensus.ErrMissingSignature) { t.Fatalf("err=%v, want missing signature", err) }
+	if err := a.Publish(PeerID("node-b"), msg); !errors.Is(err, consensus.ErrMissingSignature) {
+		t.Fatalf("publish error = %v, want missing signature", err)
+	}
 	if b.Runtime().State() != before { t.Fatal("unsigned transport message mutated runtime") }
 }
 
