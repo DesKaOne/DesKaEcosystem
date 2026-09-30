@@ -51,12 +51,10 @@ func New(cfg config.DigiFlazzConfig, httpClient *http.Client) (*Client, error) {
 		if cfg.Endpoint == "" { cfg.Endpoint = base + "/v1/transaction" }
 		if cfg.BalanceEndpoint == "" { cfg.BalanceEndpoint = base + "/v1/cek-saldo" }
 		if cfg.PriceListEndpoint == "" { cfg.PriceListEndpoint = base + "/v1/price-list" }
-		if cfg.InquiryPLNEndpoint == "" { cfg.InquiryPLNEndpoint = base + "/v1/inquiry-pln" }
 	}
 	if cfg.Endpoint == "" { cfg.Endpoint = defaultEndpoint }
 	if cfg.BalanceEndpoint == "" { cfg.BalanceEndpoint = defaultBalanceEndpoint }
 	if cfg.PriceListEndpoint == "" { cfg.PriceListEndpoint = defaultPriceListEndpoint }
-	if cfg.InquiryPLNEndpoint == "" { cfg.InquiryPLNEndpoint = "https://api.digiflazz.com/v1/inquiry-pln" }
 	if cfg.HTTPTimeout <= 0 { cfg.HTTPTimeout = 15 * time.Second }
 	if httpClient == nil { httpClient = &http.Client{Timeout: cfg.HTTPTimeout} } else if httpClient.Timeout <= 0 { copy := *httpClient; copy.Timeout = cfg.HTTPTimeout; httpClient = &copy }
 	return &Client{username: cfg.Username, apiKey: cfg.APIKey, endpoint: cfg.Endpoint, balanceEndpoint: cfg.BalanceEndpoint, priceListEndpoint: cfg.PriceListEndpoint, httpClient: httpClient}, nil
