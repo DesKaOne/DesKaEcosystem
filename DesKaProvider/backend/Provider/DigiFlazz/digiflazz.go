@@ -39,7 +39,6 @@ type Client struct {
 	endpoint       string
 	balanceEndpoint   string
 	priceListEndpoint string
-	inquiryPLNEndpoint string
 	httpClient        *http.Client
 }
 
@@ -60,7 +59,7 @@ func New(cfg config.DigiFlazzConfig, httpClient *http.Client) (*Client, error) {
 	if cfg.InquiryPLNEndpoint == "" { cfg.InquiryPLNEndpoint = "https://api.digiflazz.com/v1/inquiry-pln" }
 	if cfg.HTTPTimeout <= 0 { cfg.HTTPTimeout = 15 * time.Second }
 	if httpClient == nil { httpClient = &http.Client{Timeout: cfg.HTTPTimeout} } else if httpClient.Timeout <= 0 { copy := *httpClient; copy.Timeout = cfg.HTTPTimeout; httpClient = &copy }
-	return &Client{username: cfg.Username, apiKey: cfg.APIKey, endpoint: cfg.Endpoint, balanceEndpoint: cfg.BalanceEndpoint, priceListEndpoint: cfg.PriceListEndpoint, inquiryPLNEndpoint: cfg.InquiryPLNEndpoint, httpClient: httpClient}, nil
+	return &Client{username: cfg.Username, apiKey: cfg.APIKey, endpoint: cfg.Endpoint, balanceEndpoint: cfg.BalanceEndpoint, priceListEndpoint: cfg.PriceListEndpoint, httpClient: httpClient}, nil
 }
 
 type transactionRequest struct {
@@ -166,16 +165,19 @@ func (c *Client) Inquiry(ctx context.Context, req provider.InquiryRequest) (prov
 	if strings.ToLower(strings.TrimSpace(req.ProductCode)) != "pln" {
 		return provider.InquiryResult{}, provider.ErrUnsupportedOperation
 	}
-	if req.CustomerNo == "" {
-		return provider.InquiryResult{}, errors.New("customer number is required for DigiFlazz PLN inquiry")
+	if req.CustomerNo == "" || req.ReferenceID == "" {
+		return provider.InquiryResult{}, errors.New("customer number and reference ID are required for DigiFlazz PLN inquiry")
 	}
 	body, err := json.Marshal(struct {
+		Commands string `json:"commands"`
 		Username string `json:"username"`
+		BuyerSKUCode string `json:"buyer_sku_code"`
 		CustomerNo string `json:"customer_no"`
+		ReferenceID string `json:"ref_id"`
 		Sign string `json:"sign"`
-	}{Username: c.username, CustomerNo: req.CustomerNo, Sign: c.inquiryPLNSignature(req.CustomerNo)})
+	}{Commands: "inq-pasca", Username: c.username, BuyerSKUCode: req.ProductCode, CustomerNo: req.CustomerNo, ReferenceID: req.ReferenceID, Sign: c.signature(req.ReferenceID)})
 	if err != nil { return provider.InquiryResult{}, fmt.Errorf("encode DigiFlazz PLN inquiry request: %w", err) }
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.inquiryPLNEndpoint, strings.NewReader(string(body)))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint, strings.NewReader(string(body)))
 	if err != nil { return provider.InquiryResult{}, fmt.Errorf("create DigiFlazz PLN inquiry request: %w", err) }
 	httpReq.Header.Set("Content-Type", "application/json")
 	resp, err := c.httpClient.Do(httpReq)
@@ -184,13 +186,15 @@ func (c *Client) Inquiry(ctx context.Context, req provider.InquiryRequest) (prov
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil { return provider.InquiryResult{}, fmt.Errorf("read DigiFlazz PLN inquiry response: %w", err) }
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 { return provider.InquiryResult{}, fmt.Errorf("DigiFlazz PLN inquiry HTTP status %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody))) }
-	var decoded struct { Data struct { Message string `json:"message"`; Status string `json:"status"`; RC string `json:"rc"` } `json:"data"` }
+	var decoded struct { Data struct { ReferenceID string `json:"ref_id"`; CustomerNo string `json:"customer_no"`; BuyerSKUCode string `json:"buyer_sku_code"`; Message string `json:"message"`; Status string `json:"status"`; RC string `json:"rc"` } `json:"data"` }
 	if err := json.Unmarshal(respBody, &decoded); err != nil { return provider.InquiryResult{}, fmt.Errorf("decode DigiFlazz PLN inquiry response: %w", err) }
+	if decoded.Data.ReferenceID != req.ReferenceID || decoded.Data.CustomerNo != req.CustomerNo || decoded.Data.BuyerSKUCode != req.ProductCode {
+		return provider.InquiryResult{}, errors.New("DigiFlazz PLN inquiry response transaction identity mismatch")
+	}
 	status, err := mapResponseStatus(decoded.Data.Status, decoded.Data.RC)
 	if err != nil { return provider.InquiryResult{}, err }
 	return provider.InquiryResult{Status: status, ProviderCode: decoded.Data.RC, Message: decoded.Data.Message}, nil
 }
-
 func (c *Client) Purchase(ctx context.Context, req provider.PurchaseRequest) (provider.PurchaseResult, error) {
 	if err := validateTransactionRequest(req.ProductCode, req.CustomerNo, req.ReferenceID); err != nil { return provider.PurchaseResult{}, err }
 	data, err := c.transaction(ctx, transactionRequest{Username:c.username, BuyerSKUCode:req.ProductCode, CustomerNo:req.CustomerNo, ReferenceID:req.ReferenceID, Sign:c.signature(req.ReferenceID), Testing:req.Testing})
@@ -286,7 +290,6 @@ func parseIntegralBalance(value json.Number) (int64, error) {
 
 func (c *Client) signature(refID string) string { sum := md5.Sum([]byte(c.username+c.apiKey+refID)); return hex.EncodeToString(sum[:]) }
 func (c *Client) balanceSignature() string { sum := md5.Sum([]byte(c.username+c.apiKey+"depo")); return hex.EncodeToString(sum[:]) }
-func (c *Client) inquiryPLNSignature(customerNo string) string { sum := md5.Sum([]byte(c.username+c.apiKey+customerNo)); return hex.EncodeToString(sum[:]) }
 func (c *Client) priceListSignature() string { sum := md5.Sum([]byte(c.username+c.apiKey+"pricelist")); return hex.EncodeToString(sum[:]) }
 func validateTransactionRequest(productCode, customerNo, referenceID string) error { if productCode=="" || customerNo=="" || referenceID=="" { return errors.New("product code, customer number, and reference ID are required") }; return nil }
 func mapPurchaseResult(data transactionResponse) (provider.PurchaseResult, error) { status, err := mapResponseStatus(data.Data.Status, data.Data.RC); if err != nil { return provider.PurchaseResult{}, err }; if data.Data.Price == nil { return provider.PurchaseResult{}, errors.New("DigiFlazz purchase response is missing required price") }; return provider.PurchaseResult{ReferenceID:data.Data.ReferenceID, CustomerNo:data.Data.CustomerNo, ProductCode:data.Data.BuyerSKUCode, Status:status, ProviderCode:data.Data.RC, Message:data.Data.Message, SerialNumber:data.Data.SN, Price:*data.Data.Price}, nil }
