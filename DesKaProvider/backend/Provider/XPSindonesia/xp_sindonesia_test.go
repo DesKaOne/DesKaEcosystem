@@ -6,6 +6,7 @@ import (
  "net/http"
  "net/http/httptest"
  "testing"
+ "time"
 
  "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/config"
  provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
@@ -146,6 +147,35 @@ func TestXPPurchaseMapsDocumentedEmptyFailure(t *testing.T) {
  }
  if result.ProviderCode != "already" {
   t.Fatalf("unexpected provider code: %#v", result)
+ }
+}
+
+
+func TestXPHTTPClientGetsBoundedTimeout(t *testing.T) {
+ c, err := New(config.XPSindonesiaConfig{ID: "123", Key: "key", API: "api"}, nil)
+ if err != nil { t.Fatal(err) }
+ if c.httpClient.Timeout != defaultHTTPTimeout {
+  t.Fatalf("default timeout=%v, want %v", c.httpClient.Timeout, defaultHTTPTimeout)
+ }
+
+ zero := &http.Client{}
+ c, err = New(config.XPSindonesiaConfig{ID: "123", Key: "key", API: "api"}, zero)
+ if err != nil { t.Fatal(err) }
+ if c.httpClient.Timeout != defaultHTTPTimeout {
+  t.Fatalf("zero-client timeout=%v, want %v", c.httpClient.Timeout, defaultHTTPTimeout)
+ }
+ if zero.Timeout != 0 {
+  t.Fatalf("caller client was mutated: timeout=%v", zero.Timeout)
+ }
+
+ custom := &http.Client{Timeout: 2 * time.Second}
+ c, err = New(config.XPSindonesiaConfig{ID: "123", Key: "key", API: "api"}, custom)
+ if err != nil { t.Fatal(err) }
+ if c.httpClient.Timeout != 2*time.Second {
+  t.Fatalf("custom timeout=%v, want %v", c.httpClient.Timeout, 2*time.Second)
+ }
+ if c.httpClient != custom {
+  t.Fatal("custom client with explicit timeout should be preserved")
  }
 }
 
