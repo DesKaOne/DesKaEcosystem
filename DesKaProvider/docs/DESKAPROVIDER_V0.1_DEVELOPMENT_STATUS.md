@@ -4206,3 +4206,43 @@ Continue the XP SINDONESIA audit for documented non-order APIs only where their 
 ### Next Concrete Engineering Task
 
 Continue with IAK adapter contract completeness after the XP SINDONESIA non-order audit reaches the current interface boundary. Review documented IAK request/response/error semantics and add only deterministic mappings/fixtures supported by the authoritative repository documentation; keep unknown codes fail-closed and do not introduce provider-specific financial mutation.
+
+
+## IAK Pricelist Response-Code Contract Hardening
+
+**Date:** 2026-09-30
+
+### Source Finding
+
+The authoritative IAK Prepaid v2 Price List contract requires a `pricelist` response plus `message` and `rc`; the documented response-code contract identifies `00` as Success and documented non-success codes as Failed/Pending according to the response-code table. The existing adapter validated the pricelist shape but did not evaluate the returned `rc`, so a response carrying a documented failure code could be treated as an empty/valid catalog when the payload shape happened to be present. citeturn3search0turn1search0
+
+### Implementation
+
+- IAK `GetProducts` now evaluates the returned `data.rc` through the existing fail-closed response-code mapper before accepting the pricelist.
+- Documented failed response codes are rejected instead of being exposed as a successful catalog result.
+- Unknown response codes remain rejected fail-closed.
+- Existing product item validation and category/active filtering remain unchanged.
+
+### Deterministic Coverage
+
+Added tests for:
+
+- documented failed pricelist response code `20` (CODE NOT FOUND);
+- unknown response code `999`;
+- existing successful pricelist parsing remains covered by the adapter integration fixture.
+
+### Safety Boundary / Invariants
+
+- No routing behavior changed; `Router.Select()` remains the sole routing authority.
+- No automatic retry, failover, resubmission, refund automation, ledger mutation, customer-balance mutation, treasury movement, or provider funding was introduced.
+- External IAK validation remains credential-gated and is not replaced by deterministic fixtures.
+
+### Changed Files
+
+- `DesKaProvider/backend/Provider/IAK/iak.go`
+- `DesKaProvider/backend/Provider/IAK/iak_test.go`
+- `DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md`
+
+### Next Concrete Engineering Task
+
+Continue IAK contract audit for only the already-supported prepaid capabilities: pricelist, PLN inquiry, top-up, check-status, balance, and callback. Do not expand into postpaid or additional IAK APIs unless a provider-neutral capability boundary and authoritative response schema are available.
