@@ -98,8 +98,14 @@ func TestValidatorRuntimeRoundChangePreservesOnlyLockState(t *testing.T) {
 	if len(runtime.PrecommitVotes()) != 0 {
 		t.Fatal("round-local precommit evidence leaked across round change")
 	}
-	if !bytes.Equal(runtime.LockedProposal(), proposal) {
-		t.Fatal("valid lock was not preserved across round change")
+	if err := runtime.AcceptProposal(runtimeMessage(runtime.State(), "validator-b", MessageTypeProposal, string(proposal))); err != nil {
+		t.Fatalf("preserved lock rejected matching proposal after round change: %v", err)
+	}
+	if err := runtime.AdvanceRound(state.Round + 2); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.AcceptProposal(runtimeMessage(runtime.State(), "validator-a", MessageTypeProposal, "conflicting-round-2")); err == nil {
+		t.Fatal("preserved lock failed to reject conflicting proposal")
 	}
 }
 
