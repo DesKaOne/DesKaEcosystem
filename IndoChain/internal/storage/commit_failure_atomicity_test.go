@@ -7,7 +7,6 @@ import (
 
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/block"
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/state"
-	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/types"
 )
 
 func TestFileStoreCommitFailureDoesNotPublishPartialCanonicalState(t *testing.T) {
