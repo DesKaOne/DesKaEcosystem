@@ -6,6 +6,7 @@ import (
  "net/http"
  "net/http/httptest"
  "testing"
+
  "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/config"
  provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
 )
@@ -23,6 +24,30 @@ func TestXPPurchaseAndBalance(t *testing.T) {
  c,err:=New(config.XPSindonesiaConfig{ID:"123",Key:"key",API:"api",SaldoEndpoint:srv.URL+"/api/saldo.php",OrderEndpoint:srv.URL+"/api/order.php",CallbackURL:"https://callback.example/xp"},srv.Client());if err!=nil{t.Fatal(err)}
  p,err:=c.Purchase(context.Background(),provider.PurchaseRequest{ProductCode:"i5",CustomerNo:"0856",ReferenceID:"ref-1"});if err!=nil{t.Fatal(err)}
  if p.Status!=provider.StatusPending||p.Price!=5700{t.Fatalf("unexpected purchase: %#v",p)}
+ b,err:=c.GetBalance(context.Background());if err!=nil||b!=123000{t.Fatalf("balance=%d err=%v",b,err)}
+}
+
+func TestXPBalanceRejectsProviderError(t *testing.T) {
+ srv:=httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){
+  _=json.NewEncoder(w).Encode(map[string]string{"success":"0","error":"invalid api"})
+ }));defer srv.Close()
+ c,err:=New(config.XPSindonesiaConfig{ID:"123",Key:"key",API:"api",SaldoEndpoint:srv.URL+"/api/saldo.php"},srv.Client());if err!=nil{t.Fatal(err)}
+ if _,err:=c.GetBalance(context.Background());err==nil{t.Fatal("expected provider error")}
+}
+
+func TestXPBalanceRejectsMissingSaldo(t *testing.T) {
+ srv:=httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){
+  _=json.NewEncoder(w).Encode(map[string]string{"success":"1","id":"123"})
+ }));defer srv.Close()
+ c,err:=New(config.XPSindonesiaConfig{ID:"123",Key:"key",API:"api",SaldoEndpoint:srv.URL+"/api/saldo.php"},srv.Client());if err!=nil{t.Fatal(err)}
+ if _,err:=c.GetBalance(context.Background());err==nil{t.Fatal("expected missing saldo error")}
+}
+
+func TestXPBalanceAcceptsNumericSaldo(t *testing.T) {
+ srv:=httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){
+  _=json.NewEncoder(w).Encode(map[string]any{"success":"1","id":"123","saldo":123000})
+ }));defer srv.Close()
+ c,err:=New(config.XPSindonesiaConfig{ID:"123",Key:"key",API:"api",SaldoEndpoint:srv.URL+"/api/saldo.php"},srv.Client());if err!=nil{t.Fatal(err)}
  b,err:=c.GetBalance(context.Background());if err!=nil||b!=123000{t.Fatalf("balance=%d err=%v",b,err)}
 }
 
