@@ -2093,3 +2093,47 @@ Tidak ada production WAL/snapshot reader/writer, no durable consensus store, no 
 **4.45 — Consensus WAL/Snapshot Record Contract & Crash Boundary Matrix:** definisikan record envelope, versioning, ordering, checksum/integrity, snapshot/WAL interaction, crash cut points, stale-record rejection, context mismatch rejection, and deterministic recovery vectors sebelum production persistence implementation.
 
 **Milestone 4.44 status:** implementation/design review completed; implementation HEAD is GREEN. Final documentation HEAD remains pending its own CI gate.
+
+
+### 4.45 Consensus WAL/Snapshot Record Contract & Crash Boundary Matrix
+
+**Tanggal:** 2026-09-30
+
+**Objective**
+
+Mendefinisikan record envelope, versioning, ordering, checksum/integrity, snapshot/WAL interaction, crash cut points, stale-record rejection, context mismatch rejection, dan deterministic recovery vectors sebelum production persistence implementation.
+
+**Implementation**
+
+- IndoChain/internal/consensus/persistence_record_contract.go — contract object untuk versioned snapshot/WAL record envelope, contiguous sequencing, consensus-context digest, dan checksum validation.
+- IndoChain/internal/consensus/persistence_record_contract_test.go — deterministic checksum vector dan crash-boundary matrix.
+- IndoChain/docs/consensus-runtime-persistence-contract-v0.1.md — contract diperluas dengan 4.45 record/crash boundary.
+
+**Locked invariants**
+
+1. First WAL record sequence harus 1.
+2. Record berikutnya harus contiguous dari durable sequence sebelumnya.
+3. Snapshot pada sequence N menjadi recovery base; WAL replay dimulai dari N+1.
+4. Duplicate, stale, dan gapped sequence ditolak.
+5. Context digest mengikat record ke protocol/chain/epoch/height/round/phase dan authority/configuration digest.
+6. Payload/context corruption ditolak melalui checksum/context validation.
+7. Partial append tidak dianggap record valid.
+8. Canonical block/state commit tetap di node/storage boundary dan tidak tersirat dari persistence recovery.
+
+**Production code impact**
+
+Perubahan production hanya berupa contract types + validation primitives yang tidak melakukan file I/O dan tidak mengaktifkan WAL/snapshot persistence. Tidak ada writer/reader production, fsync policy, crash recovery engine, atau canonical commit mutation baru.
+
+**Verification scope**
+
+Test matrix mencakup valid first WAL, sequence gap, duplicate sequence, context mismatch, payload corruption, unsupported format version, snapshot + contiguous WAL, dan context digest change.
+
+**Safety boundary**
+
+Milestone ini bukan production durable consensus recovery dan bukan production BFT completion. Crash semantics terhadap filesystem/process failure masih memerlukan harness failure-injection pada milestone berikutnya.
+
+**Next milestone**
+
+**4.46 — Persistence Failure Injection & Recovery Harness:** uji partial write, checksum failure, context mismatch, sequence gap, snapshot/WAL replay, dan atomic recovery publication melalui persistence adapter/harness terkontrol tanpa mengaktifkan production persistence.
+
+**Milestone 4.45 status:** implementation/design contract completed; final exact documentation HEAD wajib diverifikasi GREEN oleh CI sebelum milestone dinyatakan selesai.
