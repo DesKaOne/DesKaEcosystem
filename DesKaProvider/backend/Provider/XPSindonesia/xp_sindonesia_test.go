@@ -14,13 +14,13 @@ func TestXPPurchaseAndBalance(t *testing.T) {
  srv:=httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){
   if err:=r.ParseForm();err!=nil{t.Fatal(err)}
   if r.URL.Path=="/api/order.php" {
-   if r.Form.Get("id")!="123"||r.Form.Get("key")!="key"||r.Form.Get("api")!="api"||r.Form.Get("trx")!="ref-1"||r.Form.Get("kod")!="i5"||r.Form.Get("isi")!="0856"{t.Fatalf("unexpected order form: %#v",r.Form)}
+   if r.Form.Get("id")!="123"||r.Form.Get("key")!="key"||r.Form.Get("api")!="api"||r.Form.Get("url")!="https://callback.example/xp"||r.Form.Get("trx")!="ref-1"||r.Form.Get("kod")!="i5"||r.Form.Get("isi")!="0856"{t.Fatalf("unexpected order form: %#v",r.Form)}
    _=json.NewEncoder(w).Encode(map[string]string{"success":"1","status":"proses","trx":"ref-1","kode":"i5","isi":"0856","harga":"5700"});return
   }
   if r.URL.Path=="/api/saldo.php" {_=json.NewEncoder(w).Encode(map[string]string{"success":"1","id":"123","saldo":"123000"});return}
   t.Fatalf("unexpected path %s",r.URL.Path)
  }));defer srv.Close()
- c,err:=New(config.XPSindonesiaConfig{ID:"123",Key:"key",API:"api",SaldoEndpoint:srv.URL+"/api/saldo.php",OrderEndpoint:srv.URL+"/api/order.php"},srv.Client());if err!=nil{t.Fatal(err)}
+ c,err:=New(config.XPSindonesiaConfig{ID:"123",Key:"key",API:"api",SaldoEndpoint:srv.URL+"/api/saldo.php",OrderEndpoint:srv.URL+"/api/order.php",CallbackURL:"https://callback.example/xp"},srv.Client());if err!=nil{t.Fatal(err)}
  p,err:=c.Purchase(context.Background(),provider.PurchaseRequest{ProductCode:"i5",CustomerNo:"0856",ReferenceID:"ref-1"});if err!=nil{t.Fatal(err)}
  if p.Status!=provider.StatusPending||p.Price!=5700{t.Fatalf("unexpected purchase: %#v",p)}
  b,err:=c.GetBalance(context.Background());if err!=nil||b!=123000{t.Fatalf("balance=%d err=%v",b,err)}
@@ -38,4 +38,15 @@ func TestXPUnsupportedOperationsAreExplicit(t *testing.T) {
  if _,err:=c.GetProducts(context.Background(),provider.ProductRequest{});err!=provider.ErrUnsupportedOperation{t.Fatal(err)}
  if _,err:=c.Inquiry(context.Background(),provider.InquiryRequest{});err!=provider.ErrUnsupportedOperation{t.Fatal(err)}
  if _,err:=c.GetStatus(context.Background(),provider.StatusRequest{});err!=provider.ErrUnsupportedOperation{t.Fatal(err)}
+}
+
+func TestXPPurchaseRequiresCallbackURL(t *testing.T) {
+ c,err:=New(config.XPSindonesiaConfig{ID:"123",Key:"key",API:"api",OrderEndpoint:"https://example.invalid/order.php"},nil);if err!=nil{t.Fatal(err)}
+ _,err=c.Purchase(context.Background(),provider.PurchaseRequest{ProductCode:"i5",CustomerNo:"0856",ReferenceID:"ref-1"});if err==nil{t.Fatal("expected callback URL requirement")}
+}
+
+func TestXPStatusMappingCoversDocumentedOrderStates(t *testing.T) {
+ cases:=map[string]provider.TransactionStatus{"sukses":provider.StatusSuccess,"gagal":provider.StatusFailed,"proses":provider.StatusPending,"lambat":provider.StatusPending}
+ for raw,want:=range cases {if got:=mapStatus(raw);got!=want{t.Fatalf("%q => %q, want %q",raw,got,want)}}
+ if got:=mapStatus("unknown");got!=""{t.Fatalf("unknown status must fail closed, got %q",got)}
 }
