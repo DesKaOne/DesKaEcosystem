@@ -4009,3 +4009,55 @@ No runtime/source milestone is opened from this checkpoint.
 
 The existing validation harnesses remain the concrete mechanism for authorized external evidence. The next implementation-bearing work remains dependent on provider-side credentials/configuration and authorized validation, rather than speculative adapter changes.
 
+
+## Milestone #304 — Documented Provider Response-Code Mapping Completion
+
+**Date:** 2026-09-30
+
+### Scope
+
+Complete deterministic provider response-code/state mapping for the documented DigiFlazz Buyer and IAK response-code contracts without depending on live provider transactions.
+
+### Implementation
+
+- DigiFlazz Buyer RC mapping now explicitly covers documented RC `00`, `01`, `02`, `03`, `40`, `41`, `42`, `43`, `44`, `45`, `47`, and `49`;
+- DigiFlazz response mapping prefers the documented RC when present and fails closed on an unknown RC;
+- DigiFlazz existing status-text mapping remains only as the fallback when a response does not contain RC;
+- IAK response-code mapping now explicitly covers the documented prepaid/postpaid response-code set, including pending codes `05` and `201`;
+- IAK purchase, status, inquiry, and webhook mapping now uses documented RC when present;
+- unknown IAK response codes fail closed instead of inventing a provider state;
+- added deterministic table-driven tests covering every documented mapped code in the current official DigiFlazz Buyer and IAK response-code references.
+
+### Changed Files
+
+- `DesKaProvider/backend/Provider/DigiFlazz/digiflazz.go`
+- `DesKaProvider/backend/Provider/DigiFlazz/digiflazz_test.go`
+- `DesKaProvider/backend/Provider/IAK/iak.go`
+- `DesKaProvider/backend/Provider/IAK/iak_test.go
+
+### Contract Evidence
+
+- DigiFlazz Buyer response-code documentation defines success/pending/failed states and RC `00`, `01`, `02`, `03`, `40`, `41`, `42`, `43`, `44`, `45`, `47`, `49`;
+- IAK prepaid documentation defines the documented prepaid RC set and states, including `00` success, `39` process/pending, and `201` undefined/pending;
+- IAK postpaid documentation defines the documented postpaid RC set and states, including `00` success, `05` undefined/pending, `39` pending, and `201` undefined/pending.
+
+### Verification Boundary
+
+- Implementation commit: `2ac84bf068243b646817788cbd29b7729a92a820`
+- External/live provider transactions: **NOT REQUIRED** for this contract-mapping milestone;
+- credential-gated integration validation remains separate and is not promoted by deterministic tests;
+- the API-based branch update used for the implementation commit did not emit a GitHub Actions run, so CI for the code commit itself is not claimed as executed at this checkpoint.
+
+### Safety / Invariants
+
+- `Router.Select()` remains the sole routing authority;
+- no automatic retry, provider failover, or transaction resubmission;
+- no duplicate transaction creation;
+- no ledger/customer-balance/treasury mutation;
+- webhook idempotency, durable ReferenceID ownership, CAS/idempotency, reconciliation authority, and transaction persistence authority remain unchanged;
+- LiveTested and ProductionReady remain explicit and unpromoted;
+- no speculative provider behavior is introduced.
+
+### Next Concrete Engineering Task
+
+Continue provider contract completion with the remaining adapter-specific gaps, starting with deterministic fixture/mapper coverage for XP SINDONESIA where the authoritative provider documentation available to the repository is currently incomplete; do not invent undocumented response codes or states.
