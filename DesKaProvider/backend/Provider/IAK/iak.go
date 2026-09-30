@@ -144,7 +144,7 @@ func (c *Client) HandleWebhook(_ context.Context, req provider.WebhookRequest)(p
  message:=str(p,"message")
  price,priceOK:=requiredInt64Num(p,"price")
  _,balanceOK:=requiredNum(p,"balance")
- _,trIDOK:=requiredIntegerNum(p,"tr_id")
+ _,trIDOK:=requiredInt64Num(p,"tr_id")
  if message=="" { return provider.WebhookEvent{}, errors.New("IAK webhook response is missing message") }
  if !priceOK { return provider.WebhookEvent{}, errors.New("IAK webhook response is missing or invalid price") }
  if !balanceOK { return provider.WebhookEvent{}, errors.New("IAK webhook response is missing or invalid balance") }
@@ -173,7 +173,7 @@ func signature(secret,user,add string)string{s:=md5.Sum([]byte(user+secret+add))
 func obj(m map[string]any,k string)map[string]any{x,_:=m[k].(map[string]any);return x}
 func str(m map[string]any,k string)string{x,_:=m[k].(string);return x}
 func num(m map[string]any,k string)float64{n,_:=requiredNum(m,k);return n}
-func requiredNum(m map[string]any,k string)(float64,bool){x,ok:=m[k];if !ok{return 0,false};switch v:=x.(type){case float64:return v,true;case string:n,err:=strconv.ParseFloat(strings.TrimSpace(v),64);return n,err==nil};return 0,false}
+func requiredNum(m map[string]any,k string)(float64,bool){x,ok:=m[k];if !ok{return 0,false};switch v:=x.(type){case float64:if math.IsNaN(v)||math.IsInf(v,0){return 0,false};return v,true;case string:n,err:=strconv.ParseFloat(strings.TrimSpace(v),64);if err!=nil||math.IsNaN(n)||math.IsInf(n,0){return 0,false};return n,true};return 0,false}
 func requiredIntegerNum(m map[string]any,k string)(float64,bool){n,ok:=requiredNum(m,k);if !ok||math.Trunc(n)!=n{return 0,false};return n,true}
 func requiredInt64Num(m map[string]any,k string)(int64,bool){x,ok:=m[k];if !ok{return 0,false};if s,ok:=x.(string);ok{n,err:=strconv.ParseInt(strings.TrimSpace(s),10,64);return n,err==nil};n,ok:=requiredIntegerNum(m,k);if !ok||n <= -math.Exp2(63) || n >= math.Exp2(63){return 0,false};return int64(n),true}
 func status(n float64)provider.TransactionStatus{switch int(n){case 1:return provider.StatusSuccess;case 0:return provider.StatusPending;case 2:return provider.StatusFailed;default:return provider.TransactionStatus(strconv.Itoa(int(n)))}}
