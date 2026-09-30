@@ -4253,3 +4253,8 @@ Continue IAK contract audit for only the already-supported prepaid capabilities:
 The first CI run for this milestone correctly exposed that checking only whether `data.rc` was known was insufficient: a known Failed code such as `20` must not be accepted as a successful catalog response. The implementation was corrected to require `data.rc == "00"` semantics through the existing response-code mapper; Pending, Failed, and unknown codes now fail closed. Added deterministic coverage for Pending `39` in addition to documented Failed `20` and unknown `999`.
 
 The previous CI run #3133 was therefore **RED by design-test feedback** and is not the completion gate. The corrected HEAD below must reach GREEN before this batch is closed.
+
+
+### IAK Pricelist Fixture Correction
+
+CI #3139 exposed one remaining fixture mismatch: the existing successful pricelist fixture omitted the documented `data.rc` field. The fixture is now aligned with the authoritative success response (`rc: "00"`, `message: "SUCCESS"`). No production behavior is relaxed; successful catalog responses still require the documented success code.
