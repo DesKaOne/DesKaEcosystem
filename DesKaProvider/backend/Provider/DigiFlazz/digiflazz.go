@@ -146,8 +146,13 @@ func (c *Client) GetProducts(ctx context.Context, req provider.ProductRequest) (
 	if err := json.Unmarshal(respBody, &decoded); err != nil { return nil, fmt.Errorf("decode DigiFlazz price list response: %w", err) }
 	products := make([]provider.Product, 0, len(decoded.Data))
 	for _, item := range decoded.Data {
+		code := strings.TrimSpace(item.BuyerSKUCode)
+		name := strings.TrimSpace(item.ProductName)
+		if code == "" || name == "" {
+			return nil, errors.New("DigiFlazz price list contains product with missing buyer SKU code or product name")
+		}
 		if req.Active != nil && item.BuyerProductStatus != *req.Active { continue }
-		products = append(products, provider.Product{Code: item.BuyerSKUCode, Name: item.ProductName})
+		products = append(products, provider.Product{Code: code, Name: name})
 	}
 	return products, nil
 }
