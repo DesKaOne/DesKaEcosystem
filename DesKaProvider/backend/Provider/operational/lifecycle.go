@@ -98,6 +98,9 @@ func (l *SyncWorkerLifecycle) Shutdown(ctx context.Context) error {
 	if ctx == nil {
 		return errors.New("shutdown context is required")
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 
 	l.mu.Lock()
 	if !l.running {
