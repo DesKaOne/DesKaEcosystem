@@ -15,7 +15,6 @@ type DigiFlazzConfig struct {
 	Endpoint        string
 	BalanceEndpoint string
 	PriceListEndpoint string
-	InquiryPLNEndpoint string
 }
 
 func LoadDigiFlazzConfig() (DigiFlazzConfig, error) {
@@ -26,7 +25,6 @@ func LoadDigiFlazzConfig() (DigiFlazzConfig, error) {
 		Endpoint:          os.Getenv("DIGIFLAZZ_ENDPOINT"),
 		BalanceEndpoint:   os.Getenv("DIGIFLAZZ_BALANCE_ENDPOINT"),
 		PriceListEndpoint: os.Getenv("DIGIFLAZZ_PRICE_LIST_ENDPOINT"),
-		InquiryPLNEndpoint: os.Getenv("DIGIFLAZZ_INQUIRY_PLN_ENDPOINT"),
 		HTTPTimeout:       15 * time.Second,
 	}
 	if cfg.BaseURL == "" {
