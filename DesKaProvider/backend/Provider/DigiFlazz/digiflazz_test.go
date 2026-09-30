@@ -362,39 +362,66 @@ func TestDigiFlazzGetProductsRejectsIncompleteProduct(t *testing.T) {
 	}
 }
 
-func TestDigiFlazzInquiryPLNUsesOfficialTransactionEndpoint(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v1/transaction" { t.Fatalf("unexpected path: %s", r.URL.Path) }
+func TestDigiFlazzInquiryPLNUsesOfficialEndpoint(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r) {
+		if r.URL.Path != "/v1/inquiry-pln" { t.Fatalf("unexpected path: %s", r.URL.Path) }
 		var got map[string]any
 		if err := json.NewDecoder(r.Body).Decode(&got); err != nil { t.Fatal(err) }
-		if got["commands"] != "inq-pasca" || got["username"] != "buyer" || got["buyer_sku_code"] != "pln" || got["customer_no"] != "1234554321" || got["ref_id"] != "ref-inq-1" {
+		if got["username"] != "buyer" || got["customer_no"] != "1234554321" {
 			t.Fatalf("unexpected request: %#v", got)
 		}
-		h := md5.Sum([]byte("buyersecretref-inq-1"))
+		h := md5.Sum([]byte("buyersecret1234554321"))
 		if got["sign"] != hex.EncodeToString(h[:]) { t.Fatalf("unexpected signature: %v", got["sign"]) }
 		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{
-			"ref_id":"ref-inq-1","customer_no":"1234554321","buyer_sku_code":"pln","message":"Transaksi Sukses","status":"Sukses","rc":"00",
+			"message":"Transaksi Sukses","status":"Sukses","rc":"00","customer_no":"1234554321",
+			"meter_no":"1234554321","subscriber_id":"523300817840","name":"DAVID","segment_power":"R1 /000001300",
 		}})
 	}))
 	defer server.Close()
-	c, err := New(config.DigiFlazzConfig{Username:"buyer", APIKey:"secret", Endpoint:server.URL + "/v1/transaction"}, server.Client())
+	c, err := New(config.DigiFlazzConfig{Username:"buyer", APIKey:"secret", InquiryEndpoint:server.URL + "/v1/inquiry-pln"}, server.Client())
 	if err != nil { t.Fatal(err) }
-	got, err := c.Inquiry(context.Background(), provider.InquiryRequest{ProductCode:"pln", CustomerNo:"1234554321", ReferenceID:"ref-inq-1"})
+	got, err := c.Inquiry(context.Background(), provider.InquiryRequest{ProductCode:"pln", CustomerNo:"1234554321", ReferenceID:"ignored-by-official-contract"})
 	if err != nil { t.Fatal(err) }
-	if got.Status != provider.StatusSuccess || got.ProviderCode != "00" { t.Fatalf("unexpected inquiry result: %#v", got) }
+	if got.Status != provider.StatusSuccess || got.ProviderCode != "00" || got.Message != "Transaksi Sukses" { t.Fatalf("unexpected inquiry result: %#v", got) }
 }
 
-func TestDigiFlazzInquiryRejectsResponseIdentityMismatch(t *testing.T) {
+func TestDigiFlazzInquiryRejectsResponseCustomerMismatch(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{
-			"ref_id":"other-ref","customer_no":"1234554321","buyer_sku_code":"pln","message":"Transaksi Sukses","status":"Sukses","rc":"00",
+			"message":"Transaksi Sukses","status":"Sukses","rc":"00","customer_no":"9999999999",
 		}})
 	}))
 	defer server.Close()
-	c, err := New(config.DigiFlazzConfig{Username:"buyer", APIKey:"secret", Endpoint:server.URL + "/v1/transaction"}, server.Client())
+	c, err := New(config.DigiFlazzConfig{Username:"buyer", APIKey:"secret", InquiryEndpoint:server.URL + "/v1/inquiry-pln"}, server.Client())
 	if err != nil { t.Fatal(err) }
-	_, err = c.Inquiry(context.Background(), provider.InquiryRequest{ProductCode:"pln", CustomerNo:"1234554321", ReferenceID:"ref-inq-1"})
-	if err == nil || !strings.Contains(err.Error(), "identity mismatch") { t.Fatalf("expected inquiry identity mismatch, got %v", err) }
+	_, err = c.Inquiry(context.Background(), provider.InquiryRequest{ProductCode:"pln", CustomerNo:"1234554321"})
+	if err == nil || !strings.Contains(err.Error(), "customer identity mismatch") { t.Fatalf("expected inquiry customer mismatch, got %v", err) }
+}
+
+func TestDigiFlazzInquiryRejectsMissingCustomerNumber(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{
+			"message":"Transaksi Sukses","status":"Sukses","rc":"00",
+		}})
+	}))
+	defer server.Close()
+	c, err := New(config.DigiFlazzConfig{Username:"buyer", APIKey:"secret", InquiryEndpoint:server.URL + "/v1/inquiry-pln"}, server.Client())
+	if err != nil { t.Fatal(err) }
+	_, err = c.Inquiry(context.Background(), provider.InquiryRequest{ProductCode:"pln", CustomerNo:"1234554321"})
+	if err == nil || !strings.Contains(err.Error(), "missing required customer_no") { t.Fatalf("expected missing customer rejection, got %v", err) }
+}
+
+func TestDigiFlazzInquiryRejectsMissingRequiredMessage(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{
+			"status":"Sukses","rc":"00","customer_no":"1234554321",
+		}})
+	}))
+	defer server.Close()
+	c, err := New(config.DigiFlazzConfig{Username:"buyer", APIKey:"secret", InquiryEndpoint:server.URL + "/v1/inquiry-pln"}, server.Client())
+	if err != nil { t.Fatal(err) }
+	_, err = c.Inquiry(context.Background(), provider.InquiryRequest{ProductCode:"pln", CustomerNo:"1234554321"})
+	if err == nil || !strings.Contains(err.Error(), "missing required message") { t.Fatalf("expected required message rejection, got %v", err) }
 }
 
 func TestDigiFlazzInquiryRejectsUnsupportedProduct(t *testing.T) {
