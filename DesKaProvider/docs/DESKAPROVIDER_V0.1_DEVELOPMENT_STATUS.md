@@ -4859,3 +4859,28 @@ Added regression coverage for:
 - Deterministic callback contract tests are credential-free.
 - External IAK callback validation remains credential-gated.
 - This batch remains open until the resulting CI is GREEN.
+
+
+## IAK Balance HTTP Error Fixture Hardening
+
+**Date:** 2026-09-30
+
+### Source Basis
+
+The current IAK Prepaid response-code documentation defines HTTP 400 as a failed request whose error_details should be inspected, while other HTTP statuses represent an upstream condition that must not be treated as a normal successful response. citeturn0search13
+
+### Implementation / Deterministic Coverage
+
+- Added a dedicated GetBalance() fixture proving HTTP 400 error_details is surfaced to the caller.
+- Added a dedicated non-2xx balance fixture proving an upstream HTTP 500 response fails closed and does not produce a balance.
+- No provider-neutral transport-state or financial-state semantics were added; the existing do() boundary remains responsible for transport errors.
+
+### Safety Boundary
+
+This batch only strengthens deterministic transport/error coverage. No retry, failover, resubmission, refund automation, ledger mutation, customer-balance mutation, treasury movement, or provider funding behavior was introduced.
+
+### Verification Boundary
+
+- Tests are credential-free and deterministic.
+- Live/sandbox IAK validation remains credential-gated.
+- This batch remains open until the resulting HEAD has GREEN CI.
