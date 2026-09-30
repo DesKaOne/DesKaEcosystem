@@ -2426,7 +2426,7 @@ Milestone ini merupakan integrasi BFT orchestration yang nyata, tetapi **bukan p
 - `go test ./...`: PASS.
 - `go test -race ./...`: PASS.
 - `go vet ./...`: PASS.
-- Final documentation HEAD tetap wajib diverifikasi sekali lagi setelah update status ini.
+- Final documentation HEAD `0a400b18ff436e478ca9e06fb959e71890a3e125`: GREEN pada CI run `36789673826`.
 - PostgreSQL: tidak relevan.
 
 **Next integration target**
