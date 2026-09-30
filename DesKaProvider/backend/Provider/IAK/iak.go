@@ -176,7 +176,7 @@ func num(m map[string]any,k string)float64{n,_:=requiredNum(m,k);return n}
 func requiredNum(m map[string]any,k string)(float64,bool){x,ok:=m[k];if !ok{return 0,false};switch v:=x.(type){case float64:return v,true;case string:n,err:=strconv.ParseFloat(strings.TrimSpace(v),64);return n,err==nil};return 0,false}
 func requiredIntegerNum(m map[string]any,k string)(float64,bool){n,ok:=requiredNum(m,k);if !ok||math.Trunc(n)!=n{return 0,false};return n,true}
 func status(n float64)provider.TransactionStatus{switch int(n){case 1:return provider.StatusSuccess;case 0:return provider.StatusPending;case 2:return provider.StatusFailed;default:return provider.TransactionStatus(strconv.Itoa(int(n)))}}
-func transactionStatus(v any)(provider.TransactionStatus,bool){switch x:=v.(type){case float64:switch int(x){case 0:return provider.StatusPending,true;case 1:return provider.StatusSuccess,true;case 2:return provider.StatusFailed,true};case string:switch strings.TrimSpace(x){case "0":return provider.StatusPending,true;case "1":return provider.StatusSuccess,true;case "2":return provider.StatusFailed,true}};return "",false}
+func transactionStatus(v any)(provider.TransactionStatus,bool){switch x:=v.(type){case float64:if math.Trunc(x)!=x{return "",false};switch int(x){case 0:return provider.StatusPending,true;case 1:return provider.StatusSuccess,true;case 2:return provider.StatusFailed,true};case string:switch strings.TrimSpace(x){case "0":return provider.StatusPending,true;case "1":return provider.StatusSuccess,true;case "2":return provider.StatusFailed,true}};return "",false}
 func mapResponseCode(rc string) (provider.TransactionStatus, error) {
 	switch strings.TrimSpace(rc) {
 	case "00":
