@@ -181,6 +181,14 @@ func TestIAKInquiryRequiresDocumentedFields(t *testing.T) {
  }
 }
 
+func TestIAKInquiryAcceptsDocumentedFailedState(t *testing.T) {
+ srv,client:=newIAKJSONServer(`{"data":{"status":"2","customer_id":"12345678901","meter_no":"548933889287","subscriber_id":"12345678901","name":"Sintya Oktaviani","segment_power":"R1 /000001300","message":"FAILED","rc":"07"}}`)
+ defer srv.Close()
+ c,err:=New(iakTestConfig(srv.URL),client);if err!=nil{t.Fatal(err)}
+ result,err:=c.Inquiry(context.Background(),provider.InquiryRequest{ProductCode:"pln",CustomerNo:"12345678901"})
+ if err!=nil||result.Status!=provider.StatusFailed||result.ProviderCode!="07"{t.Fatalf("result=%#v err=%v",result,err)}
+}
+
 func TestIAKInquiryRejectsStatusAndRCConflict(t *testing.T) {
  srv,client:=newIAKJSONServer(`{"data":{"status":"1","customer_id":"12345678901","meter_no":"548933889287","subscriber_id":"12345678901","name":"Sintya","segment_power":"R1 /000001300","message":"SUCCESS","rc":"07"}}`)
  defer srv.Close()
