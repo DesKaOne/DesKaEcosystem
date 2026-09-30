@@ -784,3 +784,36 @@ func TestIAKHTTPClientGetsBoundedTimeout(t *testing.T) {
   t.Fatal("custom client with explicit timeout should be preserved")
  }
 }
+
+
+func TestIAKDocumentedResponseCodesMapDeterministically(t *testing.T) {
+ failedCodes := []string{
+  "06", "07", "10", "12", "13", "14", "16", "17", "18", "19", "20", "21",
+  "102", "106", "107", "110", "117", "121", "131", "132", "141", "142",
+  "202", "203", "204", "205", "206", "207", "301",
+ }
+ for _, rc := range failedCodes {
+  t.Run("failed_"+rc, func(t *testing.T) {
+   got, err := mapResponseCode(rc)
+   if err != nil || got != provider.StatusFailed {
+    t.Fatalf("rc=%s status=%q err=%v", rc, got, err)
+   }
+  })
+ }
+ pendingCodes := []string{"39", "201"}
+ for _, rc := range pendingCodes {
+  t.Run("pending_"+rc, func(t *testing.T) {
+   got, err := mapResponseCode(rc)
+   if err != nil || got != provider.StatusPending {
+    t.Fatalf("rc=%s status=%q err=%v", rc, got, err)
+   }
+  })
+ }
+ got, err := mapResponseCode("00")
+ if err != nil || got != provider.StatusSuccess {
+  t.Fatalf("rc=00 status=%q err=%v", got, err)
+ }
+ if _, err = mapResponseCode("999"); err == nil {
+  t.Fatal("unknown response code must fail closed")
+ }
+}
