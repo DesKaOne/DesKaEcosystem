@@ -18,7 +18,7 @@ import (
 
 type Client struct {
  id, key, api string
- saldoEndpoint, hargaEndpoint, daftarHargaEndpoint, orderEndpoint string
+ saldoEndpoint, hargaEndpoint, daftarHargaEndpoint, orderEndpoint, callbackURL string
  httpClient *http.Client
 }
 
@@ -29,7 +29,7 @@ func New(cfg config.XPSindonesiaConfig, httpClient *http.Client) (*Client, error
  if cfg.DaftarHargaEndpoint=="" { cfg.DaftarHargaEndpoint="https://xp.sindonesia.net/api/daftar_harga.php" }
  if cfg.OrderEndpoint=="" { cfg.OrderEndpoint="https://xp.sindonesia.net/api/order.php" }
  if httpClient==nil { httpClient=http.DefaultClient }
- return &Client{id:cfg.ID,key:cfg.Key,api:cfg.API,saldoEndpoint:cfg.SaldoEndpoint,hargaEndpoint:cfg.HargaEndpoint,daftarHargaEndpoint:cfg.DaftarHargaEndpoint,orderEndpoint:cfg.OrderEndpoint,httpClient:httpClient},nil
+ return &Client{id:cfg.ID,key:cfg.Key,api:cfg.API,saldoEndpoint:cfg.SaldoEndpoint,hargaEndpoint:cfg.HargaEndpoint,daftarHargaEndpoint:cfg.DaftarHargaEndpoint,orderEndpoint:cfg.OrderEndpoint,callbackURL:cfg.CallbackURL,httpClient:httpClient},nil
 }
 
 type orderResponse struct { Success string; Error string; Status string; Trx string; Kode string; Isi string; Harga string; SN string }
