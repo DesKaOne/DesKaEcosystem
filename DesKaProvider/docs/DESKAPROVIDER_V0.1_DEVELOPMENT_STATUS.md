@@ -4404,3 +4404,40 @@ Added regression coverage for:
 - Tests remain deterministic and credential-free.
 - External IAK validation remains credential-gated.
 - Final CI for this batch must be GREEN before closure.
+
+## IAK HTTP Error Semantics Hardening
+
+**Date:** 2026-09-30
+
+### Source Basis
+
+The current IAK prepaid response-code documentation defines HTTP 200 as the normal response path, HTTP 400 as a failed request whose error_details should be checked, and other HTTP statuses as an IAK-side problem described as Pending. citeturn3search0
+
+### Implementation
+
+- IAK do() now explicitly extracts and surfaces documented error_details for HTTP 400 Bad Request responses.
+- String and structured error_details payloads are preserved in the returned error instead of being reduced to an opaque HTTP body.
+- Existing non-2xx handling remains fail-closed and preserves the raw response body when no documented error_details field is available.
+- The provider-neutral PPOBProvider interface currently exposes no transport-level error/status representation, so this batch does not invent a generic Pending error type or convert HTTP failures into financial transaction state.
+
+### Deterministic Coverage
+
+Added tests for:
+
+- HTTP 400 with string error_details;
+- HTTP 400 with structured error_details.
+
+### Safety Boundary
+
+No retry, failover, transaction resubmission, refund automation, ledger mutation, customer-balance mutation, treasury movement, or readiness promotion was introduced.
+
+### Verification Boundary
+
+- Deterministic HTTP error handling is credential-free.
+- Live/sandbox IAK validation remains credential-gated.
+- Final CI for the resulting HEAD must be GREEN before this batch is considered complete.
+
+### Next Concrete Engineering Task
+
+Continue the IAK audit only where the existing provider-neutral interface can represent the documented semantics safely. In particular, review whether balance and transaction methods need additional deterministic HTTP/response fixtures; do not introduce provider-specific transport state into the financial contract.
+\n
