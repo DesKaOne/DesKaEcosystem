@@ -2643,3 +2643,74 @@ Masih terbuka:
 Masuk ke **local proposer/prevote emission boundary**: gunakan deterministic mempool snapshot + block candidate builder untuk menghasilkan proposal lokal, lalu emit authenticated prevote hanya setelah candidate validation berhasil. Tetap tanpa scheduler/clock produksi dan tanpa canonical commit pada fase prevote.
 
 **Milestone 4.54 status:** implementation/test completed; exact implementation HEAD CI GREEN.
+
+
+### 4.55 Local Proposer → Authenticated Prevote Emission Boundary
+
+**Tanggal:** 2026-10-01
+
+**Objective**
+
+Menutup gap dari deterministic mempool ordering menuju proposal lokal yang executable. Local proposer mengambil snapshot transaksi terurut, membangun candidate block, menjalankan candidate terhadap snapshot canonical state, mengikat TransactionsRoot dan StateRoot, lalu mengirim authenticated proposal dan local authenticated prevote melalui boundary P2P yang sudah ada.
+
+**Implementation**
+
+- IndoChain/internal/consensus/local_proposer.go
+  - LocalBlockProducer mengikat existing mempool.Pool.SnapshotSorted() ke block construction;
+  - candidate memakai exact consensus height, previous hash, proposer, protocol/chain context, deterministic transactions root, dan execution-derived state root;
+  - execution dilakukan pada canonicalState.Snapshot(), sehingga block production tidak memutasi canonical state;
+  - timestamp disuplai melalui injected function, sehingga consensus tidak memiliki hidden wall-clock dependency;
+  - BuildCandidateFromTransactions menyediakan lower-level builder untuk caller yang sudah menentukan transaction selection.
+- IndoChain/internal/p2p/consensus_round_driver.go
+  - PublishLocalProposalAndPrevote menghasilkan candidate lokal, membangun/sign proposal, mempublikasikan proposal + candidate, memvalidasi candidate melalui authenticated execution boundary yang sama, lalu membuat/sign dan mengagregasikan local prevote sebelum publish;
+  - runtime tetap menjadi owner phase/quorum/lock; P2P driver tidak mengambil ownership atas scheduler, retransmission, atau canonical commit.
+- Tests:
+  - local candidate production menggunakan deterministic empty mempool snapshot;
+  - candidate state root berasal dari execution snapshot;
+  - canonical state tidak berubah selama production;
+  - rule/context mismatch ditolak sebelum candidate dipakai.
+
+**Locked invariants**
+
+1. Transaction selection pada local proposer berasal dari deterministic SnapshotSorted().
+2. Candidate height/protocol/chain/previous-hash/proposer harus sesuai BlockProductionContext.
+3. TransactionsRoot dihitung dari ordered candidate transactions.
+4. Candidate execution dilakukan pada state snapshot, bukan canonical state.
+5. StateRoot candidate berasal dari hasil deterministic execution.
+6. Authenticated proposal harus lolos signature/authority + candidate validation sebelum runtime masuk Prevote.
+7. Local prevote memakai payload proposal yang sama dan ditandatangani melalui consensus domain.
+8. Tidak ada hidden scheduler/clock; proposal timestamp berasal dari injected producer callback.
+9. Tidak ada canonical block/state commit pada fase Proposal → Prevote.
+
+**Production boundary**
+
+Milestone ini menutup local proposal/prevote emission boundary, tetapi **belum full production BFT**.
+
+Masih terbuka:
+
+- automatic scheduler/clock dan proposer trigger policy;
+- invalid/stale transaction filtering and final transaction-selection economics;
+- concurrent consensus/block request-response multiplexing;
+- peer-wide broadcast/retransmission;
+- automatic precommit emission policy;
+- timeout failure detector and round-change scheduling;
+- multi-node multi-height canonical commit loop;
+- validator-set lifecycle;
+- durable consensus recovery;
+- final canonical block serialization freeze.
+
+**Verification**
+
+- Local proposer implementation HEAD: 8490f9b5b0b37012824e4f4899a698499b265602.
+- P2P emission integration HEAD: e2753a5de47892d12a07b222dc02ec24be997969.
+- Regression test HEAD: b9ef2f7f96788c3881c279115817fe170d22bda7.
+- Exact regression HEAD CI run: 36792928081 — pending at documentation update time.
+- Prior P2P implementation CI run: 36792908184 — pending at documentation update time.
+- Prior local proposer implementation CI run: 36792880590 — pending at documentation update time.
+- PostgreSQL: tidak relevan.
+
+**Next integration target**
+
+Masuk ke **automatic local precommit emission boundary**: setelah local/remote prevote quorum dan lock proof terbentuk, emit authenticated precommit melalui driver yang sama, tetap tanpa canonical commit sampai finality evidence tervalidasi.
+
+**Milestone 4.55 status:** implementation completed; exact final documentation HEAD CI gate pending.
