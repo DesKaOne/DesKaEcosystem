@@ -390,7 +390,7 @@ func TestIAKTransactionResponseRejectsConflictingStatusAndRC(t *testing.T) {
 }
 
 func TestIAKTransactionRejectsBlankMessage(t *testing.T) {
- for _, message := range []string{"", "   ", "\t"} {
+ for _, message := range []string{"", "   ", "	"} {
   t.Run("message_"+strings.TrimSpace(message), func(t *testing.T) {
    srv, client := newIAKJSONServer(`{"data":{"ref_id":"order-1","customer_id":"08123","product_code":"xld25000","status":1,"price":25000,"balance":997061249,"tr_id":3482,"message":"`+message+`","rc":"00"}}`)
    defer srv.Close()
@@ -851,13 +851,13 @@ func TestIAKHTTPBadRequestRemainsError(t *testing.T) {
 
 
 func TestIAKPurchaseDoesNotMapUndocumentedSerialNumber(t *testing.T) {
-\tsrv, client := newIAKJSONServer(`{"data":{"ref_id":"order-topup-sn","status":1,"product_code":"xld25000","customer_id":"08123","price":25000,"message":"SUCCESS","sn":"SN-UNDOCUMENTED","balance":997061249,"tr_id":3482,"rc":"00"}}`)
-\tdefer srv.Close()
-\tc, err := New(iakTestConfig(srv.URL), client)
-\tif err != nil { t.Fatal(err) }
-\tgot, err := c.Purchase(context.Background(), provider.PurchaseRequest{ReferenceID:"order-topup-sn", CustomerNo:"08123", ProductCode:"xld25000"})
-\tif err != nil { t.Fatal(err) }
-\tif got.SerialNumber != "" { t.Fatalf("purchase serial number=%q; top-up response does not document sn", got.SerialNumber) }
+	srv, client := newIAKJSONServer(`{"data":{"ref_id":"order-topup-sn","status":1,"product_code":"xld25000","customer_id":"08123","price":25000,"message":"SUCCESS","sn":"SN-UNDOCUMENTED","balance":997061249,"tr_id":3482,"rc":"00"}}`)
+	defer srv.Close()
+	c, err := New(iakTestConfig(srv.URL), client)
+	if err != nil { t.Fatal(err) }
+	got, err := c.Purchase(context.Background(), provider.PurchaseRequest{ReferenceID:"order-topup-sn", CustomerNo:"08123", ProductCode:"xld25000"})
+	if err != nil { t.Fatal(err) }
+	if got.SerialNumber != "" { t.Fatalf("purchase serial number=%q; top-up response does not document sn", got.SerialNumber) }
 }
 
 func TestIAKTransactionRejectsSerialNumberForNonSuccess(t *testing.T) {
