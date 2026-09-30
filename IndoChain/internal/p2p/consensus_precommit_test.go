@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/consensus"
-	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/crypto"
 )
 
 func TestPublishAuthenticatedPrevoteAndMaybePrecommitEmitsLocalPrecommitAfterQuorum(t *testing.T) {
