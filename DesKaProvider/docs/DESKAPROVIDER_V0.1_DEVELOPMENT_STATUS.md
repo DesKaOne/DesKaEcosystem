@@ -3959,3 +3959,25 @@ The repository must not:
 - add provider-specific retry, failover, or transaction resubmission behavior.
 
 The existing DigiFlazz adapter and integration harness remain unchanged.
+
+## Post-Audit — Credential-Gated Provider Validation Harness Review
+
+**Date:** 2026-09-30
+
+A focused source review checked the existing credential-gated validation harnesses for IAK, XP SINDONESIA, and Midtrans after the DigiFlazz IP configuration checkpoint.
+
+### Verified Harness Boundaries
+
+- IAK validation is explicitly provider-gated, requires the IAK integration switch and runtime credentials, validates configured read-only endpoints against the integration host allowlist, and checks balance plus price-list retrieval without creating a transaction;
+- XP SINDONESIA validation is explicitly provider-gated, limited to read-only balance retrieval, validates the configured balance endpoint against the host allowlist, and includes regressions proving a mismatched provider gate cannot authorize XP validation;
+- Midtrans validation is explicitly sandbox-gated, validates both Snap and Core API endpoints against the host allowlist, creates one sandbox payment, reads its status, and validates the webhook identity/status contract without issuing a second payment request;
+- the shared `.env.example` keeps the normal integration gate disabled and contains no real credentials;
+- no reviewed harness introduces automatic retry, provider failover, duplicate transaction creation, ledger mutation, or readiness promotion.
+
+### Decision
+
+No runtime/source milestone is opened from this review because no concrete boundary defect was identified.
+
+The next implementation-bearing step remains external evidence: provider-authorized credentials/configuration must be available before the existing IAK, XP SINDONESIA, Midtrans, or DigiFlazz gated validations can produce real readiness evidence. The repository must preserve the current fail-closed behavior and must not manufacture external evidence through deterministic tests.
+
+The exact current HEAD must be re-verified GREEN after this documentation checkpoint before further development proceeds.
