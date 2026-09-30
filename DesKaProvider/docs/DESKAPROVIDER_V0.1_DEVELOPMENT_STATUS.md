@@ -5185,3 +5185,37 @@ The resulting branch HEAD must receive GREEN CI for test, vet, race, and service
 - Root cause was test-file formatting only; the provider implementation change itself was not implicated by the compiler failure.
 - Corrected the test syntax in commit `eff4d275522bce02e39d7cb20c965db2a1af5b36`.
 - CI for the corrected HEAD must be GREEN before this batch is considered complete.
+
+
+## IAK Serial Number Validation Scope Correction
+
+**Date:** 2026-09-30
+
+### Audit Finding
+
+The previous serial-number hardening was broader than the authoritative Top Up contract supports. The generic transaction validator was rejecting an sn field on non-success responses for both Purchase and Check Status, even though the V2 Top Up response contract does not document sn at all. The status document's earlier safety statement correctly said undocumented extra Top Up fields should not be promoted, but the generic validator could still reject such an extra field.
+
+### Correction
+
+- Removed serial-number validation from the shared IAK transaction response validator used by Purchase and Check Status.
+- Kept the sn status constraint only in Check Status, where the official contract explicitly documents sn as optional and only present when status is SUCCESS.
+- Purchase continues to ignore sn because the V2 Top Up response contract does not document it.
+- Callback handling retains its documented final success/failed sn constraint.
+- Added deterministic coverage proving undocumented sn on Top Up PROCESS/FAILED responses is ignored rather than promoted or rejected.
+
+### Source Basis
+
+The official V2 Top Up response lists ref_id, status, product_code, customer_id, price, message, balance, tr_id, and rc, with no sn field. The official V2 Check Status contract separately documents sn as optional and only appearing when status is SUCCESS. citeturn0search0turn0search2
+
+### Safety Boundary
+
+This correction narrows validation to documented provider-specific semantics. It does not introduce retry, resubmission, failover, refund automation, ledger mutation, customer-balance mutation, treasury movement, provider funding, or routing changes.
+
+### Verification Boundary
+
+Implementation commit: 8cde7d6235f12d50dfce8c72007321d094dd2ec5.
+
+Deterministic regression commit: 725f45351df11c17e9a01b8fe234860024ed1e73.
+
+The resulting HEAD must receive GREEN CI for test, vet, race, and service-backed validation before this correction is considered complete. Credential-gated provider validation may remain skipped when credentials are unavailable.
+
