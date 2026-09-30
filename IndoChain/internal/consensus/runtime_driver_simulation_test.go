@@ -3,7 +3,6 @@ package consensus
 import (
 	"bytes"
 	"crypto/ed25519"
-	"errors"
 	"testing"
 )
 
@@ -140,7 +139,7 @@ func TestDeterministicRoundDriverSimulationThreeNodes(t *testing.T) {
 	}
 
 	for i, runtime := range runtimes {
-		if err := runtime.AcceptProposal(signedSimulationMessage(t, runtime.State(), validatorsFixture[1], MessageTypeProposal, "round-1-proposal")); err == nil {
+		if err := runtime.AcceptProposal(signedSimulationMessage(t, runtime.State(), validatorsFixture[2], MessageTypeProposal, "round-1-proposal")); err == nil {
 			t.Fatalf("node %d accepted non-proposer round-1 proposal", i)
 		}
 	}
@@ -236,8 +235,5 @@ func TestDeterministicRoundDriverFinalityBoundaryRemainsExplicit(t *testing.T) {
 	// and durable commit verification.
 	if _, err := runtime.FinalizedCertificate(); err != nil {
 		t.Fatal(err)
-	}
-	if errors.Is(runtime.State().Phase == PhaseFinalized, false) {
-		t.Fatal("unreachable finality assertion")
 	}
 }
