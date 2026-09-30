@@ -128,8 +128,10 @@ func (c *Client) HandleWebhook(_ context.Context, req provider.WebhookRequest)(p
  if err:=json.Unmarshal(req.Body,&p);err!=nil{return provider.WebhookEvent{},fmt.Errorf("decode IAK webhook: %w",err)}
 
  ref:=strings.TrimSpace(str(p,"ref_id"))
- customerNo:=strings.TrimSpace(str(p,"hp"))
- productCode:=strings.TrimSpace(str(p,"code"))
+ customerNo:=strings.TrimSpace(str(p,"customer_id"))
+ if customerNo=="" { customerNo=strings.TrimSpace(str(p,"hp")) }
+ productCode:=strings.TrimSpace(str(p,"product_code"))
+ if productCode=="" { productCode=strings.TrimSpace(str(p,"code")) }
  rc:=strings.TrimSpace(str(p,"rc"))
  bodySign:=strings.TrimSpace(str(p,"sign"))
  if ref == "" || customerNo == "" || productCode == "" {
