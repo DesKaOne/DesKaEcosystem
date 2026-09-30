@@ -4832,3 +4832,30 @@ Added regression coverage for:
 - Deterministic purchase-response contract tests are credential-free.
 - External IAK top-up validation remains credential-gated.
 - This batch remains open until the resulting CI is GREEN.
+
+## IAK Callback Body Signature Contract Hardening
+
+**Date:** 2026-09-30
+
+### Source Basis
+
+- Current IAK callback documentation marks `sign` as mandatory in the callback body and defines it as `md5(username+api_key+ref_id)`.
+- The security documentation identifies the callback body `sign` as the authentication field.
+
+### Implementation
+
+- IAK webhook handling now requires the documented body `sign` field explicitly.
+- When `SignatureSecret` is configured, verification is performed against the documented body `sign`; a separate provider-neutral transport signature no longer substitutes for the documented callback field.
+- No new semantics were inferred for `WebhookRequest.Signature` beyond its existing provider-neutral boundary.
+- No financial mutation, retry, failover, or resubmission behavior was introduced.
+
+### Deterministic Coverage
+
+- Added a regression test proving that a supplied transport-level signature does not satisfy a missing documented callback body `sign`.
+- Existing valid and invalid callback-signature tests remain covered.
+
+### Verification Boundary
+
+- Deterministic callback contract tests are credential-free.
+- External IAK callback validation remains credential-gated.
+- This batch remains open until the resulting CI is GREEN.
