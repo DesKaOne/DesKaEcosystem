@@ -267,12 +267,47 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
 func TestMapResponseCodeCoversDocumentedBuyerCodes(t *testing.T) {
-	cases := map[string]provider.TransactionStatus{"00":provider.StatusSuccess,"01":provider.StatusFailed,"02":provider.StatusFailed,"03":provider.StatusPending,"40":provider.StatusFailed,"41":provider.StatusFailed,"42":provider.StatusFailed,"43":provider.StatusFailed,"44":provider.StatusFailed,"45":provider.StatusFailed,"47":provider.StatusFailed,"49":provider.StatusFailed}
-	for rc,want:=range cases { t.Run(rc,func(t *testing.T){ got,err:=mapResponseCode(rc); if err!=nil||got!=want{t.Fatalf("rc %s => %q,%v; want %q",rc,got,err,want)} }) }
+	cases := map[string]provider.TransactionStatus{
+		"00": provider.StatusSuccess,
+		"01": provider.StatusFailed, "02": provider.StatusFailed, "03": provider.StatusPending,
+		"40": provider.StatusFailed, "41": provider.StatusFailed, "42": provider.StatusFailed,
+		"43": provider.StatusFailed, "44": provider.StatusFailed, "45": provider.StatusFailed,
+		"47": provider.StatusFailed, "49": provider.StatusFailed, "50": provider.StatusFailed,
+		"51": provider.StatusFailed, "52": provider.StatusFailed, "53": provider.StatusFailed,
+		"54": provider.StatusFailed, "55": provider.StatusFailed, "56": provider.StatusFailed,
+		"57": provider.StatusFailed, "58": provider.StatusFailed, "59": provider.StatusFailed,
+		"60": provider.StatusFailed, "61": provider.StatusFailed, "62": provider.StatusFailed,
+		"63": provider.StatusFailed, "64": provider.StatusFailed, "65": provider.StatusFailed,
+		"66": provider.StatusFailed, "67": provider.StatusFailed, "68": provider.StatusFailed,
+		"69": provider.StatusFailed, "70": provider.StatusFailed, "71": provider.StatusFailed,
+		"72": provider.StatusFailed, "73": provider.StatusFailed, "74": provider.StatusFailed,
+		"80": provider.StatusFailed, "81": provider.StatusFailed, "82": provider.StatusFailed,
+		"83": provider.StatusFailed, "84": provider.StatusFailed, "85": provider.StatusFailed,
+		"86": provider.StatusFailed, "87": provider.StatusFailed, "88": provider.StatusFailed,
+		"99": provider.StatusPending,
+	}
+	for rc,want:=range cases {
+		t.Run(rc,func(t *testing.T){ got,err:=mapResponseCode(rc); if err!=nil||got!=want{t.Fatalf("rc %s => %q,%v; want %q",rc,got,err,want)} })
+	}
 }
 func TestMapResponseCodeRejectsUnknown(t *testing.T) {
 	if _,err:=mapResponseCode("999"); !errors.Is(err,ErrUnknownResponseCode){t.Fatalf("expected unknown response code, got %v",err)}
 }
-func TestMapResponseStatusUsesDocumentedRC(t *testing.T) {
-	got,err:=mapResponseStatus("Sukses","03"); if err!=nil||got!=provider.StatusPending{t.Fatalf("got %q,%v; want pending",got,err)}
+func TestMapResponseStatusRejectsStatusRCConflict(t *testing.T) {
+	if _,err:=mapResponseStatus("Sukses","03"); err == nil {
+		t.Fatal("expected status/RC conflict to fail closed")
+	}
+}
+func TestMapResponseStatusAcceptsConsistentStatusRC(t *testing.T) {
+	cases := []struct{status,rc string; want provider.TransactionStatus}{
+		{"Sukses","00",provider.StatusSuccess},
+		{"Pending","03",provider.StatusPending},
+		{"Gagal","02",provider.StatusFailed},
+	}
+	for _,tc:=range cases {
+		t.Run(tc.status,func(t *testing.T){
+			got,err:=mapResponseStatus(tc.status,tc.rc)
+			if err!=nil||got!=tc.want{t.Fatalf("got %q,%v; want %q",got,err,tc.want)}
+		})
+	}
 }
