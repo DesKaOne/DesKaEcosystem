@@ -70,7 +70,8 @@ func (c *Client) GetStatus(context.Context,provider.StatusRequest)(provider.Purc
 
 func (c *Client) HandleWebhook(_ context.Context,req provider.WebhookRequest)(provider.WebhookEvent,error){
  q,err:=url.ParseQuery(string(req.Body));if err!=nil{return provider.WebhookEvent{},fmt.Errorf("decode XP callback: %w",err)}
- if req.SignatureSecret!=""&&subtle.ConstantTimeCompare([]byte(q.Get("key")),[]byte(req.SignatureSecret))!=1{return provider.WebhookEvent{},errors.New("invalid XP callback key")}
+ if subtle.ConstantTimeCompare([]byte(q.Get("key")),[]byte(c.key))!=1{return provider.WebhookEvent{},errors.New("invalid XP callback key")}
+ if req.SignatureSecret!=""&&subtle.ConstantTimeCompare([]byte(req.SignatureSecret),[]byte(c.key))!=1{return provider.WebhookEvent{},errors.New("XP callback signature secret mismatch")}
  if q.Get("id")==""||q.Get("trx")==""||q.Get("kod")==""||q.Get("isi")==""{return provider.WebhookEvent{},errors.New("XP callback is missing transaction identity")}
  if q.Get("id")!=c.id{return provider.WebhookEvent{},errors.New("XP callback member ID mismatch")}
  rawStatus:=strings.ToLower(strings.TrimSpace(q.Get("status")));if rawStatus!="sukses"&&rawStatus!="gagal"{return provider.WebhookEvent{},fmt.Errorf("XP callback has unsupported status %q",q.Get("status"))};st:=mapStatus(rawStatus)
