@@ -95,3 +95,37 @@ func TestXPOrderStatusMappingCoversDocumentedErrorStates(t *testing.T) {
  }
 }
 
+
+func TestXPPurchaseMapsDocumentedEmptyFailure(t *testing.T) {
+ srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+  _ = json.NewEncoder(w).Encode(map[string]string{
+   "success": "0",
+   "error": "already",
+   "status": "kosong (batalkan manual di hisoty order)",
+   "trx": "ref-1",
+   "kode": "i5",
+   "isi": "0856",
+   "harga": "5700",
+  })
+ }))
+ defer srv.Close()
+
+ c, err := New(config.XPSindonesiaConfig{
+  ID: "123", Key: "key", API: "api",
+  OrderEndpoint: srv.URL,
+  CallbackURL: "https://callback.example/xp",
+ }, srv.Client())
+ if err != nil { t.Fatal(err) }
+
+ result, err := c.Purchase(context.Background(), provider.PurchaseRequest{
+  ProductCode: "i5", CustomerNo: "0856", ReferenceID: "ref-1",
+ })
+ if err != nil { t.Fatal(err) }
+ if result.Status != provider.StatusFailed {
+  t.Fatalf("unexpected purchase status: %#v", result)
+ }
+ if result.ProviderCode != "already" {
+  t.Fatalf("unexpected provider code: %#v", result)
+ }
+}
+
