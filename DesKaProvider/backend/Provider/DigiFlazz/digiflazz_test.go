@@ -265,3 +265,14 @@ func TestDigiFlazzHTTPTimeoutCancelsRequest(t *testing.T) {
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestMapResponseCodeCoversDocumentedBuyerCodes(t *testing.T) {
+	cases := map[string]provider.TransactionStatus{"00":provider.StatusSuccess,"01":provider.StatusFailed,"02":provider.StatusFailed,"03":provider.StatusPending,"40":provider.StatusFailed,"41":provider.StatusFailed,"42":provider.StatusFailed,"43":provider.StatusFailed,"44":provider.StatusFailed,"45":provider.StatusFailed,"47":provider.StatusFailed,"49":provider.StatusFailed}
+	for rc,want:=range cases { t.Run(rc,func(t *testing.T){ got,err:=mapResponseCode(rc); if err!=nil||got!=want{t.Fatalf("rc %s => %q,%v; want %q",rc,got,err,want)} }) }
+}
+func TestMapResponseCodeRejectsUnknown(t *testing.T) {
+	if _,err:=mapResponseCode("999"); !errors.Is(err,ErrUnknownResponseCode){t.Fatalf("expected unknown response code, got %v",err)}
+}
+func TestMapResponseStatusUsesDocumentedRC(t *testing.T) {
+	got,err:=mapResponseStatus("Sukses","03"); if err!=nil||got!=provider.StatusPending{t.Fatalf("got %q,%v; want pending",got,err)}
+}

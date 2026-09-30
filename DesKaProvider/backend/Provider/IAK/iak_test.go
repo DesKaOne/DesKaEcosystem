@@ -206,3 +206,11 @@ func TestIAKProductListItemValidation(t *testing.T) {
 		})
 	}
 }
+
+func TestIAKMapResponseCodeCoversDocumentedCodes(t *testing.T) {
+	cases:=map[string]provider.TransactionStatus{"00":provider.StatusSuccess,"05":provider.StatusPending,"201":provider.StatusPending,"01":provider.StatusFailed,"02":provider.StatusFailed,"03":provider.StatusFailed,"04":provider.StatusFailed,"06":provider.StatusFailed,"07":provider.StatusFailed,"08":provider.StatusFailed,"09":provider.StatusFailed,"10":provider.StatusFailed,"11":provider.StatusFailed,"12":provider.StatusFailed,"13":provider.StatusFailed,"14":provider.StatusFailed,"15":provider.StatusFailed,"16":provider.StatusFailed,"17":provider.StatusFailed,"18":provider.StatusFailed,"19":provider.StatusFailed,"20":provider.StatusFailed,"21":provider.StatusFailed,"30":provider.StatusFailed,"31":provider.StatusFailed,"32":provider.StatusFailed,"33":provider.StatusFailed,"34":provider.StatusFailed,"35":provider.StatusFailed,"36":provider.StatusFailed,"37":provider.StatusFailed,"38":provider.StatusFailed,"40":provider.StatusFailed,"41":provider.StatusFailed,"42":provider.StatusFailed,"44":provider.StatusFailed,"45":provider.StatusFailed,"76":provider.StatusFailed,"77":provider.StatusFailed,"91":provider.StatusFailed,"92":provider.StatusFailed,"93":provider.StatusFailed,"94":provider.StatusFailed,"100":provider.StatusFailed,"101":provider.StatusFailed,"102":provider.StatusFailed,"103":provider.StatusFailed,"105":provider.StatusFailed,"106":provider.StatusFailed,"107":provider.StatusFailed,"108":provider.StatusFailed,"109":provider.StatusFailed,"110":provider.StatusFailed,"117":provider.StatusFailed,"121":provider.StatusFailed,"131":provider.StatusFailed,"132":provider.StatusFailed,"141":provider.StatusFailed,"142":provider.StatusFailed,"143":provider.StatusFailed,"202":provider.StatusFailed,"203":provider.StatusFailed,"204":provider.StatusFailed,"205":provider.StatusFailed,"206":provider.StatusFailed,"207":provider.StatusFailed,"301":provider.StatusFailed}
+	for rc,want:=range cases { t.Run(rc,func(t *testing.T){ got,err:=mapResponseCode(rc); if err!=nil||got!=want{t.Fatalf("rc %s => %q,%v; want %q",rc,got,err,want)} }) }
+}
+func TestIAKMapResponseCodeRejectsUnknown(t *testing.T) {
+	if _,err:=mapResponseCode("999"); err==nil{t.Fatal("expected unknown response code error")}
+}

@@ -22,6 +22,7 @@ import (
 var (
 	ErrInvalidWebhookSignature = errors.New("invalid DigiFlazz webhook signature")
 	ErrUnknownTransactionStatus = errors.New("unknown DigiFlazz transaction status")
+	ErrUnknownResponseCode = errors.New("unknown DigiFlazz response code")
 )
 
 const (

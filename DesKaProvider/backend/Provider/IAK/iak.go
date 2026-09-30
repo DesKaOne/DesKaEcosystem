@@ -44,7 +44,7 @@ func (c *Client) Inquiry(ctx context.Context, req provider.InquiryRequest)(provi
  if req.CustomerNo==""{return provider.InquiryResult{},errors.New("customer number is required for IAK PLN inquiry")}
  var d map[string]any
  if err:=c.do(ctx,c.inquiryPLNEndpoint,map[string]string{"username":c.username,"customer_id":req.CustomerNo,"sign":c.sig(req.CustomerNo)},&d);err!=nil{return provider.InquiryResult{},err}
- x:=obj(d,"data"); status:=mapInquiry(str(x,"status")); message:=str(x,"message"); if status=="" { return provider.InquiryResult{}, errors.New("IAK inquiry response is missing data.status") }; if message=="" { return provider.InquiryResult{}, errors.New("IAK inquiry response is missing data.message") }; return provider.InquiryResult{Status:status,ProviderCode:str(x,"rc"),Message:message},nil
+ x:=obj(d,"data"); status,statusErr:=mapResponseStatus(str(x,"status"),str(x,"rc")); message:=str(x,"message"); if statusErr!=nil { return provider.InquiryResult{}, statusErr }; if message=="" { return provider.InquiryResult{}, errors.New("IAK inquiry response is missing data.message") }; return provider.InquiryResult{Status:status,ProviderCode:str(x,"rc"),Message:message},nil
 }
 
 func (c *Client) Purchase(ctx context.Context, req provider.PurchaseRequest)(provider.PurchaseResult,error) {
@@ -82,9 +82,9 @@ func (c *Client) HandleWebhook(_ context.Context, req provider.WebhookRequest)(p
  var p map[string]any; if err:=json.Unmarshal(req.Body,&p);err!=nil{return provider.WebhookEvent{},fmt.Errorf("decode IAK webhook: %w",err)}
  ref:=str(p,"ref_id"); if req.SignatureSecret!="" { got:=strings.TrimSpace(req.Signature); if got==""{got=str(p,"sign")}; want:=signature(req.SignatureSecret,c.username,ref); if subtle.ConstantTimeCompare([]byte(got),[]byte(want))!=1{return provider.WebhookEvent{},errors.New("invalid IAK webhook signature")} }
  customerNo, productCode := str(p,"hp"), str(p,"code")
- st, ok := transactionStatus(p["status"])
+ st, statusErr := mapResponseStatus(fmt.Sprint(p["status"]), str(p,"rc")); ok := statusErr == nil
  if ref == "" || customerNo == "" || productCode == "" { return provider.WebhookEvent{}, errors.New("IAK webhook response is missing transaction identity") }
- if !ok { return provider.WebhookEvent{}, errors.New("IAK webhook response has unknown status") }
+ if !ok { return provider.WebhookEvent{}, statusErr }
  message:=str(p,"message"); price,priceOK:=requiredNum(p,"price"); if message=="" { return provider.WebhookEvent{}, errors.New("IAK webhook response is missing message") }; if !priceOK { return provider.WebhookEvent{}, errors.New("IAK webhook response is missing or invalid price") }; return provider.WebhookEvent{ReferenceID:ref,CustomerNo:customerNo,ProductCode:productCode,Status:st,ProviderCode:str(p,"rc"),Message:message,SerialNumber:str(p,"sn"),Price:int64(price)},nil
 }
 
@@ -102,7 +102,27 @@ func num(m map[string]any,k string)float64{n,_:=requiredNum(m,k);return n}
 func requiredNum(m map[string]any,k string)(float64,bool){x,ok:=m[k];if !ok{return 0,false};switch v:=x.(type){case float64:return v,true;case string:n,err:=strconv.ParseFloat(strings.TrimSpace(v),64);return n,err==nil};return 0,false}
 func status(n float64)provider.TransactionStatus{switch int(n){case 1:return provider.StatusSuccess;case 0:return provider.StatusPending;case 2:return provider.StatusFailed;default:return provider.TransactionStatus(strconv.Itoa(int(n)))}}
 func transactionStatus(v any)(provider.TransactionStatus,bool){switch x:=v.(type){case float64:switch int(x){case 0:return provider.StatusPending,true;case 1:return provider.StatusSuccess,true;case 2:return provider.StatusFailed,true};case string:switch strings.TrimSpace(x){case "0":return provider.StatusPending,true;case "1":return provider.StatusSuccess,true;case "2":return provider.StatusFailed,true}};return "",false}
+func mapResponseCode(rc string) (provider.TransactionStatus, error) {
+	switch strings.TrimSpace(rc) {
+	case "00":
+		return provider.StatusSuccess, nil
+	case "05", "201":
+		return provider.StatusPending, nil
+	case "01", "02", "03", "04", "06", "07", "08", "09", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "30", "31", "32", "33", "34", "35", "36", "37", "38", "40", "41", "42", "44", "45", "76", "77", "91", "92", "93", "94", "100", "101", "102", "103", "105", "106", "107", "108", "109", "110", "117", "121", "131", "132", "141", "142", "143", "202", "203", "204", "205", "206", "207", "301":
+		return provider.StatusFailed, nil
+	default:
+		return "", fmt.Errorf("unknown IAK response code %q", strings.TrimSpace(rc))
+	}
+}
+
+func mapResponseStatus(rawStatus, rc string) (provider.TransactionStatus, error) {
+	if strings.TrimSpace(rc) != "" {
+		return mapResponseCode(rc)
+	}
+	return transactionStatus(rawStatus)
+}
+
 func mapInquiry(s string)provider.TransactionStatus{switch strings.TrimSpace(s){case "1":return provider.StatusSuccess;case "2":return provider.StatusFailed;default:return provider.TransactionStatus("")}}
 func iakResponseError(d map[string]any, field string) error { x:=obj(d,"data"); if msg:=str(d,"message"); msg!="" { return fmt.Errorf("IAK response missing data.%s: %s",field,msg) }; if msg:=str(x,"message"); msg!="" { return fmt.Errorf("IAK response missing data.%s: %s",field,msg) }; return fmt.Errorf("IAK response missing data.%s",field) }
-func purchase(d map[string]any)(provider.PurchaseResult,error){x:=obj(d,"data");if len(x)==0{return provider.PurchaseResult{},errors.New("IAK purchase response is missing data")};ref,customer,product:=str(x,"ref_id"),str(x,"customer_id"),str(x,"product_code");st,ok:=transactionStatus(x["status"]);if ref==""||customer==""||product==""{return provider.PurchaseResult{},errors.New("IAK purchase response is missing transaction identity")};if !ok{return provider.PurchaseResult{},errors.New("IAK purchase response has unknown status")};message:=str(x,"message"); price,priceOK:=requiredNum(x,"price"); if message=="" { return provider.PurchaseResult{}, errors.New("IAK purchase response is missing message") }; if !priceOK { return provider.PurchaseResult{}, errors.New("IAK purchase response is missing or invalid price") }; return provider.PurchaseResult{ReferenceID:ref,CustomerNo:customer,ProductCode:product,Status:st,ProviderCode:str(x,"rc"),Message:message,SerialNumber:str(x,"sn"),Price:int64(price)},nil}
-func purchaseStatus(x map[string]any)(provider.PurchaseStatus,error){if len(x)==0{return provider.PurchaseStatus{},errors.New("IAK status response is missing data")};ref,customer,product:=str(x,"ref_id"),str(x,"customer_id"),str(x,"product_code");st,ok:=transactionStatus(x["status"]);if ref==""||customer==""||product==""{return provider.PurchaseStatus{},errors.New("IAK status response is missing transaction identity")};if !ok{return provider.PurchaseStatus{},errors.New("IAK status response has unknown status")};message:=str(x,"message"); price,priceOK:=requiredNum(x,"price"); if message=="" { return provider.PurchaseStatus{}, errors.New("IAK status response is missing message") }; if !priceOK { return provider.PurchaseStatus{}, errors.New("IAK status response is missing or invalid price") }; return provider.PurchaseStatus{ReferenceID:ref,CustomerNo:customer,ProductCode:product,Status:st,ProviderCode:str(x,"rc"),Message:message,SerialNumber:str(x,"sn"),Price:int64(price)},nil}
+func purchase(d map[string]any)(provider.PurchaseResult,error){x:=obj(d,"data");if len(x)==0{return provider.PurchaseResult{},errors.New("IAK purchase response is missing data")};ref,customer,product:=str(x,"ref_id"),str(x,"customer_id"),str(x,"product_code");st,ok:=transactionStatus(x["status"]);if rc:=str(x,"rc"); rc!="" { mapped,mapErr:=mapResponseCode(rc); if mapErr!=nil{return provider.PurchaseResult{},mapErr}; st=mapped; ok=true };if ref==""||customer==""||product==""{return provider.PurchaseResult{},errors.New("IAK purchase response is missing transaction identity")};if !ok{return provider.PurchaseResult{},errors.New("IAK purchase response has unknown status")};message:=str(x,"message"); price,priceOK:=requiredNum(x,"price"); if message=="" { return provider.PurchaseResult{}, errors.New("IAK purchase response is missing message") }; if !priceOK { return provider.PurchaseResult{}, errors.New("IAK purchase response is missing or invalid price") }; return provider.PurchaseResult{ReferenceID:ref,CustomerNo:customer,ProductCode:product,Status:st,ProviderCode:str(x,"rc"),Message:message,SerialNumber:str(x,"sn"),Price:int64(price)},nil}
+func purchaseStatus(x map[string]any)(provider.PurchaseStatus,error){if len(x)==0{return provider.PurchaseStatus{},errors.New("IAK status response is missing data")};ref,customer,product:=str(x,"ref_id"),str(x,"customer_id"),str(x,"product_code");st,ok:=transactionStatus(x["status"]);if rc:=str(x,"rc"); rc!="" { mapped,mapErr:=mapResponseCode(rc); if mapErr!=nil{return provider.PurchaseStatus{},mapErr}; st=mapped; ok=true };if ref==""||customer==""||product==""{return provider.PurchaseStatus{},errors.New("IAK status response is missing transaction identity")};if !ok{return provider.PurchaseStatus{},errors.New("IAK status response has unknown status")};message:=str(x,"message"); price,priceOK:=requiredNum(x,"price"); if message=="" { return provider.PurchaseStatus{}, errors.New("IAK status response is missing message") }; if !priceOK { return provider.PurchaseStatus{}, errors.New("IAK status response is missing or invalid price") }; return provider.PurchaseStatus{ReferenceID:ref,CustomerNo:customer,ProductCode:product,Status:st,ProviderCode:str(x,"rc"),Message:message,SerialNumber:str(x,"sn"),Price:int64(price)},nil}
