@@ -228,6 +228,52 @@ func TestWebhookRequiresPrepaidMetadata(t *testing.T) {
 	}
 }
 
+func TestWebhookRejectsMissingRequiredFields(t *testing.T) {
+	base := map[string]any{
+		"ref_id": "ref-required",
+		"customer_no": "087800001233",
+		"buyer_sku_code": "xld10",
+		"message": "Transaksi Sukses",
+		"status": "Sukses",
+		"rc": "00",
+		"price": 10000,
+	}
+	for _, tc := range []struct {
+		name string
+		remove string
+		want string
+	}{
+		{name: "ref id", remove: "ref_id", want: "missing required ref_id"},
+		{name: "customer number", remove: "customer_no", want: "missing required customer_no"},
+		{name: "buyer sku code", remove: "buyer_sku_code", want: "missing required buyer_sku_code"},
+		{name: "message", remove: "message", want: "missing required message"},
+		{name: "price", remove: "price", want: "missing required price"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			data := make(map[string]any, len(base))
+			for key, value := range base {
+				if key != tc.remove {
+					data[key] = value
+				}
+			}
+			body, err := json.Marshal(map[string]any{"data": data})
+			if err != nil {
+				t.Fatal(err)
+			}
+			c, err := New(config.DigiFlazzConfig{Username: "buyer", APIKey: "secret"}, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = c.HandleWebhook(context.Background(), provider.WebhookRequest{
+				Body: body, Event: "create", UserAgent: "Digiflazz-Hookshot",
+			})
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("expected %s rejection, got %v", tc.want, err)
+			}
+		})
+	}
+}
+
 func TestWebhookRejectsNonPrepaidMetadata(t *testing.T) {
 	body := []byte(`{"data":{"ref_id":"ref-meta","customer_no":"087800001233","buyer_sku_code":"xld10","message":"Transaksi Sukses","status":"Sukses","rc":"00","sn":"SN1","price":10000}}`)
 	c, err := New(config.DigiFlazzConfig{Username: "buyer", APIKey: "secret"}, nil)
