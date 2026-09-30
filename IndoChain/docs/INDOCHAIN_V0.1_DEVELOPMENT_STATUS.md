@@ -2137,3 +2137,12 @@ Milestone ini bukan production durable consensus recovery dan bukan production B
 **4.46 — Persistence Failure Injection & Recovery Harness:** uji partial write, checksum failure, context mismatch, sequence gap, snapshot/WAL replay, dan atomic recovery publication melalui persistence adapter/harness terkontrol tanpa mengaktifkan production persistence.
 
 **Milestone 4.45 status:** implementation/design contract completed; final exact documentation HEAD wajib diverifikasi GREEN oleh CI sebelum milestone dinyatakan selesai.
+
+
+**CI iteration / root cause**
+
+- CI #1437, run 36725502329, exact HEAD c0da0d0b83552b1a65bc3bf0638ecdb2b9b2d58f: RED.
+- Root cause was isolated to persistence_record_contract_test.go: the checksum-corruption fixture shallow-copied record1 and mutated the shared payload backing array, so the earlier valid-append case was unintentionally corrupted.
+- No production consensus logic caused the failure.
+- Fix commit 56bb1406b487324f66c20607259331a1b2d2719d isolates the corrupted payload before mutation.
+- Final milestone gate remains the exact documentation HEAD after this fix and must be GREEN.
