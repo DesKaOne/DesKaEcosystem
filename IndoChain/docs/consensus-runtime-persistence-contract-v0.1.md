@@ -187,3 +187,103 @@ Canonical block/state commit remains outside this sequence.
 
 The contract is sufficiently explicit for deterministic serialization test vectors, but **not yet sufficient to activate production WAL/snapshot recovery**. Crash/fsync semantics, record format, snapshot lifecycle, WAL ordering, durable atomicity across consensus and canonical state, and distributed recovery coordination still require a separate design step.
 
+
+
+## 4.45 WAL/Snapshot Record Contract & Crash Boundary Matrix
+
+Milestone 4.45 defines the persistence record boundary without activating a production WAL/snapshot writer or reader.
+
+### Record envelope
+
+IndoChain/internal/consensus/persistence_record_contract.go defines a versioned record envelope containing:
+
+- format version;
+- record type (snapshot or WAL);
+- strictly ordered sequence number;
+- exact consensus-context digest;
+- opaque payload bytes;
+- SHA-256 integrity checksum over the canonical envelope fields.
+
+The envelope is a contract object only. It does not perform file I/O, fsync, rename, log rotation, or recovery activation.
+
+### Ordering contract
+
+- The first WAL record must use sequence 1.
+- Subsequent records must advance exactly by one from the last durable sequence.
+- A snapshot establishes a durable sequence boundary and is followed by contiguous WAL records.
+- Duplicate, stale, or gapped sequences are rejected.
+- Record validation is bound to the expected consensus-context digest.
+
+### Integrity and context binding
+
+The checksum covers format version, record type, sequence, context digest, payload length, and payload bytes. Mutating payload or context without recomputing the checksum is rejected.
+
+The context digest is derived from a deterministic binary representation of:
+
+- protocol version;
+- chain ID;
+- epoch;
+- height;
+- round;
+- phase;
+- validator authority digest;
+- voting-power digest;
+- quorum threshold;
+- proposer policy and policy version.
+
+A record from another protocol/chain/epoch/height/round context therefore cannot be accepted merely because its sequence number is newer.
+
+### Snapshot/WAL interaction
+
+The contract treats a snapshot at sequence N as the recovery base. WAL replay starts at N+1 and must remain contiguous. No WAL record at or below the snapshot base may be replayed as new state.
+
+This milestone does not define snapshot file layout, compaction, retention, or garbage collection.
+
+### Crash boundary matrix
+
+| Cut point | Required recovery result |
+|---|---|
+| before append | previous durable sequence remains authoritative |
+| complete record append | record may become eligible after integrity/context validation |
+| partial record append | partial bytes are not a valid record |
+| checksum corruption | reject record; do not advance durable sequence |
+| context mismatch | reject record; do not mutate recovered runtime |
+| sequence gap | reject replay; do not infer missing records |
+| duplicate/stale sequence | reject replay |
+| snapshot + contiguous WAL | restore snapshot, then replay WAL strictly in order |
+| canonical commit failure | consensus recovery must not imply partial canonical state mutation |
+
+### Deterministic vectors
+
+IndoChain/internal/consensus/persistence_record_contract_test.go covers:
+
+- deterministic checksum regression vector;
+- valid first WAL record;
+- sequence gap;
+- duplicate sequence;
+- context mismatch;
+- payload corruption;
+- unsupported format version;
+- snapshot followed by contiguous WAL;
+- context-digest change detection.
+
+These are contract-level vectors. They do not establish durable crash recovery until a storage implementation exists and is tested against actual filesystem/process crash behavior.
+
+### Safety boundary
+
+4.45 does not activate production persistence. It does not implement:
+
+- WAL file I/O;
+- snapshot file I/O;
+- fsync or directory durability policy;
+- atomic cross-file consensus/canonical-state commit;
+- process crash recovery;
+- distributed recovery;
+- validator lifecycle persistence;
+- production BFT scheduler/liveness.
+
+The existing node/storage boundary remains the owner of canonical block/state commit.
+
+### Next milestone
+
+**4.46 — Persistence Failure Injection & Recovery Harness:** exercise the 4.45 contract against a controlled persistence adapter/harness, including partial writes, checksum failures, context mismatch, sequence gaps, snapshot/WAL replay, and atomic recovery publication, while keeping production activation disabled until the crash semantics are explicitly tested.
