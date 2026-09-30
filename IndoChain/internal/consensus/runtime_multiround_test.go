@@ -290,3 +290,140 @@ func lockProofEqual(a, b *LockProof) bool {
 	}
 	return true
 }
+
+
+func TestValidatorRuntimeRoundChangeScenarioMatrix(t *testing.T) {
+	tests := []struct {
+		name string
+		run  func(*testing.T)
+	}{
+		{
+			name: "higher-lock-adoption",
+			run: func(t *testing.T) {
+				runtime, state, validators, power := runtimeFixture(t)
+				runtime.state.Round = 1
+				runtime.lockedProposal = []byte("old-proposal")
+				runtime.lockedRound = 0
+				signerA, signerB, resolver := newTimeoutTestSignerPair(t)
+				proof := timeoutLockProofAtRound(t, state, validators, power, 1, "new-proposal", signerA, signerB)
+				if _, err := runtime.AdvanceRoundWithTimeoutEvidence(timeoutMessagesForProof(t, runtime.State(), proof, signerA, signerB), resolver); err != nil {
+					t.Fatalf("higher-lock adoption failed: %v", err)
+				}
+				if runtime.lockedRound != 1 || !bytes.Equal(runtime.lockedProposal, []byte("new-proposal")) {
+					t.Fatal("higher lock was not adopted")
+				}
+			},
+		},
+		{
+			name: "lower-lock-non-downgrade",
+			run: func(t *testing.T) {
+				runtime, state, validators, power := runtimeFixture(t)
+				runtime.state.Round = 2
+				runtime.lockedProposal = []byte("current-lock")
+				runtime.lockedRound = 1
+				signerA, signerB, resolver := newTimeoutTestSignerPair(t)
+				proof := timeoutLockProofAtRound(t, state, validators, power, 0, "current-lock", signerA, signerB)
+				if _, err := runtime.AdvanceRoundWithTimeoutEvidence(timeoutMessagesForProof(t, runtime.State(), proof, signerA, signerB), resolver); err != nil {
+					t.Fatalf("lower-lock timeout should still advance round: %v", err)
+				}
+				if runtime.lockedRound != 1 || !bytes.Equal(runtime.lockedProposal, []byte("current-lock")) {
+					t.Fatal("lower lock downgraded existing lock")
+				}
+			},
+		},
+		{
+			name: "equal-lock-conflict",
+			run: func(t *testing.T) {
+				runtime, state, validators, power := runtimeFixture(t)
+				runtime.state.Round = 1
+				runtime.lockedProposal = []byte("existing")
+				runtime.lockedRound = 0
+				signerA, signerB, resolver := newTimeoutTestSignerPair(t)
+				proofA := timeoutLockProofAtRound(t, state, validators, power, 0, "proposal-a", signerA, signerB)
+				proofB := timeoutLockProofAtRound(t, state, validators, power, 0, "proposal-b", signerA, signerB)
+				msgA, err := NewTimeoutMessageWithLockProof(runtime.State(), []byte("validator-a"), 2, proofA, signerA)
+				if err != nil { t.Fatal(err) }
+				msgB, err := NewTimeoutMessageWithLockProof(runtime.State(), []byte("validator-b"), 2, proofB, signerB)
+				if err != nil { t.Fatal(err) }
+				before := runtime.state
+				if _, err := runtime.AdvanceRoundWithTimeoutEvidence([]Message{msgA, msgB}, resolver); !errors.Is(err, ErrConflictingTimeoutLock) {
+					t.Fatalf("conflicting equal-lock error = %v", err)
+				}
+				if runtime.state != before || runtime.lockedRound != 0 || !bytes.Equal(runtime.lockedProposal, []byte("existing")) {
+					t.Fatal("equal-lock conflict mutated runtime state")
+				}
+			},
+		},
+		{
+			name: "delayed-reordered-timeout-evidence",
+			run: func(t *testing.T) {
+				runtime, state, _, _ := runtimeFixture(t)
+				signerA, signerB, resolver := newTimeoutTestSignerPair(t)
+				msgA, err := NewTimeoutMessage(state, []byte("validator-a"), 1, signerA)
+				if err != nil { t.Fatal(err) }
+				msgB, err := NewTimeoutMessage(state, []byte("validator-b"), 1, signerB)
+				if err != nil { t.Fatal(err) }
+				if _, err := runtime.AdvanceRoundWithTimeoutEvidence([]Message{msgB, msgA}, resolver); err != nil {
+					t.Fatalf("reordered timeout evidence failed: %v", err)
+				}
+				if runtime.State().Round != 1 || runtime.State().Phase != PhaseProposal {
+					t.Fatal("reordered evidence did not produce deterministic round change")
+				}
+			},
+		},
+		{
+			name: "invalid-signature",
+			run: func(t *testing.T) {
+				runtime, state, validators, power := runtimeFixture(t)
+				signerA, signerB, resolver := newTimeoutTestSignerPair(t)
+				proof := timeoutLockProofAtRound(t, state, validators, power, 0, "proposal", signerA, signerB)
+				proof.Certificate.Votes[0].Signature[0] ^= 0xff
+				before := runtime.state
+				_, err := runtime.AdvanceRoundWithTimeoutEvidence(timeoutMessagesForProof(t, runtime.State(), proof, signerA, signerB), resolver)
+				if !errors.Is(err, ErrInvalidSignature) {
+					t.Fatalf("invalid signature error = %v", err)
+				}
+				if runtime.state != before || runtime.lockedProof != nil {
+					t.Fatal("invalid signature mutated runtime state")
+				}
+			},
+		},
+		{
+			name: "duplicate-evidence",
+			run: func(t *testing.T) {
+				runtime, state, _, _ := runtimeFixture(t)
+				signerA, _, resolver := newTimeoutTestSignerPair(t)
+				msg, err := NewTimeoutMessage(state, []byte("validator-a"), 1, signerA)
+				if err != nil { t.Fatal(err) }
+				before := runtime.state
+				if _, err := runtime.AdvanceRoundWithTimeoutEvidence([]Message{msg, msg}, resolver); err == nil {
+					t.Fatal("duplicate timeout evidence was accepted")
+				}
+				if runtime.state != before {
+					t.Fatal("duplicate timeout evidence mutated runtime state")
+				}
+			},
+		},
+		{
+			name: "cross-height-replay",
+			run: func(t *testing.T) {
+				runtime, state, validators, power := runtimeFixture(t)
+				proofState := state
+				proofState.Height++
+				signerA, signerB, resolver := newTimeoutTestSignerPair(t)
+				proof := timeoutLockProofAtRound(t, proofState, validators, power, proofState.Round, "height-mismatch", signerA, signerB)
+				before := runtime.state
+				_, err := runtime.AdvanceRoundWithTimeoutEvidence(timeoutMessagesForProof(t, runtime.State(), proof, signerA, signerB), resolver)
+				if !errors.Is(err, ErrStateContextMismatch) {
+					t.Fatalf("cross-height replay error = %v", err)
+				}
+				if runtime.state != before || runtime.lockedProof != nil {
+					t.Fatal("cross-height replay mutated runtime state")
+				}
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, tc.run)
+	}
+}
