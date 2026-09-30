@@ -4908,3 +4908,34 @@ The current IAK API Guide lists a separate V2 Check Balance endpoint. The reposi
 This audit deliberately avoids inventing V2 request semantics. A future endpoint-version-specific change requires the official V2 Check Balance request contract to be retrievable or otherwise supplied as authoritative source material.
 
 No retry, failover, resubmission, refund automation, ledger mutation, customer-balance mutation, treasury movement, or provider funding behavior was introduced.
+
+
+## IAK Price List Request Contract Regression Coverage
+
+**Date:** 2026-09-30
+
+### Source Basis
+
+The current official IAK Prepaid v2 Price List contract defines POST `api/pricelist/:type/:operator` with mandatory `username` and `sign=md5(username+api_key+'pl')`. The optional `status` request value is restricted to `all`, `active`, or `non active`. citeturn0search0
+
+### Implementation / Deterministic Coverage
+
+- Added credential-free regression coverage for the exact provider-neutral Price List request mapping already implemented by the adapter.
+- The test verifies the configured endpoint path, username, `md5(username+api_key+'pl')` signature, and all three documented status values:
+  - no ProductRequest.Active filter -> `all`;
+  - Active=true -> `active`;
+  - Active=false -> `non active`.
+- No production request behavior was changed because the existing adapter already matched the authoritative V2 request contract.
+- No V1-only `commands=pricelist` field was introduced into the repository's V2-style endpoint.
+
+### Safety Boundary
+
+- Deterministic request-contract coverage is credential-free.
+- No retry, failover, transaction resubmission, duplicate transaction creation, ledger/customer-balance/treasury mutation, or provider funding was introduced.
+- LiveTested and ProductionReady remain explicit and unpromoted.
+- This batch does not infer or introduce any undocumented Price List semantics.
+
+### Verification Boundary
+
+The resulting HEAD must reach GREEN CI before this batch is considered complete. Credential-gated IAK validation remains separate and is not replaced by deterministic fixtures.
+
