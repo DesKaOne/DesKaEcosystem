@@ -1680,3 +1680,69 @@ Consensus foundation sekarang memiliki boundary yang lebih jelas antara evidence
 **4.39 — Production Round Driver Specification & Adversarial Multi-Node Harness:** definisikan state-machine orchestration contract untuk proposal/prevote/precommit/timeout/LockProof/finality, lalu bangun deterministic multi-node adversarial harness sebelum production scheduler atau persistent consensus state.
 
 **Milestone 4.38 status:** implementation/test HEAD `7e979d23a852ccec6859b1e1b20088da1fa35841` GREEN pada CI #1374. Documentation follow-up ini wajib diverifikasi kembali pada exact documentation HEAD sebelum milestone dinyatakan final GREEN.
+
+
+### 4.39 Production Round Driver Specification & Adversarial Multi-Node Harness
+
+**Tanggal:** 2026-09-30
+
+**Objective**
+
+Mendefinisikan orchestration contract di atas ValidatorRuntime dan memperkuat deterministic multi-node adversarial harness sebelum production timeout scheduler, network-wide round synchronization, atau persistent consensus driver dibuat.
+
+**Specification**
+
+Dokumen baru: `IndoChain/docs/consensus-round-driver-spec-v0.1.md`.
+
+Contract yang dikunci:
+
+- runtime tetap menjadi owner protocol/chain/epoch/height/round, proposal, prevote/precommit evidence, lock, LockProof, dan authenticated finality;
+- round driver hanya mengorkestrasi proposal → vote → precommit → finality atau timeout → evidence batch → round change;
+- runtime rejection diperlakukan sebagai state-machine decision dan tidak boleh dibypass dengan mutasi langsung;
+- timeout batch wajib exact-context, authenticated, quorum-valid, dan lock-consistent;
+- higher-lock boleh menggantikan lower-lock, equal-lock conflict ditolak, lower-lock tidak boleh downgrade;
+- replay old-round/cross-height evidence ditolak dan tidak boleh meregresikan state;
+- P2P hanya menjadi transport/encoding boundary, bukan quorum/lock/finality authority;
+- finalized consensus evidence tetap harus melewati node finalized-block validation → execution → durable commit.
+
+**Adversarial multi-node harness**
+
+File: `IndoChain/internal/p2p/consensus_round_driver_adversarial_test.go`.
+
+Coverage baru:
+
+1. transport-backed stale round proposal setelah node maju ke round berikutnya ditolak tanpa state regression;
+2. conflicting timeout locks dari dua validator ditolak secara atomic;
+3. timeout evidence round lama yang direplay setelah round change ditolak tanpa round regression.
+
+Existing regression suites tetap menjadi coverage untuk cross-height context, signature tampering, duplicate evidence, failed higher-lock atomicity, authenticated finality, dan finalized node handoff.
+
+**Production code impact**
+
+Tidak ada production scheduler/network driver baru. Milestone ini sengaja berhenti di specification + deterministic adversarial harness agar tidak menciptakan pseudo-production BFT tanpa protocol timeout scheduling, failure detection, network-wide synchronization, dan persistence semantics yang sudah dibekukan.
+
+**Safety boundary**
+
+Milestone ini bukan production BFT completion dan tidak mengklaim production proposer/validator algorithm, network-wide liveness, persistent consensus recovery, validator-set lifecycle, atau formal BFT safety/liveness proof.
+
+**Verification**
+
+- Adversarial harness implementation/test HEAD: `fa6b159810c530fe8cb112bd78e9fba3daa32789`
+- IndoChain CI #1384, run `36717060270`: PASS
+- Tidy: PASS
+- `go test ./...`: PASS
+- `go test -race ./...`: PASS
+- `go vet ./...`: PASS
+- PostgreSQL: tidak relevan; milestone ini hanya consensus/P2P test harness dan specification.
+- Documentation specification commit: `9b2d70de9ae1db6db049b544bdc992f74f7cd3bc`; exact documentation HEAD wajib diverifikasi ulang sebagai final gate.
+
+**Known limitations**
+
+- production timeout scheduler dan network-wide round synchronization belum diimplementasikan;
+- real multi-node consensus driver belum menjadi production runtime;
+- validator/proposer lifecycle, authority persistence, durable consensus recovery, adversarial network failure simulation, dan production block-production loop masih terbuka;
+- formal protocol/BFT safety-liveness analysis belum dilakukan.
+
+**Next milestone**
+
+**4.40 — Multi-Node Round-Change / Lock Adoption Scenario Matrix:** memperluas harness menjadi deterministic scenario matrix untuk higher-lock adoption, lower-lock non-downgrade, equal-lock conflict, delayed/reordered evidence, invalid signatures, dan multi-height replay sebelum menyentuh production scheduler/persistent consensus state.
