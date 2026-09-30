@@ -128,10 +128,20 @@ func (c *Client) HandleWebhook(_ context.Context, req provider.WebhookRequest)(p
  if err:=json.Unmarshal(req.Body,&p);err!=nil{return provider.WebhookEvent{},fmt.Errorf("decode IAK webhook: %w",err)}
 
  ref:=strings.TrimSpace(str(p,"ref_id"))
- customerNo:=strings.TrimSpace(str(p,"customer_id"))
- if customerNo=="" { customerNo=strings.TrimSpace(str(p,"hp")) }
- productCode:=strings.TrimSpace(str(p,"product_code"))
- if productCode=="" { productCode=strings.TrimSpace(str(p,"code")) }
+ customerV2:=strings.TrimSpace(str(p,"customer_id"))
+ customerV1:=strings.TrimSpace(str(p,"hp"))
+ if customerV2!="" && customerV1!="" && customerV2!=customerV1 {
+  return provider.WebhookEvent{}, errors.New("IAK webhook response has conflicting customer ID fields")
+ }
+ customerNo:=customerV2
+ if customerNo=="" { customerNo=customerV1 }
+ productV2:=strings.TrimSpace(str(p,"product_code"))
+ productV1:=strings.TrimSpace(str(p,"code"))
+ if productV2!="" && productV1!="" && productV2!=productV1 {
+  return provider.WebhookEvent{}, errors.New("IAK webhook response has conflicting product code fields")
+ }
+ productCode:=productV2
+ if productCode=="" { productCode=productV1 }
  rc:=strings.TrimSpace(str(p,"rc"))
  bodySign:=strings.TrimSpace(str(p,"sign"))
  if ref == "" || customerNo == "" || productCode == "" {
