@@ -97,13 +97,49 @@ func (c *Client) GetBalance(ctx context.Context)(int64,error) {
 }
 
 func (c *Client) HandleWebhook(_ context.Context, req provider.WebhookRequest)(provider.WebhookEvent,error) {
- var p map[string]any; if err:=json.Unmarshal(req.Body,&p);err!=nil{return provider.WebhookEvent{},fmt.Errorf("decode IAK webhook: %w",err)}
- ref:=str(p,"ref_id"); if req.SignatureSecret!="" { got:=strings.TrimSpace(req.Signature); if got==""{got=str(p,"sign")}; want:=signature(req.SignatureSecret,c.username,ref); if subtle.ConstantTimeCompare([]byte(got),[]byte(want))!=1{return provider.WebhookEvent{},errors.New("invalid IAK webhook signature")} }
- customerNo, productCode := str(p,"hp"), str(p,"code")
- st, statusErr := mapResponseStatus(fmt.Sprint(p["status"]), str(p,"rc")); ok := statusErr == nil
- if ref == "" || customerNo == "" || productCode == "" { return provider.WebhookEvent{}, errors.New("IAK webhook response is missing transaction identity") }
- if !ok { return provider.WebhookEvent{}, statusErr }
- message:=str(p,"message"); price,priceOK:=requiredNum(p,"price"); if message=="" { return provider.WebhookEvent{}, errors.New("IAK webhook response is missing message") }; if !priceOK { return provider.WebhookEvent{}, errors.New("IAK webhook response is missing or invalid price") }; return provider.WebhookEvent{ReferenceID:ref,CustomerNo:customerNo,ProductCode:productCode,Status:st,ProviderCode:str(p,"rc"),Message:message,SerialNumber:str(p,"sn"),Price:int64(price)},nil
+ var p map[string]any
+ if err:=json.Unmarshal(req.Body,&p);err!=nil{return provider.WebhookEvent{},fmt.Errorf("decode IAK webhook: %w",err)}
+
+ ref:=strings.TrimSpace(str(p,"ref_id"))
+ customerNo:=strings.TrimSpace(str(p,"hp"))
+ productCode:=strings.TrimSpace(str(p,"code"))
+ rc:=strings.TrimSpace(str(p,"rc"))
+ bodySign:=strings.TrimSpace(str(p,"sign"))
+ if ref == "" || customerNo == "" || productCode == "" {
+  return provider.WebhookEvent{}, errors.New("IAK webhook response is missing transaction identity")
+ }
+ if rc == "" { return provider.WebhookEvent{}, errors.New("IAK webhook response is missing rc") }
+ if bodySign == "" && strings.TrimSpace(req.Signature) == "" {
+  return provider.WebhookEvent{}, errors.New("IAK webhook response is missing sign")
+ }
+ got:=strings.TrimSpace(req.Signature)
+ if got=="" { got=bodySign }
+ if req.SignatureSecret!="" {
+  want:=signature(req.SignatureSecret,c.username,ref)
+  if subtle.ConstantTimeCompare([]byte(got),[]byte(want))!=1{return provider.WebhookEvent{},errors.New("invalid IAK webhook signature")}
+ }
+
+ rawStatus:=fmt.Sprint(p["status"])
+ status, statusOK:=transactionStatus(p["status"])
+ if !statusOK || (status != provider.StatusSuccess && status != provider.StatusFailed) {
+  return provider.WebhookEvent{}, fmt.Errorf("IAK webhook response has invalid callback status %q", strings.TrimSpace(rawStatus))
+ }
+ mapped, mapErr:=mapResponseCode(rc)
+ if mapErr!=nil { return provider.WebhookEvent{}, mapErr }
+ if mapped!=status {
+  return provider.WebhookEvent{}, fmt.Errorf("IAK webhook response status %q conflicts with rc %q", status, rc)
+ }
+
+ message:=str(p,"message")
+ price,priceOK:=requiredNum(p,"price")
+ _,balanceOK:=requiredNum(p,"balance")
+ _,trIDOK:=requiredNum(p,"tr_id")
+ if message=="" { return provider.WebhookEvent{}, errors.New("IAK webhook response is missing message") }
+ if !priceOK { return provider.WebhookEvent{}, errors.New("IAK webhook response is missing or invalid price") }
+ if !balanceOK { return provider.WebhookEvent{}, errors.New("IAK webhook response is missing or invalid balance") }
+ if !trIDOK { return provider.WebhookEvent{}, errors.New("IAK webhook response is missing or invalid tr_id") }
+
+ return provider.WebhookEvent{ReferenceID:ref,CustomerNo:customerNo,ProductCode:productCode,Status:status,ProviderCode:rc,Message:message,SerialNumber:str(p,"sn"),Price:int64(price)},nil
 }
 
 func (c *Client) do(ctx context.Context, endpoint string, payload any, out *map[string]any) error {
