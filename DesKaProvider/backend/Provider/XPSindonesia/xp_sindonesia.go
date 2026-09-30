@@ -54,9 +54,11 @@ func (c *Client) Purchase(ctx context.Context, req provider.PurchaseRequest) (pr
 
 func (c *Client) GetBalance(ctx context.Context)(int64,error){
  values:=url.Values{"id":{c.id},"key":{c.key},"api":{c.api}}
- var out struct{Success string;Saldo json.RawMessage;Error string}
+ var out struct{Success string;ID string;Saldo json.RawMessage;Error string}
  if err:=c.postJSON(ctx,c.saldoEndpoint,values,&out);err!=nil{return 0,err}
+ if out.Success!="0"&&out.Success!="1"{return 0,fmt.Errorf("XP balance response has invalid success value %q",out.Success)}
  if out.Success!="1"{return 0,fmt.Errorf("XP balance request failed: %s",out.Error)}
+ if out.ID!=c.id{return 0,errors.New("XP balance response member ID mismatch")}
  if len(out.Saldo)==0{return 0,errors.New("XP balance response is missing saldo")}
  var s string;if err:=json.Unmarshal(out.Saldo,&s);err==nil{return parseInt(s)}
  var n int64;if err:=json.Unmarshal(out.Saldo,&n);err!=nil{return 0,fmt.Errorf("XP balance response has invalid saldo: %w",err)};return n,nil
