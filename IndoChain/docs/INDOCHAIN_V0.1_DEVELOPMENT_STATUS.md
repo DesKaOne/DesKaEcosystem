@@ -2338,3 +2338,41 @@ CI #1489 / run 36734412117: GREEN / success. Tidy, Test, Race Test, dan Vet semu
 **Next milestone**
 
 4.49 completed after exact-head CI gate. Next milestone ditentukan setelah review status branch berikutnya.
+
+### 4.50 Finalized Block Replay & Stale Context Regression
+
+**Tanggal:** 2026-09-30
+
+**Objective**
+
+Memastikan finalized block replay dan stale consensus context tidak dapat melewati canonical node/storage validation boundary.
+
+**Implementation**
+
+- `IndoChain/internal/node/node_test.go`
+  - `TestCommitFinalizedBlockRejectsAlreadyCommittedBlockWithoutMutation`
+  - `TestCommitFinalizedBlockRejectsDifferentBlockAtCommittedHeightWithoutMutation`
+  - `TestCommitFinalizedBlockRejectsStaleContextWithoutStorageMutation`
+- `IndoChain/docs/consensus-finalized-replay-stale-context-v0.1.md`
+
+**Locked invariants**
+
+1. Exact finalized replay ditolak tanpa mutation.
+2. Different block pada committed height tidak bypass context validation.
+3. Stale context ditolak sebelum storage mutation.
+4. Rejection tidak mengubah canonical node/storage state.
+5. Tidak ada automatic retry/resubmission.
+
+**Production code impact**
+
+Tidak ada perubahan production behavior; milestone ini menambah regression coverage.
+
+**Verification**
+
+Implementation commit: `5d4a9518eb9aac7a55bb394ed9734a1fdcd415fe`.
+
+Exact-head CI gate: pending.
+
+**Next milestone**
+
+Ditentukan setelah 4.50 exact-head CI gate GREEN.
