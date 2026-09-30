@@ -5709,3 +5709,38 @@ Production hardening commit: `e5c395dbbf1991e0095bcb34d8764bbc3b74fd2e`.
 Deterministic regression commit: `67dc2843209ddb644a2a94e7e2eef732d6bb4365`.
 
 The resulting HEAD must receive GREEN Push CI for test, vet, race, and applicable service-backed validation before this batch is considered complete. Credential-gated live-provider validation may remain skipped when credentials are unavailable.
+
+
+## XP SINDONESIA Order / Callback Identity Boundary Hardening
+
+**Date:** 2026-10-01
+
+### Source Basis
+
+The repository's authoritative XP SINDONESIA API document defines Order responses with a success discriminator ("1" for success responses and "0" for error responses). The documented callback payload includes the member id, transaction identity fields, status, and optional serial number. The callback example also authenticates the received member ID and key before accepting the callback.
+
+### Audit Finding
+
+The XP adapter validated order transaction identity and mapped documented order states, but it did not reject an unknown success discriminator. The callback parser only required a non-empty member ID, allowing a callback carrying another member's ID to reach status mapping when the callback key matched the configured secret.
+
+### Implementation
+
+- Purchase now accepts only documented Order response success values "0" or "1"; unknown values fail closed.
+- HandleWebhook now requires the callback id to match the configured XP member ID.
+- Existing callback key validation, terminal callback status restriction (sukses / gagal), transaction identity checks, and serial-number mapping remain unchanged.
+- No retry, resubmission, duplicate purchase, balance mutation, ledger mutation, treasury movement, or provider funding behavior was introduced.
+
+### Deterministic Coverage
+
+Added:
+
+- TestXPPurchaseRejectsInvalidSuccessDiscriminator
+- TestXPCallbackRejectsMemberIDMismatch
+
+### Verification Boundary
+
+Production hardening commit: 5c6c6aae46ba9c5d8775aba15cbd3899575f024f.
+
+Deterministic regression commit: 1ae1730f6993414336c525b4c8ec04bc75f85fb4.
+
+The resulting HEAD must receive GREEN Push and PR CI, including test, vet, race, and applicable service-backed validation. Credential-gated provider validation may remain skipped when credentials/configuration are unavailable.
