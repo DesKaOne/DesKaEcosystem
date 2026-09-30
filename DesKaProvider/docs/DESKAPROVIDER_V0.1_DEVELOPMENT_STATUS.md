@@ -4473,3 +4473,37 @@ This is a representation-boundary validation only. No balance mutation, ledger m
 - Live/sandbox IAK validation remains credential-gated.
 - This batch is not considered complete until the final HEAD has GREEN CI.
 
+
+
+## IAK Prepaid Response-Code Contract Alignment
+
+**Date:** 2026-09-30
+
+### Source Basis
+
+The current IAK Prepaid Response Code documentation lists `00` as Success; `39` and `201` as Pending; and the documented Failed codes as `06`, `07`, `10`, `12`, `13`, `14`, `16`, `17`, `18`, `19`, `20`, `21`, `102`, `106`, `107`, `110`, `117`, `121`, `131`, `132`, `141`, `142`, `202`, `203`, `204`, `205`, `206`, and `207`. Code `143` is documented separately for Game Inquiry only, not as a generic prepaid transaction code. citeturn10search0
+
+### Implementation
+
+- IAK `mapResponseCode()` is now restricted to the current documented generic Prepaid response-code contract.
+- Previously accepted legacy/undocumented codes are no longer silently classified as Failed.
+- Game-Inquiry-only code `143` is not exposed through the generic transaction mapper.
+- Unknown and undocumented codes remain fail-closed.
+
+### Deterministic Coverage
+
+Added a table-driven mapper contract test covering every current generic Prepaid response code and explicit rejection of representative undocumented/legacy codes, including Game-Inquiry-only `143`.
+
+### Safety Boundary
+
+This change only tightens response classification. No retry, failover, resubmission, refund automation, ledger mutation, customer-balance mutation, treasury movement, or provider funding behavior was introduced.
+
+### Verification Boundary
+
+- Response-code mapping tests are credential-free.
+- Live/sandbox IAK validation remains credential-gated.
+- This batch is not complete until the final HEAD has GREEN CI.
+
+### Next Concrete Engineering Task
+
+Continue the IAK audit for remaining already-supported response/request boundaries, especially balance and HTTP error fixtures, without expanding the provider-neutral capability surface or inventing undocumented semantics.
