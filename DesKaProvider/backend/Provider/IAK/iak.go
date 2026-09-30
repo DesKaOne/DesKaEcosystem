@@ -43,9 +43,25 @@ func (c *Client) GetProducts(ctx context.Context, req provider.ProductRequest)([
  } else {
   return nil, errors.New("IAK pricelist response is missing data.rc")
  }
+ message:=strings.TrimSpace(str(data,"message"))
+ if message=="" { return nil, errors.New("IAK pricelist response is missing data.message") }
  if _,ok:=data["pricelist"]; !ok { return nil, iakResponseError(d, "pricelist") }
  list,ok:=data["pricelist"].([]any); if !ok { return nil, iakResponseError(d, "pricelist") }; out:=make([]provider.Product,0,len(list))
- for _,v:=range list { x,ok:=v.(map[string]any); if !ok { return nil, errors.New("IAK response contains invalid pricelist item") }; code,name:=str(x,"product_code"),str(x,"product_description"); if code==""||name=="" { return nil, errors.New("IAK response contains incomplete pricelist item") }; cat:=str(x,"product_category"); active:=strings.EqualFold(str(x,"status"),"active"); if req.Category!=""&&!strings.EqualFold(strings.TrimSpace(cat),strings.TrimSpace(req.Category)){continue}; if req.Active!=nil&&active!=*req.Active{continue}; out=append(out,provider.Product{Code:code,Name:name}) }
+ for _,v:=range list {
+  x,ok:=v.(map[string]any); if !ok { return nil, errors.New("IAK response contains invalid pricelist item") }
+  for _,field:=range []string{"product_code","product_description","product_details","product_nominal","product_type","active_period","status","icon_url","product_category"} {
+   if strings.TrimSpace(str(x,field))=="" { return nil, fmt.Errorf("IAK pricelist item is missing %s",field) }
+  }
+  if _,ok:=requiredNum(x,"product_price"); !ok { return nil, errors.New("IAK pricelist item has missing or invalid product_price") }
+  code,name:=strings.TrimSpace(str(x,"product_code")),strings.TrimSpace(str(x,"product_description"))
+  cat:=strings.TrimSpace(str(x,"product_category"))
+  rawStatus:=strings.TrimSpace(str(x,"status"))
+  if !strings.EqualFold(rawStatus,"active") && !strings.EqualFold(rawStatus,"non active") { return nil, fmt.Errorf("IAK pricelist item has invalid status %q",rawStatus) }
+  active:=strings.EqualFold(rawStatus,"active")
+  if req.Category!=""&&!strings.EqualFold(cat,strings.TrimSpace(req.Category)){continue}
+  if req.Active!=nil&&active!=*req.Active{continue}
+  out=append(out,provider.Product{Code:code,Name:name})
+ }
  return out,nil
 }
 
