@@ -144,7 +144,7 @@ func (c *Client) HandleWebhook(_ context.Context, req provider.WebhookRequest)(p
  message:=str(p,"message")
  price,priceOK:=requiredNum(p,"price")
  _,balanceOK:=requiredNum(p,"balance")
- _,trIDOK:=requiredNum(p,"tr_id")
+ _,trIDOK:=requiredIntegerNum(p,"tr_id")
  if message=="" { return provider.WebhookEvent{}, errors.New("IAK webhook response is missing message") }
  if !priceOK { return provider.WebhookEvent{}, errors.New("IAK webhook response is missing or invalid price") }
  if !balanceOK { return provider.WebhookEvent{}, errors.New("IAK webhook response is missing or invalid balance") }
@@ -174,6 +174,7 @@ func obj(m map[string]any,k string)map[string]any{x,_:=m[k].(map[string]any);ret
 func str(m map[string]any,k string)string{x,_:=m[k].(string);return x}
 func num(m map[string]any,k string)float64{n,_:=requiredNum(m,k);return n}
 func requiredNum(m map[string]any,k string)(float64,bool){x,ok:=m[k];if !ok{return 0,false};switch v:=x.(type){case float64:return v,true;case string:n,err:=strconv.ParseFloat(strings.TrimSpace(v),64);return n,err==nil};return 0,false}
+func requiredIntegerNum(m map[string]any,k string)(float64,bool){n,ok:=requiredNum(m,k);if !ok||math.Trunc(n)!=n{return 0,false};return n,true}
 func status(n float64)provider.TransactionStatus{switch int(n){case 1:return provider.StatusSuccess;case 0:return provider.StatusPending;case 2:return provider.StatusFailed;default:return provider.TransactionStatus(strconv.Itoa(int(n)))}}
 func transactionStatus(v any)(provider.TransactionStatus,bool){switch x:=v.(type){case float64:switch int(x){case 0:return provider.StatusPending,true;case 1:return provider.StatusSuccess,true;case 2:return provider.StatusFailed,true};case string:switch strings.TrimSpace(x){case "0":return provider.StatusPending,true;case "1":return provider.StatusSuccess,true;case "2":return provider.StatusFailed,true}};return "",false}
 func mapResponseCode(rc string) (provider.TransactionStatus, error) {
@@ -214,7 +215,7 @@ func validateTransactionResponse(x map[string]any, operation string) (provider.T
  if str(x,"message")=="" { return "", fmt.Errorf("IAK %s response is missing message", operation) }
  if _, ok := requiredNum(x,"price"); !ok { return "", fmt.Errorf("IAK %s response is missing or invalid price", operation) }
  if _, ok := requiredNum(x,"balance"); !ok { return "", fmt.Errorf("IAK %s response is missing or invalid balance", operation) }
- if _, ok := requiredNum(x,"tr_id"); !ok { return "", fmt.Errorf("IAK %s response is missing or invalid tr_id", operation) }
+ if _, ok := requiredIntegerNum(x,"tr_id"); !ok { return "", fmt.Errorf("IAK %s response is missing or invalid tr_id", operation) }
  return mapped, nil
 }
 
