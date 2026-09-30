@@ -95,6 +95,15 @@ func TestIAKProductListRejectsDocumentedFailedResponseCode(t *testing.T) {
  if err == nil { t.Fatal("expected documented failed pricelist response code error") }
 }
 
+func TestIAKProductListRejectsPendingResponseCode(t *testing.T) {
+ srv, client := newIAKJSONServer(`{"data":{"pricelist":[],"rc":"39","message":"PROCESS"}}`)
+ defer srv.Close()
+ c, err := New(iakTestConfig(srv.URL), client)
+ if err != nil { t.Fatal(err) }
+ _, err = c.GetProducts(context.Background(), provider.ProductRequest{})
+ if err == nil { t.Fatal("expected pending pricelist response code error") }
+}
+
 func TestIAKProductListRejectsUnknownResponseCode(t *testing.T) {
  srv, client := newIAKJSONServer(`{"data":{"pricelist":[],"rc":"999","message":"UNKNOWN"}}`)
  defer srv.Close()
