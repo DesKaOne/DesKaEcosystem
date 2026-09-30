@@ -106,6 +106,36 @@ func TestIAKBalanceResponseValidation(t *testing.T) {
 	}
 }
 
+func TestIAKBalanceHTTP400ExposesErrorDetails(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error_details":"missing sign"}`))
+	}))
+	defer srv.Close()
+
+	c, err := New(config.IAKConfig{Username:"user", APIKey:"secret", BalanceEndpoint:srv.URL}, srv.Client())
+	if err != nil { t.Fatal(err) }
+	balance, err := c.GetBalance(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "missing sign") {
+		t.Fatalf("expected IAK balance HTTP 400 error_details, balance=%d err=%v", balance, err)
+	}
+}
+
+func TestIAKBalanceHTTPNon2xxFailsClosed(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"message":"upstream failure"}`))
+	}))
+	defer srv.Close()
+
+	c, err := New(config.IAKConfig{Username:"user", APIKey:"secret", BalanceEndpoint:srv.URL}, srv.Client())
+	if err != nil { t.Fatal(err) }
+	balance, err := c.GetBalance(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "upstream failure") {
+		t.Fatalf("expected IAK balance non-2xx error, balance=%d err=%v", balance, err)
+	}
+}
+
 func TestIAKImplementsProviderCapabilities(t *testing.T) {
 	c, err := New(config.IAKConfig{
 		Username:"user", APIKey:"secret",
