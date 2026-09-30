@@ -14,7 +14,6 @@ var (
 	ErrCandidateHashMismatch = errors.New("candidate hash mismatch")
 	ErrCandidateHeightMismatch = errors.New("candidate height mismatch")
 	ErrUnexpectedSyncPeer = errors.New("unexpected sync peer")
-	ErrUnexpectedSyncMessage = errors.New("unexpected sync message")
 )
 
 type CandidateExchange struct {
