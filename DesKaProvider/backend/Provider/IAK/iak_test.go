@@ -183,6 +183,15 @@ func TestIAKTransactionResponseRejectsConflictingStatusAndRC(t *testing.T) {
  }
 }
 
+func TestIAKTransactionResponseRequiresRC(t *testing.T) {
+ srv, client := newIAKJSONServer(`{"data":{"ref_id":"order-1","customer_id":"08123","product_code":"xld25000","status":0,"price":25000,"balance":997061249,"tr_id":3482,"message":"PROCESS"}}`)
+ defer srv.Close()
+ c, err := New(iakTestConfig(srv.URL), client)
+ if err != nil { t.Fatal(err) }
+ _, err = c.GetStatus(context.Background(), provider.StatusRequest{ProductCode:"xld25000",CustomerNo:"08123",ReferenceID:"order-1"})
+ if err == nil { t.Fatal("expected missing rc error") }
+}
+
 func TestIAKTransactionResponseRequiresBalanceAndTransactionID(t *testing.T) {
  cases := []struct{name, body string}{
   {"missing balance", `{"data":{"ref_id":"order-1","customer_id":"08123","product_code":"xld25000","status":0,"price":25000,"tr_id":3482,"message":"PROCESS","rc":"39"}}`},
