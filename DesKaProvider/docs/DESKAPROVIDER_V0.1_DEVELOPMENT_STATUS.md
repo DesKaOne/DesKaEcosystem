@@ -5576,3 +5576,10 @@ The balance precision hardening commit `0f67b02726af3682ca9a172ead3f7111793aea7c
 The failure is isolated to the newly added deterministic balance fixtures. The two inline `httptest` handlers were rewritten as package-level named handler functions without changing production behavior or test intent.
 
 No provider contract behavior was changed by this CI-only correction. The next HEAD must again pass test, vet, race, and applicable service-backed validation before the batch is considered complete.
+
+
+## CI Follow-up — 2026-10-01 — DigiFlazz Fixture Correction
+
+CI #3399 / run `36784978377` showed the first fixture correction still left the original inline handler expressions in place; the named handlers had only been added, so the same compile error remained. The test fixtures were corrected to call the named handlers directly. No production code or provider contract behavior changed.
+
+The branch HEAD now requires a fresh GREEN CI verification.
