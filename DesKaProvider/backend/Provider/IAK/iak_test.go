@@ -850,6 +850,16 @@ func TestIAKHTTPBadRequestRemainsError(t *testing.T) {
 }
 
 
+func TestIAKPurchaseDoesNotMapUndocumentedSerialNumber(t *testing.T) {
+\tsrv, client := newIAKJSONServer(`{"data":{"ref_id":"order-topup-sn","status":1,"product_code":"xld25000","customer_id":"08123","price":25000,"message":"SUCCESS","sn":"SN-UNDOCUMENTED","balance":997061249,"tr_id":3482,"rc":"00"}}`)
+\tdefer srv.Close()
+\tc, err := New(iakTestConfig(srv.URL), client)
+\tif err != nil { t.Fatal(err) }
+\tgot, err := c.Purchase(context.Background(), provider.PurchaseRequest{ReferenceID:"order-topup-sn", CustomerNo:"08123", ProductCode:"xld25000"})
+\tif err != nil { t.Fatal(err) }
+\tif got.SerialNumber != "" { t.Fatalf("purchase serial number=%q; top-up response does not document sn", got.SerialNumber) }
+}
+
 func TestIAKTransactionRejectsSerialNumberForNonSuccess(t *testing.T) {
  for _, tc := range []struct{status, rc, message string}{{"0","39","PROCESS"},{"2","07","FAILED"}} {
   t.Run(tc.status, func(t *testing.T) {
