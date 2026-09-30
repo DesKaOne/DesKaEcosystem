@@ -5583,3 +5583,37 @@ No provider contract behavior was changed by this CI-only correction. The next H
 CI #3399 / run `36784978377` showed the first fixture correction still left the original inline handler expressions in place; the named handlers had only been added, so the same compile error remained. The test fixtures were corrected to call the named handlers directly. No production code or provider contract behavior changed.
 
 The branch HEAD now requires a fresh GREEN CI verification.
+
+
+## DigiFlazz PLN Inquiry Contract Alignment
+
+**Date:** 2026-10-01
+
+### Source Basis
+
+The official DigiFlazz Buyer Cek Tagihan / Test Case documentation defines PLN inquiry as a postpaid transaction using `POST https://api.digiflazz.com/v1/transaction`, `commands=inq-pasca`, `username`, `buyer_sku_code`, `customer_no`, `ref_id`, and `sign=md5(username + apiKey + ref_id)`. The response documents `ref_id`, `customer_no`, `buyer_sku_code`, `message`, `status`, and `rc` as required fields. citeturn0search3turn1search0
+
+### Audit Finding
+
+The adapter previously used a separate `/v1/inquiry-pln` endpoint and generated the inquiry signature from `customer_no`. That endpoint/signature combination is not the documented Buyer API contract used by the current provider integration. The provider-neutral `InquiryRequest` already carries `ReferenceID`, so the documented ref-id signature can be implemented without changing the provider-neutral interface.
+
+### Implementation
+
+- Removed the undocumented dedicated PLN inquiry endpoint from the DigiFlazz client and configuration surface.
+- Reused the documented transaction endpoint for PLN inquiry.
+- Added the documented `commands: "inq-pasca"`, `buyer_sku_code`, `customer_no`, and `ref_id` request fields.
+- Reused the documented transaction signature `md5(username + apiKey + ref_id)`.
+- Require `ReferenceID` for PLN inquiry because it is a documented request field and is required for the documented signature.
+- Validate response `ref_id`, `customer_no`, and `buyer_sku_code` against the inquiry request before exposing a provider-neutral result.
+- Added deterministic regression coverage for the official request shape/signature and response identity mismatch.
+- Removed the obsolete `DIGIFLAZZ_INQUIRY_PLN_ENDPOINT` configuration example.
+
+### Safety Boundary
+
+- This change aligns request routing/signing with documented provider behavior; it does not add retry, resubmission, failover, duplicate inquiry, purchase creation, customer-balance mutation, ledger mutation, treasury movement, or provider funding behavior.
+- Inquiry remains read/verification behavior and does not become transaction authority.
+- No live-provider transaction was executed by this audit.
+
+### Verification Boundary
+
+The resulting HEAD must receive GREEN Push CI for test, vet, race, and applicable service-backed validation before this batch is considered complete. Credential-gated live-provider validation may remain skipped when credentials are unavailable.
