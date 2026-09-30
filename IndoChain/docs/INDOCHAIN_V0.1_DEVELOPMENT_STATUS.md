@@ -2192,4 +2192,57 @@ Harness masih in-memory dan tidak menguji actual filesystem/process crash. Atomi
 
 **4.47 — Persistence Adapter Boundary & Canonical Commit Coordination Contract:** definisikan interface boundary antara consensus recovery/persistence dan canonical ChainStore commit, termasuk ordering, failure ownership, and no-partial-publication invariants, tanpa mengaktifkan production WAL.
 
-**Milestone 4.46 status:** implementation/test completed; final documentation HEAD pending exact-head GREEN CI gate.
+**Milestone 4.46 status:** implementation/test completed and final documentation HEAD verified GREEN. Final docs HEAD `adab8d74094c55e14940da54b0434acac7ba0fd8`; CI #1452 / run `36726558485`: GREEN.
+
+
+### 4.47 Persistence Adapter Boundary & Canonical Commit Coordination Contract
+
+**Tanggal:** 2026-09-30
+
+**Objective**
+
+Mendefinisikan interface boundary antara consensus/recovery persistence dan canonical ChainStore commit, termasuk ordering, failure ownership, dan no-partial-publication invariants tanpa mengaktifkan production WAL/snapshot persistence.
+
+**Implementation**
+
+- `IndoChain/internal/consensus/canonical_commit_boundary.go`
+  - `CanonicalCommitCandidate` membawa block, block hash, dan resulting state snapshot.
+  - `CanonicalCommitter` menjadi narrow handoff interface yang kompatibel secara struktural dengan `storage.ChainStore.CommitBlockState`.
+  - `ValidateCanonicalCommitCandidate` memverifikasi non-nil state, non-zero hash, deterministic block-hash binding, dan optional state-root binding.
+  - `CommitCanonicalCandidate` memastikan validation terjadi sebelum store call dan canonical commit dipanggil tepat satu kali; commit error tidak diperlakukan sebagai successful publication.
+- `IndoChain/internal/consensus/canonical_commit_boundary_test.go`
+  - regression coverage untuk valid candidate, hash mismatch, state-root mismatch, validation-before-store, exactly-one commit, commit failure propagation, dan nil committer.
+- `IndoChain/docs/consensus-persistence-canonical-commit-boundary-v0.1.md`
+  - mendokumentasikan ordering, failure ownership, no-partial-publication, scope, dan known limitations.
+
+**Locked invariants**
+
+1. Recovery/execution harus menghasilkan candidate sebelum canonical commit.
+2. Candidate hash harus cocok dengan deterministic block hash.
+3. Optional non-zero block state root harus cocok dengan candidate state root.
+4. Invalid candidate tidak boleh memanggil canonical store.
+5. Successful handoff memanggil canonical commit tepat satu kali.
+6. Commit failure tidak boleh dianggap sebagai successful consensus/runtime publication.
+7. Runtime/node state hanya boleh dipublish setelah canonical commit sukses.
+8. Coordination layer tidak melakukan retry/resubmission otomatis.
+
+**Production code impact**
+
+Milestone ini menambahkan contract/validation boundary pada package consensus. Tidak ada WAL writer/reader, snapshot persistence, filesystem crash recovery, fsync policy, automatic retry, atau canonical state mutation baru.
+
+**Verification scope**
+
+Test boundary menggunakan fake in-memory committer. Test tidak mengaktifkan production persistence dan tidak mengklaim durable filesystem atomicity.
+
+**Known limitations**
+
+- `ChainStore.CommitBlockState` tetap menjadi canonical storage atomicity boundary.
+- Contract ini tidak membuktikan filesystem/process crash atomicity.
+- MemoryStore/FileStore belum menjadi transactional durable persistence engine.
+- Production BFT tetap belum selesai.
+
+**Next milestone**
+
+**4.48 — Canonical Commit Failure-Atomicity Regression Matrix:** perluas regression matrix di node/storage boundary untuk memverifikasi bahwa canonical commit failure tidak memajukan head/state dan tidak menghasilkan partial publication pada implementasi store yang diuji, tetap tanpa mengaktifkan WAL production.
+
+**Milestone 4.47 status:** implementation/design completed; exact-head CI gate wajib GREEN sebelum milestone dinyatakan selesai.
