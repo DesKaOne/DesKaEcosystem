@@ -428,3 +428,22 @@ func TestIAKMapResponseCodeCoversDocumentedCodes(t *testing.T) {
 func TestIAKMapResponseCodeRejectsUnknown(t *testing.T) {
 	if _,err:=mapResponseCode("999"); err==nil{t.Fatal("expected unknown response code error")}
 }
+
+
+func TestIAKResponseCodeMapperMatchesCurrentPrepaidContract(t *testing.T) {
+	success := []string{"00"}
+	pending := []string{"39", "201"}
+	failed := []string{"06", "07", "10", "12", "13", "14", "16", "17", "18", "19", "20", "21", "102", "106", "107", "110", "117", "121", "131", "132", "141", "142", "202", "203", "204", "205", "206", "207"}
+	for _, rc := range success {
+		if got, err := mapResponseCode(rc); err != nil || got != provider.StatusSuccess { t.Fatalf("rc %q: got=%q err=%v, want success", rc, got, err) }
+	}
+	for _, rc := range pending {
+		if got, err := mapResponseCode(rc); err != nil || got != provider.StatusPending { t.Fatalf("rc %q: got=%q err=%v, want pending", rc, got, err) }
+	}
+	for _, rc := range failed {
+		if got, err := mapResponseCode(rc); err != nil || got != provider.StatusFailed { t.Fatalf("rc %q: got=%q err=%v, want failed", rc, got, err) }
+	}
+	for _, rc := range []string{"01", "02", "03", "04", "05", "08", "09", "11", "15", "30", "40", "43", "76", "77", "91", "92", "93", "94", "100", "101", "103", "105", "108", "109", "143", "301", "999"} {
+		if _, err := mapResponseCode(rc); err == nil { t.Fatalf("undocumented prepaid response code %q must fail closed", rc) }
+	}
+}
