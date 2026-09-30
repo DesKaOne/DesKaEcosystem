@@ -259,7 +259,9 @@ func TestWebhookRejectsStatusRCConflict(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = c.HandleWebhook(context.Background(), provider.WebhookRequest{Body: body})
+	_, err = c.HandleWebhook(context.Background(), provider.WebhookRequest{
+		Body: body, Event: "update", UserAgent: "Digiflazz-Hookshot",
+	})
 	if err == nil || !strings.Contains(err.Error(), "conflicts with rc") {
 		t.Fatalf("expected webhook status/RC conflict rejection, got %v", err)
 	}
