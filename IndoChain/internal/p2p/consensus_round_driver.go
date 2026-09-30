@@ -5,6 +5,7 @@ import (
 
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/consensus"
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/block"
+	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/state"
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/crypto"
 )
 
@@ -135,6 +136,29 @@ func (d *ConsensusRoundDriver) PublishBlockProposalAndCandidate(
 func (d *ConsensusRoundDriver) FetchProposalCandidate(peer PeerID, proposal consensus.Message) (block.Block, error) {
 	if d == nil || d.candidate == nil { return block.Block{}, ErrNilConsensusRoundDriver }
 	return d.candidate.FetchCandidate(peer, proposal)
+}
+
+// AcceptFetchedBlockProposal validates the fetched candidate against the
+// authenticated proposal, executes it on a snapshot, and only then advances
+// the consensus runtime into Prevote.
+func (d *ConsensusRoundDriver) AcceptFetchedBlockProposal(
+	proposal consensus.Message,
+	candidate block.Block,
+	ctx consensus.BlockProductionContext,
+	canonicalState *state.State,
+	executionRules block.ExecutionRules,
+) error {
+	if d == nil || d.driver == nil {
+		return ErrNilConsensusRoundDriver
+	}
+	return d.driver.Runtime().ValidateAuthenticatedBlockProposal(
+		proposal,
+		candidate,
+		ctx,
+		canonicalState,
+		executionRules,
+		d.driver.Authority(),
+	)
 }
 
 // ServeCandidateRequest handles one existing block-request message.
