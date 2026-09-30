@@ -154,7 +154,16 @@ func (c *Client) do(ctx context.Context, endpoint string, payload any, out *map[
  b,e:=json.Marshal(payload);if e!=nil{return fmt.Errorf("encode IAK request: %w",e)}
  r,e:=http.NewRequestWithContext(ctx,http.MethodPost,endpoint,strings.NewReader(string(b)));if e!=nil{return fmt.Errorf("create IAK request: %w",e)};r.Header.Set("Content-Type","application/json")
  resp,e:=c.httpClient.Do(r);if e!=nil{return fmt.Errorf("IAK request failed: %w",e)};defer resp.Body.Close();body,e:=io.ReadAll(resp.Body);if e!=nil{return fmt.Errorf("read IAK response: %w",e)}
- if resp.StatusCode<200||resp.StatusCode>=300{return fmt.Errorf("IAK HTTP status %d: %s",resp.StatusCode,strings.TrimSpace(string(body)))};if e=json.Unmarshal(body,out);e!=nil{return fmt.Errorf("decode IAK response: %w",e)};return nil
+ if resp.StatusCode<200||resp.StatusCode>=300{
+  if resp.StatusCode==http.StatusBadRequest {
+    var errorResponse struct{ ErrorDetails any `json:"error_details"` }
+    if json.Unmarshal(body,&errorResponse)==nil && errorResponse.ErrorDetails!=nil {
+      return fmt.Errorf("IAK HTTP status 400: error_details=%v",errorResponse.ErrorDetails)
+    }
+  }
+  return fmt.Errorf("IAK HTTP status %d: %s",resp.StatusCode,strings.TrimSpace(string(body)))
+}
+if e=json.Unmarshal(body,out);e!=nil{return fmt.Errorf("decode IAK response: %w",e)};return nil
 }
 func (c *Client) sig(add string)string{return signature(c.apiKey,c.username,add)}
 func signature(secret,user,add string)string{s:=md5.Sum([]byte(user+secret+add));return hex.EncodeToString(s[:])}
