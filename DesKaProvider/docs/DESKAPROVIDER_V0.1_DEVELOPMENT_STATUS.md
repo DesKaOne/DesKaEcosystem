@@ -5376,3 +5376,35 @@ Webhook regression commit: `930c0d83d899c1a882db6874d386e3d00c583c59`.
 The resulting HEAD must receive GREEN Push and PR CI. Credential-gated DigiFlazz live validation may remain skipped while provider IP allowlisting/credentials are unavailable.
 
 No authorized live-provider transaction was executed by this audit.
+
+## DigiFlazz Webhook Metadata Boundary Hardening
+
+**Date:** 2026-09-30
+
+### Source Basis
+
+The official DigiFlazz Buyer webhook documentation defines `X-Digiflazz-Event` values for transaction events (`create` and `update`, plus `resend` for hotel) and identifies `Digiflazz-Hookshot` as the User-Agent for prepaid webhooks. The same documentation distinguishes postpaid and hotel webhook User-Agents.
+
+Source: https://developer.digiflazz.com/api/buyer/webhook/
+
+### Audit Finding
+
+`HandleWebhook()` previously validated the body/signature/status/RC mapping but ignored the optional normalized webhook metadata fields already present in the provider-neutral `WebhookRequest`. That allowed a postpaid/hotel event to reach the DigiFlazz prepaid adapter if the body happened to resemble a prepaid payload.
+
+### Implementation
+
+- Reject non-prepaid event metadata when `Event` is supplied: only `create` and `update` are accepted.
+- Reject a supplied `UserAgent` unless it is `Digiflazz-Hookshot`.
+- Preserve compatibility with callers that do not yet populate these metadata fields by validating them only when supplied.
+- Added deterministic coverage for a postpaid User-Agent and the hotel-only `resend` event.
+
+### Safety Boundary
+
+This hardening prevents cross-product webhook misclassification at the adapter boundary. It does not add retries, resubmission, failover, duplicate transaction creation, financial mutations, or routing changes.
+
+### Verification Boundary
+
+Implementation commit: `26539ea497669c4d1931727389f16bfdc5a305af`.
+Deterministic test commit: `28221244a53e028ec49c20dbd3bb468ac38b5e56`.
+
+The resulting HEAD must receive GREEN Push and PR CI, including test, vet, race, and any applicable service-backed validation. Credential-gated live validation may remain skipped when credentials are unavailable.
