@@ -5922,3 +5922,51 @@ This batch closes a documented DigiFlazz prepaid webhook response-shape gap. It 
 ### Next Concrete Engineering Task
 
 Continue the DigiFlazz contract audit for any remaining documented request/response/error behavior that is representable by the existing provider-neutral interfaces, then proceed to the next provider in priority order only after DigiFlazz's implementation boundary is exhausted.
+
+## DigiFlazz PLN Inquiry Contract Alignment
+
+**Date:** 2026-10-01
+
+### Source Basis
+
+The official DigiFlazz Buyer **Inquiry PLN** contract defines the endpoint as `POST /v1/inquiry-pln`. Its required request fields are `username`, `customer_no`, and `sign`, with the signature formula `md5(username + apiKey + customer_no)`. The documented response contains required `message`, `status`, `rc`, and `customer_no`; additional customer information such as meter number, subscriber ID, name, and segment power is optional. citeturn3view0
+
+### Audit Finding
+
+The existing DigiFlazz `Inquiry()` implementation did not match that official contract. It sent the request to the generic transaction endpoint, used `commands=inq-pasca`, required a provider reference ID, and signed using `ref_id`. This was a real contract mismatch, not merely a test-coverage gap.
+
+### Implementation
+
+- Added a dedicated configurable `InquiryEndpoint`, defaulting to `https://api.digiflazz.com/v1/inquiry-pln`.
+- When `BaseURL` is configured, the default inquiry endpoint is derived as `/v1/inquiry-pln`.
+- Reworked `Inquiry()` to send only the documented request fields: `username`, `customer_no`, and `sign`.
+- Changed the signature to the documented `md5(username + apiKey + customer_no)`.
+- Removed the requirement for `ReferenceID` from the DigiFlazz inquiry path; the neutral interface field remains available for other providers but is not promoted into the DigiFlazz contract.
+- Validates required response `customer_no` and exact customer identity.
+- Validates required response `message`.
+- Reuses the existing documented status/RC mapper and fail-closed unknown/conflict handling.
+- Optional documented customer fields remain ignored because the provider-neutral `InquiryResult` has no corresponding fields.
+
+### Deterministic Coverage
+
+Replaced the previous transaction-endpoint inquiry fixture with official-contract fixtures covering:
+
+- official `/v1/inquiry-pln` endpoint;
+- exact request field set;
+- documented customer-number signature;
+- successful response mapping;
+- response customer identity mismatch;
+- missing required `customer_no`;
+- missing required `message`.
+
+### Safety Boundary
+
+This change only corrects the provider adapter's documented inquiry contract. It does not add transaction submission, retry, resubmission, status polling, failover, ledger mutation, customer-balance mutation, or provider funding.
+
+Implementation commit: `d4dfc28b5a07dbe904941c196d74ed5be8917bd9`.
+
+Deterministic regression commit: `50b060aad0ceb6479c9cfdb94823a644ec8003b0`.
+
+### Verification Boundary
+
+Fresh GREEN Push CI is required before this batch is considered complete. External DigiFlazz live validation remains separately credential/IP-allowlist gated.
