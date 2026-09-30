@@ -2578,3 +2578,68 @@ Masih terbuka:
 Bind fetched candidate ke consensus proposal acceptance sehingga receiver tidak hanya memiliki block/hash binding, tetapi dapat menjalankan candidate validation/execution policy sebelum authenticated prevote emission.
 
 **Milestone 4.53 status:** implementation/test completed; exact-head CI gate GREEN.
+
+
+### 4.54 Candidate Execution Validation → Authenticated Prevote Boundary
+
+**Tanggal:** 2026-10-01
+
+**Objective**
+
+Memastikan candidate block yang diperoleh dari proposal P2P tidak cukup hanya hash-match. Sebelum authenticated proposal diterima dan runtime masuk ke Prevote, candidate harus lolos consensus-context validation dan deterministic block execution terhadap snapshot canonical state.
+
+**Implementation**
+
+- `IndoChain/internal/consensus/candidate_validation.go`
+  - `ValidateBlockCandidateForConsensus` memvalidasi block-production context, menjalankan candidate melalui existing `block.ExecuteBlock` pada state snapshot, dan memverifikasi execution result/state root tanpa memutasi canonical state.
+  - `ValidateAuthenticatedBlockProposal` menggabungkan candidate validation dengan existing signature/validator-authority boundary sebelum memanggil `AcceptAuthenticatedProposal`.
+  - `ValidateBlockCandidateContext` mengikat proposal message, height/round/context, previous hash, chain/protocol, dan proposer identity.
+- `IndoChain/internal/p2p/consensus_round_driver.go`
+  - `AcceptFetchedBlockProposal` menjadi P2P-to-consensus boundary: fetched candidate harus lolos execution validation terlebih dahulu sebelum runtime menerima authenticated proposal.
+- `IndoChain/internal/consensus/round_driver.go`
+  - menambahkan read-only `Authority()` accessor untuk meneruskan authority resolver yang sama ke authenticated candidate path.
+- Tests:
+  - valid candidate dieksekusi pada snapshot dan canonical state tetap identik;
+  - state-root mismatch ditolak tanpa canonical mutation;
+  - proposal/candidate context mismatch ditolak.
+
+**Locked invariants**
+
+1. Proposal signature/validator authority tetap wajib valid.
+2. Candidate harus cocok dengan exact proposal consensus context.
+3. Candidate harus cocok dengan expected proposer.
+4. Candidate harus memenuhi `TransactionsRoot`.
+5. Candidate harus dapat dieksekusi secara deterministic menggunakan existing block execution rules.
+6. Non-zero `StateRoot` harus cocok dengan hasil execution.
+7. Candidate hash harus cocok dengan authenticated proposal payload.
+8. Canonical node state tidak boleh dimutasi selama prevote admission.
+9. Hanya setelah seluruh validation berhasil runtime boleh maju dari Proposal ke Prevote.
+
+**Production boundary**
+
+Milestone ini memperkecil gap antara consensus evidence dan executable block validity. Namun ini **belum full production BFT** dan belum melakukan canonical commit pada prevote admission.
+
+Masih terbuka:
+
+- automatic local proposer loop dari mempool;
+- automatic local prevote/precommit emission policy;
+- concurrent request/response multiplexing;
+- peer-wide broadcast/retransmission;
+- timeout clock/failure detector;
+- multi-node multi-height canonical commit loop;
+- validator-set lifecycle;
+- durable consensus recovery;
+- final canonical serialization freeze.
+
+**Verification**
+
+- Implementation exact HEAD: `49bae7485ebc3e817ecafa759ba88b2db56cd581`.
+- CI run `36792081645`: **GREEN** — Tidy/Test/Race/Vet PASS.
+- Additional exact-head CI run `36792084200`: **GREEN** — Tidy/Test/Race/Vet PASS.
+- PostgreSQL: tidak relevan.
+
+**Next integration target**
+
+Masuk ke **local proposer/prevote emission boundary**: gunakan deterministic mempool snapshot + block candidate builder untuk menghasilkan proposal lokal, lalu emit authenticated prevote hanya setelah candidate validation berhasil. Tetap tanpa scheduler/clock produksi dan tanpa canonical commit pada fase prevote.
+
+**Milestone 4.54 status:** implementation/test completed; exact implementation HEAD CI GREEN.
