@@ -76,3 +76,22 @@ func TestXPStatusMappingCoversDocumentedOrderStates(t *testing.T) {
  for raw,want:=range cases {if got:=mapStatus(raw);got!=want{t.Fatalf("%q => %q, want %q",raw,got,want)}}
  if got:=mapStatus("unknown");got!=""{t.Fatalf("unknown status must fail closed, got %q",got)}
 }
+
+func TestXPOrderStatusMappingCoversDocumentedErrorStates(t *testing.T) {
+ cases := map[string]provider.TransactionStatus{
+  "gagal (batalkan manual di hisoty order)": provider.StatusFailed,
+  "kosong (batalkan manual di hisoty order)": provider.StatusFailed,
+  "proses": provider.StatusPending,
+  "lambat": provider.StatusPending,
+  "sukses": provider.StatusSuccess,
+ }
+ for raw, want := range cases {
+  if got := mapOrderStatus(raw); got != want {
+   t.Fatalf("%q => %q, want %q", raw, got, want)
+  }
+ }
+ if got := mapOrderStatus("unknown"); got != "" {
+  t.Fatalf("unknown order status must fail closed, got %q", got)
+ }
+}
+
