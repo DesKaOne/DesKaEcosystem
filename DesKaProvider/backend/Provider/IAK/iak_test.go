@@ -145,6 +145,34 @@ func TestIAKProductListRejectsUnknownResponseCode(t *testing.T) {
  if err == nil { t.Fatal("expected unknown pricelist response code error") }
 }
 
+func TestIAKHTTP400ExposesErrorDetails(t *testing.T) {
+  srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+    w.WriteHeader(http.StatusBadRequest)
+    _, _ = w.Write([]byte(`{"error_details":"missing username"}`))
+  }))
+  defer srv.Close()
+  c, err := New(iakTestConfig(srv.URL), srv.Client())
+  if err != nil { t.Fatal(err) }
+  _, err = c.GetProducts(context.Background(), provider.ProductRequest{})
+  if err == nil || !strings.Contains(err.Error(), "missing username") {
+    t.Fatalf("expected IAK HTTP 400 error_details, err=%v", err)
+  }
+}
+
+func TestIAKHTTP400PreservesStructuredErrorDetails(t *testing.T) {
+  srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+    w.WriteHeader(http.StatusBadRequest)
+    _, _ = w.Write([]byte(`{"error_details":{"field":"sign","message":"invalid"}}`))
+  }))
+  defer srv.Close()
+  c, err := New(iakTestConfig(srv.URL), srv.Client())
+  if err != nil { t.Fatal(err) }
+  _, err = c.GetProducts(context.Background(), provider.ProductRequest{})
+  if err == nil || !strings.Contains(err.Error(), "invalid") {
+    t.Fatalf("expected structured IAK HTTP 400 error_details, err=%v", err)
+  }
+}
+
 func TestIAKProductListRequiresPricelist(t *testing.T) {
 	srv, client := newIAKJSONServer(`{"data":{"message":"FAILED","rc":"XX"}}`)
 	defer srv.Close()
