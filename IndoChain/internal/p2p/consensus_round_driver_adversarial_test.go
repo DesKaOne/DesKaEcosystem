@@ -155,7 +155,7 @@ func TestAdversarialCrossHeightConsensusMessageRejected(t *testing.T) {
 	if err := nodeA.transport.SendConsensus(nodeB.id, msg, rules0); err != nil {
 		t.Fatal(err)
 	}
-	_, received, err := nodeB.transport.ReceiveConsensus(rules1)
+	_, received, err := nodeB.transport.ReceiveConsensus(rules0)
 	if err != nil {
 		t.Fatal(err)
 	}
