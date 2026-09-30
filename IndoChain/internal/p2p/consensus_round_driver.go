@@ -161,6 +161,67 @@ func (d *ConsensusRoundDriver) AcceptFetchedBlockProposal(
 	)
 }
 
+// PublishLocalProposalAndPrevote builds a candidate from the deterministic
+// mempool snapshot, publishes the authenticated proposal and candidate,
+// validates the same candidate locally, then signs and emits the local
+// prevote. No scheduler, clock, retransmission, or canonical commit is owned
+// by this method; proposal time comes from the LocalBlockProducer.
+func (d *ConsensusRoundDriver) PublishLocalProposalAndPrevote(
+	peer PeerID,
+	ctx consensus.BlockProductionContext,
+	producer *consensus.LocalBlockProducer,
+	signer crypto.Signer,
+) (consensus.Message, consensus.Message, block.Block, error) {
+	if d == nil || d.driver == nil || d.candidate == nil {
+		return consensus.Message{}, consensus.Message{}, block.Block{}, ErrNilConsensusRoundDriver
+	}
+	if producer == nil || signer == nil {
+		return consensus.Message{}, consensus.Message{}, block.Block{}, consensus.ErrInvalidLocalProducer
+	}
+
+	candidate, err := producer.ProduceBlock(ctx)
+	if err != nil {
+		return consensus.Message{}, consensus.Message{}, block.Block{}, err
+	}
+	proposalMsg, _, err := d.PublishBlockProposalAndCandidate(peer, ctx, candidate, signer)
+	if err != nil {
+		return consensus.Message{}, consensus.Message{}, block.Block{}, err
+	}
+
+	if err := d.AcceptFetchedBlockProposal(
+		proposalMsg,
+		candidate,
+		ctx,
+		producer.CanonicalState(),
+		producer.ExecutionRules(),
+	); err != nil {
+		return consensus.Message{}, consensus.Message{}, block.Block{}, err
+	}
+
+	prevote := consensus.Message{
+		ProtocolVersion: ctx.State.ProtocolVersion,
+		ChainID:         ctx.State.ChainID,
+		Epoch:           ctx.State.Epoch,
+		Height:          ctx.State.Height,
+		Round:           ctx.State.Round,
+		Sender:          append([]byte(nil), ctx.Proposer...),
+		Type:            consensus.MessageTypePrevote,
+		Payload:          proposalMsg.Payload,
+	}
+	prevote, err = prevote.Sign(signer)
+	if err != nil {
+		return consensus.Message{}, consensus.Message{}, block.Block{}, err
+	}
+
+	if err := d.driver.Runtime().AddAuthenticatedVote(prevote, d.driver.Authority()); err != nil {
+		return consensus.Message{}, consensus.Message{}, block.Block{}, err
+	}
+	if err := d.Publish(peer, prevote); err != nil {
+		return consensus.Message{}, consensus.Message{}, block.Block{}, err
+	}
+	return proposalMsg, prevote, candidate, nil
+}
+
 // ServeCandidateRequest handles one existing block-request message.
 func (d *ConsensusRoundDriver) ServeCandidateRequest(reader SyncReader) (PeerID, error) {
 	if d == nil || d.candidate == nil { return "", ErrNilConsensusRoundDriver }
