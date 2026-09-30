@@ -860,6 +860,21 @@ func TestIAKPurchaseDoesNotMapUndocumentedSerialNumber(t *testing.T) {
 	if got.SerialNumber != "" { t.Fatalf("purchase serial number=%q; top-up response does not document sn", got.SerialNumber) }
 }
 
+func TestIAKPurchaseIgnoresUndocumentedSerialNumberForNonSuccess(t *testing.T) {
+ for _, tc := range []struct{status, rc, message string}{{"0","39","PROCESS"},{"2","07","FAILED"}} {
+  t.Run(tc.status, func(t *testing.T) {
+   body := fmt.Sprintf("{\"data\":{\"ref_id\":\"order-topup-sn-%s\",\"status\":%s,\"product_code\":\"xld25000\",\"customer_id\":\"08123\",\"price\":25000,\"message\":\"%s\",\"sn\":\"SN-UNDOCUMENTED\",\"balance\":997061249,\"tr_id\":3482,\"rc\":\"%s\"}}", tc.status, tc.status, tc.message, tc.rc)
+   srv, client := newIAKJSONServer(body)
+   defer srv.Close()
+   c, err := New(iakTestConfig(srv.URL), client)
+   if err != nil { t.Fatal(err) }
+   got, err := c.Purchase(context.Background(), provider.PurchaseRequest{ReferenceID:"order-topup-sn-"+tc.status, CustomerNo:"08123", ProductCode:"xld25000"})
+   if err != nil { t.Fatal(err) }
+   if got.Status == "" || got.SerialNumber != "" { t.Fatalf("purchase=%#v", got) }
+  })
+ }
+}
+
 func TestIAKTransactionRejectsSerialNumberForNonSuccess(t *testing.T) {
  for _, tc := range []struct{status, rc, message string}{{"0","39","PROCESS"},{"2","07","FAILED"}} {
   t.Run(tc.status, func(t *testing.T) {
