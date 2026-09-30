@@ -5970,3 +5970,29 @@ Deterministic regression commit: `50b060aad0ceb6479c9cfdb94823a644ec8003b0`.
 ### Verification Boundary
 
 Fresh GREEN Push CI is required before this batch is considered complete. External DigiFlazz live validation remains separately credential/IP-allowlist gated.
+
+## CI Follow-up — 2026-10-01 — DigiFlazz PLN Inquiry Alignment GREEN
+
+Initial Push CI #3477 / run `36792091909` failed during DigiFlazz test-package compilation because the newly added inquiry fixture had an incomplete HTTP handler parameter declaration. The failure was isolated to deterministic test code; production compilation was not reached for that package.
+
+A duplicate inquiry regression test introduced during the contract replacement was also removed in the same correction pass.
+
+The fixture declaration was corrected in commit `bb2a743d252800619777c7022cd944d55b8adb89`.
+
+Push CI #3481 / run `36792344488`: **GREEN**
+- test: PASS (including vet step)
+- race: PASS
+- credential-gated `digiflazz-validation`: SKIPPED as expected
+- credential-gated `iak-read-only`: SKIPPED as expected
+- credential-gated `midtrans-sandbox`: SKIPPED as expected
+- credential-gated `xp-sindonesia-read-only`: SKIPPED as expected
+
+PostgreSQL service-backed environment initialized successfully. No live DigiFlazz transaction was executed.
+
+### Current Completion Assessment
+
+This batch closes a concrete documented DigiFlazz PLN inquiry contract mismatch. Overall DesKaProvider v0.1 remains approximately **82%**; the percentage is unchanged because this batch improves provider-contract correctness but does not materially change overall adapter breadth or external validation coverage.
+
+### Next Concrete Engineering Task
+
+Continue the DigiFlazz documented-contract audit, prioritizing any remaining documented behavior that can be implemented through existing provider-neutral capabilities without introducing unsupported transaction semantics. External validation remains a separate credential/IP-allowlist gate.
