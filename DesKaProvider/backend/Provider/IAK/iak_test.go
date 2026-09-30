@@ -21,7 +21,7 @@ func TestIAKAdapter(t *testing.T){
   var p map[string]string;_ = json.NewDecoder(r.Body).Decode(&p)
   if p["username"]!="user"{t.Errorf("username=%q",p["username"])}
   switch r.URL.Path{
-  case "/api/pricelist": if p["sign"]!=ts("pl"){t.Errorf("bad price signature")};w.Write([]byte(`{"data":{"pricelist":[{"product_code":"xld25000","product_description":"XL 25K","product_category":"pulsa","status":"active"}],"rc":"00","message":"SUCCESS"}}`))
+  case "/api/pricelist": if p["sign"]!=ts("pl"){t.Errorf("bad price signature")};w.Write([]byte(`{"data":{"pricelist":[{"product_code":"xld25000","product_description":"XL 25K","product_details":"XL 25K","product_nominal":"25000","product_price":25000,"product_type":"pulsa","active_period":"30","status":"active","icon_url":"-","product_category":"pulsa"}],"rc":"00","message":"SUCCESS"}}`))
   case "/api/inquiry-pln": if p["sign"]!=ts("12345678901"){t.Errorf("bad inquiry signature")};w.Write([]byte(`{"data":{"status":"1","customer_id":"12345678901","meter_no":"548933889287","subscriber_id":"12345678901","name":"Sintya Oktaviani","segment_power":"R1 /000001300","message":"SUCCESS","rc":"00"}}`))
   case "/api/top-up": if p["sign"]!=ts("order-1"){t.Errorf("bad purchase signature")};w.Write([]byte(`{"data":{"ref_id":"order-1","status":0,"product_code":"xld25000","customer_id":"08123","price":25000,"balance":997061249,"tr_id":3482,"message":"PROCESS","rc":"39"}}`))
   case "/api/check-status":w.Write([]byte(`{"data":{"ref_id":"order-1","status":1,"product_code":"xld25000","customer_id":"08123","price":25000,"balance":997061249,"tr_id":3482,"message":"SUCCESS","rc":"00","sn":"SN123"}}`))
@@ -117,6 +117,40 @@ func TestIAKImplementsProviderCapabilities(t *testing.T) {
 	if err != nil { t.Fatal(err) }
 	if _, ok := any(c).(provider.PPOBProvider); !ok { t.Fatal("IAK client must implement PPOBProvider") }
 	if _, ok := any(c).(provider.BalanceProvider); !ok { t.Fatal("IAK client must implement BalanceProvider") }
+}
+
+func TestIAKProductListRequiresDocumentedMessage(t *testing.T) {
+ srv, client := newIAKJSONServer(`{"data":{"pricelist":[],"rc":"00"}}`)
+ defer srv.Close()
+ c, err := New(iakTestConfig(srv.URL), client)
+ if err != nil { t.Fatal(err) }
+ _, err = c.GetProducts(context.Background(), provider.ProductRequest{})
+ if err == nil { t.Fatal("expected missing pricelist message error") }
+}
+
+func TestIAKProductListRejectsIncompleteDocumentedItem(t *testing.T) {
+ cases := []struct{name, item string}{
+  {"missing product_details", `{"product_code":"xld25000","product_description":"XL 25K","product_nominal":"25000","product_price":25000,"product_type":"pulsa","active_period":"30","status":"active","icon_url":"-","product_category":"pulsa"}`},
+  {"missing product_price", `{"product_code":"xld25000","product_description":"XL 25K","product_details":"XL 25K","product_nominal":"25000","product_type":"pulsa","active_period":"30","status":"active","icon_url":"-","product_category":"pulsa"}`},
+  {"missing status", `{"product_code":"xld25000","product_description":"XL 25K","product_details":"XL 25K","product_nominal":"25000","product_price":25000,"product_type":"pulsa","active_period":"30","icon_url":"-","product_category":"pulsa"}`},
+  {"missing category", `{"product_code":"xld25000","product_description":"XL 25K","product_details":"XL 25K","product_nominal":"25000","product_price":25000,"product_type":"pulsa","active_period":"30","status":"active","icon_url":"-"}`},
+ }
+ for _,tc:=range cases {
+  t.Run(tc.name,func(t *testing.T){
+   srv,client:=newIAKJSONServer(`{"data":{"pricelist":[`+tc.item+`],"rc":"00","message":"SUCCESS"}}`)
+   defer srv.Close()
+   c,err:=New(iakTestConfig(srv.URL),client);if err!=nil{t.Fatal(err)}
+   if _,err=c.GetProducts(context.Background(),provider.ProductRequest{});err==nil{t.Fatal("expected incomplete pricelist item error")}
+  })
+ }
+}
+
+func TestIAKProductListRejectsInvalidItemStatus(t *testing.T) {
+ srv, client := newIAKJSONServer(`{"data":{"pricelist":[{"product_code":"xld25000","product_description":"XL 25K","product_details":"XL 25K","product_nominal":"25000","product_price":25000,"product_type":"pulsa","active_period":"30","status":"unknown","icon_url":"-","product_category":"pulsa"}],"rc":"00","message":"SUCCESS"}}`)
+ defer srv.Close()
+ c, err := New(iakTestConfig(srv.URL), client)
+ if err != nil { t.Fatal(err) }
+ if _, err = c.GetProducts(context.Background(), provider.ProductRequest{}); err == nil { t.Fatal("expected invalid pricelist item status error") }
 }
 
 func TestIAKProductListRejectsDocumentedFailedResponseCode(t *testing.T) {
