@@ -20,7 +20,7 @@ func TestIAKAdapter(t *testing.T){
   var p map[string]string;_ = json.NewDecoder(r.Body).Decode(&p)
   if p["username"]!="user"{t.Errorf("username=%q",p["username"])}
   switch r.URL.Path{
-  case "/api/pricelist": if p["sign"]!=ts("pl"){t.Errorf("bad price signature")};w.Write([]byte(`{"data":{"pricelist":[{"product_code":"xld25000","product_description":"XL 25K","product_category":"pulsa","status":"active"}]}}`))
+  case "/api/pricelist": if p["sign"]!=ts("pl"){t.Errorf("bad price signature")};w.Write([]byte(`{"data":{"pricelist":[{"product_code":"xld25000","product_description":"XL 25K","product_category":"pulsa","status":"active"}],"rc":"00","message":"SUCCESS"}}`))
   case "/api/inquiry-pln": if p["sign"]!=ts("12345678901"){t.Errorf("bad inquiry signature")};w.Write([]byte(`{"data":{"status":"1","message":"SUCCESS","rc":"00"}}`))
   case "/api/top-up": if p["sign"]!=ts("order-1"){t.Errorf("bad purchase signature")};w.Write([]byte(`{"data":{"ref_id":"order-1","status":0,"product_code":"xld25000","customer_id":"08123","price":25000,"message":"PROCESS","rc":"39"}}`))
   case "/api/check-status":w.Write([]byte(`{"data":{"ref_id":"order-1","status":1,"product_code":"xld25000","customer_id":"08123","price":25000,"message":"SUCCESS","rc":"00","sn":"SN123"}}`))
