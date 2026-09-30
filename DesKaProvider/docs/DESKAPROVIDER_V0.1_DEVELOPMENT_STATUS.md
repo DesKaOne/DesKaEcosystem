@@ -6030,3 +6030,34 @@ The branch remains on the previously verified implementation HEAD `44ffd99dedd6d
 ### Next Concrete Engineering Task
 
 Continue the DigiFlazz contract audit only for documented behavior that can be represented by existing provider-neutral interfaces without unsafe transaction semantics. If no further safe DigiFlazz implementation gap is found, move to the next provider adapter rather than expanding the neutral interface solely to mirror provider-specific semantics.
+
+
+## DigiFlazz Webhook Contract Boundary Audit
+
+**Date:** 2026-10-01
+
+### Source Basis
+
+Official DigiFlazz Buyer webhook documentation defines transaction events `create` and `update`; `resend` is documented only for hotel transactions. The `User-Agent` distinguishes prepaid, postpaid, and hotel webhook payloads, and `X-Hub-Signature` uses HMAC-SHA1 when a webhook secret is configured. citeturn1search0
+
+The same documentation defines a separate `ping` mechanism for webhook configuration testing. The ping is not stored and is returned from a dedicated endpoint; it is not a transaction lifecycle event. citeturn1search0
+
+### Audit Finding
+
+The existing provider-neutral webhook boundary is transaction-oriented. DigiFlazz prepaid `create/update` events fit that boundary, while postpaid/hotel payloads and the webhook-configuration `ping` event do not provide a safe reason to expand the neutral transaction model in this batch.
+
+### Decision
+
+- Keep prepaid transaction webhook handling focused on documented `create/update` lifecycle events.
+- Do not map webhook `ping` into a transaction event or persistence path.
+- Do not add postpaid/hotel-specific payload models to the prepaid DigiFlazz adapter.
+- Preserve HMAC-SHA1 verification and fail-closed behavior already enforced by the webhook boundary.
+- Treat provider-specific webhook configuration/testing operations as outside the transaction adapter contract.
+
+### Safety Boundary
+
+No production-code change is required by this audit. No ledger mutation, customer balance mutation, transaction duplication, automatic retry, provider failover, or provider-specific state leakage is introduced.
+
+### Next Concrete Engineering Task
+
+DigiFlazz documented-contract audit has no additional safe adapter-neutral gap identified in the current scope. Proceed to the next provider adapter only after preserving the current GREEN CI baseline.
