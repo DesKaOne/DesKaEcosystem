@@ -214,7 +214,7 @@ func TestIAKInquiryRejectsInvalidStatus(t *testing.T) {
  srv, client := newIAKJSONServer(`{"data":{"status":"0","customer_id":"12345678901","message":"PROCESS","rc":"39"}}`)
  defer srv.Close()
  c, err := New(iakTestConfig(srv.URL), client)
- if err == nil { t.Fatal(err) }
+ if err != nil { t.Fatal(err) }
  _, err = c.Inquiry(context.Background(), provider.InquiryRequest{ProductCode:"pln", CustomerNo:"12345678901"})
  if err == nil { t.Fatal("expected invalid inquiry status error") }
 }
