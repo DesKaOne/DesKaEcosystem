@@ -2157,3 +2157,39 @@ Milestone ini bukan production durable consensus recovery dan bukan production B
 - go test -race ./...: PASS.
 - go vet ./...: PASS.
 - The final status-document commit must itself pass the exact-head CI gate before 4.45 is declared complete.
+
+
+### 4.46 Persistence Failure Injection & Recovery Harness
+
+**Tanggal:** 2026-09-30
+
+**Objective**
+
+Menguji contract 4.45 melalui controlled in-memory persistence adapter/harness tanpa mengaktifkan production WAL/snapshot persistence.
+
+**Implementation**
+
+- IndoChain/internal/consensus/persistence_failure_injection_test.go
+- Harness mensimulasikan failure sebelum append, partial write, checksum corruption, context mismatch, sequence gap, snapshot + WAL replay, stale WAL terhadap snapshot, dan atomic recovery publication.
+- Recovery dibangun ke candidate state terlebih dahulu dan baru dipublish setelah seluruh validation berhasil.
+
+**Verification**
+
+- CI #1448 / run 36726341648
+- Exact implementation HEAD 2eefbca3de224ea83a718086795965287be432fd
+- CI GREEN / success.
+- Final documentation HEAD tetap wajib melewati CI exact-head sebelum milestone dinyatakan selesai.
+
+**Production boundary**
+
+Tidak ada production WAL writer/reader, filesystem persistence activation, fsync policy, process-crash recovery, distributed recovery, atau canonical state mutation baru.
+
+**Known limitations**
+
+Harness masih in-memory dan tidak menguji actual filesystem/process crash. Atomicity terhadap canonical ChainStore dan durable storage tetap belum teraktivasi.
+
+**Next milestone**
+
+**4.47 — Persistence Adapter Boundary & Canonical Commit Coordination Contract:** definisikan interface boundary antara consensus recovery/persistence dan canonical ChainStore commit, termasuk ordering, failure ownership, and no-partial-publication invariants, tanpa mengaktifkan production WAL.
+
+**Milestone 4.46 status:** implementation/test completed; final documentation HEAD pending exact-head GREEN CI gate.
