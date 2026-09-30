@@ -27,6 +27,26 @@ func TestXPPurchaseAndBalance(t *testing.T) {
  b,err:=c.GetBalance(context.Background());if err!=nil||b!=123000{t.Fatalf("balance=%d err=%v",b,err)}
 }
 
+func TestXPBalanceRequestUsesDocumentedFormFields(t *testing.T) {
+ srv:=httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){
+  if err:=r.ParseForm();err!=nil{t.Fatal(err)}
+  if r.Form.Get("id")!="123"||r.Form.Get("key")!="key"||r.Form.Get("api")!="api" {
+   t.Fatalf("unexpected balance form: %#v",r.Form)
+  }
+  _=json.NewEncoder(w).Encode(map[string]string{"success":"1","id":"123","saldo":"123000"})
+ }));defer srv.Close()
+ c,err:=New(config.XPSindonesiaConfig{ID:"123",Key:"key",API:"api",SaldoEndpoint:srv.URL},srv.Client());if err!=nil{t.Fatal(err)}
+ b,err:=c.GetBalance(context.Background());if err!=nil||b!=123000{t.Fatalf("balance=%d err=%v",b,err)}
+}
+
+func TestXPBalanceRejectsInvalidSaldo(t *testing.T) {
+ srv:=httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){
+  _=json.NewEncoder(w).Encode(map[string]string{"success":"1","id":"123","saldo":"not-a-number"})
+ }));defer srv.Close()
+ c,err:=New(config.XPSindonesiaConfig{ID:"123",Key:"key",API:"api",SaldoEndpoint:srv.URL},srv.Client());if err!=nil{t.Fatal(err)}
+ if _,err:=c.GetBalance(context.Background());err==nil{t.Fatal("expected invalid saldo error")}
+}
+
 func TestXPBalanceRejectsProviderError(t *testing.T) {
  srv:=httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){
   _=json.NewEncoder(w).Encode(map[string]string{"success":"0","error":"invalid api"})
