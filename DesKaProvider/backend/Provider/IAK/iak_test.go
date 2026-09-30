@@ -673,3 +673,10 @@ func TestIAKPurchaseResponseIdentityFieldsAreRequired(t *testing.T) {
 		})
 	}
 }
+
+func TestIAKWebhookRequiresBodySignatureEvenWhenTransportSignatureProvided(t *testing.T) {
+ c,_:=New(config.IAKConfig{Username:"user",APIKey:"secret"},http.DefaultClient)
+ body:=[]byte(`{"ref_id":"order-1","status":1,"code":"xld25000","hp":"08123","price":25000,"balance":997061249,"tr_id":3482,"message":"SUCCESS","rc":"00"}`)
+ _,err:=c.HandleWebhook(context.Background(),provider.WebhookRequest{Body:body,Signature:ts("order-1"),SignatureSecret:"secret"})
+ if err==nil { t.Fatal("expected missing callback body sign error") }
+}
