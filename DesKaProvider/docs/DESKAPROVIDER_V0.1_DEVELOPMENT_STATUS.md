@@ -4797,3 +4797,21 @@ Added regression coverage for:
 - Deterministic webhook parsing remains credential-free.
 - External IAK callback validation remains credential-gated.
 - This batch is not considered complete until the resulting HEAD has GREEN CI.
+
+
+## IAK Status Response Identity Contract Hardening
+
+**Date:** 2026-09-30
+
+### Implementation
+
+- IAK `GetStatus` already requires response `ref_id`, `customer_id`, and `product_code` before constructing the provider-neutral status result.
+- The adapter also compares returned identity against the supplied request where those request fields are present.
+- Added deterministic regression coverage for missing status-response identity fields, preserving fail-closed behavior.
+- No provider-neutral interface changes and no financial mutation/retry/failover behavior were introduced.
+
+### Verification Boundary
+
+- Deterministic contract tests are credential-free.
+- External IAK status validation remains credential-gated.
+- This batch remains open until the resulting CI is GREEN.
