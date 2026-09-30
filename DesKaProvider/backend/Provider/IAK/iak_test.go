@@ -524,7 +524,7 @@ func TestIAKWebhookRejectsOutOfRangePrice(t *testing.T) {
 }
 
 func TestIAKTransactionAcceptsInt64BoundaryPrice(t *testing.T) {
- srv, client := newIAKJSONServer(`{"data":{"ref_id":"order-1","status":1,"product_code":"xld25000","customer_id":"08123","price":9223372036854775807,"balance":997061249,"tr_id":3482,"message":"SUCCESS","rc":"00"}}`)
+ srv, client := newIAKJSONServer(`{"data":{"ref_id":"order-1","status":1,"product_code":"xld25000","customer_id":"08123","price":"9223372036854775807","balance":997061249,"tr_id":3482,"message":"SUCCESS","rc":"00"}}`)
  defer srv.Close()
  c, err := New(iakTestConfig(srv.URL), client)
  if err != nil { t.Fatal(err) }
