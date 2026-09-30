@@ -4766,3 +4766,34 @@ No retry, failover, resubmission, refund automation, ledger mutation, customer-b
 ### Verification Boundary
 
 This batch is schema/semantic validation only. External IAK validation remains credential-gated and the batch remains open until CI for the resulting HEAD is GREEN.
+
+
+## IAK Webhook v2 Identity Contract Alignment
+
+**Date:** 2026-09-30
+
+### Source Basis
+
+Current IAK callback documentation provides version 1 callback identity fields as `code` and `hp`, while the version 2 callback examples use `product_code` and `customer_id`. The callback signature remains based on `username+api_key+ref_id`. citeturn3search0
+
+### Implementation
+
+- IAK webhook parsing now accepts the documented v2 `product_code` and `customer_id` fields.
+- Existing v1 `code` and `hp` fields remain supported for compatibility with the documented version 1 callback contract.
+- When both versioned aliases are supplied, conflicting values are rejected instead of silently selecting one representation.
+- The provider-neutral `WebhookEvent` contract remains unchanged; only the provider adapter's documented input mapping was aligned.
+- No retry, failover, resubmission, refund automation, ledger mutation, customer-balance mutation, treasury movement, provider funding, or routing behavior was introduced.
+
+### Deterministic Coverage
+
+Added regression coverage for:
+
+- documented v2 callback identity fields `product_code` / `customer_id`;
+- conflicting v1/v2 product-code aliases;
+- conflicting v1/v2 customer-ID aliases.
+
+### Verification Boundary
+
+- Deterministic webhook parsing remains credential-free.
+- External IAK callback validation remains credential-gated.
+- This batch is not considered complete until the resulting HEAD has GREEN CI.
