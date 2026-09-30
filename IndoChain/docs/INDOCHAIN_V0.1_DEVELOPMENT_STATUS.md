@@ -2011,3 +2011,85 @@ Milestone ini **bukan production BFT completion** dan bukan durable consensus pe
 **4.44 — Production Consensus Persistence Design Review:** review contract v0.1 terhadap existing storage interfaces dan canonical commit semantics, lalu buat deterministic serialization/versioning test vectors tanpa mengaktifkan production restore sebelum format dan atomicity contract disetujui oleh test matrix.
 
 **Milestone 4.43 implementation status:** pending final exact documentation HEAD CI gate.
+
+
+### 4.44 Production Consensus Persistence Design Review
+
+**Tanggal:** 2026-09-30
+
+**Objective**
+
+Review persistence contract v0.1 against the actual storage interfaces, canonical node commit semantics, `RoundState`, validator authority, voting power, quorum threshold, proposer policy, LockProof, FinalityCertificate, round-local evidence, node recovery, and finalized-block handoff.
+
+**Implementation**
+
+1. Reviewed `IndoChain/internal/storage/storage.go`: `ChainStore.CommitBlockState` remains the canonical block/state persistence boundary.
+2. Reviewed `IndoChain/internal/storage/file_store.go`: development `FileStore` uses gob as an implementation format with temp-file + sync + rename; its source explicitly states gob is not canonical protocol encoding.
+3. Reviewed `IndoChain/internal/consensus/state.go`: protocol version, chain ID, epoch, height, round, and phase are explicit `RoundState` context.
+4. Reviewed `ValidatorRuntime`: runtime additionally depends on validator membership, voting power, quorum threshold, proposer selector, lock state, round-local vote aggregation, and authenticated finality evidence.
+5. Reviewed `StaticValidatorAuthority`: authority is an immutable public-key snapshot and must remain an authenticated recovery context.
+6. Added deterministic contract-level serialization/versioning vectors in `IndoChain/internal/consensus/persistence_vectors_test.go`.
+7. Expanded `IndoChain/docs/consensus-runtime-persistence-contract-v0.1.md` with the architecture review findings and explicit production-persistence boundary.
+
+**Durable vs ephemeral boundary**
+
+- Durable consensus context: protocol/chain/epoch/height/round/phase, validator authority/membership, voting power, quorum threshold, proposer policy/version.
+- Authenticated safety evidence: LockProof and FinalityCertificate only after complete revalidation.
+- Ephemeral evidence: proposal bytes, vote aggregation, transient timeout/transport evidence, peer/network state.
+- Canonical blockchain state: block execution and commit owned by node/storage.
+
+No consensus persistence object is allowed to imply canonical state commit.
+
+**Deterministic serialization**
+
+`persistence_vectors_test.go` verifies that the same semantic versioned consensus context produces identical serialized bytes and that serialization round-trips to the same semantic representation.
+
+The vector includes explicit validator identity/public-key/voting-power entries, threshold, proposer policy/version, and consensus context. The SHA-256 digest is fixed as a regression vector.
+
+This is a **contract-level test vector**, not a production WAL/snapshot format.
+
+**Recovery ordering**
+
+Future restore must be transactional:
+
+1. decode/version-check;
+2. validate protocol/chain/epoch/height/round/phase;
+3. validate validator authority/voting power;
+4. validate threshold/proposer policy;
+5. validate LockProof/FinalityCertificate when present;
+6. rebuild fresh aggregators;
+7. publish recovered runtime only after all validation succeeds.
+
+Canonical block/state commit remains outside consensus recovery.
+
+**Tests / verification**
+
+- `IndoChain/internal/consensus/runtime_recovery_boundary_test.go`
+- `IndoChain/internal/consensus/persistence_vectors_test.go`
+- `IndoChain/docs/consensus-runtime-persistence-contract-v0.1.md`
+- Exact implementation/documentation HEAD: pending final status-document commit.
+- CI exact final documentation HEAD: pending.
+- PostgreSQL: tidak relevan.
+
+**Production code impact**
+
+Tidak ada production WAL/snapshot reader/writer, no durable consensus store, no production restore activation, dan no change to canonical node commit semantics.
+
+**Known limitations**
+
+- WAL record format belum didefinisikan.
+- Snapshot lifecycle/version compatibility belum diaktifkan.
+- Crash/fsync semantics dan durable atomicity antara consensus state dan canonical state belum didefinisikan.
+- Distributed recovery coordination belum didefinisikan.
+- Current proposer policy tetap development-only.
+- Milestone ini tidak mengubah status production BFT.
+
+**Safety boundary**
+
+4.44 belum boleh dianggap production consensus durability atau production BFT completion sampai WAL/snapshot format, crash boundary, recovery ordering, and durable atomicity contract selesai dan diuji.
+
+**Next milestone**
+
+**4.45 — Consensus WAL/Snapshot Record Contract & Crash Boundary Matrix:** definisikan record envelope, versioning, ordering, checksum/integrity, snapshot/WAL interaction, crash cut points, stale-record rejection, context mismatch rejection, and deterministic recovery vectors sebelum production persistence implementation.
+
+**Milestone 4.44 status:** implementation/design review completed, awaiting exact final documentation HEAD CI GREEN gate.
