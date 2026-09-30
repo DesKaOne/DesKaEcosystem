@@ -11,6 +11,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
+	"strconv"
 	"net/http"
 	"strings"
 	"time"
@@ -91,7 +93,7 @@ type balanceRequest struct {
 }
 
 type balanceResponse struct {
-	Data struct { Deposit float64 `json:"deposit"` } `json:"data"`
+	Data struct { Deposit json.Number `json:"deposit"` } `json:"data"`
 }
 
 func (c *Client) GetBalance(ctx context.Context) (int64, error) {
@@ -109,8 +111,12 @@ func (c *Client) GetBalance(ctx context.Context) (int64, error) {
 		return 0, fmt.Errorf("DigiFlazz balance HTTP status %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
 	}
 	var decoded balanceResponse
-	if err := json.Unmarshal(respBody, &decoded); err != nil { return 0, fmt.Errorf("decode DigiFlazz balance response: %w", err) }
-	return int64(decoded.Data.Deposit), nil
+	decoder := json.NewDecoder(strings.NewReader(string(respBody)))
+	decoder.UseNumber()
+	if err := decoder.Decode(&decoded); err != nil { return 0, fmt.Errorf("decode DigiFlazz balance response: %w", err) }
+	balance, err := parseIntegralBalance(decoded.Data.Deposit)
+	if err != nil { return 0, err }
+	return balance, nil
 }
 
 type priceListRequest struct {
@@ -265,6 +271,17 @@ func (c *Client) transaction(ctx context.Context, req transactionRequest) (trans
 	}
 
 	return decoded, nil
+}
+
+
+func parseIntegralBalance(value json.Number) (int64, error) {
+	raw := strings.TrimSpace(value.String())
+	if raw == "" { return 0, errors.New("DigiFlazz balance response is missing required deposit") }
+	r := new(big.Rat)
+	if _, ok := r.SetString(raw); !ok { return 0, fmt.Errorf("invalid DigiFlazz deposit value %q", raw) }
+	if !r.IsInt() { return 0, fmt.Errorf("DigiFlazz deposit is not an integer value: %q", raw) }
+	if !r.Num().IsInt64() { return 0, fmt.Errorf("DigiFlazz deposit is outside provider-neutral balance range: %q", raw) }
+	return strconv.ParseInt(r.Num().String(), 10, 64)
 }
 
 func (c *Client) signature(refID string) string { sum := md5.Sum([]byte(c.username+c.apiKey+refID)); return hex.EncodeToString(sum[:]) }
