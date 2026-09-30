@@ -1813,4 +1813,4 @@ Milestone ini memperkuat regression confidence, tetapi tetap **bukan production 
 
 **4.41 — Adversarial Multi-Node Evidence Ordering & Failure Matrix:** perluas harness dari scenario-level state tests menjadi deterministic multi-node message delivery matrix untuk delayed proposal, duplicated vote/precommit, reordered timeout batches, invalid sender/signature, conflicting locks, partition/rejoin, dan canonical-state non-mutation.
 
-**Milestone 4.40 implementation/test status:** GREEN pada exact implementation HEAD c01083cc132b30865c0e7d174dfd234e2d9cb480, CI #1389 / run 36720194819. Documentation follow-up ini wajib diverifikasi ulang pada exact documentation HEAD sebelum milestone final GREEN.
+**Milestone 4.40 implementation/test status:** GREEN pada exact implementation HEAD c01083cc132b30865c0e7d174dfd234e2d9cb480, CI #1389 / run 36720194819. Documentation follow-up ini menjadi source snapshot final; milestone hanya dinyatakan GREEN setelah CI pada exact documentation HEAD ini PASS.
