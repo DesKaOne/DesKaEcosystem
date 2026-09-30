@@ -222,13 +222,13 @@ func (d *ConsensusRoundDriver) PublishLocalProposalAndPrevote(
 	return proposalMsg, prevote, candidate, nil
 }
 
-// PublishLocalPrecommitAfterPrevote submits the local authenticated prevote
-// to the runtime. A precommit is emitted only when that prevote, together with
-// already authenticated peer prevotes, causes the runtime to enter Precommit.
-// The method does not finalize or commit canonical state.
-func (d *ConsensusRoundDriver) PublishLocalPrecommitAfterPrevote(
+// PublishAuthenticatedPrevoteAndMaybePrecommit submits one authenticated
+// prevote and, if the resulting quorum moves the runtime to Precommit, emits
+// the local validator's authenticated precommit. It never finalizes state.
+func (d *ConsensusRoundDriver) PublishAuthenticatedPrevoteAndMaybePrecommit(
 	peer PeerID,
 	prevote consensus.Message,
+	localSender []byte,
 	signer crypto.Signer,
 ) (consensus.Message, error) {
 	if d == nil || d.driver == nil {
@@ -237,7 +237,7 @@ func (d *ConsensusRoundDriver) PublishLocalPrecommitAfterPrevote(
 	if signer == nil {
 		return consensus.Message{}, consensus.ErrNilProposalSigner
 	}
-	if prevote.Type != consensus.MessageTypePrevote {
+	if prevote.Type != consensus.MessageTypePrevote || len(localSender) == 0 {
 		return consensus.Message{}, consensus.ErrInvalidRuntimeVoteType
 	}
 
@@ -250,7 +250,7 @@ func (d *ConsensusRoundDriver) PublishLocalPrecommitAfterPrevote(
 
 	precommit, err := consensus.BuildSignedVoteMessage(
 		d.driver.Runtime().State(),
-		prevote.Sender,
+		localSender,
 		consensus.MessageTypePrecommit,
 		d.driver.Runtime().Proposal(),
 		signer,
