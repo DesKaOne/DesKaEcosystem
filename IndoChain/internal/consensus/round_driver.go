@@ -40,6 +40,11 @@ func NewRoundDriver(
 	}, nil
 }
 
+func (d *RoundDriver) Authority() TimeoutAuthorityResolver {
+	if d == nil { return nil }
+	return d.authority
+}
+
 func (d *RoundDriver) Runtime() *ValidatorRuntime {
 	if d == nil {
 		return nil
