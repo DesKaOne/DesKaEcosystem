@@ -1746,3 +1746,71 @@ Milestone ini bukan production BFT completion dan tidak mengklaim production pro
 **Next milestone**
 
 **4.40 — Multi-Node Round-Change / Lock Adoption Scenario Matrix:** memperluas harness menjadi deterministic scenario matrix untuk higher-lock adoption, lower-lock non-downgrade, equal-lock conflict, delayed/reordered evidence, invalid signatures, dan multi-height replay sebelum menyentuh production scheduler/persistent consensus state.
+
+
+### 4.40 Multi-Node Round-Change / Lock Adoption Scenario Matrix
+
+**Tanggal:** 2026-09-30
+
+**Objective**
+
+Memperluas deterministic regression coverage menjadi scenario matrix eksplisit untuk higher-lock adoption, lower-lock non-downgrade, equal-lock conflict, delayed/reordered timeout evidence, invalid signatures, duplicate evidence, dan cross-height replay.
+
+**Implementation**
+
+Tidak ada perubahan production consensus algorithm. Perubahan hanya memperkuat IndoChain/internal/consensus/runtime_multiround_test.go dengan table-driven scenario matrix.
+
+Matrix mencakup:
+
+1. higher-lock-adoption — authenticated higher lock dengan proposal berbeda diadopsi tanpa kehilangan context;
+2. lower-lock-non-downgrade — timeout membawa lock lama tetapi round tetap maju dan existing higher lock tidak turun;
+3. equal-lock-conflict — dua authenticated lock pada round yang sama dengan proposal berbeda ditolak atomic;
+4. delayed-reordered-timeout-evidence — evidence datang dalam urutan berbeda tetapi menghasilkan deterministic round change yang sama;
+5. invalid-signature — nested authenticated lock proof dengan signature rusak ditolak tanpa mutation;
+6. duplicate-evidence — timeout evidence validator yang sama tidak dapat membentuk transition;
+7. cross-height-replay — LockProof dari height berbeda ditolak dan runtime tetap unchanged.
+
+Coverage sebelumnya tetap dipertahankan untuk authenticated finality, multi-round sequence, tampered precommit signature, wrong chain/epoch/height, timeout replay, dan higher-lock atomicity.
+
+**Production code impact**
+
+Tidak ada production code change. Existing ValidatorRuntime, TimeoutCertificate, LockProof, authenticated authority, quorum, dan node handoff semantics tetap menjadi implementation under test.
+
+**Verification**
+
+- Scenario matrix implementation HEAD: c01083cc132b30865c0e7d174dfd234e2d9cb480
+- IndoChain CI #1389, run 36720194819: PASS
+- Tidy: PASS
+- go test ./...: PASS
+- go test -race ./...: PASS
+- go vet ./...: PASS
+- PostgreSQL: tidak relevan; milestone hanya consensus regression/P2P scenario coverage.
+
+**Consensus invariants locked**
+
+- higher-lock adoption tetap membutuhkan authenticated LockProof;
+- lower-lock evidence tidak pernah downgrade existing lock;
+- equal-round conflicting lock proposal ditolak;
+- evidence ordering tidak menjadi consensus decision;
+- duplicate validator evidence tidak menghasilkan quorum/round transition;
+- signature failure dan cross-height evidence tidak boleh mutate runtime;
+- replay evidence tidak boleh meregresikan round atau lock;
+- explicit authenticated precommit tetap menjadi root evidence untuk finality.
+
+**Safety boundary**
+
+Milestone ini memperkuat regression confidence, tetapi tetap **bukan production BFT completion**. Tidak ada klaim production proposer/validator algorithm, network-wide timeout scheduler, durable consensus recovery, validator lifecycle, atau formal BFT proof.
+
+**Known limitations**
+
+- production round driver dan timeout scheduler belum diimplementasikan;
+- real network failure/reordering/partition simulation masih terbatas pada deterministic in-memory harness;
+- durable consensus state/recovery belum dibekukan;
+- production block-production loop belum terintegrasi end-to-end;
+- formal BFT safety/liveness analysis masih terbuka.
+
+**Next milestone**
+
+**4.41 — Adversarial Multi-Node Evidence Ordering & Failure Matrix:** perluas harness dari scenario-level state tests menjadi deterministic multi-node message delivery matrix untuk delayed proposal, duplicated vote/precommit, reordered timeout batches, invalid sender/signature, conflicting locks, partition/rejoin, dan canonical-state non-mutation.
+
+**Milestone 4.40 implementation/test status:** GREEN pada exact implementation HEAD c01083cc132b30865c0e7d174dfd234e2d9cb480, CI #1389 / run 36720194819. Documentation follow-up ini wajib diverifikasi ulang pada exact documentation HEAD sebelum milestone final GREEN.
