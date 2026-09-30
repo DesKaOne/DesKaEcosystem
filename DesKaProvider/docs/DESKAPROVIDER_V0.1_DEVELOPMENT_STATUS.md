@@ -4291,3 +4291,8 @@ No routing, retry, failover, resubmission, refund automation, ledger mutation, c
 ### Next Concrete Task
 
 Continue the same contract audit on IAK Check Status and Top Up: verify mandatory identity/status/message/price fields and ensure documented `rc` semantics cannot be silently overridden by conflicting status values.
+
+
+### IAK Inquiry CI Fixture Correction
+
+CI #3149 correctly exposed a test-fixture assertion bug in the newly added invalid-status case: the test checked constructor error instead of inquiry error. The test has been corrected to assert the actual `Inquiry()` response validation path. Production validation logic is unchanged.
