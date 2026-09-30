@@ -182,7 +182,8 @@ func TestWebhookSignatureAndMapping(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := c.HandleWebhook(context.Background(), provider.WebhookRequest{
-		Body: body, Signature: "sha1=" + signature, SignatureSecret: "hooksecret",
+		Body: body, Event: "create", UserAgent: "Digiflazz-Hookshot",
+		Signature: "sha1=" + signature, SignatureSecret: "hooksecret",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -196,6 +197,34 @@ func TestWebhookSignatureAndMapping(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected invalid signature error")
+	}
+}
+
+func TestWebhookRequiresPrepaidMetadata(t *testing.T) {
+	body := []byte(`{"data":{"ref_id":"ref-required","customer_no":"087800001233","buyer_sku_code":"xld10","message":"Transaksi Sukses","status":"Sukses","rc":"00","sn":"SN1","price":10000}}`)
+	c, err := New(config.DigiFlazzConfig{Username: "buyer", APIKey: "secret"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cases := []struct {
+		name      string
+		event     string
+		userAgent string
+		want      string
+	}{
+		{name: "missing event", userAgent: "Digiflazz-Hookshot", want: "event header is required"},
+		{name: "missing user agent", event: "create", want: "user-agent header is required"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := c.HandleWebhook(context.Background(), provider.WebhookRequest{
+				Body: body, Event: tc.event, UserAgent: tc.userAgent,
+			})
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("expected required webhook metadata rejection, got %v", err)
+			}
+		})
 	}
 }
 
