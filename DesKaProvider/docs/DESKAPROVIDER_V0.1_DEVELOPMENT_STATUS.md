@@ -4258,3 +4258,36 @@ The previous CI run #3133 was therefore **RED by design-test feedback** and is n
 ### IAK Pricelist Fixture Correction
 
 CI #3139 exposed one remaining fixture mismatch: the existing successful pricelist fixture omitted the documented `data.rc` field. The fixture is now aligned with the authoritative success response (`rc: "00"`, `message: "SUCCESS"`). No production behavior is relaxed; successful catalog responses still require the documented success code.
+
+
+## IAK PLN Inquiry Contract Hardening
+
+**Date:** 2026-09-30
+
+### Source Basis
+
+The IAK Prepaid Core v2 PLN Inquiry contract documents `status` as mandatory with only `1:SUCCESS` and `2:FAILED`; `customer_id`, `message`, and `rc` are also mandatory. The documented success response echoes the requested customer ID. citeturn0search0
+
+### Implementation
+
+- `Inquiry()` now rejects missing/unsupported inquiry `data.status`; only documented `1` and `2` are accepted.
+- `data.customer_id` is now required and must match the requested customer number.
+- Existing `rc` mapping remains authoritative for provider code/status handling and unknown codes remain fail-closed.
+- Existing required `message` validation remains enforced.
+
+### Deterministic Coverage
+
+Added tests for:
+
+- missing `customer_id`;
+- mismatched `customer_id`;
+- invalid inquiry status `0` / PROCESS;
+- existing successful PLN inquiry fixture now includes documented `customer_id`.
+
+### Safety Boundary
+
+No routing, retry, failover, resubmission, refund automation, ledger mutation, customer-balance mutation, treasury movement, or provider funding behavior was introduced. The change only tightens response-contract validation.
+
+### Next Concrete Task
+
+Continue the same contract audit on IAK Check Status and Top Up: verify mandatory identity/status/message/price fields and ensure documented `rc` semantics cannot be silently overridden by conflicting status values.
