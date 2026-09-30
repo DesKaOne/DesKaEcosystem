@@ -2044,7 +2044,7 @@ No consensus persistence object is allowed to imply canonical state commit.
 
 `persistence_vectors_test.go` verifies that the same semantic versioned consensus context produces identical serialized bytes and that serialization round-trips to the same semantic representation.
 
-The vector includes explicit validator identity/public-key/voting-power entries, threshold, proposer policy/version, and consensus context. The SHA-256 digest is fixed as a regression vector.
+The vector includes explicit validator identity/public-key/voting-power entries, threshold, proposer policy/version, and consensus context. The SHA-256 digest is fixed as a regression vector. Initial CI #1424 exposed a test-vector digest mismatch; the failure was isolated to the expected test constant and corrected without production-code changes.
 
 This is a **contract-level test vector**, not a production WAL/snapshot format.
 
@@ -2067,8 +2067,8 @@ Canonical block/state commit remains outside consensus recovery.
 - `IndoChain/internal/consensus/runtime_recovery_boundary_test.go`
 - `IndoChain/internal/consensus/persistence_vectors_test.go`
 - `IndoChain/docs/consensus-runtime-persistence-contract-v0.1.md`
-- Exact implementation/documentation HEAD: pending final status-document commit.
-- CI exact final documentation HEAD: pending.
+- Exact implementation HEAD after vector fix: `ec65f91b33dacca89dde6989565668a6cde46bd9`.
+- CI #1425, run `36724366897`: PASS on exact implementation HEAD `ec65f91b33dacca89dde6989565668a6cde46bd9`.
 - PostgreSQL: tidak relevan.
 
 **Production code impact**
@@ -2092,4 +2092,4 @@ Tidak ada production WAL/snapshot reader/writer, no durable consensus store, no 
 
 **4.45 — Consensus WAL/Snapshot Record Contract & Crash Boundary Matrix:** definisikan record envelope, versioning, ordering, checksum/integrity, snapshot/WAL interaction, crash cut points, stale-record rejection, context mismatch rejection, and deterministic recovery vectors sebelum production persistence implementation.
 
-**Milestone 4.44 status:** implementation/design review completed, awaiting exact final documentation HEAD CI GREEN gate.
+**Milestone 4.44 status:** implementation/design review completed; implementation HEAD is GREEN. Final documentation HEAD remains pending its own CI gate.
