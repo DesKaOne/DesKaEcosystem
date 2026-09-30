@@ -274,7 +274,6 @@ func validateTransactionResponse(x map[string]any, operation string) (provider.T
  if _, ok := requiredInt64Num(x,"price"); !ok { return "", fmt.Errorf("IAK %s response is missing or invalid price", operation) }
  if _, ok := requiredNum(x,"balance"); !ok { return "", fmt.Errorf("IAK %s response is missing or invalid balance", operation) }
  if _, ok := requiredInt64Num(x,"tr_id"); !ok { return "", fmt.Errorf("IAK %s response is missing or invalid tr_id", operation) }
- if mapped != provider.StatusSuccess && strings.TrimSpace(str(x,"sn")) != "" { return "", fmt.Errorf("IAK %s response has serial number for non-success status", operation) }
  return mapped, nil
 }
 
@@ -291,6 +290,7 @@ func purchase(d map[string]any)(provider.PurchaseResult,error){
 func purchaseStatus(x map[string]any)(provider.PurchaseStatus,error){
  st,err:=validateTransactionResponse(x,"status")
  if err!=nil{return provider.PurchaseStatus{},err}
+ if st != provider.StatusSuccess && strings.TrimSpace(str(x,"sn")) != "" { return provider.PurchaseStatus{}, errors.New("IAK status response has serial number for non-success status") }
  ref,customer,product:=str(x,"ref_id"),str(x,"customer_id"),str(x,"product_code")
  if ref==""||customer==""||product==""{return provider.PurchaseStatus{},errors.New("IAK status response is missing transaction identity")}
  price,_:=requiredInt64Num(x,"price")
