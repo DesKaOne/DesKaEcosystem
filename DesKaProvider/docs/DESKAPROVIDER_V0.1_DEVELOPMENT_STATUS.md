@@ -4157,3 +4157,18 @@ The latest CI verification must remain green for the final documentation HEAD; c
 ### Next Concrete Engineering Task
 
 Continue XP SINDONESIA completion only where the repository/API contract provides enough deterministic schema to map safely. Review whether any documented balance/error semantics require additional fail-closed coverage; do not add Cek Harga or List Harga semantics to `PPOBProvider` without a provider-neutral interface boundary.
+
+
+## XP SINDONESIA Documented Order Error-State Mapping
+
+**Date:** 2026-09-30
+
+- Tightened Order API response mapping to cover the documented `success: "0"` states `gagal (...)` and `kosong (...)` as Failed.
+- Documented `proses` and `lambat` remain Pending, while `sukses` remains Success.
+- Callback mapping remains stricter and continues to accept only the two documented callback statuses `sukses` and `gagal`; the relaxed prefix handling applies only to Order API responses because the source documentation explicitly shows annotated Order API status strings.
+- Added deterministic coverage for all documented Order API status variants above plus fail-closed behavior for unknown status.
+- No retry, refund automation, resubmission, ledger mutation, or provider failover was introduced.
+
+### Next Concrete Engineering Task
+
+Continue the XP SINDONESIA audit for documented non-order APIs only where their response schema maps cleanly to an existing capability. Do not add deposit operations to `PPOBProvider` without a dedicated provider-neutral capability boundary.
