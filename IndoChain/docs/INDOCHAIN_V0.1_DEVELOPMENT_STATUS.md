@@ -2503,3 +2503,78 @@ Masih terbuka:
 Candidate dissemination/fetch harus diikat ke existing block/sync transport sehingga node penerima dapat memperoleh candidate block berdasarkan proposal hash, memvalidasi candidate terhadap consensus context, lalu menjalankan authenticated prevote/precommit melalui `ConsensusRoundDriver`.
 
 **Milestone 4.52 status:** implementation/test completed; final documentation HEAD requires exact-head CI verification.
+
+
+### 4.53 Consensus Proposal ↔ Candidate Block Dissemination/Fetch Boundary
+
+**Tanggal:** 2026-10-01
+
+**Objective**
+
+Mengikat proposal consensus yang sudah authenticated ke candidate block nyata melalui existing P2P block/sync message types. Receiver harus dapat meminta block pada height proposal, menerima development-encoded candidate, lalu memverifikasi deterministic block hash terhadap proposal payload sebelum candidate dipakai lebih lanjut.
+
+**Implementation**
+
+- `IndoChain/internal/p2p/block_codec.go`
+  - menambahkan development-only block/candidate codec untuk `block.Block` dan `BlockResponse`;
+  - mempertahankan header, proposer, consensus evidence, dan signed `transaction.Transaction`;
+  - round-trip verification mempertahankan deterministic block hash;
+  - codec secara eksplisit bukan canonical block serialization.
+- `IndoChain/internal/p2p/candidate_exchange.go`
+  - `CandidateExchange.PublishCandidate` mengirim candidate melalui existing `MessageTypeBlock`;
+  - `ServeOneRequest` memakai existing `BlockRequest` + `SyncReader` dan mengembalikan `BlockResponse`;
+  - `FetchCandidate` meminta block pada proposal height dan menolak candidate bila height atau deterministic block hash tidak cocok dengan proposal payload.
+- `IndoChain/internal/p2p/consensus_round_driver.go`
+  - `NewConsensusRoundDriverWithCandidateExchange` menggabungkan authenticated consensus driver dengan candidate exchange;
+  - `PublishBlockProposalAndCandidate` mengirim signed proposal evidence lalu complete development candidate;
+  - `FetchProposalCandidate` mengikat candidate hasil fetch ke proposal hash;
+  - `ServeCandidateRequest` menjadi boundary untuk existing sync request handling.
+- Tests:
+  - development block codec round-trip;
+  - candidate fetch/hash binding melalui in-memory P2P boundary;
+  - existing consensus runtime authentication tetap menjadi authority boundary.
+
+**Locked invariants**
+
+1. Proposal payload tetap menjadi deterministic block-hash binding.
+2. Candidate fetch dibatasi ke proposal height.
+3. Candidate dengan hash berbeda dari authenticated proposal ditolak.
+4. Candidate codec tidak mengubah canonical block hash algorithm atau mengklaim canonical serialization freeze.
+5. Candidate exchange tidak melakukan canonical execution, state publication, atau storage commit.
+6. Existing sync reader tetap menjadi source untuk block retrieval; exchange tidak membuat second canonical block store.
+7. Request/response handling tetap bounded oleh existing payload/request limits.
+
+**Production boundary**
+
+Milestone ini menutup gap antara authenticated proposal evidence dan block candidate retrieval pada executable P2P boundary. Ini **belum full production multi-node BFT loop**.
+
+Masih terbuka:
+
+- multiplexing request/response dengan concurrent consensus traffic;
+- automatic proposer loop dari mempool;
+- automatic prevote/precommit policy setelah candidate validation;
+- peer-wide broadcast/retransmission;
+- timeout clock/failure detector;
+- multi-node multi-height canonical commit loop;
+- validator-set lifecycle;
+- durable consensus recovery;
+- final canonical serialization freeze.
+
+**Verification**
+
+- Initial implementation HEAD `b399f3086b3f16da628ba85b2a927ec49c2bf499`: CI RED karena duplicate package error `ErrUnexpectedSyncMessage` pada candidate exchange.
+- Root cause diperbaiki dengan memakai existing sync error declaration.
+- Corrected implementation HEAD `ca16643bc211ebada60ff57764fcde2e647b59f`.
+- Exact-head CI run `36790985190`: **GREEN**.
+- Tidy: PASS.
+- `go test ./...`: PASS.
+- `go test -race ./...`: PASS.
+- `go vet ./...`: PASS.
+- Additional exact-head CI run `36790979322`: **GREEN**.
+- PostgreSQL: tidak relevan.
+
+**Next integration target**
+
+Bind fetched candidate ke consensus proposal acceptance sehingga receiver tidak hanya memiliki block/hash binding, tetapi dapat menjalankan candidate validation/execution policy sebelum authenticated prevote emission.
+
+**Milestone 4.53 status:** implementation/test completed; exact-head CI gate GREEN.
