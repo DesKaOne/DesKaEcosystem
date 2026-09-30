@@ -1814,3 +1814,66 @@ Milestone ini memperkuat regression confidence, tetapi tetap **bukan production 
 **4.41 — Adversarial Multi-Node Evidence Ordering & Failure Matrix:** perluas harness dari scenario-level state tests menjadi deterministic multi-node message delivery matrix untuk delayed proposal, duplicated vote/precommit, reordered timeout batches, invalid sender/signature, conflicting locks, partition/rejoin, dan canonical-state non-mutation.
 
 **Milestone 4.40 implementation/test status:** GREEN pada exact implementation HEAD c01083cc132b30865c0e7d174dfd234e2d9cb480, CI #1389 / run 36720194819. Documentation follow-up ini menjadi source snapshot final; milestone hanya dinyatakan GREEN setelah CI pada exact documentation HEAD ini PASS.
+
+
+### 4.41 Adversarial Multi-Node Evidence Ordering & Failure Matrix
+
+**Tanggal:** 2026-09-30
+
+**Objective**
+
+Memperluas adversarial coverage dari scenario-level runtime tests menjadi deterministic multi-node message-delivery matrix yang menguji delayed proposal, duplicated vote/precommit, invalid sender/signature, conflicting locks, partition/rejoin delivery, dan canonical-state non-mutation tanpa membuat production scheduler/network driver.
+
+**Implementation**
+
+File utama: `IndoChain/internal/p2p/consensus_round_driver_adversarial_test.go`.
+
+Coverage baru:
+
+1. **duplicated vote/precommit delivery** — pesan yang sama dikirim dua kali melalui transport; duplicate precommit tidak diterima dua kali oleh runtime dan tidak mengubah phase secara ilegal;
+2. **invalid sender across nodes** — proposal bertanda tangan dengan sender yang tidak menjadi anggota validator ditolak setelah delivery dan runtime tetap unchanged;
+3. **tampered precommit from peer** — precommit dengan signature rusak dikirim melalui transport; evidence dapat mencapai aggregation boundary tetapi authenticated finality menolak signature yang tidak valid dan state finalized tidak berubah;
+4. **partition/rejoin delivery** — transport yang belum terhubung tidak dapat mengirim message; setelah peer tersambung kembali, delivery berhasil dan payload tetap utuh;
+5. existing **stale-round proposal** tetap diuji melalui transport setelah node target maju round;
+6. existing **conflicting timeout locks** tetap diuji sebagai atomic rejection;
+7. existing **replayed timeout evidence** tetap ditolak setelah round change;
+8. existing consensus scenario matrix mempertahankan **delayed/reordered timeout evidence**, cross-height replay, invalid nested signature, duplicate evidence, dan higher/lower/equal lock semantics.
+
+**Production code impact**
+
+Tidak ada production consensus algorithm, timeout scheduler, network-wide driver, atau persistent recovery code baru. Perubahan milestone ini terbatas pada adversarial regression harness.
+
+Temuan penting dari CI iteration: fixture tampered-precommit awal gagal pada `precommit quorum not reached`, bukan pada signature verification. Fixture diperbaiki dengan menambahkan satu precommit valid sehingga finalization benar-benar mencapai authenticated signature validation. Tidak ada perubahan production code untuk memperbaiki test tersebut.
+
+**Consensus invariants locked**
+
+1. Delayed/stale proposal tidak dapat masuk ke round target setelah context berubah.
+2. Duplicate vote/precommit delivery tidak menghasilkan duplicate validator evidence.
+3. Invalid sender tidak dapat memengaruhi runtime state.
+4. Tampered authenticated precommit tidak dapat menghasilkan finality.
+5. Conflicting timeout locks tetap atomic dan tidak mengubah round/lock state.
+6. Replayed timeout evidence tidak dapat meregresikan round.
+7. Partitioned transport tidak mengklaim delivery sebelum peer connection tersedia; rejoin delivery tetap melewati message validation.
+8. Evidence ordering tidak menjadi sumber nondeterminism pada round-change decision.
+9. Failed evidence validation tidak mengubah runtime round/phase/lock/finality state.
+10. Canonical node state tetap di luar test harness; tidak ada test yang menganggap consensus evidence sebagai durable commit.
+
+**Safety boundary**
+
+Milestone ini meningkatkan adversarial regression confidence, tetapi tetap **bukan production BFT completion**. In-memory transport belum mensimulasikan network latency, packet loss, Byzantine peer behavior, real partition timing, peer discovery, retransmission, failure detection, atau network-wide liveness. Persistent consensus WAL/snapshot, validator lifecycle, production proposer policy, dan formal BFT safety/liveness analysis masih belum selesai.
+
+**Verification**
+
+- Adversarial harness implementation/test HEAD: `dd7759021b62606a5fa3191f6fb83aa3447b6e20`
+- IndoChain CI #1398, run `36721370689`: PASS
+- Tidy: PASS
+- `go test ./...`: PASS
+- `go test -race ./...`: PASS
+- `go vet ./...`: PASS
+- PostgreSQL: tidak relevan; milestone hanya consensus/P2P regression harness.
+
+**Next milestone**
+
+**4.42 — Deterministic Round Driver Simulation & Recovery Boundary:** bangun simulation harness yang menjalankan contract round-driver v0.1 secara deterministic di beberapa node, termasuk queued evidence, timeout transition, lock adoption, restart/recovery state boundary, dan finalized-block handoff tanpa mengklaim production scheduler atau durable consensus implementation.
+
+**Milestone 4.41 implementation/test status:** GREEN pada exact implementation/test HEAD `dd7759021b62606a5fa3191f6fb83aa3447b6e20`, CI #1398 / run `36721370689`. Documentation follow-up ini wajib diverifikasi kembali pada exact documentation HEAD sebagai final gate.
