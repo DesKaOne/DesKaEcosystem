@@ -817,3 +817,34 @@ func TestIAKDocumentedResponseCodesMapDeterministically(t *testing.T) {
   t.Fatal("unknown response code must fail closed")
  }
 }
+
+
+func TestIAKWebhookAcceptsDocumentedDataEnvelope(t *testing.T) {
+ c, err := New(config.IAKConfig{Username:"user", APIKey:"secret"}, http.DefaultClient)
+ if err != nil { t.Fatal(err) }
+ body := []byte("{\"data\":{\"ref_id\":\"order-envelope\",\"status\":\"1\",\"product_code\":\"xld25000\",\"customer_id\":\"08123\",\"price\":\"25000\",\"message\":\"SUCCESS\",\"balance\":\"997061249\",\"tr_id\":\"3482\",\"rc\":\"00\",\"sign\":\"" + ts("order-envelope") + "\"}}")
+ event, err := c.HandleWebhook(context.Background(), provider.WebhookRequest{Body:body, SignatureSecret:"secret"})
+ if err != nil { t.Fatal(err) }
+ if event.ReferenceID!="order-envelope" || event.CustomerNo!="08123" || event.ProductCode!="xld25000" || event.Status!=provider.StatusSuccess || event.Price!=25000 { t.Fatalf("event=%#v", event) }
+}
+
+func TestIAKTransactionMapsOtherHTTPStatusToPending(t *testing.T) {
+ srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Error(w, "provider unavailable", http.StatusServiceUnavailable) }))
+ defer srv.Close()
+ c, err := New(iakTestConfig(srv.URL), srv.Client())
+ if err != nil { t.Fatal(err) }
+ purchase, err := c.Purchase(context.Background(), provider.PurchaseRequest{ProductCode:"xld25000", CustomerNo:"08123", ReferenceID:"order-http-pending"})
+ if err != nil { t.Fatal(err) }
+ if purchase.Status != provider.StatusPending || purchase.ReferenceID != "order-http-pending" || purchase.CustomerNo != "08123" || purchase.ProductCode != "xld25000" { t.Fatalf("purchase=%#v", purchase) }
+ status, err := c.GetStatus(context.Background(), provider.StatusRequest{ProductCode:"xld25000", CustomerNo:"08123", ReferenceID:"order-http-pending"})
+ if err != nil { t.Fatal(err) }
+ if status.Status != provider.StatusPending || status.ReferenceID != "order-http-pending" || status.CustomerNo != "08123" || status.ProductCode != "xld25000" { t.Fatalf("status=%#v", status) }
+}
+
+func TestIAKHTTPBadRequestRemainsError(t *testing.T) {
+ srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusBadRequest); _, _ = w.Write([]byte("{\"error_details\":{\"message\":\"invalid request\"}}")) }))
+ defer srv.Close()
+ c, err := New(iakTestConfig(srv.URL), srv.Client())
+ if err != nil { t.Fatal(err) }
+ if _, err := c.Purchase(context.Background(), provider.PurchaseRequest{ProductCode:"xld25000", CustomerNo:"08123", ReferenceID:"order-bad-request"}); err == nil { t.Fatal("expected HTTP 400 to remain an error") }
+}
