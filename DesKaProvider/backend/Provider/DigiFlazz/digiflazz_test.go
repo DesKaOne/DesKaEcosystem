@@ -56,6 +56,20 @@ func TestPurchaseBuildsOfficialBuyerRequestAndMapsResponse(t *testing.T) {
 }
 
 
+func TestPurchaseRejectsMissingRequiredPrice(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{
+			"ref_id": "ref-no-price", "customer_no": "087800001232", "buyer_sku_code": "xld10",
+			"message": "Transaksi Sukses", "status": "Sukses", "rc": "00",
+		}})
+	}))
+	defer server.Close()
+	c, err := New(config.DigiFlazzConfig{Username: "buyer", APIKey: "secret", Endpoint: server.URL}, server.Client())
+	if err != nil { t.Fatal(err) }
+	_, err = c.Purchase(context.Background(), provider.PurchaseRequest{ProductCode: "xld10", CustomerNo: "087800001232", ReferenceID: "ref-no-price"})
+	if err == nil || !strings.Contains(err.Error(), "missing required price") { t.Fatalf("expected missing required price rejection, got %v", err) }
+}
+
 func TestPurchaseMapsStructuredProviderErrorFromHTTP400(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -68,6 +82,7 @@ func TestPurchaseMapsStructuredProviderErrorFromHTTP400(t *testing.T) {
 				"message": "IP Anda tidak kami kenali",
 				"status": "Gagal",
 				"rc": "45",
+				"price": 10000,
 			},
 		})
 	}))
