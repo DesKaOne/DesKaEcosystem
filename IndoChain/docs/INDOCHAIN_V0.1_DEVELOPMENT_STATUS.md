@@ -2421,8 +2421,12 @@ Milestone ini merupakan integrasi BFT orchestration yang nyata, tetapi **bukan p
 **Verification**
 
 - Implementation HEAD: `ee5864dc3bf996083404430759f9a8285bfb7a83`
-- Exact-head CI: in progress saat status entry dibuat.
-- Required gate tetap: Tidy, Test, Race Test, Vet pada exact documentation HEAD.
+- Exact-head CI #1510 / run `36789565991`: GREEN.
+- Tidy: PASS.
+- `go test ./...`: PASS.
+- `go test -race ./...`: PASS.
+- `go vet ./...`: PASS.
+- Final documentation HEAD tetap wajib diverifikasi sekali lagi setelah update status ini.
 - PostgreSQL: tidak relevan.
 
 **Next integration target**
