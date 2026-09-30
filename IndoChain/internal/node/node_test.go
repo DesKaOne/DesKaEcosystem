@@ -687,6 +687,71 @@ func TestCommitFinalizedBlockRejectsAlreadyCommittedBlockWithoutMutation(t *test
 	}
 }
 
+func TestCommitFinalizedBlockRejectsDifferentBlockAtCommittedHeightWithoutMutation(t *testing.T) {
+	n, ctx, candidate, certificate, validatorResolver, senderResolver, _ := finalizedBlockFixture(t, storage.NewMemoryStore())
+	validators := mustValidatorSet(t, certificate)
+	power := mustVotingPowerSet(t, certificate)
+	if err := n.CommitFinalizedBlock(ctx, candidate, certificate, validators, power, validatorResolver, senderResolver); err != nil {
+		t.Fatal(err)
+	}
+
+	beforeHead, beforeHash, beforeRoot := n.Head, n.HeadHash, n.State.Root()
+	different := candidate
+	different.Header.Timestamp++
+	different.Header.TransactionsRoot = types.Hash{42}
+	different.Header.StateRoot = candidate.Header.StateRoot
+	differentHash, err := block.Hash(different)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if differentHash == n.HeadHash {
+		t.Fatal("test candidate unexpectedly matches canonical head hash")
+	}
+
+	err = n.CommitFinalizedBlock(ctx, different, certificate, validators, power, validatorResolver, senderResolver)
+	if err != ErrConsensusContextMismatch {
+		t.Fatalf("error = %v, want %v", err, ErrConsensusContextMismatch)
+	}
+	if !reflect.DeepEqual(n.Head, beforeHead) || n.HeadHash != beforeHash || n.State.Root() != beforeRoot {
+		t.Fatal("node mutated after rejecting different block at committed height")
+	}
+}
+
+func TestCommitFinalizedBlockRejectsStaleContextWithoutStorageMutation(t *testing.T) {
+	n, ctx, candidate, certificate, validatorResolver, senderResolver, _ := finalizedBlockFixture(t, storage.NewMemoryStore())
+	beforeHead, beforeHash, beforeRoot := n.Head, n.HeadHash, n.State.Root()
+	storedHead, storedHash, err := n.Store.Head()
+	if err != nil {
+		t.Fatal(err)
+	}
+	storedState, err := n.Store.LoadState()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	stale := ctx
+	stale.State.Height++
+	stale.PreviousHash = types.Hash{77}
+	err = n.CommitFinalizedBlock(stale, candidate, certificate, mustValidatorSet(t, certificate), mustVotingPowerSet(t, certificate), validatorResolver, senderResolver)
+	if err != ErrConsensusContextMismatch {
+		t.Fatalf("error = %v, want %v", err, ErrConsensusContextMismatch)
+	}
+	if !reflect.DeepEqual(n.Head, beforeHead) || n.HeadHash != beforeHash || n.State.Root() != beforeRoot {
+		t.Fatal("node mutated after stale context rejection")
+	}
+	afterHead, afterHash, err := n.Store.Head()
+	if err != nil {
+		t.Fatal(err)
+	}
+	afterState, err := n.Store.LoadState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(afterHead, storedHead) || afterHash != storedHash || afterState.Root() != storedState.Root() {
+		t.Fatal("storage mutated after stale context rejection")
+	}
+}
+
 func TestCommitFinalizedBlockUsesExplicitAuthorityBoundaries(t *testing.T) {
 	store := storage.NewMemoryStore()
 	n, err := NewDevnet(store); if err != nil { t.Fatal(err) }
