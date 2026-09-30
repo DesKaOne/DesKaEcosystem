@@ -644,3 +644,32 @@ func TestIAKWebhookRejectsNonFiniteBalance(t *testing.T) {
   })
  }
 }
+
+func TestIAKPurchaseResponseIdentityFieldsAreRequired(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+	}{
+		{"missing ref_id", `{"data":{"customer_id":"08123","product_code":"xld25000","status":0,"price":25000,"balance":997061249,"tr_id":3482,"message":"PROCESS","rc":"39"}}`},
+		{"missing customer_id", `{"data":{"ref_id":"order-1","product_code":"xld25000","status":0,"price":25000,"balance":997061249,"tr_id":3482,"message":"PROCESS","rc":"39"}}`},
+		{"missing product_code", `{"data":{"ref_id":"order-1","customer_id":"08123","status":0,"price":25000,"balance":997061249,"tr_id":3482,"message":"PROCESS","rc":"39"}}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, client := newIAKJSONServer(tc.body)
+			defer srv.Close()
+			c, err := New(iakTestConfig(srv.URL), client)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = c.Purchase(context.Background(), provider.PurchaseRequest{
+				ProductCode:  "xld25000",
+				CustomerNo:   "08123",
+				ReferenceID:  "order-1",
+			})
+			if err == nil {
+				t.Fatal("expected missing purchase identity field error")
+			}
+		})
+	}
+}
