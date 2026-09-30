@@ -21,7 +21,7 @@ func TestIAKAdapter(t *testing.T){
   if p["username"]!="user"{t.Errorf("username=%q",p["username"])}
   switch r.URL.Path{
   case "/api/pricelist": if p["sign"]!=ts("pl"){t.Errorf("bad price signature")};w.Write([]byte(`{"data":{"pricelist":[{"product_code":"xld25000","product_description":"XL 25K","product_category":"pulsa","status":"active"}],"rc":"00","message":"SUCCESS"}}`))
-  case "/api/inquiry-pln": if p["sign"]!=ts("12345678901"){t.Errorf("bad inquiry signature")};w.Write([]byte(`{"data":{"status":"1","message":"SUCCESS","rc":"00"}}`))
+  case "/api/inquiry-pln": if p["sign"]!=ts("12345678901"){t.Errorf("bad inquiry signature")};w.Write([]byte(`{"data":{"status":"1","customer_id":"12345678901","message":"SUCCESS","rc":"00"}}`))
   case "/api/top-up": if p["sign"]!=ts("order-1"){t.Errorf("bad purchase signature")};w.Write([]byte(`{"data":{"ref_id":"order-1","status":0,"product_code":"xld25000","customer_id":"08123","price":25000,"message":"PROCESS","rc":"39"}}`))
   case "/api/check-status":w.Write([]byte(`{"data":{"ref_id":"order-1","status":1,"product_code":"xld25000","customer_id":"08123","price":25000,"message":"SUCCESS","rc":"00","sn":"SN123"}}`))
   case "/api/check-balance":if p["sign"]!=ts("bl"){t.Errorf("bad balance signature")};w.Write([]byte(`{"data":{"balance":123456}}`))
@@ -190,6 +190,33 @@ func TestIAKStatusResponseValidation(t *testing.T) {
 			if !tc.wantErr && (err != nil || result.Status != provider.StatusSuccess) { t.Fatalf("result=%#v err=%v", result, err) }
 		})
 	}
+}
+
+func TestIAKInquiryRejectsMissingCustomerID(t *testing.T) {
+ srv, client := newIAKJSONServer(`{"data":{"status":"1","message":"SUCCESS","rc":"00"}}`)
+ defer srv.Close()
+ c, err := New(iakTestConfig(srv.URL), client)
+ if err != nil { t.Fatal(err) }
+ _, err = c.Inquiry(context.Background(), provider.InquiryRequest{ProductCode:"pln", CustomerNo:"12345678901"})
+ if err == nil { t.Fatal("expected missing inquiry customer ID error") }
+}
+
+func TestIAKInquiryRejectsCustomerIDMismatch(t *testing.T) {
+ srv, client := newIAKJSONServer(`{"data":{"status":"1","customer_id":"99999999999","message":"SUCCESS","rc":"00"}}`)
+ defer srv.Close()
+ c, err := New(iakTestConfig(srv.URL), client)
+ if err != nil { t.Fatal(err) }
+ _, err = c.Inquiry(context.Background(), provider.InquiryRequest{ProductCode:"pln", CustomerNo:"12345678901"})
+ if err == nil { t.Fatal("expected inquiry customer ID mismatch") }
+}
+
+func TestIAKInquiryRejectsInvalidStatus(t *testing.T) {
+ srv, client := newIAKJSONServer(`{"data":{"status":"0","customer_id":"12345678901","message":"PROCESS","rc":"39"}}`)
+ defer srv.Close()
+ c, err := New(iakTestConfig(srv.URL), client)
+ if err == nil { t.Fatal(err) }
+ _, err = c.Inquiry(context.Background(), provider.InquiryRequest{ProductCode:"pln", CustomerNo:"12345678901"})
+ if err == nil { t.Fatal("expected invalid inquiry status error") }
 }
 
 func TestIAKInquiryRequiresMessage(t *testing.T) {
