@@ -85,7 +85,7 @@ func (c *Client) Inquiry(ctx context.Context, req provider.InquiryRequest)(provi
  if mapErr!=nil { return provider.InquiryResult{}, mapErr }
  status,_:=transactionStatus(rawStatus)
  if mapped!=status { return provider.InquiryResult{}, fmt.Errorf("IAK inquiry response status %q conflicts with rc %q", status, rc) }
- message:=str(x,"message")
+ message:=strings.TrimSpace(str(x,"message"))
  if message=="" { return provider.InquiryResult{}, errors.New("IAK inquiry response is missing data.message") }
  return provider.InquiryResult{Status:status,ProviderCode:rc,Message:message},nil
 }
@@ -157,7 +157,7 @@ func (c *Client) HandleWebhook(_ context.Context, req provider.WebhookRequest)(p
   return provider.WebhookEvent{}, fmt.Errorf("IAK webhook response status %q conflicts with rc %q", status, rc)
  }
 
- message:=str(p,"message")
+ message:=strings.TrimSpace(str(p,"message"))
  price,priceOK:=requiredInt64Num(p,"price")
  _,balanceOK:=requiredNum(p,"balance")
  _,trIDOK:=requiredInt64Num(p,"tr_id")
@@ -229,7 +229,7 @@ func validateTransactionResponse(x map[string]any, operation string) (provider.T
  mapped, err := mapResponseCode(rc)
  if err != nil { return "", err }
  if mapped != rawStatus { return "", fmt.Errorf("IAK %s response status %q conflicts with rc %q", operation, rawStatus, rc) }
- if str(x,"message")=="" { return "", fmt.Errorf("IAK %s response is missing message", operation) }
+ if strings.TrimSpace(str(x,"message"))=="" { return "", fmt.Errorf("IAK %s response is missing message", operation) }
  if _, ok := requiredInt64Num(x,"price"); !ok { return "", fmt.Errorf("IAK %s response is missing or invalid price", operation) }
  if _, ok := requiredNum(x,"balance"); !ok { return "", fmt.Errorf("IAK %s response is missing or invalid balance", operation) }
  if _, ok := requiredInt64Num(x,"tr_id"); !ok { return "", fmt.Errorf("IAK %s response is missing or invalid tr_id", operation) }
@@ -243,7 +243,7 @@ func purchase(d map[string]any)(provider.PurchaseResult,error){
  ref,customer,product:=str(x,"ref_id"),str(x,"customer_id"),str(x,"product_code")
  if ref==""||customer==""||product==""{return provider.PurchaseResult{},errors.New("IAK purchase response is missing transaction identity")}
  price,_:=requiredInt64Num(x,"price")
- return provider.PurchaseResult{ReferenceID:ref,CustomerNo:customer,ProductCode:product,Status:st,ProviderCode:str(x,"rc"),Message:str(x,"message"),SerialNumber:str(x,"sn"),Price:int64(price)},nil
+ return provider.PurchaseResult{ReferenceID:ref,CustomerNo:customer,ProductCode:product,Status:st,ProviderCode:str(x,"rc"),Message:strings.TrimSpace(str(x,"message")),SerialNumber:str(x,"sn"),Price:int64(price)},nil
 }
 
 func purchaseStatus(x map[string]any)(provider.PurchaseStatus,error){
@@ -252,5 +252,5 @@ func purchaseStatus(x map[string]any)(provider.PurchaseStatus,error){
  ref,customer,product:=str(x,"ref_id"),str(x,"customer_id"),str(x,"product_code")
  if ref==""||customer==""||product==""{return provider.PurchaseStatus{},errors.New("IAK status response is missing transaction identity")}
  price,_:=requiredInt64Num(x,"price")
- return provider.PurchaseStatus{ReferenceID:ref,CustomerNo:customer,ProductCode:product,Status:st,ProviderCode:str(x,"rc"),Message:str(x,"message"),SerialNumber:str(x,"sn"),Price:price},nil
+ return provider.PurchaseStatus{ReferenceID:ref,CustomerNo:customer,ProductCode:product,Status:st,ProviderCode:str(x,"rc"),Message:strings.TrimSpace(str(x,"message")),SerialNumber:str(x,"sn"),Price:price},nil
 }
