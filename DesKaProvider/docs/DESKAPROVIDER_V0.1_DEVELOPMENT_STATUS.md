@@ -4637,3 +4637,31 @@ This is representation-boundary validation only. No retry, failover, resubmissio
 - External IAK validation remains credential-gated.
 - JSON numeric values near int64 limits are handled conservatively because Go's float64 representation cannot distinguish every adjacent int64 value; exact boundary acceptance is therefore covered through the documented string-number compatibility path.
 - This batch is not considered complete until the resulting HEAD has GREEN CI.
+
+
+### CI Correction — IAK int64 Boundary
+
+The first validation run for this batch exposed two representation details in the deterministic fixtures:
+
+- JSON-number values around the signed int64 boundary are decoded through float64 and cannot safely represent every adjacent int64 value; the balance boundary was tightened conservatively to reject the float64 -2^63 and 2^63 edges.
+- Check Status price extraction was aligned to use the new exact int64 parser rather than converting the validated value through float64 a second time.
+
+The corrected implementation also keeps exact signed-int64 decimal strings supported through direct ParseInt handling.
+
+### Final Verification
+
+Final implementation/test HEAD:
+
+074ad2ae8d2fcc4a9c9f76bf6ab4dedc5cb3745e
+
+Pull Request CI #3235 / run 36687499645: GREEN
+
+- test: PASS
+- vet: PASS
+- race: PASS
+- iak-read-only: skipped as expected
+- xp-sindonesia-read-only: skipped as expected
+- digiflazz-validation: skipped as expected
+- midtrans-sandbox: skipped as expected
+
+No authorized live-provider transaction was executed by this batch.
