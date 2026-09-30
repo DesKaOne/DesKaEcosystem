@@ -21,7 +21,7 @@ func TestIAKAdapter(t *testing.T){
   if p["username"]!="user"{t.Errorf("username=%q",p["username"])}
   switch r.URL.Path{
   case "/api/pricelist": if p["sign"]!=ts("pl"){t.Errorf("bad price signature")};w.Write([]byte(`{"data":{"pricelist":[{"product_code":"xld25000","product_description":"XL 25K","product_category":"pulsa","status":"active"}],"rc":"00","message":"SUCCESS"}}`))
-  case "/api/inquiry-pln": if p["sign"]!=ts("12345678901"){t.Errorf("bad inquiry signature")};w.Write([]byte(`{"data":{"status":"1","customer_id":"12345678901","message":"SUCCESS","rc":"00"}}`))
+  case "/api/inquiry-pln": if p["sign"]!=ts("12345678901"){t.Errorf("bad inquiry signature")};w.Write([]byte(`{"data":{"status":"1","customer_id":"12345678901","meter_no":"548933889287","subscriber_id":"12345678901","name":"Sintya Oktaviani","segment_power":"R1 /000001300","message":"SUCCESS","rc":"00"}}`))
   case "/api/top-up": if p["sign"]!=ts("order-1"){t.Errorf("bad purchase signature")};w.Write([]byte(`{"data":{"ref_id":"order-1","status":0,"product_code":"xld25000","customer_id":"08123","price":25000,"balance":997061249,"tr_id":3482,"message":"PROCESS","rc":"39"}}`))
   case "/api/check-status":w.Write([]byte(`{"data":{"ref_id":"order-1","status":1,"product_code":"xld25000","customer_id":"08123","price":25000,"balance":997061249,"tr_id":3482,"message":"SUCCESS","rc":"00","sn":"SN123"}}`))
   case "/api/check-balance":if p["sign"]!=ts("bl"){t.Errorf("bad balance signature")};w.Write([]byte(`{"data":{"balance":123456}}`))
@@ -161,6 +161,32 @@ func TestIAKInquiryRequiresStatus(t *testing.T) {
 	if err != nil { t.Fatal(err) }
 	_, err = c.Inquiry(context.Background(), provider.InquiryRequest{ProductCode:"pln", CustomerNo:"12345678901"})
 	if err == nil { t.Fatal("expected missing inquiry status error") }
+}
+
+func TestIAKInquiryRequiresDocumentedFields(t *testing.T) {
+ cases:=[]struct{name,body string}{
+  {"missing rc", `{"data":{"status":"1","customer_id":"12345678901","meter_no":"548933889287","subscriber_id":"12345678901","name":"Sintya","segment_power":"R1 /000001300","message":"SUCCESS"}}`},
+  {"missing meter_no", `{"data":{"status":"1","customer_id":"12345678901","subscriber_id":"12345678901","name":"Sintya","segment_power":"R1 /000001300","message":"SUCCESS","rc":"00"}}`},
+  {"missing subscriber_id", `{"data":{"status":"1","customer_id":"12345678901","meter_no":"548933889287","name":"Sintya","segment_power":"R1 /000001300","message":"SUCCESS","rc":"00"}}`},
+  {"missing name", `{"data":{"status":"1","customer_id":"12345678901","meter_no":"548933889287","subscriber_id":"12345678901","segment_power":"R1 /000001300","message":"SUCCESS","rc":"00"}}`},
+  {"missing segment_power", `{"data":{"status":"1","customer_id":"12345678901","meter_no":"548933889287","subscriber_id":"12345678901","name":"Sintya","message":"SUCCESS","rc":"00"}}`},
+ }
+ for _,tc:=range cases {
+  t.Run(tc.name,func(t *testing.T){
+   srv,client:=newIAKJSONServer(tc.body);defer srv.Close()
+   c,err:=New(iakTestConfig(srv.URL),client);if err!=nil{t.Fatal(err)}
+   _,err=c.Inquiry(context.Background(),provider.InquiryRequest{ProductCode:"pln",CustomerNo:"12345678901"})
+   if err==nil{t.Fatal("expected documented inquiry field validation error")}
+  })
+ }
+}
+
+func TestIAKInquiryRejectsStatusAndRCConflict(t *testing.T) {
+ srv,client:=newIAKJSONServer(`{"data":{"status":"1","customer_id":"12345678901","meter_no":"548933889287","subscriber_id":"12345678901","name":"Sintya","segment_power":"R1 /000001300","message":"SUCCESS","rc":"07"}}`)
+ defer srv.Close()
+ c,err:=New(iakTestConfig(srv.URL),client);if err!=nil{t.Fatal(err)}
+ _,err=c.Inquiry(context.Background(),provider.InquiryRequest{ProductCode:"pln",CustomerNo:"12345678901"})
+ if err==nil{t.Fatal("expected inquiry status/rc conflict error")}
 }
 
 func TestIAKInquiryUnknownStatusIsRejected(t *testing.T) {
