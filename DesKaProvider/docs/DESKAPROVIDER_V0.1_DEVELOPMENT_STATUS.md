@@ -4061,3 +4061,57 @@ Complete deterministic provider response-code/state mapping for the documented D
 ### Next Concrete Engineering Task
 
 Continue provider contract completion with the remaining adapter-specific gaps, starting with deterministic fixture/mapper coverage for XP SINDONESIA where the authoritative provider documentation available to the repository is currently incomplete; do not invent undocumented response codes or states.
+
+
+## Post-CI Green — Provider Contract Completion Checkpoint
+
+**Date:** 2026-09-30
+
+### Exact-HEAD Verification
+
+- branch: `dev/deskaprovider-v0.1`
+- CI gate for the previous response-code repair reached GREEN on HEAD `cad690e95033a2eb6262c8c940e3d491570070fe`.
+- Push CI #3093: GREEN.
+- Pull Request CI #3094: GREEN.
+- test: PASS; vet: PASS; race: PASS; PostgreSQL service-backed suite: PASS.
+- credential-gated provider validation remains skipped in normal CI.
+
+### Provider Contract Changes After the Green Gate
+
+**IAK**
+- Added documented prepaid RC `39` (PROCESS) as Pending.
+- Added deterministic coverage for RC `39`.
+- Unknown IAK response codes remain fail-closed.
+
+**DigiFlazz**
+- Corrected the deterministic unknown-code fixture to use an actually undocumented RC (`999`) instead of documented pending RC `99`.
+- Documented Buyer RC mapping remains deterministic and fail-closed for unknown codes.
+
+**XP SINDONESIA**
+- Repository API documentation defines the Order API callback parameter `url` and the callback contract.
+- Added explicit `XP_SINDONESIA_CALLBACK_URL` configuration.
+- Purchase now fails closed when the callback URL is not configured and sends the configured callback URL in the documented `url` request field.
+- Added deterministic tests for callback URL propagation, missing callback configuration, and documented order states: `sukses` -> Success, `gagal` -> Failed, `proses`/ `lambat` -> Pending.
+- No undocumented XP product-list response schema was invented; `GetProducts` remains unsupported because the repository API document does not provide a complete response schema for `daftar_harga.php`.
+
+### Changed Files
+
+- `DesKaProvider/backend/config/xp_sindonesia.go`
+- `DesKaProvider/backend/Provider/XPSindonesia/xp_sindonesia.go`
+- `DesKaProvider/backend/Provider/XPSindonesia/xp_sindonesia_test.go`
+- `DesKaProvider/backend/Provider/IAK/iak.go`
+- `DesKaProvider/backend/Provider/IAK/iak_test.go`
+- `DesKaProvider/backend/Provider/DigiFlazz/digiflazz_test.go`
+- `DesKaProvider/backend/.env.example`
+- `DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md`
+
+### Safety / Readiness Boundary
+
+- No automatic retry, provider failover, transaction resubmission, duplicate transaction creation, ledger mutation, customer-balance mutation, treasury movement, or provider funding was introduced.
+- `Router.Select()` remains the sole routing authority.
+- LiveTested and ProductionReady remain explicit and unpromoted.
+- XP external validation remains credential-gated; normal CI does not execute provider transactions.
+
+### Next Concrete Engineering Task
+
+Continue XP SINDONESIA contract completion only where the authoritative repository documentation supports deterministic behavior. The next review target is the documented balance/order error handling and callback boundary; do not infer undocumented `daftar_harga.php` response fields or invent provider status codes.
