@@ -15,6 +15,7 @@ type DigiFlazzConfig struct {
 	Endpoint        string
 	BalanceEndpoint string
 	PriceListEndpoint string
+	InquiryEndpoint string
 }
 
 func LoadDigiFlazzConfig() (DigiFlazzConfig, error) {
@@ -25,6 +26,7 @@ func LoadDigiFlazzConfig() (DigiFlazzConfig, error) {
 		Endpoint:          os.Getenv("DIGIFLAZZ_ENDPOINT"),
 		BalanceEndpoint:   os.Getenv("DIGIFLAZZ_BALANCE_ENDPOINT"),
 		PriceListEndpoint: os.Getenv("DIGIFLAZZ_PRICE_LIST_ENDPOINT"),
+		InquiryEndpoint:     os.Getenv("DIGIFLAZZ_INQUIRY_ENDPOINT"),
 		HTTPTimeout:       15 * time.Second,
 	}
 	if cfg.BaseURL == "" {
@@ -38,6 +40,7 @@ func LoadDigiFlazzConfig() (DigiFlazzConfig, error) {
 	if cfg.Endpoint == "" { cfg.Endpoint = cfg.BaseURL + "/v1/transaction" }
 	if cfg.BalanceEndpoint == "" { cfg.BalanceEndpoint = cfg.BaseURL + "/v1/cek-saldo" }
 	if cfg.PriceListEndpoint == "" { cfg.PriceListEndpoint = cfg.BaseURL + "/v1/price-list" }
+	if cfg.InquiryEndpoint == "" { cfg.InquiryEndpoint = cfg.BaseURL + "/v1/inquiry-pln" }
 	if cfg.Username == "" {
 		return DigiFlazzConfig{}, fmt.Errorf("DIGIFLAZZ_USERNAME is required")
 	}
