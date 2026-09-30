@@ -202,6 +202,7 @@ func (c *Client) HandleWebhook(_ context.Context, req provider.WebhookRequest)(p
  if !priceOK { return provider.WebhookEvent{}, errors.New("IAK webhook response is missing or invalid price") }
  if !balanceOK { return provider.WebhookEvent{}, errors.New("IAK webhook response is missing or invalid balance") }
  if !trIDOK { return provider.WebhookEvent{}, errors.New("IAK webhook response is missing or invalid tr_id") }
+ if status != provider.StatusSuccess && strings.TrimSpace(str(payload,"sn")) != "" { return provider.WebhookEvent{}, errors.New("IAK webhook response has serial number for non-success status") }
 
  return provider.WebhookEvent{ReferenceID:ref,CustomerNo:customerNo,ProductCode:productCode,Status:status,ProviderCode:rc,Message:message,SerialNumber:str(payload,"sn"),Price:price},nil
 }
@@ -273,6 +274,7 @@ func validateTransactionResponse(x map[string]any, operation string) (provider.T
  if _, ok := requiredInt64Num(x,"price"); !ok { return "", fmt.Errorf("IAK %s response is missing or invalid price", operation) }
  if _, ok := requiredNum(x,"balance"); !ok { return "", fmt.Errorf("IAK %s response is missing or invalid balance", operation) }
  if _, ok := requiredInt64Num(x,"tr_id"); !ok { return "", fmt.Errorf("IAK %s response is missing or invalid tr_id", operation) }
+ if mapped != provider.StatusSuccess && strings.TrimSpace(str(x,"sn")) != "" { return "", fmt.Errorf("IAK %s response has serial number for non-success status", operation) }
  return mapped, nil
 }
 
