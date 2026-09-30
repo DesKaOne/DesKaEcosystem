@@ -5525,3 +5525,45 @@ The previous DigiFlazz price-list required-field batch is verified complete:
 
 The GREEN result confirms the required product-field hardening batch before this new transaction-response audit.
 
+
+
+## DigiFlazz Buyer Balance Precision / Required Deposit Hardening
+
+**Date:** 2026-09-30
+
+### Source Basis
+
+The official DigiFlazz Buyer Cek Saldo contract defines the response as `data.deposit`, marks `deposit` as required, and documents its type as `Float`. The request uses the documented `md5(username + apiKey + "depo")` signature. citeturn3view0
+
+### Audit Finding
+
+The adapter previously decoded `deposit` into `float64` and converted it directly to provider-neutral `int64`. That could silently truncate a fractional value and could not distinguish a missing required field from numeric zero.
+
+### Implementation
+
+- Changed the internal deposit representation to `json.Number` so the response value is preserved without an early floating-point conversion.
+- Added an explicit required-field check: a missing `deposit` is rejected.
+- Added an integral-value boundary: fractional deposit values are rejected rather than truncated because the provider-neutral `BalanceProvider` exposes an integer balance.
+- Added an `int64` range check before mapping the provider value.
+- Existing integer-valued deposits continue to map unchanged.
+- No provider-neutral interface change was introduced.
+
+### Deterministic Coverage
+
+Added regression coverage for:
+- missing required `deposit`;
+- fractional `deposit` that must fail closed.
+
+### Safety Boundary
+
+- Balance remains operational account-state data; it is not promoted into financial ledger authority.
+- No automatic funding, retry, failover, purchase resubmission, customer-balance mutation, ledger mutation, or treasury movement was introduced.
+- No live-provider transaction was executed by this audit.
+
+### Verification Boundary
+
+Implementation commit: `63e73eaed15139384e94f9936f2828a703b54d58`.
+
+Deterministic regression commit: `e487444b8f95af92fa95f2a588df1156a3308cc9`.
+
+The resulting HEAD must receive GREEN Push CI for test, vet, race, and applicable service-backed validation before this batch is considered complete. Credential-gated live-provider validation may remain skipped when credentials are unavailable.
