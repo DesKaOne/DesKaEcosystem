@@ -22,8 +22,8 @@ func TestIAKAdapter(t *testing.T){
   switch r.URL.Path{
   case "/api/pricelist": if p["sign"]!=ts("pl"){t.Errorf("bad price signature")};w.Write([]byte(`{"data":{"pricelist":[{"product_code":"xld25000","product_description":"XL 25K","product_category":"pulsa","status":"active"}],"rc":"00","message":"SUCCESS"}}`))
   case "/api/inquiry-pln": if p["sign"]!=ts("12345678901"){t.Errorf("bad inquiry signature")};w.Write([]byte(`{"data":{"status":"1","customer_id":"12345678901","message":"SUCCESS","rc":"00"}}`))
-  case "/api/top-up": if p["sign"]!=ts("order-1"){t.Errorf("bad purchase signature")};w.Write([]byte(`{"data":{"ref_id":"order-1","status":0,"product_code":"xld25000","customer_id":"08123","price":25000,"message":"PROCESS","rc":"39"}}`))
-  case "/api/check-status":w.Write([]byte(`{"data":{"ref_id":"order-1","status":1,"product_code":"xld25000","customer_id":"08123","price":25000,"message":"SUCCESS","rc":"00","sn":"SN123"}}`))
+  case "/api/top-up": if p["sign"]!=ts("order-1"){t.Errorf("bad purchase signature")};w.Write([]byte(`{"data":{"ref_id":"order-1","status":0,"product_code":"xld25000","customer_id":"08123","price":25000,"balance":997061249,"tr_id":3482,"message":"PROCESS","rc":"39"}}`))
+  case "/api/check-status":w.Write([]byte(`{"data":{"ref_id":"order-1","status":1,"product_code":"xld25000","customer_id":"08123","price":25000,"balance":997061249,"tr_id":3482,"message":"SUCCESS","rc":"00","sn":"SN123"}}`))
   case "/api/check-balance":if p["sign"]!=ts("bl"){t.Errorf("bad balance signature")};w.Write([]byte(`{"data":{"balance":123456}}`))
   default:t.Errorf("unexpected path %s",r.URL.Path)
   }
@@ -38,7 +38,7 @@ func TestIAKAdapter(t *testing.T){
 
 func TestIAKWebhookSignature(t *testing.T){
  c,_:=New(config.IAKConfig{Username:"user",APIKey:"secret",PriceListEndpoint:"https://x",InquiryPLNEndpoint:"https://x",TopUpEndpoint:"https://x",StatusEndpoint:"https://x",BalanceEndpoint:"https://x"},http.DefaultClient)
- body:=[]byte(`{"ref_id":"order-1","status":1,"code":"xld25000","hp":"08123","price":25000,"message":"SUCCESS","rc":"00"}`)
+ body:=[]byte(`{"ref_id":"order-1","status":1,"code":"xld25000","hp":"08123","price":25000,"balance":997061249,"tr_id":3482,"message":"SUCCESS","rc":"00"}`)
  e:=ts("order-1");event,err:=c.HandleWebhook(context.Background(),provider.WebhookRequest{Body:body,SignatureSecret:"secret",Signature:e});if err!=nil||event.Status!=provider.StatusSuccess{t.Fatalf("event=%#v err=%v",event,err)}
 }
 
@@ -146,7 +146,7 @@ func TestIAKPurchaseResponseValidation(t *testing.T) {
 		{"unknown status", `{"data":{"ref_id":"order-1","customer_id":"08123","product_code":"xld25000","status":9}}`, true},
 		{"missing message", `{"data":{"ref_id":"order-1","customer_id":"08123","product_code":"xld25000","status":0,"price":25000}}`, true},
 		{"missing price", `{"data":{"ref_id":"order-1","customer_id":"08123","product_code":"xld25000","status":0,"message":"PROCESS"}}`, true},
-		{"valid pending", `{"data":{"ref_id":"order-1","customer_id":"08123","product_code":"xld25000","status":0,"price":25000,"message":"PROCESS","rc":"39"}}`, false},
+		{"valid pending", `{"data":{"ref_id":"order-1","customer_id":"08123","product_code":"xld25000","status":0,"price":25000,"balance":997061249,"tr_id":3482,"message":"PROCESS","rc":"39"}}`, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -160,6 +160,44 @@ func TestIAKPurchaseResponseValidation(t *testing.T) {
 			if !tc.wantErr && (err != nil || result.Status != provider.StatusPending) { t.Fatalf("result=%#v err=%v", result, err) }
 		})
 	}
+}
+
+func TestIAKTransactionResponseRejectsConflictingStatusAndRC(t *testing.T) {
+ cases := []struct{name, body string}{
+  {"purchase", `{"data":{"ref_id":"order-1","customer_id":"08123","product_code":"xld25000","status":1,"price":25000,"balance":997061249,"tr_id":3482,"message":"SUCCESS","rc":"39"}}`},
+  {"status", `{"data":{"ref_id":"order-1","customer_id":"08123","product_code":"xld25000","status":2,"price":25000,"balance":997061249,"tr_id":3482,"message":"FAILED","rc":"00"}}`},
+ }
+ for _, tc := range cases {
+  t.Run(tc.name, func(t *testing.T) {
+   srv, client := newIAKJSONServer(tc.body)
+   defer srv.Close()
+   c, err := New(iakTestConfig(srv.URL), client)
+   if err != nil { t.Fatal(err) }
+   if tc.name=="purchase" {
+    _, err = c.Purchase(context.Background(), provider.PurchaseRequest{ProductCode:"xld25000",CustomerNo:"08123",ReferenceID:"order-1"})
+   } else {
+    _, err = c.GetStatus(context.Background(), provider.StatusRequest{ProductCode:"xld25000",CustomerNo:"08123",ReferenceID:"order-1"})
+   }
+   if err == nil { t.Fatal("expected status/rc conflict error") }
+  })
+ }
+}
+
+func TestIAKTransactionResponseRequiresBalanceAndTransactionID(t *testing.T) {
+ cases := []struct{name, body string}{
+  {"missing balance", `{"data":{"ref_id":"order-1","customer_id":"08123","product_code":"xld25000","status":0,"price":25000,"tr_id":3482,"message":"PROCESS","rc":"39"}}`},
+  {"missing tr_id", `{"data":{"ref_id":"order-1","customer_id":"08123","product_code":"xld25000","status":0,"price":25000,"balance":997061249,"message":"PROCESS","rc":"39"}}`},
+ }
+ for _, tc := range cases {
+  t.Run(tc.name, func(t *testing.T) {
+   srv, client := newIAKJSONServer(tc.body)
+   defer srv.Close()
+   c, err := New(iakTestConfig(srv.URL), client)
+   if err != nil { t.Fatal(err) }
+   _, err = c.Purchase(context.Background(), provider.PurchaseRequest{ProductCode:"xld25000",CustomerNo:"08123",ReferenceID:"order-1"})
+   if err == nil { t.Fatal("expected mandatory transaction field error") }
+  })
+ }
 }
 
 func TestIAKPurchaseResponseIdentityMismatch(t *testing.T) {
@@ -177,7 +215,7 @@ func TestIAKStatusResponseValidation(t *testing.T) {
 		{"unknown status", `{"data":{"ref_id":"order-1","customer_id":"08123","product_code":"xld25000","status":"9"}}`, true},
 		{"missing message", `{"data":{"ref_id":"order-1","customer_id":"08123","product_code":"xld25000","status":"1","price":25000}}`, true},
 		{"missing price", `{"data":{"ref_id":"order-1","customer_id":"08123","product_code":"xld25000","status":"1","message":"SUCCESS"}}`, true},
-		{"valid success", `{"data":{"ref_id":"order-1","customer_id":"08123","product_code":"xld25000","status":"1","price":25000,"message":"SUCCESS","rc":"00"}}`, false},
+		{"valid success", `{"data":{"ref_id":"order-1","customer_id":"08123","product_code":"xld25000","status":"1","price":25000,"balance":997061249,"tr_id":3482,"message":"SUCCESS","rc":"00"}}`, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
