@@ -5779,3 +5779,32 @@ Production hardening commit: `3ab5c2c57e50c8053f6fc756bab59c443023cb87`.
 Deterministic regression commit: `c11b08443acdb0b31ec6501c22d2baf5ddb472b3`.
 
 The resulting HEAD must receive GREEN Push and PR CI, including test, vet, race, and applicable service-backed validation. Credential-gated provider validation may remain skipped when credentials/configuration are unavailable.
+
+
+## XP SINDONESIA Catalog Endpoint Contract Boundary Review
+
+**Date:** 2026-10-01
+
+### Source Basis
+
+The authoritative XP SINDONESIA API document exposes `harga.php` (Cek Harga Produk) and `daftar_harga.php` (List Harga Produk). The documented single-product price request requires a product `kode`; the list endpoint documents product status values 1 (ready), 0, or 2 (empty/disruption). The document does not provide a complete machine-readable response schema for the list endpoint beyond its examples/notes.
+
+### Audit Finding
+
+The current provider-neutral catalog interface does not carry the provider fields needed to safely expose the documented XP catalog semantics: `Product` contains only `Code` and `Name`, while `ProductRequest` contains only `Category` and optional `Active`. There is also no provider-neutral price or provider catalog-status field. Implementing `harga.php` or `daftar_harga.php` behind `GetProducts` would therefore require inventing request/response mappings or silently dropping documented provider state.
+
+### Decision
+
+- Keep XP `GetProducts` explicitly `ErrUnsupportedOperation` for now.
+- Do not repurpose `ProductRequest.Category` as XP product code because the provider-neutral field semantics do not document that meaning.
+- Do not invent a price/status mapping that the provider-neutral `Product` cannot represent.
+- Do not expand the provider-neutral interface solely for one provider without a broader contract decision.
+- Existing deterministic coverage in `TestXPUnsupportedOperationsAreExplicit` remains the guard that catalog support is explicit rather than partially implemented.
+
+### Safety Boundary
+
+This review prevents an undocumented or lossy provider-to-provider-neutral catalog mapping. No retry, transaction resubmission, failover, duplicate purchase creation, balance mutation, ledger mutation, treasury movement, or provider funding behavior is introduced.
+
+### Verification Boundary
+
+No production code change was required for this audit. The current branch HEAD remains the previously verified GREEN commit `658b9520a4684567fea35a077706c78ae38b76a4`.
