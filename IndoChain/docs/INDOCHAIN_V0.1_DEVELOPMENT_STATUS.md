@@ -2715,3 +2715,66 @@ Masih terbuka:
 Masuk ke **automatic local precommit emission boundary**: setelah local/remote prevote quorum dan lock proof terbentuk, emit authenticated precommit melalui driver yang sama, tetap tanpa canonical commit sampai finality evidence tervalidasi.
 
 **Milestone 4.55 status:** implementation/test completed; verification refresh documented above; this status-document commit requires its own exact-head CI gate.
+
+### 4.56 Authenticated Prevote → Precommit Emission Boundary
+
+**Tanggal:** 2026-10-01
+
+**Objective**
+
+Menutup boundary dari authenticated prevote quorum/lock menuju authenticated precommit emission. Runtime tetap menjadi owner phase transition, lock state, voting power, dan quorum; P2P hanya mengorkestrasi evidence yang sudah terautentikasi.
+
+**Implementation**
+
+- IndoChain/internal/consensus/vote_signing.go
+  - BuildSignedVoteMessage membangun signed phase-specific Prevote/Precommit untuk exact protocol, chain, epoch, height, round, sender, dan proposal payload.
+  - signer dan sender wajib tersedia; hanya Prevote dan Precommit yang dapat dibangun oleh helper ini.
+- IndoChain/internal/p2p/consensus_round_driver.go
+  - PublishAuthenticatedPrevoteAndMaybePrecommit memasukkan authenticated prevote ke ValidatorRuntime;
+  - precommit hanya dibuat ketika prevote tersebut menyebabkan runtime masuk PhasePrecommit, sehingga quorum/lock tetap diputuskan runtime;
+  - precommit memakai localSender + local signer, bukan sender prevote pemicu quorum;
+  - precommit memakai payload proposal yang sama dan melalui AddAuthenticatedVote sebelum publish;
+  - tidak ada finality/canonical commit di boundary ini.
+- Tests:
+  - phase-specific vote signing/context binding;
+  - invalid vote-type rejection;
+  - authenticated local precommit emission setelah prevote quorum;
+  - precommit sender/payload/phase dan runtime aggregation diverifikasi.
+
+**Locked invariants**
+
+1. Prevote harus authenticated sebelum masuk aggregation.
+2. Runtime hanya masuk PhasePrecommit setelah prevote quorum tercapai.
+3. Precommit selalu ditandatangani validator lokal yang benar-benar mengemit evidence.
+4. Precommit payload harus identik dengan runtime proposal/locked proposal.
+5. Precommit harus lolos validator authority/signature validation sebelum aggregation.
+6. Duplicate/foreign/conflicting vote semantics tetap dimiliki VoteAggregator + ValidatorRuntime.
+7. Tidak ada FinalityCertificate atau canonical commit yang dihasilkan oleh emission boundary ini.
+
+**Production boundary**
+
+Milestone ini menutup authenticated Prevote → Precommit emission boundary, tetapi **belum full production BFT**.
+
+Masih terbuka:
+
+- peer-wide precommit broadcast/retransmission;
+- automatic precommit policy untuk semua validator setelah lock/quorum evidence;
+- timeout/failure detector dan automatic round-change;
+- finality evidence publication/transport;
+- multi-node multi-height canonical commit loop;
+- validator-set lifecycle;
+- durable consensus recovery;
+- final canonical block serialization freeze.
+
+**Verification**
+
+- Corrected implementation/test HEAD: 455704a115a1cc430bde40ca1bc93f95c53cb1a0.
+- Exact CI run 36793638569: **GREEN** — Tidy/Test/Race/Vet PASS.
+- Previous failing attempt 4af2b1e32f7846755bf04bce51493d6b412b5a86 failed in Test due incorrect test expectation and unused test import; both were corrected before accepting this milestone.
+- PostgreSQL: tidak relevan.
+
+**Next integration target**
+
+Masuk ke **precommit quorum → finality evidence boundary**: setelah authenticated precommit quorum terbentuk, expose/transport finality evidence secara eksplisit sebelum canonical commit, tanpa mencampur evidence validation dengan storage mutation.
+
+**Milestone 4.56 status:** implementation/test completed; exact implementation HEAD CI GREEN; status-document commit requires its own exact-head CI gate.
