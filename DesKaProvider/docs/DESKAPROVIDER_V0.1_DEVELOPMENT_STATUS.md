@@ -5844,3 +5844,58 @@ Production hardening commit: `1645aafd90332d2958d00d0b9dbf12eae4123d62`.
 Deterministic regression commits: `94067ebefa7c3ada43db95790e946d6b954c7a42` and `9c57f7a81b7fec525b82eeaf73c8ed9882b03ff7`.
 
 The resulting HEAD must receive GREEN Push and PR CI, including test, vet, race, and applicable service-backed validation. Credential-gated provider validation may remain skipped when credentials/configuration are unavailable.
+
+## DigiFlazz Prepaid Webhook Required-Field Hardening
+
+**Date:** 2026-10-01
+
+### Source Basis
+
+The official DigiFlazz Buyer Topup contract marks `ref_id`, `customer_no`, `buyer_sku_code`, `message`, `status`, `rc`, and `price` as required response fields. The official Buyer webhook documentation shows the prepaid webhook payload carrying the same transaction fields under `data`, while separately documenting the prepaid `X-Digiflazz-Event` values `create` / `update` and the `Digiflazz-Hookshot` User-Agent.
+
+Sources:
+- https://developer.digiflazz.com/api/buyer/topup/
+- https://developer.digiflazz.com/api/buyer/webhook/
+
+### Audit Finding
+
+The DigiFlazz prepaid webhook adapter already enforced the documented delivery metadata, status/RC consistency, and optional HMAC boundary, but its webhook payload decoder did not distinguish missing required transaction fields from zero/empty Go values. In particular, a missing `price` decoded as zero and empty identity/message fields could reach the provider-neutral webhook event.
+
+### Implementation
+
+- Changed webhook `price` decoding to a nullable pointer so JSON field presence is observable.
+- Reject missing/blank `ref_id`.
+- Reject missing/blank `customer_no`.
+- Reject missing/blank `buyer_sku_code`.
+- Reject missing/blank `message`.
+- Reject missing `price`.
+- Preserved the existing documented status/RC mapping and conflict rejection.
+- Preserved the prepaid webhook metadata and optional HMAC-SHA1 authentication boundaries.
+- No provider-neutral interface change was introduced.
+
+### Deterministic Coverage
+
+Added `TestWebhookRejectsMissingRequiredFields` covering each required field independently:
+- `ref_id`;
+- `customer_no`;
+- `buyer_sku_code`;
+- `message`;
+- `price`.
+
+Implementation commit: `01e9a344da1123d97cb828ab8fe453ea0154e0db`.
+
+Deterministic regression commit: `c5587e4fb914ec22e8dc2728721291eff507f4b7`.
+
+### Safety Boundary
+
+- Webhook parsing remains observational and does not become financial authority.
+- No retry, resubmission, failover, duplicate purchase creation, customer-balance mutation, ledger mutation, treasury movement, or provider funding was introduced.
+- No live-provider transaction was executed by this batch.
+
+### Verification Boundary
+
+The post-change branch HEAD is the status-document update commit created after the implementation and regression commits above. It requires fresh GREEN CI for test, vet, race, and applicable service-backed validation. Credential-gated DigiFlazz validation may remain skipped when provider credentials/IP allowlisting are unavailable.
+
+### Next Concrete Engineering Task
+
+After the green gate, continue the DigiFlazz adapter contract audit only where official documentation exposes additional provider behavior that can be represented without changing the provider-neutral interface or violating the existing transaction/retry/failover safety boundaries.
