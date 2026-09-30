@@ -38,6 +38,51 @@ func TestIAKAdapter(t *testing.T){
  b,err:=c.GetBalance(context.Background());if err!=nil||b!=123456{t.Fatalf("balance=%d err=%v",b,err)}
 }
 
+func TestIAKPriceListRequestContract(t *testing.T) {
+	cases := []struct {
+		name   string
+		active *bool
+		want   string
+	}{
+		{name: "all", want: "all"},
+		{name: "active", active: func() *bool { v := true; return &v }(), want: "active"},
+		{name: "non active", active: func() *bool { v := false; return &v }(), want: "non active"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var p map[string]string
+				if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
+					t.Fatalf("decode request: %v", err)
+				}
+				if r.URL.Path != "/api/pricelist" {
+					t.Fatalf("path=%q", r.URL.Path)
+				}
+				if p["username"] != "user" {
+					t.Fatalf("username=%q", p["username"])
+				}
+				if p["sign"] != ts("pl") {
+					t.Fatalf("sign=%q", p["sign"])
+				}
+				if p["status"] != tc.want {
+					t.Fatalf("status=%q want=%q", p["status"], tc.want)
+				}
+				_, _ = w.Write([]byte(`{"data":{"pricelist":[],"rc":"00","message":"SUCCESS"}}`))
+			}))
+			defer srv.Close()
+
+			c, err := New(iakTestConfig(srv.URL), srv.Client())
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = c.GetProducts(context.Background(), provider.ProductRequest{Active: tc.active})
+			if err != nil {
+				t.Fatalf("GetProducts: %v", err)
+			}
+		})
+	}
+}
+
 func TestIAKWebhookSignature(t *testing.T){
  c,_:=New(config.IAKConfig{Username:"user",APIKey:"secret",PriceListEndpoint:"https://x",InquiryPLNEndpoint:"https://x",TopUpEndpoint:"https://x",StatusEndpoint:"https://x",BalanceEndpoint:"https://x"},http.DefaultClient)
  body:=[]byte(fmt.Sprintf(`{"ref_id":"order-1","status":1,"code":"xld25000","hp":"08123","price":25000,"balance":997061249,"tr_id":3482,"message":"SUCCESS","rc":"00","sign":"%s"}`,ts("order-1")))
