@@ -66,7 +66,7 @@ func (c *Client) HandleWebhook(_ context.Context,req provider.WebhookRequest)(pr
  q,err:=url.ParseQuery(string(req.Body));if err!=nil{return provider.WebhookEvent{},fmt.Errorf("decode XP callback: %w",err)}
  if req.SignatureSecret!=""&&subtle.ConstantTimeCompare([]byte(q.Get("key")),[]byte(req.SignatureSecret))!=1{return provider.WebhookEvent{},errors.New("invalid XP callback key")}
  if q.Get("id")==""||q.Get("trx")==""||q.Get("kod")==""||q.Get("isi")==""{return provider.WebhookEvent{},errors.New("XP callback is missing transaction identity")}
- st:=mapStatus(q.Get("status"));if st==""{return provider.WebhookEvent{},fmt.Errorf("XP callback has unknown status %q",q.Get("status"))}
+ rawStatus:=strings.ToLower(strings.TrimSpace(q.Get("status")));if rawStatus!="sukses"&&rawStatus!="gagal"{return provider.WebhookEvent{},fmt.Errorf("XP callback has unsupported status %q",q.Get("status"))};st:=mapStatus(rawStatus)
  return provider.WebhookEvent{ReferenceID:q.Get("trx"),CustomerNo:q.Get("isi"),ProductCode:q.Get("kod"),Status:st,SerialNumber:q.Get("sn")},nil
 }
 
