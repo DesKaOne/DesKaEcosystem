@@ -5440,3 +5440,38 @@ Deterministic test commit: `e95fa34919f6e7fde7433a72e21b4ae873457b21`.
 The resulting HEAD must receive GREEN Push and PR CI, including test, vet, race, and applicable service-backed validation. Credential-gated live validation may remain skipped when credentials are unavailable.
 
 No authorized live-provider transaction was executed by this audit.
+
+## DigiFlazz Price-List Required Product Field Hardening
+
+**Date:** 2026-09-30
+
+### Source Basis
+
+The official DigiFlazz Buyer price-list response marks `product_name` and `buyer_sku_code` as required fields. The same response also contains seller status, stock, cutoff, and other catalog metadata. DigiFlazz notes that filtered price-list queries are not real-time and may differ from current system data by roughly 10–15 minutes. citeturn2search0
+
+### Audit Finding
+
+The adapter maps only `buyer_sku_code` and `product_name` into the provider-neutral `Product` model. Before this change, an incomplete price-list item could therefore produce a provider-neutral product with an empty code or name.
+
+### Implementation
+
+- Trimmed `buyer_sku_code` and `product_name` before mapping.
+- Reject the entire price-list response when an item used for the provider-neutral catalog is missing either required field.
+- Preserved the existing `buyer_product_status` filter semantics.
+- Did not promote seller status, stock, cutoff, multi-transaction metadata, or price-list freshness into transaction/routing authority.
+
+### Deterministic Coverage
+
+Added `TestDigiFlazzGetProductsRejectsIncompleteProduct` with a fixture containing an incomplete required field and verified the adapter fails closed rather than emitting an invalid `Product`.
+
+### Safety Boundary
+
+This is catalog-shape validation only. It does not add retries, transaction resubmission, failover, duplicate purchase creation, customer-balance mutation, ledger mutation, or provider funding behavior.
+
+### Verification Boundary
+
+Implementation commit: `fd52cdb7d576f638e35c3af680f0de2cfc3e9b20`.
+
+Deterministic test commit: `c49d27d60240e6b6181099f5972f6ed811b8e429`.
+
+The final status-doc HEAD must receive GREEN Push and PR CI, including test, vet, and race. Credential-gated live-provider validation may remain skipped when credentials are unavailable.
