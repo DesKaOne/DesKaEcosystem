@@ -36,7 +36,11 @@ func (c *Client) GetProducts(ctx context.Context, req provider.ProductRequest)([
  if err:=c.do(ctx,c.priceListEndpoint,p,&d);err!=nil{return nil,err}
  data:=obj(d,"data")
  if rc:=str(data,"rc"); rc!="" {
-  if _,err:=mapResponseCode(rc); err!=nil { return nil, err }
+  mapped,err:=mapResponseCode(rc)
+  if err!=nil { return nil, err }
+  if mapped!=provider.StatusSuccess { return nil, fmt.Errorf("IAK pricelist response code %q is %q", strings.TrimSpace(rc), mapped) }
+ } else {
+  return nil, errors.New("IAK pricelist response is missing data.rc")
  }
  if _,ok:=data["pricelist"]; !ok { return nil, iakResponseError(d, "pricelist") }
  list,ok:=data["pricelist"].([]any); if !ok { return nil, iakResponseError(d, "pricelist") }; out:=make([]provider.Product,0,len(list))
