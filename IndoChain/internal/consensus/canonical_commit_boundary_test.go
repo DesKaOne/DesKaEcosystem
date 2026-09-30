@@ -94,7 +94,8 @@ func TestCommitCanonicalCandidateDoesNotPublishOnStoreFailure(t *testing.T) {
 	store := &canonicalCommitTestStore{err: errExpected}
 	candidate := canonicalCommitCandidate(t)
 
-	if err := CommitCanonicalCandidate(store, candidate); !errors.Is(err, ErrCanonicalCommitFailed) {
+	err := CommitCanonicalCandidate(store, candidate)
+	if !errors.Is(err, ErrCanonicalCommitFailed) {
 		t.Fatalf("error = %v, want canonical commit failure", err)
 	}
 	if !errors.Is(err, errExpected) {
