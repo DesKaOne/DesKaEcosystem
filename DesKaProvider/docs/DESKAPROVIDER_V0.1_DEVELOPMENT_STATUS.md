@@ -5022,3 +5022,31 @@ The new code batch must receive GREEN CI on the resulting branch HEAD before bei
 ### Next Concrete Engineering Task
 
 Continue the IAK contract audit only for documented response fields/status behavior that can be mapped deterministically without inventing V2 semantics. In particular, inspect remaining transaction/webhook optional fields and documented callback status/RC combinations for missing deterministic coverage.
+
+## IAK RC 301 CI Regression Correction
+
+**Date:** 2026-09-30
+
+### Verification Finding
+
+Push CI #3303 / run 36725025689 for commit dd7ba12c2129b76faf067bd02cc7346da0486d69 was RED.
+
+- test: FAILED
+- race: FAILED
+- credential-gated provider validation jobs: skipped as expected
+
+The failure was deterministic: the new contract test's explicit failed-code fixture omitted RC 301 even though the production mapper already included RC 301. The race job reproduced the same test failure; no race defect was identified.
+
+### Correction
+
+- Updated TestIAKResponseCodeMapperMatchesCurrentPrepaidContract so RC 301 is covered in the documented failed-code set.
+- No production mapping behavior was changed by the correction.
+- No provider-neutral interface, routing, financial authority, retry, failover, or resubmission behavior was changed.
+
+### Correction Commit
+
+364215ea43a0fd4883fdeaf2821122c06f3fdf4b
+
+### Verification Boundary
+
+The correction must receive a new GREEN CI run with test, vet, race, and service-backed validation before the IAK response-code batch is considered complete.
