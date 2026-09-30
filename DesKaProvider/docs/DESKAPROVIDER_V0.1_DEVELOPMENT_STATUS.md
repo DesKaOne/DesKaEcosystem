@@ -5344,6 +5344,6 @@ The DigiFlazz provider documentation explicitly describes prepaid status checkin
 
 Implementation commit: `d37ffa238ea8bd5c525b7e342a71578a3323ed8d`.
 
-Deterministic test commit: `91824df691fd08c26da3f68faf4ff207152d9f`.
+Deterministic test commit: `91824df691fd08c26da3f68faf4ff207152de664`.
 
 The resulting HEAD must receive GREEN Push and PR CI. Credential-gated DigiFlazz live validation may remain skipped while provider IP allowlisting is unresolved.
