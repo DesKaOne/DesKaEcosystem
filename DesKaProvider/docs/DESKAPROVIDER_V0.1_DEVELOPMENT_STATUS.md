@@ -5307,3 +5307,43 @@ No retry, resubmission, failover, duplicate transaction creation, refund automat
 ### Verification Boundary
 
 This audit is documentation-only after confirming the existing implementation and deterministic coverage. The resulting HEAD must still receive GREEN Push and PR CI before the audit batch is considered complete.
+
+
+## DigiFlazz Buyer Response-Code / Status Consistency Hardening
+
+**Date:** 2026-09-30
+
+### Source Basis
+
+The official DigiFlazz Buyer API response-code documentation defines RC `00` as Sukses, `03` and `99` as Pending, and the documented failure codes `01`, `02`, `40`-`45`, `47`, `49`-`74`, and `80`-`88`. The Topup response contract also requires `status` and `rc` in the structured `data` response. citeturn4search0turn3search0
+
+### Audit Finding
+
+The production DigiFlazz RC mapper already contained the documented response-code set, but deterministic tests covered only a subset. In addition, `mapResponseStatus()` previously preferred RC whenever present and could silently accept a conflicting status string.
+
+### Implementation
+
+- Expanded deterministic RC coverage to the complete documented Buyer response-code set, including RC `50`-`74`, `80`-`88`, and pending RC `99`.
+- Hardened `mapResponseStatus()` so when both status and RC are supplied, both are mapped and must agree.
+- Unknown status/RC values remain fail-closed.
+- Added deterministic coverage for consistent Sukses/Pending/Gagal combinations and explicit status/RC conflict rejection.
+
+### Safety Boundary
+
+This is response-contract validation only. It does not add retries, duplicate purchases, automatic status polling, failover, provider funding, ledger/customer-balance mutation, treasury movement, or routing changes.
+
+The DigiFlazz provider documentation explicitly describes prepaid status checking by reusing the same `ref_id` through the top-up flow and warns about race conditions/duplicate processing. Therefore `GetStatus()` remains unsupported rather than being implemented as an implicit resubmission/status check; no side-effecting status operation is introduced by this batch. citeturn3search1turn3search0
+
+### Changed Files
+
+- `DesKaProvider/backend/Provider/DigiFlazz/digiflazz.go`
+- `DesKaProvider/backend/Provider/DigiFlazz/digiflazz_test.go`
+- `DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md`
+
+### Verification Boundary
+
+Implementation commit: `d37ffa238ea8bd5c525b7e342a71578a3323ed8d`.
+
+Deterministic test commit: `91824df691fd08c26da3f68faf4ff207152d9f`.
+
+The resulting HEAD must receive GREEN Push and PR CI. Credential-gated DigiFlazz live validation may remain skipped while provider IP allowlisting is unresolved.
