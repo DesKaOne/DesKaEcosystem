@@ -5996,3 +5996,37 @@ This batch closes a concrete documented DigiFlazz PLN inquiry contract mismatch.
 ### Next Concrete Engineering Task
 
 Continue the DigiFlazz documented-contract audit, prioritizing any remaining documented behavior that can be implemented through existing provider-neutral capabilities without introducing unsupported transaction semantics. External validation remains a separate credential/IP-allowlist gate.
+
+## DigiFlazz Prepaid Status-Check Safety Boundary
+
+**Date:** 2026-10-01
+
+### Source Basis
+
+The official DigiFlazz Buyer **Cek Status** documentation states that prepaid status checking is performed by submitting topup again with the same `ref_id`. The same documentation warns not to repeat calls for the same transaction/data within one minute and warns that attempting prepaid status checks after 90 days can create a **new transaction**. citeturn8view0
+
+The official DigiFlazz Buyer **Response Code** documentation confirms that `03` and `99` are Pending, while the other documented buyer response codes map to Sukses/Gagal according to the provider table. The adapter's response-code mapper already covers the complete documented buyer-code set and has deterministic coverage for each code. citeturn9view0
+
+### Audit Finding
+
+The provider-neutral `GetStatus` operation cannot safely represent DigiFlazz prepaid status checking as a read-only operation because the documented mechanism reuses the transaction/topup request. Implementing `GetStatus` by resubmitting that request would violate the DesKaProvider invariant that no automatic transaction retry/resubmission or duplicate purchase creation may be introduced.
+
+### Decision
+
+- Keep DigiFlazz `GetStatus` explicitly `ErrUnsupportedOperation`.
+- Do not add an internal automatic status poll or topup resubmission path.
+- Keep the existing deterministic `TestGetStatusFailsClosedWithoutResubmission` regression guard.
+- Preserve the existing response-code mapper, including Pending mapping for `03` and `99`.
+- Treat external/manual provider-side status handling as outside the current provider-neutral adapter boundary until a genuinely read-only provider contract is available.
+
+### Safety Boundary
+
+This audit intentionally produces **no production-code change** because the documented provider mechanism conflicts with the existing transaction-safety contract. No retry, resubmission, failover, duplicate purchase creation, balance mutation, ledger mutation, treasury movement, provider funding, or public API exposure is introduced.
+
+### Verification Boundary
+
+The branch remains on the previously verified implementation HEAD `44ffd99dedd6dc0445fe1edf19895f67ec5853f7` before this documentation-only audit update. A fresh GREEN Push CI is required after recording this audit result.
+
+### Next Concrete Engineering Task
+
+Continue the DigiFlazz contract audit only for documented behavior that can be represented by existing provider-neutral interfaces without unsafe transaction semantics. If no further safe DigiFlazz implementation gap is found, move to the next provider adapter rather than expanding the neutral interface solely to mirror provider-specific semantics.
