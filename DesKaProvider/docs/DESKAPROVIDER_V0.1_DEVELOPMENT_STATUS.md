@@ -4507,3 +4507,10 @@ This change only tightens response classification. No retry, failover, resubmiss
 ### Next Concrete Engineering Task
 
 Continue the IAK audit for remaining already-supported response/request boundaries, especially balance and HTTP error fixtures, without expanding the provider-neutral capability surface or inventing undocumented semantics.
+
+
+### CI Correction — Response-Code Fixture Alignment
+
+CI run #3195 exposed that an older deterministic mapper test still expected legacy/undocumented IAK response codes, while the newly aligned mapper correctly rejected them. The test fixture was corrected to the current documented Prepaid response-code table, and code 05 was removed from the generic mapper because it is not present in the current official table.
+
+The failed run is not the completion gate. The corrected HEAD must reach GREEN CI before this batch is closed.
