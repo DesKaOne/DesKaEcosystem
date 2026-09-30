@@ -5110,3 +5110,12 @@ No authorized live-provider transaction was executed by this audit.
 ### Next Concrete Engineering Task
 
 After the green gate, continue only with remaining IAK response-field/status behavior that is directly supported by official documentation; avoid inventing V2 semantics or expanding the provider-neutral interface solely for optional provider-specific fields.
+
+
+### CI Regression Correction — IAK Non-2xx Diagnostic Preservation
+
+- CI #3316 test job exposed an existing deterministic assertion that expects non-400 HTTP errors from IAK balance calls to preserve the provider response body in the returned error text.
+- Updated the internal HTTP-status error wrapper to retain the response body for diagnostics while transaction purchase/status callers still map non-400 statuses to provider-neutral Pending.
+- No provider protocol mapping, retry, failover, resubmission, or financial behavior was broadened by this correction.
+- Correction commit: 'cef4e0df2ca10b9d7c8c55346b5a054af9d53227'.
+- The corrected HEAD must receive GREEN CI before this audit is considered complete.
