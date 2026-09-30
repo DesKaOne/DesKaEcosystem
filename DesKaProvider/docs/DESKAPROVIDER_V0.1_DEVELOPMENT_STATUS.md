@@ -4441,3 +4441,35 @@ No retry, failover, transaction resubmission, refund automation, ledger mutation
 
 Continue the IAK audit only where the existing provider-neutral interface can represent the documented semantics safely. In particular, review whether balance and transaction methods need additional deterministic HTTP/response fixtures; do not introduce provider-specific transport state into the financial contract.
 \n
+
+## IAK Balance Numeric Boundary Hardening
+
+**Date:** 2026-09-30
+
+### Source Basis
+
+The current IAK Check Balance documentation defines the response balance as a Double and shows the balance as a numeric value. The DesKaProvider-neutral BalanceProvider contract returns `int64`. citeturn0search0
+
+### Implementation
+
+- IAK `GetBalance()` now rejects fractional JSON numeric balances instead of silently truncating them when converting to `int64`.
+- Integer JSON numbers continue to map directly to the provider-neutral `int64` balance.
+- Existing string-number parsing remains supported and continues to require a valid integer representation.
+
+### Deterministic Coverage
+
+Added tests for:
+
+- fractional JSON numeric balance → rejected;
+- integer JSON numeric balance → accepted.
+
+### Safety Boundary
+
+This is a representation-boundary validation only. No balance mutation, ledger mutation, funding, retry, failover, or automatic financial action was introduced.
+
+### Verification Boundary
+
+- Deterministic balance parsing is credential-free.
+- Live/sandbox IAK validation remains credential-gated.
+- This batch is not considered complete until the final HEAD has GREEN CI.
+
