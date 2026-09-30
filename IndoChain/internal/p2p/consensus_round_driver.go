@@ -222,6 +222,51 @@ func (d *ConsensusRoundDriver) PublishLocalProposalAndPrevote(
 	return proposalMsg, prevote, candidate, nil
 }
 
+// PublishLocalPrecommitAfterPrevote submits the local authenticated prevote
+// to the runtime. A precommit is emitted only when that prevote, together with
+// already authenticated peer prevotes, causes the runtime to enter Precommit.
+// The method does not finalize or commit canonical state.
+func (d *ConsensusRoundDriver) PublishLocalPrecommitAfterPrevote(
+	peer PeerID,
+	prevote consensus.Message,
+	signer crypto.Signer,
+) (consensus.Message, error) {
+	if d == nil || d.driver == nil {
+		return consensus.Message{}, ErrNilConsensusRoundDriver
+	}
+	if signer == nil {
+		return consensus.Message{}, consensus.ErrNilProposalSigner
+	}
+	if prevote.Type != consensus.MessageTypePrevote {
+		return consensus.Message{}, consensus.ErrInvalidRuntimeVoteType
+	}
+
+	if err := d.driver.Runtime().AddAuthenticatedVote(prevote, d.driver.Authority()); err != nil {
+		return consensus.Message{}, err
+	}
+	if d.driver.Runtime().State().Phase != consensus.PhasePrecommit {
+		return consensus.Message{}, nil
+	}
+
+	precommit, err := consensus.BuildSignedVoteMessage(
+		d.driver.Runtime().State(),
+		prevote.Sender,
+		consensus.MessageTypePrecommit,
+		d.driver.Runtime().Proposal(),
+		signer,
+	)
+	if err != nil {
+		return consensus.Message{}, err
+	}
+	if err := d.driver.Runtime().AddAuthenticatedVote(precommit, d.driver.Authority()); err != nil {
+		return consensus.Message{}, err
+	}
+	if err := d.Publish(peer, precommit); err != nil {
+		return consensus.Message{}, err
+	}
+	return precommit, nil
+}
+
 // ServeCandidateRequest handles one existing block-request message.
 func (d *ConsensusRoundDriver) ServeCandidateRequest(reader SyncReader) (PeerID, error) {
 	if d == nil || d.candidate == nil { return "", ErrNilConsensusRoundDriver }
