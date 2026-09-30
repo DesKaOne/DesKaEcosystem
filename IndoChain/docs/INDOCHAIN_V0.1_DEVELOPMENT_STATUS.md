@@ -2299,3 +2299,42 @@ CI #1477 / run `36732898863`: **GREEN**.
 **4.49 — Canonical Commit ↔ Consensus Publication Ordering Regression:** uji ordering end-to-end pada boundary node agar consensus/runtime state tidak maju sebelum canonical storage commit berhasil, tetap tanpa mengaktifkan WAL production.
 
 **Milestone 4.48 status:** completed. Final documentation HEAD `794fc2a737fa060b8a5510e5f591cd21a00f73db`; CI #1481 / run `36733106037`: GREEN (Tidy/Test/Race/Vet).
+
+
+### 4.49 Canonical Commit ↔ Consensus Publication Ordering Regression
+
+**Tanggal:** 2026-09-30
+
+**Objective**
+
+Memastikan authenticated consensus finality evidence tidak otomatis memajukan canonical node state, dan canonical Head/HeadHash/State hanya dipublish setelah CommitBlockState berhasil.
+
+**Implementation**
+
+- IndoChain/internal/node/node_test.go
+  - TestCommitRuntimeFinalizedBlockStoreFailureDoesNotPublishCanonicalNodeState
+  - TestCommitRuntimeFinalizedBlockPublishesCanonicalStateOnlyAfterSuccessfulCommit
+- IndoChain/docs/consensus-canonical-consensus-publication-ordering-v0.1.md
+  - ordering contract, regression matrix, production boundary, dan known limitations.
+
+**Locked invariants**
+
+1. Finality evidence dan canonical publication adalah dua boundary berbeda.
+2. Node canonical head/state tidak boleh maju sebelum storage commit sukses.
+3. Storage head/state tidak boleh maju ketika commit gagal.
+4. Successful commit membuat node publication konvergen dengan canonical storage.
+5. Tidak ada automatic retry/resubmission dari coordination boundary.
+
+**Production code impact**
+
+Tidak ada perubahan production consensus/storage behavior pada milestone ini; coverage ditambahkan untuk mengunci ordering yang sudah diimplementasikan pada CommitFinalizedBlock/ImportBlockWithAuthority.
+
+**Verification**
+
+Implementation commit: 75daf849b52466b30e1e78f15a8485f1b66fa288.
+
+CI final exact-head gate: pending.
+
+**Next milestone**
+
+Menunggu hasil exact-head CI 4.49 sebelum menentukan boundary berikutnya.
