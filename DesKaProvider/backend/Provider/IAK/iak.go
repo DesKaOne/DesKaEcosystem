@@ -142,7 +142,7 @@ func (c *Client) HandleWebhook(_ context.Context, req provider.WebhookRequest)(p
  }
 
  message:=str(p,"message")
- price,priceOK:=requiredNum(p,"price")
+ price,priceOK:=requiredIntegerNum(p,"price")
  _,balanceOK:=requiredNum(p,"balance")
  _,trIDOK:=requiredIntegerNum(p,"tr_id")
  if message=="" { return provider.WebhookEvent{}, errors.New("IAK webhook response is missing message") }
@@ -213,7 +213,7 @@ func validateTransactionResponse(x map[string]any, operation string) (provider.T
  if err != nil { return "", err }
  if mapped != rawStatus { return "", fmt.Errorf("IAK %s response status %q conflicts with rc %q", operation, rawStatus, rc) }
  if str(x,"message")=="" { return "", fmt.Errorf("IAK %s response is missing message", operation) }
- if _, ok := requiredNum(x,"price"); !ok { return "", fmt.Errorf("IAK %s response is missing or invalid price", operation) }
+ if _, ok := requiredIntegerNum(x,"price"); !ok { return "", fmt.Errorf("IAK %s response is missing or invalid price", operation) }
  if _, ok := requiredNum(x,"balance"); !ok { return "", fmt.Errorf("IAK %s response is missing or invalid balance", operation) }
  if _, ok := requiredIntegerNum(x,"tr_id"); !ok { return "", fmt.Errorf("IAK %s response is missing or invalid tr_id", operation) }
  return mapped, nil
