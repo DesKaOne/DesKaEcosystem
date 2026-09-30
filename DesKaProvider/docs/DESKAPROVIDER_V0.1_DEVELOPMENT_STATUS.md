@@ -5119,3 +5119,35 @@ After the green gate, continue only with remaining IAK response-field/status beh
 - No provider protocol mapping, retry, failover, resubmission, or financial behavior was broadened by this correction.
 - Correction commit: 'cef4e0df2ca10b9d7c8c55346b5a054af9d53227'.
 - The corrected HEAD must receive GREEN CI before this audit is considered complete.
+
+
+## IAK Optional Serial Number Status Contract Hardening
+
+**Date:** 2026-09-30
+
+### Source Basis
+
+The official IAK v2 Check Status documentation defines `sn` as optional and states it only appears when transaction status is SUCCESS. The callback contract likewise documents `sn` as optional and callbacks as final success/failed responses. citeturn0search2turn0search4
+
+### Implementation / Deterministic Coverage
+
+- IAK transaction response validation now rejects a non-empty `sn` when the mapped status is not SUCCESS.
+- IAK callback validation now rejects a non-empty `sn` on FAILED callbacks.
+- Existing SUCCESS `sn` mapping remains available through the provider-neutral `SerialNumber` field.
+- `pin` and `activation_code` remain unmapped because the provider-neutral interface has no corresponding fields; no speculative interface expansion was introduced.
+- Added credential-free regression coverage for PROCESS/FAILED transaction responses carrying `sn` and for FAILED callbacks carrying `sn`.
+
+### Safety Boundary
+
+- This is response-contract validation only; no retry, resubmission, failover, refund, ledger mutation, customer-balance mutation, treasury movement, or provider funding behavior was introduced.
+- Callback handling remains observational and non-authorizing.
+- LiveTested and ProductionReady remain explicit and unpromoted.
+
+### Verification Boundary
+
+Implementation commit: `26c5b66ab419d2c19680d26d35a4b71868d2c747`.
+Deterministic test commit: `c7a1bc6e494bcbc2cee796cbeed2371eb9b25606`.
+
+The resulting branch HEAD must receive GREEN CI for test, vet, race, and service-backed validation before this batch is considered complete. Credential-gated provider validation may remain skipped when credentials are unavailable.
+
+No authorized live-provider transaction was executed by this audit.
