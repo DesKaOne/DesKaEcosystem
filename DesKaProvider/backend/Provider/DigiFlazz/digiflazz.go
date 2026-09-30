@@ -175,7 +175,7 @@ func (c *Client) Inquiry(ctx context.Context, req provider.InquiryRequest) (prov
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 { return provider.InquiryResult{}, fmt.Errorf("DigiFlazz PLN inquiry HTTP status %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody))) }
 	var decoded struct { Data struct { Message string `json:"message"`; Status string `json:"status"`; RC string `json:"rc"` } `json:"data"` }
 	if err := json.Unmarshal(respBody, &decoded); err != nil { return provider.InquiryResult{}, fmt.Errorf("decode DigiFlazz PLN inquiry response: %w", err) }
-	status, err := mapStatus(decoded.Data.Status)
+	status, err := mapResponseStatus(decoded.Data.Status, decoded.Data.RC)
 	if err != nil { return provider.InquiryResult{}, err }
 	return provider.InquiryResult{Status: status, ProviderCode: decoded.Data.RC, Message: decoded.Data.Message}, nil
 }
@@ -204,7 +204,7 @@ func (c *Client) HandleWebhook(_ context.Context, req provider.WebhookRequest) (
 		ReferenceID string `json:"ref_id"`; CustomerNo string `json:"customer_no"`; BuyerSKUCode string `json:"buyer_sku_code"`; Message string `json:"message"`; Status string `json:"status"`; RC string `json:"rc"`; SN string `json:"sn"`; Price int64 `json:"price"`
 	} `json:"data"` }
 	if err := json.Unmarshal(req.Body, &payload); err != nil { return provider.WebhookEvent{}, fmt.Errorf("decode DigiFlazz webhook: %w", err) }
-	status, err := mapStatus(payload.Data.Status)
+	status, err := mapResponseStatus(payload.Data.Status, payload.Data.RC)
 	if err != nil { return provider.WebhookEvent{}, err }
 	return provider.WebhookEvent{ReferenceID:payload.Data.ReferenceID, CustomerNo:payload.Data.CustomerNo, ProductCode:payload.Data.BuyerSKUCode, Status:status, ProviderCode:payload.Data.RC, Message:payload.Data.Message, SerialNumber:payload.Data.SN, Price:payload.Data.Price}, nil
 }
@@ -261,6 +261,30 @@ func (c *Client) balanceSignature() string { sum := md5.Sum([]byte(c.username+c.
 func (c *Client) inquiryPLNSignature(customerNo string) string { sum := md5.Sum([]byte(c.username+c.apiKey+customerNo)); return hex.EncodeToString(sum[:]) }
 func (c *Client) priceListSignature() string { sum := md5.Sum([]byte(c.username+c.apiKey+"pricelist")); return hex.EncodeToString(sum[:]) }
 func validateTransactionRequest(productCode, customerNo, referenceID string) error { if productCode=="" || customerNo=="" || referenceID=="" { return errors.New("product code, customer number, and reference ID are required") }; return nil }
-func mapPurchaseResult(data transactionResponse) (provider.PurchaseResult, error) { status, err := mapStatus(data.Data.Status); if err != nil { return provider.PurchaseResult{}, err }; return provider.PurchaseResult{ReferenceID:data.Data.ReferenceID, CustomerNo:data.Data.CustomerNo, ProductCode:data.Data.BuyerSKUCode, Status:status, ProviderCode:data.Data.RC, Message:data.Data.Message, SerialNumber:data.Data.SN, Price:data.Data.Price}, nil }
-func mapPurchaseStatus(data transactionResponse) (provider.PurchaseStatus, error) { status, err := mapStatus(data.Data.Status); if err != nil { return provider.PurchaseStatus{}, err }; return provider.PurchaseStatus{ReferenceID:data.Data.ReferenceID, CustomerNo:data.Data.CustomerNo, ProductCode:data.Data.BuyerSKUCode, Status:status, ProviderCode:data.Data.RC, Message:data.Data.Message, SerialNumber:data.Data.SN, Price:data.Data.Price}, nil }
+func mapPurchaseResult(data transactionResponse) (provider.PurchaseResult, error) { status, err := mapResponseStatus(data.Data.Status, data.Data.RC); if err != nil { return provider.PurchaseResult{}, err }; return provider.PurchaseResult{ReferenceID:data.Data.ReferenceID, CustomerNo:data.Data.CustomerNo, ProductCode:data.Data.BuyerSKUCode, Status:status, ProviderCode:data.Data.RC, Message:data.Data.Message, SerialNumber:data.Data.SN, Price:data.Data.Price}, nil }
+func mapPurchaseStatus(data transactionResponse) (provider.PurchaseStatus, error) { status, err := mapResponseStatus(data.Data.Status, data.Data.RC); if err != nil { return provider.PurchaseStatus{}, err }; return provider.PurchaseStatus{ReferenceID:data.Data.ReferenceID, CustomerNo:data.Data.CustomerNo, ProductCode:data.Data.BuyerSKUCode, Status:status, ProviderCode:data.Data.RC, Message:data.Data.Message, SerialNumber:data.Data.SN, Price:data.Data.Price}, nil }
+func mapResponseCode(rc string) (provider.TransactionStatus, error) {
+	switch strings.TrimSpace(rc) {
+	case "00":
+		return provider.StatusSuccess, nil
+	case "03", "99":
+		return provider.StatusPending, nil
+	case "01", "02", "40", "41", "42", "43", "44", "45", "47",
+		"49", "50", "51", "52", "53", "54", "55", "56", "57", "58",
+		"59", "60", "61", "62", "63", "64", "65", "66", "67", "68",
+		"69", "70", "71", "72", "73", "74", "80", "81", "82", "83",
+		"84", "85", "86", "87", "88":
+		return provider.StatusFailed, nil
+	default:
+		return "", fmt.Errorf("%w: %q", ErrUnknownResponseCode, strings.TrimSpace(rc))
+	}
+}
+
+func mapResponseStatus(status, rc string) (provider.TransactionStatus, error) {
+	if strings.TrimSpace(rc) != "" {
+		return mapResponseCode(rc)
+	}
+	return mapStatus(status)
+}
+
 func mapStatus(status string) (provider.TransactionStatus, error) { switch strings.ToLower(strings.TrimSpace(status)) { case "sukses": return provider.StatusSuccess, nil; case "pending": return provider.StatusPending, nil; case "gagal": return provider.StatusFailed, nil; default: return "", fmt.Errorf("%w: %q", ErrUnknownTransactionStatus, strings.TrimSpace(status)) } }
