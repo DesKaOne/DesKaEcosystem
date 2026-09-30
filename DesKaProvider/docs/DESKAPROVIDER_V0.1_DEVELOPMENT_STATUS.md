@@ -5408,3 +5408,35 @@ Implementation commit: `26539ea497669c4d1931727389f16bfdc5a305af`.
 Deterministic test commit: `28221244a53e028ec49c20dbd3bb468ac38b5e56`.
 
 The resulting HEAD must receive GREEN Push and PR CI, including test, vet, race, and any applicable service-backed validation. Credential-gated live validation may remain skipped when credentials are unavailable.
+
+## DigiFlazz Price-List Seller Status Boundary Coverage
+
+**Date:** 2026-09-30
+
+### Source Basis
+
+The official DigiFlazz Buyer price-list contract exposes both `buyer_product_status` (the buyer's configured product status) and `seller_product_status` (the seller's product status), along with stock/cut-off/catalog metadata. DigiFlazz also notes that filtered price-list queries may lag current system data by roughly 10–15 minutes and recommends treating the price list as catalog data that is stored and refreshed periodically. citeturn2search0
+
+### Audit Finding
+
+The provider-neutral `ProductRequest.Active` filter is already scoped to `buyer_product_status`. The DigiFlazz adapter does not promote `seller_product_status`, stock, cut-off, or other price-list metadata into routing, transaction authorization, or financial authority. That boundary is consistent with the current neutral `Product` model, which only exposes product code and name.
+
+### Deterministic Coverage
+
+- Extended the price-list fixture to include both buyer and seller product-status fields.
+- Verified an active buyer product remains visible even when `seller_product_status=false`; the seller status is not silently reused as the buyer catalog filter.
+- Verified an inactive buyer product remains filtered when `ProductRequest.Active=true`.
+
+### Safety Boundary
+
+- Price-list status is treated as catalog metadata, not as an automatic provider lifecycle/routing toggle.
+- No stale price-list observation is promoted to real-time transaction authorization.
+- No retry, resubmission, failover, duplicate purchase creation, ledger/customer-balance mutation, treasury movement, or provider funding behavior was introduced.
+
+### Verification Boundary
+
+Deterministic test commit: `e95fa34919f6e7fde7433a72e21b4ae873457b21`.
+
+The resulting HEAD must receive GREEN Push and PR CI, including test, vet, race, and applicable service-backed validation. Credential-gated live validation may remain skipped when credentials are unavailable.
+
+No authorized live-provider transaction was executed by this audit.
