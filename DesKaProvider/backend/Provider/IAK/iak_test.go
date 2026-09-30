@@ -312,6 +312,18 @@ func TestIAKTransactionResponseRejectsConflictingStatusAndRC(t *testing.T) {
  }
 }
 
+func TestIAKTransactionRejectsBlankMessage(t *testing.T) {
+ for _, message := range []string{"", "   ", "\t"} {
+  t.Run("message_"+strings.TrimSpace(message), func(t *testing.T) {
+   srv, client := newIAKJSONServer(`{"data":{"ref_id":"order-1","customer_id":"08123","product_code":"xld25000","status":1,"price":25000,"balance":997061249,"tr_id":3482,"message":"`+message+`","rc":"00"}}`)
+   defer srv.Close()
+   c, err := New(iakTestConfig(srv.URL), client)
+   if err != nil { t.Fatal(err) }
+   if _, err = c.GetStatus(context.Background(), provider.StatusRequest{ReferenceID:"order-1",CustomerNo:"08123",ProductCode:"xld25000"}); err == nil { t.Fatal("expected blank message to be rejected") }
+  })
+ }
+}
+
 func TestIAKTransactionResponseRequiresRC(t *testing.T) {
  srv, client := newIAKJSONServer(`{"data":{"ref_id":"order-1","customer_id":"08123","product_code":"xld25000","status":0,"price":25000,"balance":997061249,"tr_id":3482,"message":"PROCESS"}}`)
  defer srv.Close()
