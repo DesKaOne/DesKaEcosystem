@@ -66,6 +66,7 @@ func TestPersistenceRecordCrashBoundaryMatrix(t *testing.T) {
 		}(), 0, ErrPersistenceContextMismatch},
 		{"checksum corruption", func() PersistenceRecordEnvelope {
 			r := record1
+			r.Payload = append([]byte(nil), record1.Payload...)
 			r.Payload[0] ^= 0xff
 			return r
 		}(), 0, ErrPersistenceChecksum},
