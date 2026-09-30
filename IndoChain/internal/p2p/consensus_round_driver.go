@@ -19,6 +19,7 @@ type ConsensusRoundDriver struct {
 	transport Transport
 	driver   *consensus.RoundDriver
 	rules    consensus.ValidationRules
+	candidate *CandidateExchange
 }
 
 func NewConsensusRoundDriver(
@@ -90,6 +91,56 @@ func (d *ConsensusRoundDriver) ReceiveAndHandle() (PeerID, error) {
 		return from, err
 	}
 	return from, d.driver.HandleMessage(msg)
+}
+
+// NewConsensusRoundDriverWithCandidateExchange adds the existing block/sync
+// candidate exchange without changing the basic consensus-driver constructor.
+func NewConsensusRoundDriverWithCandidateExchange(
+	transport Transport,
+	runtime *consensus.ValidatorRuntime,
+	authority consensus.TimeoutAuthorityResolver,
+	rules consensus.ValidationRules,
+	maxPayload uint32,
+	maxRequest uint64,
+) (*ConsensusRoundDriver, error) {
+	d, err := NewConsensusRoundDriver(transport, runtime, authority, rules)
+	if err != nil { return nil, err }
+	exchange, err := NewCandidateExchange(transport, maxPayload, maxRequest)
+	if err != nil { return nil, err }
+	d.candidate = exchange
+	return d, nil
+}
+
+// PublishBlockProposalAndCandidate publishes authenticated proposal evidence
+// and the complete development candidate through the existing block message.
+func (d *ConsensusRoundDriver) PublishBlockProposalAndCandidate(
+	peer PeerID,
+	ctx consensus.BlockProductionContext,
+	candidate block.Block,
+	signer crypto.Signer,
+) (consensus.Message, consensus.BlockProposal, error) {
+	if d == nil || d.driver == nil || d.candidate == nil {
+		return consensus.Message{}, consensus.BlockProposal{}, ErrNilConsensusRoundDriver
+	}
+	msg, proposal, err := d.PublishBlockProposal(peer, ctx, candidate, signer)
+	if err != nil { return consensus.Message{}, consensus.BlockProposal{}, err }
+	if err := d.candidate.PublishCandidate(peer, candidate); err != nil {
+		return consensus.Message{}, consensus.BlockProposal{}, err
+	}
+	return msg, proposal, nil
+}
+
+// FetchProposalCandidate fetches one candidate at the proposal height and
+// verifies its deterministic block hash against the authenticated proposal.
+func (d *ConsensusRoundDriver) FetchProposalCandidate(peer PeerID, proposal consensus.Message) (block.Block, error) {
+	if d == nil || d.candidate == nil { return block.Block{}, ErrNilConsensusRoundDriver }
+	return d.candidate.FetchCandidate(peer, proposal)
+}
+
+// ServeCandidateRequest handles one existing block-request message.
+func (d *ConsensusRoundDriver) ServeCandidateRequest(reader SyncReader) (PeerID, error) {
+	if d == nil || d.candidate == nil { return "", ErrNilConsensusRoundDriver }
+	return d.candidate.ServeOneRequest(reader)
 }
 
 func (d *ConsensusRoundDriver) RoundDriver() *consensus.RoundDriver {
