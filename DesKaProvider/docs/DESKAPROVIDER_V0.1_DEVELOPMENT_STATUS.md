@@ -5151,3 +5151,29 @@ Deterministic test commit: `c7a1bc6e494bcbc2cee796cbeed2371eb9b25606`.
 The resulting branch HEAD must receive GREEN CI for test, vet, race, and service-backed validation before this batch is considered complete. Credential-gated provider validation may remain skipped when credentials are unavailable.
 
 No authorized live-provider transaction was executed by this audit.
+
+
+## IAK Top Up Serial Number Mapping Boundary
+
+**Date:** 2026-09-30
+
+### Source Basis
+
+The official IAK v2 Top Up response contract documents `ref_id`, `status`, `product_code`, `customer_id`, `price`, `message`, `balance`, `tr_id`, and `rc`; it does not document `sn` in the Top Up response. The official Check Status contract separately documents optional `sn`, only when status is SUCCESS, and the callback contract documents optional `sn`. citeturn1search0turn1search1turn1search5
+
+### Implementation / Deterministic Coverage
+
+- IAK `Purchase()` no longer maps an undocumented Top Up response `sn` into the provider-neutral `PurchaseResult.SerialNumber` field.
+- `GetStatus()` continues to map documented successful Check Status `sn` into `PurchaseStatus.SerialNumber`.
+- Callback handling continues to map documented callback `sn` while rejecting it for non-success callbacks.
+- Added a credential-free regression fixture proving that an unexpected `sn` field in a Top Up response is ignored rather than promoted into the provider-neutral purchase result.
+
+### Safety Boundary
+
+- This change limits provider-neutral output to the documented Top Up response surface; it does not reject otherwise valid provider responses merely because they contain an undocumented extra field.
+- No provider-neutral interface expansion, retry, resubmission, failover, refund automation, ledger mutation, customer-balance mutation, treasury movement, or provider funding behavior was introduced.
+- No live-provider transaction was executed by this audit.
+
+### Verification Boundary
+
+The resulting branch HEAD must receive GREEN CI for test, vet, race, and service-backed validation before this batch is considered complete. Credential-gated provider validation may remain skipped when credentials are unavailable.
