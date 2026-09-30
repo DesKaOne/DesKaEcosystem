@@ -4815,3 +4815,20 @@ Added regression coverage for:
 - Deterministic contract tests are credential-free.
 - External IAK status validation remains credential-gated.
 - This batch remains open until the resulting CI is GREEN.
+
+## IAK Purchase Response Identity Contract Hardening
+
+**Date:** 2026-09-30
+
+### Implementation
+
+- IAK `Purchase()` already requires response `ref_id`, `customer_id`, and `product_code` before constructing the provider-neutral purchase result.
+- The adapter compares all three returned identity fields against the supplied purchase request and fails closed on mismatch.
+- Added deterministic regression coverage for each documented transaction identity field being absent from the purchase response.
+- No provider-neutral interface changes and no financial mutation/retry/failover behavior were introduced.
+
+### Verification Boundary
+
+- Deterministic purchase-response contract tests are credential-free.
+- External IAK top-up validation remains credential-gated.
+- This batch remains open until the resulting CI is GREEN.
