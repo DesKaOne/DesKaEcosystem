@@ -68,6 +68,9 @@ func (r PersistenceRecordEnvelope) Validate(expectedContext [32]byte, previousSe
 	if r.Sequence == 0 {
 		return ErrPersistenceSequence
 	}
+	if r.RecordType == PersistenceRecordTypeWAL && previousSequence == 0 && r.Sequence != 1 {
+		return ErrPersistenceSequence
+	}
 	if previousSequence > 0 && r.Sequence != previousSequence+1 {
 		return ErrPersistenceSequence
 	}
