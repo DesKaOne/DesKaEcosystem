@@ -76,7 +76,7 @@ func TestDeterministicRoundDriverSimulationThreeNodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runtimes, validatorsFixture, validators, _ := newSimulatedRuntimeCluster(t, state)
+	runtimes, validatorsFixture, validators, power := newSimulatedRuntimeCluster(t, state)
 	proposer, err := runtimes[0].ExpectedProposer()
 	if err != nil {
 		t.Fatal(err)
@@ -108,24 +108,15 @@ func TestDeterministicRoundDriverSimulationThreeNodes(t *testing.T) {
 
 	signerA, publicA := newTimeoutTestSigner(t)
 	signerB, publicB := newTimeoutTestSigner(t)
-	_ = signerA
-	_ = signerB
 	resolver := timeoutRuntimeAuthorityResolver{keys: map[string]ed25519.PublicKey{
 		"validator-a": publicA,
 		"validator-b": publicB,
-		"validator-c": validatorsFixture[2].public,
 	}}
-	timeoutA, err := NewTimeoutMessage(runtimes[0].State(), validatorsFixture[0].id, 1, signerA)
-	if err != nil {
-		t.Fatal(err)
-	}
-	timeoutB, err := NewTimeoutMessage(runtimes[0].State(), validatorsFixture[1].id, 1, signerB)
-	if err != nil {
-		t.Fatal(err)
-	}
+	proof := timeoutLockProofAtRound(t, state, validators, power, 0, "round-0-proposal", signerA, signerB)
+	timeoutMessages := timeoutMessagesForProof(t, runtimes[0].State(), proof, signerA, signerB)
 
 	for i, runtime := range runtimes {
-		if _, err := runtime.AdvanceRoundWithTimeoutEvidence([]Message{timeoutB, timeoutA}, resolver); err != nil {
+		if _, err := runtime.AdvanceRoundWithTimeoutEvidence([]Message{timeoutMessages[1], timeoutMessages[0]}, resolver); err != nil {
 			t.Fatalf("node %d failed deterministic timeout transition: %v", i, err)
 		}
 		if runtime.State().Round != 1 || runtime.State().Phase != PhaseProposal {
