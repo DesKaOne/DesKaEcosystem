@@ -381,6 +381,38 @@ func TestUnknownProviderStatusFailsClosed(t *testing.T) {
 	if !errors.Is(err, ErrUnknownResponseCode) { t.Fatalf("expected unknown status error, got %v", err) }
 }
 
+func TestPurchaseRejectsMissingRequiredMessage(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{
+			"ref_id": "ref-missing-message", "customer_no": "087800001232", "buyer_sku_code": "xld10",
+			"status": "Sukses", "rc": "00", "price": 10000,
+		}})
+	}))
+	defer server.Close()
+	c, err := New(config.DigiFlazzConfig{Username: "buyer", APIKey: "secret", Endpoint: server.URL}, server.Client())
+	if err != nil { t.Fatal(err) }
+	_, err = c.Purchase(context.Background(), provider.PurchaseRequest{ProductCode: "xld10", CustomerNo: "087800001232", ReferenceID: "ref-missing-message"})
+	if err == nil || !strings.Contains(err.Error(), "missing required message") {
+		t.Fatalf("expected required message rejection, got %v", err)
+	}
+}
+
+func TestDigiFlazzInquiryRejectsMissingRequiredMessage(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{
+			"ref_id": "ref-inq-missing-message", "customer_no": "1234554321", "buyer_sku_code": "pln",
+			"status": "Sukses", "rc": "00",
+		}})
+	}))
+	defer server.Close()
+	c, err := New(config.DigiFlazzConfig{Username: "buyer", APIKey: "secret", Endpoint: server.URL + "/v1/transaction"}, server.Client())
+	if err != nil { t.Fatal(err) }
+	_, err = c.Inquiry(context.Background(), provider.InquiryRequest{ProductCode: "pln", CustomerNo: "1234554321", ReferenceID: "ref-inq-missing-message"})
+	if err == nil || !strings.Contains(err.Error(), "missing required message") {
+		t.Fatalf("expected inquiry required message rejection, got %v", err)
+	}
+}
+
 func TestPurchaseRejectsResponseIdentityMismatch(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"ref_id": "other-ref", "customer_no": "087800001232", "buyer_sku_code": "xld10", "message": "Transaksi Sukses", "status": "Sukses", "rc": "00", "price": 10000}})
