@@ -4246,3 +4246,10 @@ Added tests for:
 ### Next Concrete Engineering Task
 
 Continue IAK contract audit for only the already-supported prepaid capabilities: pricelist, PLN inquiry, top-up, check-status, balance, and callback. Do not expand into postpaid or additional IAK APIs unless a provider-neutral capability boundary and authoritative response schema are available.
+
+
+### IAK Pricelist CI Correction
+
+The first CI run for this milestone correctly exposed that checking only whether `data.rc` was known was insufficient: a known Failed code such as `20` must not be accepted as a successful catalog response. The implementation was corrected to require `data.rc == "00"` semantics through the existing response-code mapper; Pending, Failed, and unknown codes now fail closed. Added deterministic coverage for Pending `39` in addition to documented Failed `20` and unknown `999`.
+
+The previous CI run #3133 was therefore **RED by design-test feedback** and is not the completion gate. The corrected HEAD below must reach GREEN before this batch is closed.
