@@ -4172,3 +4172,37 @@ Continue XP SINDONESIA completion only where the repository/API contract provide
 ### Next Concrete Engineering Task
 
 Continue the XP SINDONESIA audit for documented non-order APIs only where their response schema maps cleanly to an existing capability. Do not add deposit operations to `PPOBProvider` without a dedicated provider-neutral capability boundary.
+
+
+## XP SINDONESIA Balance Contract Regression Coverage
+
+**Date:** 2026-09-30
+
+### Implementation
+
+- Added deterministic coverage that Cek Saldo sends the documented `id`, `key`, and `api` POST fields.
+- Added deterministic fail-closed coverage for a successful response whose `saldo` value is non-numeric.
+- Existing coverage continues to verify documented successful string saldo, numeric JSON saldo, provider-declared `success: "0"` errors, and missing `saldo`.
+- No new provider operation or provider-specific capability was introduced.
+
+### Changed Files
+
+- `DesKaProvider/backend/Provider/XPSindonesia/xp_sindonesia_test.go`
+- `DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md`
+
+### Safety Boundary / Invariants
+
+- Cek Saldo remains an optional provider-neutral BalanceProvider capability.
+- Cek Harga remains unsupported because the provider-neutral interface has no pricing operation.
+- List Harga remains unsupported because the repository source does not provide a complete response schema.
+- Deposit operations remain outside PPOBProvider pending a dedicated provider-neutral capability boundary.
+- No retry, failover, resubmission, refund automation, ledger mutation, customer-balance mutation, treasury movement, or provider funding is introduced.
+
+### Verification Boundary
+
+- Deterministic contract coverage was expanded; external XP validation remains credential-gated.
+- Final CI for the resulting HEAD must be GREEN before this batch is considered complete.
+
+### Next Concrete Engineering Task
+
+Continue with IAK adapter contract completeness after the XP SINDONESIA non-order audit reaches the current interface boundary. Review documented IAK request/response/error semantics and add only deterministic mappings/fixtures supported by the authoritative repository documentation; keep unknown codes fail-closed and do not introduce provider-specific financial mutation.
