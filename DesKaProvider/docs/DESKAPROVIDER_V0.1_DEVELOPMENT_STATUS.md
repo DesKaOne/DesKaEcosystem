@@ -5744,3 +5744,38 @@ Production hardening commit: 5c6c6aae46ba9c5d8775aba15cbd3899575f024f.
 Deterministic regression commit: 1ae1730f6993414336c525b4c8ec04bc75f85fb4.
 
 The resulting HEAD must receive GREEN Push and PR CI, including test, vet, race, and applicable service-backed validation. Credential-gated provider validation may remain skipped when credentials/configuration are unavailable.
+
+
+## XP SINDONESIA Balance Response Identity Boundary Hardening
+
+**Date:** 2026-10-01
+
+### Source Basis
+
+The authoritative XP SINDONESIA API document defines Cek Saldo as returning `success`, the member `id`, and `saldo`; success responses use `success: "1"` and error responses use `success: "0"`.
+
+### Audit Finding
+
+The adapter validated successful balance status and parsed `saldo`, but it did not reject an unknown `success` discriminator or verify that the returned member `id` matched the configured XP member. A mismatched response could therefore be accepted as operational balance state.
+
+### Implementation
+
+- GetBalance now accepts only documented `success` values `"0"` and `"1"`; unknown values fail closed.
+- Successful balance responses must carry the configured member ID.
+- Existing required `saldo`, numeric parsing, and non-negative integration validation remain unchanged.
+- No financial ledger authority, customer balance mutation, funding, retry, failover, or transaction behavior was introduced.
+
+### Deterministic Coverage
+
+Added:
+
+- `TestXPBalanceRejectsInvalidSuccessDiscriminator`
+- `TestXPBalanceRejectsMemberIDMismatch`
+
+### Verification Boundary
+
+Production hardening commit: `3ab5c2c57e50c8053f6fc756bab59c443023cb87`.
+
+Deterministic regression commit: `c11b08443acdb0b31ec6501c22d2baf5ddb472b3`.
+
+The resulting HEAD must receive GREEN Push and PR CI, including test, vet, race, and applicable service-backed validation. Credential-gated provider validation may remain skipped when credentials/configuration are unavailable.
