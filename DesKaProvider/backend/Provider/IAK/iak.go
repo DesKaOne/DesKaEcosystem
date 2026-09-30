@@ -180,7 +180,7 @@ func mapResponseCode(rc string) (provider.TransactionStatus, error) {
 	switch strings.TrimSpace(rc) {
 	case "00":
 		return provider.StatusSuccess, nil
-	case "05", "39", "201":
+	case "39", "201":
 		return provider.StatusPending, nil
 	case "06", "07", "10", "12", "13", "14", "16", "17", "18", "19", "20", "21", "102", "106", "107", "110", "117", "121", "131", "132", "141", "142", "202", "203", "204", "205", "206", "207":
 		return provider.StatusFailed, nil
