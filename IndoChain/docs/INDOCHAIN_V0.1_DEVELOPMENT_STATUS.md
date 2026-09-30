@@ -1877,3 +1877,78 @@ Milestone ini meningkatkan adversarial regression confidence, tetapi tetap **buk
 **4.42 — Deterministic Round Driver Simulation & Recovery Boundary:** bangun simulation harness yang menjalankan contract round-driver v0.1 secara deterministic di beberapa node, termasuk queued evidence, timeout transition, lock adoption, restart/recovery state boundary, dan finalized-block handoff tanpa mengklaim production scheduler atau durable consensus implementation.
 
 **Milestone 4.41 implementation/test status:** GREEN pada exact implementation/test HEAD `dd7759021b62606a5fa3191f6fb83aa3447b6e20`, CI #1398 / run `36721370689`. Documentation follow-up ini wajib diverifikasi kembali pada exact documentation HEAD sebagai final gate.
+
+
+### 4.42 Deterministic Round Driver Simulation & Recovery Boundary
+
+**Tanggal:** 2026-09-30
+
+**Objective**
+
+Membangun simulation harness deterministic untuk beberapa runtime validator yang menjalankan contract round-driver v0.1 secara terurut, mencakup proposal delivery, quorum evidence, authenticated timeout/lock transition, simulated restart boundary, dan explicit finalized-certificate handoff.
+
+**Implementation**
+
+File utama: `IndoChain/internal/consensus/runtime_driver_simulation_test.go`.
+
+Coverage baru:
+
+1. **three-node deterministic simulation** — tiga `ValidatorRuntime` menerima proposal dan quorum prevote yang sama, lalu menghasilkan phase transition yang sama;
+2. **authenticated timeout/lock transition** — timeout evidence dikirim dalam urutan berbeda tetapi membawa LockProof yang sesuai dengan existing lock, sehingga round transition tetap deterministic dan lock tidak downgrade;
+3. **round-local evidence reset** — setelah round change, proposal/precommit evidence round sebelumnya tidak terbawa ke round berikutnya;
+4. **proposer context enforcement** — simulation menolak proposal dari validator yang bukan proposer untuk round target;
+5. **simulated restart boundary** — runtime baru hanya direkonstruksi dari `RoundState` + authority/voting configuration yang saat ini tersedia; lock/proposal/certificate yang belum memiliki persistence contract tidak boleh “muncul kembali” secara implisit;
+6. **replay after simulated restart** — timeout evidence dari round lama tetap ditolak dan restart boundary tidak menyebabkan round regression;
+7. **explicit finality boundary** — finality certificate hanya berasal dari authenticated precommit evidence dan tetap menjadi handoff artifact, bukan canonical-state mutation.
+
+**Production code impact**
+
+Tidak ada production consensus algorithm, production round scheduler, durable consensus WAL/snapshot, atau network-wide driver baru.
+
+Milestone ini sengaja memperlakukan persistence sebagai **boundary yang belum diimplementasikan**. Simulation restart tidak berpura-pura sebagai durable recovery: hanya state yang memang dapat direkonstruksi dari API runtime saat ini yang dipulihkan. LockProof, round-local evidence, dan finalized certificate belum dianggap persisted sampai persistence contract formal tersedia.
+
+Canonical execution/commit tetap berada pada node boundary. Existing node tests mencakup `CommitRuntimeFinalizedBlock` dan convergence/finalized handoff; milestone ini tidak memindahkan execution semantics ke consensus runtime.
+
+**Consensus invariants locked**
+
+1. Semua simulated nodes memproses context yang sama secara deterministic.
+2. Proposal hanya valid pada proposer/round yang sesuai.
+3. Quorum prevote mengubah phase secara konsisten pada semua simulated nodes.
+4. Timeout evidence harus konsisten dengan existing authenticated lock jika runtime sudah locked.
+5. Round change membersihkan round-local proposal dan vote aggregation.
+6. Existing lock tidak boleh downgrade atau hilang hanya karena timeout transition.
+7. Restart boundary tidak boleh menciptakan lock/finality evidence yang tidak persisted.
+8. Replay evidence lama setelah restart tetap ditolak.
+9. Finality tetap membutuhkan explicit authenticated precommit evidence.
+10. Finality certificate tidak dengan sendirinya memutasi canonical node state.
+
+**CI iteration / root causes**
+
+- CI #1404, run `36722764714`: RED karena fixture simulation memiliki unused value dan mencoba mengambil public key dari `timeoutTestSigner` yang memang tidak mengekspos method tersebut.
+- CI #1406, run `36722869486`: RED karena simulation telah memiliki local lock dari quorum prevote tetapi timeout fixture tidak membawa matching LockProof; runtime secara benar menolak dengan `ErrConflictingTimeoutLock`.
+- Kedua failure diperbaiki di test harness saja; tidak ada production consensus change.
+- Exact implementation/test HEAD: `c33fe9ccc65f609f0a5446e152b761d0f606612b`
+- IndoChain CI #1408, run `36722964026`: PASS
+- Tidy: PASS
+- `go test ./...`: PASS
+- `go test -race ./...`: PASS
+- `go vet ./...`: PASS
+- PostgreSQL: tidak relevan; milestone hanya deterministic consensus simulation/recovery boundary.
+
+**Safety boundary**
+
+Milestone ini **bukan production BFT completion** dan bukan durable consensus recovery implementation. Belum ada production scheduler, peer discovery, retransmission, failure detector, real network partition/rejoin timing, persistent consensus WAL/snapshot format, validator lifecycle persistence, atau formal BFT safety/liveness proof.
+
+**Known limitations**
+
+- simulation masih process-local dan deterministic;
+- restart/recovery masih boundary test, bukan persistent recovery;
+- queued network evidence belum dijalankan oleh production round driver;
+- real multi-node transport failure semantics masih berada pada in-memory adversarial harness;
+- finalized-block execution/commit tetap memerlukan node-side canonical context dan durable store.
+
+**Next milestone**
+
+**4.43 — Consensus Runtime Persistence Contract & Recovery Test Matrix:** definisikan snapshot/WAL boundary untuk RoundState, lock proof, round-local evidence, finality certificate, authority context, serta deterministic restore/replay tests sebelum implementasi persistence production.
+
+**Milestone 4.42 implementation/test status:** GREEN pada exact implementation/test HEAD `c33fe9ccc65f609f0a5446e152b761d0f606612b`, CI #1408 / run `36722964026`. Documentation follow-up ini wajib diverifikasi kembali pada exact documentation HEAD sebagai final gate.
