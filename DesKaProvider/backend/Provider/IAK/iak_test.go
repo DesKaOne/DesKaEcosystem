@@ -848,3 +848,25 @@ func TestIAKHTTPBadRequestRemainsError(t *testing.T) {
  if err != nil { t.Fatal(err) }
  if _, err := c.Purchase(context.Background(), provider.PurchaseRequest{ProductCode:"xld25000", CustomerNo:"08123", ReferenceID:"order-bad-request"}); err == nil { t.Fatal("expected HTTP 400 to remain an error") }
 }
+
+
+func TestIAKTransactionRejectsSerialNumberForNonSuccess(t *testing.T) {
+ for _, tc := range []struct{status, rc, message string}{{"0","39","PROCESS"},{"2","07","FAILED"}} {
+  t.Run(tc.status, func(t *testing.T) {
+   body := fmt.Sprintf("{\"data\":{\"ref_id\":\"order-sn\",\"status\":%s,\"product_code\":\"xld25000\",\"customer_id\":\"08123\",\"price\":25000,\"message\":\"%s\",\"sn\":\"SN-UNEXPECTED\",\"balance\":997061249,\"tr_id\":3482,\"rc\":\"%s\"}}", tc.status, tc.message, tc.rc)
+   srv, client := newIAKJSONServer(body)
+   defer srv.Close()
+   c, err := New(iakTestConfig(srv.URL), client)
+   if err != nil { t.Fatal(err) }
+   _, err = c.GetStatus(context.Background(), provider.StatusRequest{ReferenceID:"order-sn", CustomerNo:"08123", ProductCode:"xld25000"})
+   if err == nil { t.Fatal("expected serial number on non-success status to be rejected") }
+  })
+ }
+}
+
+func TestIAKWebhookRejectsSerialNumberForFailedStatus(t *testing.T) {
+ c, _ := New(config.IAKConfig{Username:"user", APIKey:"secret"}, http.DefaultClient)
+ body := []byte("{\"ref_id\":\"order-sn\",\"status\":\"2\",\"code\":\"xld25000\",\"hp\":\"08123\",\"price\":\"25000\",\"message\":\"FAILED\",\"sn\":\"SN-UNEXPECTED\",\"balance\":\"997011249\",\"tr_id\":\"3486\",\"rc\":\"07\",\"sign\":\"" + ts("order-sn") + "\"}")
+ _, err := c.HandleWebhook(context.Background(), provider.WebhookRequest{Body:body, SignatureSecret:"secret"})
+ if err == nil { t.Fatal("expected serial number on failed callback to be rejected") }
+}
