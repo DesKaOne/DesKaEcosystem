@@ -549,6 +549,28 @@ func TestAdversarialRoundDriverRejectsTamperedPrecommitFromPeer(t *testing.T) {
 	if err := runtime.AddVote(received); err != nil {
 		t.Fatal(err)
 	}
+
+	validPrecommit := consensus.Message{
+		ProtocolVersion: state.ProtocolVersion, ChainID: state.ChainID,
+		Epoch: state.Epoch, Height: state.Height, Round: state.Round,
+		Sender: []byte("validator-b"), Type: consensus.MessageTypePrecommit,
+		Payload: []byte("proposal"),
+	}
+	validPrecommit, err = validPrecommit.Sign(signer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := transportA.SendConsensus(PeerID("node-b"), validPrecommit, rules); err != nil {
+		t.Fatal(err)
+	}
+	_, received, err = transportB.ReceiveConsensus(rules)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.AddVote(received); err != nil {
+		t.Fatal(err)
+	}
+
 	authority := runtimeAuthorityForSigner(t, signer)
 	before := runtime.State()
 	if _, err := runtime.FinalizeProposal(authority); !errors.Is(err, consensus.ErrInvalidSignature) {
