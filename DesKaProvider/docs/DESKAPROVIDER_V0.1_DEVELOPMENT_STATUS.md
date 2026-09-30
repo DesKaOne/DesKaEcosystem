@@ -5253,3 +5253,24 @@ Correction commit: `9d3c9f1e4c4d33cba6581ce0584866215b6d452e`.
 ### Verification Boundary
 
 The new HEAD must receive GREEN Push and PR CI before this correction is considered complete.
+
+
+## CI Follow-up — 2026-09-30 — Pre-Canceled Shutdown Context Race Correction
+
+CI #3351 for HEAD `7e8014039877265c9f68528ac05988ff2d00ba2a` failed only in the `race` job. The failing deterministic test was `TestSyncWorkerLifecycleTimeoutDoesNotReleaseOwnership`.
+
+### Verification Finding
+
+The test supplies a shutdown context that is already canceled and requires `Shutdown()` to return `context.Canceled` without releasing worker ownership. The previous implementation canceled the worker first and then selected between the worker's `done` channel and `ctx.Done()`. When the worker exited quickly, both cases could be ready and Go's select could return the clean worker result (`nil`) instead of the caller's canceled-context error. Race execution exposed this nondeterminism.
+
+### Correction
+
+- `SyncWorkerLifecycle.Shutdown()` now checks `ctx.Err()` before acquiring/canceling worker ownership.
+- A pre-canceled shutdown context therefore returns its context error immediately and does not cancel or release the active worker.
+- No provider behavior, routing authority, financial authority, persistence authority, retry, failover, or transaction resubmission behavior changed.
+
+Correction commit: `1762b9361274dd9aaa288c2f2281ce46d86c1a3f`.
+
+### Verification Boundary
+
+Push #3350 for the previous HEAD was GREEN, but PR #3351 was RED in race. The resulting new HEAD must receive GREEN Push and PR CI before this correction is considered complete.
