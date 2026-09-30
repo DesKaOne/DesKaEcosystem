@@ -4990,3 +4990,35 @@ This hardening batch is not considered GREEN-complete until the final branch HEA
 ### Next Concrete Engineering Task
 
 After the current green gate, continue the IAK contract audit only where authoritative documentation supports deterministic mapping/validation. Do not infer undocumented V2 balance semantics or expand the provider-neutral capability surface.
+
+## IAK Documented Response Code Completeness
+
+**Date:** 2026-09-30
+
+### Source Basis
+
+Official IAK Prepaid Response Code documentation lists RC 00 as Success; RC 39 and 201 as Pending; and the documented failed codes include 06, 07, 10, 12, 13, 14, 16, 17, 18, 19, 20, 21, 102, 106, 107, 110, 117, 121, 131, 132, 141, 142, 202, 203, 204, 205, 206, 207, and 301. RC 301 is documented as EMAIL SEND LIMIT REACHED / Failed. Source: https://api.iak.id/api/prepaid/response-code
+
+### Implementation
+
+- Added documented IAK RC 301 to the provider adapter failed-state mapper.
+- Added deterministic regression coverage for every documented prepaid response code relevant to the current provider-neutral transaction adapter.
+- Preserved RC 39 and 201 as pending and RC 00 as success.
+- Preserved fail-closed behavior for undocumented/unknown response codes.
+- RC 143 remains outside the generic transaction mapper because the official documentation scopes it specifically to the game inquiry section, while the current adapter's inquiry implementation is PLN-specific.
+
+### Safety Boundary
+
+- No retry, failover, transaction resubmission, duplicate purchase creation, provider funding, ledger mutation, customer-balance mutation, treasury movement, or routing behavior was introduced.
+- Response-code mapping remains observational/domain-result mapping only; it does not mutate financial authority.
+- External IAK validation remains credential-gated and is separate from deterministic contract validation.
+
+### Verification Boundary
+
+The implementation commit is 47af287106800fc0f4829682d42f30f957c38e94 and deterministic coverage is dd7ba12c2129b76faf067bd02cc7346da0486d69.
+
+The new code batch must receive GREEN CI on the resulting branch HEAD before being considered complete.
+
+### Next Concrete Engineering Task
+
+Continue the IAK contract audit only for documented response fields/status behavior that can be mapped deterministically without inventing V2 semantics. In particular, inspect remaining transaction/webhook optional fields and documented callback status/RC combinations for missing deterministic coverage.
