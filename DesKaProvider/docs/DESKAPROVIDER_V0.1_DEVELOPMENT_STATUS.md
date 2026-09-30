@@ -5219,3 +5219,14 @@ Deterministic regression commit: 725f45351df11c17e9a01b8fe234860024ed1e73.
 
 The resulting HEAD must receive GREEN CI for test, vet, race, and service-backed validation before this correction is considered complete. Credential-gated provider validation may remain skipped when credentials are unavailable.
 
+
+
+## CI Follow-up — 2026-09-30 — Race Test Contract Correction
+
+The Push CI for HEAD `dfb78ee3203cd3acb2665aaded4a81483e01de64` was GREEN (#3342), while PR CI #3343 failed only in the `race` job.
+
+The failure was isolated to `DesKaProvider/backend/runtime/runtime_test.go` in `TestServiceRunShutdownTimeoutKeepsDatabaseOwnershipUntilWorkerStops`. The test released the deliberately blocking provider and then expected `SyncWorkerLifecycle.Shutdown(context.Background())` to preserve the earlier deadline error. The lifecycle contract instead returns the worker's final error and normalizes `context.Canceled` to nil. The corresponding non-race shutdown test already expects a clean nil result after provider release.
+
+Correction commit: `f3488e23bcae7b5a01801d66863ca7b27576ee36`.
+
+This is a test-contract correction only; no provider routing, retry, financial authority, persistence authority, or provider behavior was changed. The new HEAD must receive GREEN Push and PR CI before the batch is considered complete.
