@@ -2376,3 +2376,57 @@ Exact-head CI gate: pending.
 **Next milestone**
 
 4.50 implementation/test gate GREEN; final documentation HEAD masih memerlukan exact-head CI gate tersendiri.
+
+### 4.51 Authenticated Consensus Round Driver Integration
+
+**Tanggal:** 2026-10-01
+
+**Objective**
+
+Mengintegrasikan primitive BFT yang sudah ada menjadi executable orchestration boundary yang melakukan authenticated message ingress dan deterministic timeout/round-change coordination, tanpa menambahkan scheduler semu atau memindahkan authority dari ValidatorRuntime.
+
+**Implementation**
+
+- `IndoChain/internal/consensus/authenticated_runtime.go`
+  - `AcceptAuthenticatedProposal` memvalidasi exact consensus context, validator membership, dan signature authority sebelum proposal masuk ke runtime.
+  - `AddAuthenticatedVote` memvalidasi exact context, validator membership, dan signature authority sebelum prevote/precommit masuk ke round-local aggregation.
+  - API development `AcceptProposal` / `AddVote` dipertahankan untuk compatibility; authenticated path menjadi boundary yang dipakai driver.
+- `IndoChain/internal/consensus/round_driver.go`
+  - `RoundDriver` menjadi event-driven orchestration boundary di atas `ValidatorRuntime`.
+  - Proposal, prevote, dan precommit diroute melalui exact-context + signature validation.
+  - Timeout message dikumpulkan tanpa langsung memajukan round.
+  - Round transition hanya terjadi melalui explicit `AdvanceRoundFromTimeoutEvidence`.
+  - Timeout queue hanya dibersihkan setelah transition sukses; failed batch tetap tersedia untuk recovery/discard.
+  - Driver tidak memiliki clock, peer discovery, retransmission, failure detector, atau canonical storage mutation.
+- `IndoChain/internal/consensus/round_driver_test.go`
+  - unsigned vote rejection sebelum aggregation;
+  - tampered vote rejection sebelum aggregation;
+  - explicit timeout batch boundary;
+  - atomic conflicting-lock timeout rejection.
+
+**Locked invariants**
+
+1. Authenticated proposal/vote/timeout harus exact-context dan berasal dari validator yang terdaftar.
+2. Signature failure tidak boleh mencapai vote aggregation.
+3. Timeout collection tidak boleh memajukan round secara implicit.
+4. Failed timeout batch tidak boleh memutasi runtime dan tidak boleh diam-diam hilang.
+5. Successful timeout transition membersihkan evidence round-local melalui runtime.
+6. Runtime tetap menjadi owner phase, quorum, lock, finality, dan state transition.
+7. Driver tidak melakukan canonical block/state commit.
+
+**Production boundary**
+
+Milestone ini merupakan integrasi BFT orchestration yang nyata, tetapi **bukan production BFT completion**. Clock/scheduler, network-wide peer/gossip/retransmission, validator-set lifecycle, production proposer policy, durable consensus recovery, end-to-end block-production loop, dan formal BFT safety/liveness analysis masih terbuka.
+
+**Verification**
+
+- Implementation HEAD: `ee5864dc3bf996083404430759f9a8285bfb7a83`
+- Exact-head CI: in progress saat status entry dibuat.
+- Required gate tetap: Tidy, Test, Race Test, Vet pada exact documentation HEAD.
+- PostgreSQL: tidak relevan.
+
+**Next integration target**
+
+Bind `RoundDriver` ke existing P2P consensus transport dan block-candidate production sehingga pipeline proposal/prevote/precommit/timeout/finality berjalan melalui transport nyata, dengan canonical execution/commit tetap berada di node boundary.
+
+**Milestone 4.51 status:** implementation completed; exact implementation CI gate pending.
