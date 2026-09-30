@@ -285,7 +285,7 @@ func purchase(d map[string]any)(provider.PurchaseResult,error){
  ref,customer,product:=str(x,"ref_id"),str(x,"customer_id"),str(x,"product_code")
  if ref==""||customer==""||product==""{return provider.PurchaseResult{},errors.New("IAK purchase response is missing transaction identity")}
  price,_:=requiredInt64Num(x,"price")
- return provider.PurchaseResult{ReferenceID:ref,CustomerNo:customer,ProductCode:product,Status:st,ProviderCode:str(x,"rc"),Message:strings.TrimSpace(str(x,"message")),SerialNumber:str(x,"sn"),Price:int64(price)},nil
+ return provider.PurchaseResult{ReferenceID:ref,CustomerNo:customer,ProductCode:product,Status:st,ProviderCode:str(x,"rc"),Message:strings.TrimSpace(str(x,"message")),Price:int64(price)},nil
 }
 
 func purchaseStatus(x map[string]any)(provider.PurchaseStatus,error){
