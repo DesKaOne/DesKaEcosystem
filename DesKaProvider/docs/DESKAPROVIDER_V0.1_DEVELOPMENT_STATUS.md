@@ -5062,3 +5062,51 @@ CI #3308 reproduced a test-fixture inconsistency: RC `301` was correctly mapped 
 - Deterministic response-code coverage now consistently treats `301` as documented failed.
 - No routing, financial authority, retry/failover, or provider operational behavior changed.
 - CI must be GREEN on the resulting HEAD before this batch is considered complete.
+
+
+## IAK Transaction / Webhook Status Contract Audit
+
+**Date:** 2026-09-30
+
+### Source Basis
+
+The current official IAK Prepaid v2 Top Up and Check Status contracts require transaction responses to expose 'ref_id', 'status', 'product_code', 'customer_id', 'price', 'message', 'balance', 'tr_id', and 'rc'; status values are '0=PROCESS', '1=SUCCESS', and '2=FAILED'. The official callback contract documents a JSON 'data' envelope and requires 'ref_id', 'status', 'code', 'hp', 'price', 'message', 'balance', 'tr_id', 'rc', and 'sign', with 'sn', 'pin', and 'activation_code' optional. The callback contract states that callbacks are final success/failed notifications. citeturn0search0turn0search1turn0search4
+
+The official IAK prepaid response-code contract also defines HTTP 200 as normal success/failed processing, HTTP 400 as failed, and other HTTP statuses as pending. citeturn2view0
+
+### Implementation
+
+- updated IAK webhook parsing to consume the documented 'data' JSON envelope while retaining compatibility with the existing root-level deterministic fixtures;
+- preserved the documented V1/V2 callback identity aliases ('code'/'hp' and 'product_code'/'customer_id') and conflicting-alias rejection;
+- added explicit HTTP-status error classification so transaction purchase/status operations map non-400 HTTP responses to provider-neutral StatusPending, using only the request identity available at the caller boundary;
+- preserved HTTP 400 as an error so documented bad-request semantics are not converted to pending;
+- added deterministic regression coverage for the documented callback envelope, non-400 pending behavior, and HTTP 400 failure behavior;
+- did not add 'pin' or 'activation_code' to the provider-neutral event/result surface because the current interface has no corresponding fields; no undocumented generic-field expansion was introduced.
+
+### Safety Boundary
+
+- HTTP pending mapping does not retry, resubmit, or fail over the transaction;
+- callback parsing remains observational and does not mutate financial authority;
+- webhook identity, signature, status/RC consistency, and required transaction fields remain validated;
+- no duplicate purchase creation, provider funding, ledger mutation, customer-balance mutation, treasury movement, or routing behavior was introduced;
+- LiveTested and ProductionReady remain explicit and unpromoted.
+
+### Changed Files
+
+- DesKaProvider/backend/Provider/IAK/iak.go
+- DesKaProvider/backend/Provider/IAK/iak_test.go
+- DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md
+
+### Verification Boundary
+
+Implementation commit: '533f17616e1de5b68efcda1ceff94e091a4e647f'.
+
+Deterministic test commit: '281621e31bc474a0a0f476fc906a342a167ee83c'.
+
+The resulting branch HEAD must receive GREEN CI for test, vet, race, and service-backed validation before this batch is considered complete. Credential-gated provider validation may remain skipped when credentials are unavailable.
+
+No authorized live-provider transaction was executed by this audit.
+
+### Next Concrete Engineering Task
+
+After the green gate, continue only with remaining IAK response-field/status behavior that is directly supported by official documentation; avoid inventing V2 semantics or expanding the provider-neutral interface solely for optional provider-specific fields.
