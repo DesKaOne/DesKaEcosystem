@@ -56,6 +56,11 @@ func TestValidateCanonicalCommitCandidateRejectsHashMismatch(t *testing.T) {
 func TestValidateCanonicalCommitCandidateRejectsStateRootMismatch(t *testing.T) {
 	candidate := canonicalCommitCandidate(t)
 	candidate.Block.Header.StateRoot[0] = 1
+	var err error
+	candidate.Hash, err = block.Hash(candidate.Block)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := ValidateCanonicalCommitCandidate(candidate); !errors.Is(err, ErrInvalidCanonicalCommit) {
 		t.Fatalf("error = %v, want invalid canonical commit", err)
 	}
