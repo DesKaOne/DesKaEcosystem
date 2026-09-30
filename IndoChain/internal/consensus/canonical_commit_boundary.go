@@ -69,7 +69,7 @@ func CommitCanonicalCandidate(committer CanonicalCommitter, candidate CanonicalC
 		return err
 	}
 	if err := committer.CommitBlockState(candidate.Block, candidate.Hash, candidate.State); err != nil {
-		return fmt.Errorf("%w: %v", ErrCanonicalCommitFailed, err)
+		return fmt.Errorf("%w: %w", ErrCanonicalCommitFailed, err)
 	}
 	return nil
 }
