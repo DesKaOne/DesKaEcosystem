@@ -4572,3 +4572,31 @@ This is response-schema representation validation only. No retry, failover, resu
 - Deterministic price parsing is credential-free.
 - External IAK validation remains credential-gated.
 - Final CI for the resulting HEAD must be GREEN before this batch is considered complete.
+
+## IAK Transaction Status Numeric Boundary Hardening
+
+**Date:** 2026-09-30
+
+### Source Basis
+
+Current IAK Prepaid Check Status and Top Up documentation defines transaction `status` as Double, but the documented domain is only `0:PROCESS`, `1:SUCCESS`, and `2:FAILED`. citeturn0search0turn0search6
+
+### Implementation
+
+- IAK transaction status parsing now rejects fractional JSON numeric values before converting them to the provider-neutral transaction status.
+- Values outside the documented `0/1/2` domain remain rejected.
+- String callback status handling remains restricted to the documented terminal callback values already enforced by the callback boundary.
+
+### Deterministic Coverage
+
+Added regression coverage for a fractional JSON-number transaction status (`1.5`) and confirmed it fails closed.
+
+### Safety Boundary
+
+This is response-schema validation only. No retry, failover, resubmission, refund automation, ledger mutation, customer-balance mutation, treasury movement, or provider funding was introduced.
+
+### Verification Boundary
+
+- Deterministic status parsing is credential-free.
+- External IAK validation remains credential-gated.
+- Final CI for the resulting HEAD must be GREEN before this batch is considered complete.
