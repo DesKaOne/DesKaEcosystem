@@ -43,7 +43,7 @@ func (c *Client) Purchase(ctx context.Context, req provider.PurchaseRequest) (pr
  if out.Trx==""||out.Kode==""||out.Isi==""{return provider.PurchaseResult{},errors.New("XP order response is missing transaction identity")}
  if out.Trx!=req.ReferenceID||out.Kode!=req.ProductCode||out.Isi!=req.CustomerNo{return provider.PurchaseResult{},errors.New("XP order response transaction identity mismatch")}
  price,err:=parseInt(out.Harga);if err!=nil{return provider.PurchaseResult{},fmt.Errorf("XP order response has invalid price: %w",err)}
- status:=mapStatus(out.Status);if out.Success=="0"&&status==""{status=provider.StatusFailed};if status==""{return provider.PurchaseResult{},fmt.Errorf("XP order response has unknown status %q",out.Status)}
+ status:=mapOrderStatus(out.Status);if status==""{return provider.PurchaseResult{},fmt.Errorf("XP order response has unknown status %q",out.Status)}
  message:=out.Status;if out.Error!=""{message=out.Error+": "+out.Status}
  return provider.PurchaseResult{ReferenceID:out.Trx,CustomerNo:out.Isi,ProductCode:out.Kode,Status:status,ProviderCode:out.Error,Message:message,SerialNumber:out.SN,Price:price},nil
 }
@@ -78,4 +78,32 @@ func (c *Client) postJSON(ctx context.Context,endpoint string,values url.Values,
  if err:=json.Unmarshal(body,out);err!=nil{return fmt.Errorf("decode XP response: %w",err)};return nil
 }
 func parseInt(s string)(int64,error){return strconv.ParseInt(strings.TrimSpace(s),10,64)}
-func mapStatus(s string)provider.TransactionStatus{switch strings.ToLower(strings.TrimSpace(s)){case "sukses":return provider.StatusSuccess;case "gagal":return provider.StatusFailed;case "proses","lambat":return provider.StatusPending;default:return ""}}
+func mapOrderStatus(s string) provider.TransactionStatus {
+ raw := strings.ToLower(strings.TrimSpace(s))
+ switch {
+ case raw == "sukses":
+  return provider.StatusSuccess
+ case raw == "gagal" || strings.HasPrefix(raw, "gagal "):
+  return provider.StatusFailed
+ case raw == "kosong" || strings.HasPrefix(raw, "kosong "):
+  return provider.StatusFailed
+ case raw == "proses", raw == "lambat":
+  return provider.StatusPending
+ default:
+  return ""
+ }
+}
+
+func mapStatus(s string) provider.TransactionStatus {
+ raw := strings.ToLower(strings.TrimSpace(s))
+ switch raw {
+ case "sukses":
+  return provider.StatusSuccess
+ case "gagal":
+  return provider.StatusFailed
+ case "proses", "lambat":
+  return provider.StatusPending
+ default:
+  return ""
+ }
+}
