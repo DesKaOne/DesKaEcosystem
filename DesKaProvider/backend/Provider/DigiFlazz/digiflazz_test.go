@@ -114,6 +114,28 @@ func TestPurchaseMapsStructuredProviderErrorFromHTTP400(t *testing.T) {
 	}
 }
 
+func TestGetBalanceRejectsFractionalDeposit(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"deposit": 1000.5}})
+	}))
+	defer server.Close()
+	client, err := New(config.DigiFlazzConfig{Username: "buyer", APIKey: "secret", BalanceEndpoint: server.URL}, server.Client())
+	if err != nil { t.Fatal(err) }
+	_, err = client.GetBalance(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "not an integer") { t.Fatalf("expected fractional deposit rejection, got %v", err) }
+}
+
+func TestGetBalanceRejectsMissingDeposit(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{}})
+	}))
+	defer server.Close()
+	client, err := New(config.DigiFlazzConfig{Username: "buyer", APIKey: "secret", BalanceEndpoint: server.URL}, server.Client())
+	if err != nil { t.Fatal(err) }
+	_, err = client.GetBalance(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "missing required deposit") { t.Fatalf("expected missing deposit rejection, got %v", err) }
+}
+
 func TestDigiFlazzGetBalanceUsesOfficialDepositEndpoint(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/cek-saldo" {
