@@ -3931,3 +3931,31 @@ The next implementation-bearing step remains external evidence rather than specu
 4. continue with authorized IAK, XP SINDONESIA, and Midtrans validation as credentials/evidence become available.
 
 Until that evidence exists, the current green Provider v0.1 architecture is preserved unchanged.
+
+## Post-Audit — DigiFlazz Buyer IP Configuration Evidence
+
+**Date:** 2026-09-30
+
+A current external documentation check was performed against DigiFlazz's published Buyer API connection guidance.
+
+The documented Buyer API setup requires:
+- a **Development IP** for testing;
+- a **Production IP** for live transactions;
+- separate Development and Production API keys;
+- the selected mode must match the corresponding key.
+
+This aligns with the repository's existing credential-gated validation model and reinforces that the observed provider response indicating an unrecognized caller IP is an external configuration gate, not evidence of an adapter defect.
+
+### Development Decision
+
+No runtime/source milestone is opened from this finding.
+
+The actionable next step is provider-side configuration/confirmation of the server IP used by the controlled DigiFlazz validation environment. Once confirmed, run the already-existing credential-gated test tuple and read-only balance validation.
+
+The repository must not:
+- infer a successful transaction from connectivity alone;
+- promote `LiveTested` from credentials, PKS, or deterministic tests;
+- promote `ProductionReady` from a single test transaction;
+- add provider-specific retry, failover, or transaction resubmission behavior.
+
+The existing DigiFlazz adapter and integration harness remain unchanged.
