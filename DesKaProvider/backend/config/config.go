@@ -38,7 +38,6 @@ func LoadDigiFlazzConfig() (DigiFlazzConfig, error) {
 	if cfg.Endpoint == "" { cfg.Endpoint = cfg.BaseURL + "/v1/transaction" }
 	if cfg.BalanceEndpoint == "" { cfg.BalanceEndpoint = cfg.BaseURL + "/v1/cek-saldo" }
 	if cfg.PriceListEndpoint == "" { cfg.PriceListEndpoint = cfg.BaseURL + "/v1/price-list" }
-	if cfg.InquiryPLNEndpoint == "" { cfg.InquiryPLNEndpoint = cfg.BaseURL + "/v1/inquiry-pln" }
 	if cfg.Username == "" {
 		return DigiFlazzConfig{}, fmt.Errorf("DIGIFLAZZ_USERNAME is required")
 	}
