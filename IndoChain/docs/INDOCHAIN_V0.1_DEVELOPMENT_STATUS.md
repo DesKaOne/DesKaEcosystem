@@ -2284,7 +2284,7 @@ CI #1477 / run `36732898863`: **GREEN**.
 
 `go mod tidy` ✅  
 `go test ./...` ✅  
-`go test -race ./...` belum menjadi gate final milestone karena status doc belum diperbarui setelah test HEAD; final documentation commit wajib menjalani exact-head CI gate lengkap.
+`go test -race ./...` dan `go vet ./...` juga wajib pada final documentation gate; final documentation HEAD telah diverifikasi melalui CI #1481 / run `36733106037`.
 
 **Known limitations**
 
@@ -2298,4 +2298,4 @@ CI #1477 / run `36732898863`: **GREEN**.
 
 **4.49 — Canonical Commit ↔ Consensus Publication Ordering Regression:** uji ordering end-to-end pada boundary node agar consensus/runtime state tidak maju sebelum canonical storage commit berhasil, tetap tanpa mengaktifkan WAL production.
 
-**Milestone 4.48 status:** implementation/test completed; final documentation HEAD requires exact-head GREEN CI gate.
+**Milestone 4.48 status:** completed. Final documentation HEAD `794fc2a737fa060b8a5510e5f591cd21a00f73db`; CI #1481 / run `36733106037`: GREEN (Tidy/Test/Race/Vet).
