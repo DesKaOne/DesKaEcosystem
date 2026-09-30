@@ -158,6 +158,31 @@ func TestWebhookSignatureAndMapping(t *testing.T) {
 	}
 }
 
+func TestWebhookRejectsNonPrepaidMetadata(t *testing.T) {
+	body := []byte(`{"data":{"ref_id":"ref-meta","customer_no":"087800001233","buyer_sku_code":"xld10","message":"Transaksi Sukses","status":"Sukses","rc":"00","sn":"SN1","price":10000}}`)
+	c, err := New(config.DigiFlazzConfig{Username: "buyer", APIKey: "secret"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name      string
+		event     string
+		userAgent string
+	}{
+		{name: "postpaid user agent", event: "create", userAgent: "Digiflazz-Pasca-Hookshot"},
+		{name: "unsupported event", event: "resend", userAgent: "Digiflazz-Hookshot"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := c.HandleWebhook(context.Background(), provider.WebhookRequest{
+				Body: body, Event: tc.event, UserAgent: tc.userAgent,
+			})
+			if err == nil {
+				t.Fatal("expected non-prepaid webhook metadata to be rejected")
+			}
+		})
+	}
+}
+
 func TestWebhookRejectsStatusRCConflict(t *testing.T) {
 	body := []byte(`{"data":{"ref_id":"ref-conflict","customer_no":"087800001233","buyer_sku_code":"xld10","message":"Konflik","status":"Sukses","rc":"03","price":10000}}`)
 	c, err := New(config.DigiFlazzConfig{Username: "buyer", APIKey: "secret"}, nil)
