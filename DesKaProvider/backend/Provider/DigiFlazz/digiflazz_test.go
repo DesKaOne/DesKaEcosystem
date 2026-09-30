@@ -210,8 +210,9 @@ func TestDigiFlazzGetProductsUsesOfficialPriceListEndpoint(t *testing.T) {
 		h := md5.Sum([]byte("buyersecretpricelist"))
 		if got["sign"] != hex.EncodeToString(h[:]) { t.Fatalf("unexpected signature: %v", got["sign"]) }
 		_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{
-			{"product_name":"XL 10K","buyer_sku_code":"xld10","buyer_product_status":true},
-			{"product_name":"XL 25K","buyer_sku_code":"xld25","buyer_product_status":false},
+			{"product_name":"XL 10K","buyer_sku_code":"xld10","buyer_product_status":true,"seller_product_status":true},
+			{"product_name":"XL 25K","buyer_sku_code":"xld25","buyer_product_status":false,"seller_product_status":true},
+			{"product_name":"XL 50K","buyer_sku_code":"xld50","buyer_product_status":true,"seller_product_status":false},
 		}})
 	}))
 	defer server.Close()
@@ -221,7 +222,9 @@ func TestDigiFlazzGetProductsUsesOfficialPriceListEndpoint(t *testing.T) {
 	active := true
 	got, err := c.GetProducts(context.Background(), provider.ProductRequest{Category:"Pulsa", Active:&active})
 	if err != nil { t.Fatal(err) }
-	if len(got) != 1 || got[0].Code != "xld10" || got[0].Name != "XL 10K" { t.Fatalf("unexpected products: %#v", got) }
+	if len(got) != 2 || got[0].Code != "xld10" || got[0].Name != "XL 10K" || got[1].Code != "xld50" || got[1].Name != "XL 50K" {
+		t.Fatalf("unexpected products: %#v", got)
+	}
 }
 
 func TestDigiFlazzInquiryPLNUsesOfficialEndpoint(t *testing.T) {
