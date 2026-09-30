@@ -119,7 +119,11 @@ func mapResponseStatus(rawStatus, rc string) (provider.TransactionStatus, error)
 	if strings.TrimSpace(rc) != "" {
 		return mapResponseCode(rc)
 	}
-	return transactionStatus(rawStatus)
+	st, ok := transactionStatus(rawStatus)
+	if !ok {
+		return "", fmt.Errorf("unknown IAK transaction status %q", strings.TrimSpace(rawStatus))
+	}
+	return st, nil
 }
 
 func mapInquiry(s string)provider.TransactionStatus{switch strings.TrimSpace(s){case "1":return provider.StatusSuccess;case "2":return provider.StatusFailed;default:return provider.TransactionStatus("")}}
