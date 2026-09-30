@@ -2704,13 +2704,14 @@ Masih terbuka:
 - Local proposer implementation HEAD: 8490f9b5b0b37012824e4f4899a698499b265602.
 - P2P emission integration HEAD: e2753a5de47892d12a07b222dc02ec24be997969.
 - Regression test HEAD: b9ef2f7f96788c3881c279115817fe170d22bda7.
-- Exact regression HEAD CI run: 36792928081 — pending at documentation update time.
-- Prior P2P implementation CI run: 36792908184 — pending at documentation update time.
-- Prior local proposer implementation CI run: 36792880590 — pending at documentation update time.
+- Exact regression HEAD CI run: 36792928081 — GREEN (Tidy/Test/Race/Vet PASS).
+- Final documentation HEAD before verification refresh: b9ef2f7f96788c3881c279115817fe170d22bda7; CI run 36792932937 — GREEN (Tidy/Test/Race/Vet PASS).
+- Prior P2P implementation CI run: 36792908184 — GREEN (Tidy/Test/Race/Vet PASS).
+- Prior local proposer implementation CI run: 36792884349 — GREEN (Tidy/Test/Race/Vet PASS).
 - PostgreSQL: tidak relevan.
 
 **Next integration target**
 
 Masuk ke **automatic local precommit emission boundary**: setelah local/remote prevote quorum dan lock proof terbentuk, emit authenticated precommit melalui driver yang sama, tetap tanpa canonical commit sampai finality evidence tervalidasi.
 
-**Milestone 4.55 status:** implementation completed; exact final documentation HEAD CI gate pending.
+**Milestone 4.55 status:** implementation/test completed; verification refresh documented above; this status-document commit requires its own exact-head CI gate.
