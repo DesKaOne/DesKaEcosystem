@@ -582,7 +582,7 @@ func TestIAKBalanceAcceptsIntegerJSONNumber(t *testing.T) {
 }
 
 func TestIAKMapResponseCodeCoversDocumentedCodes(t *testing.T) {
-	cases:=map[string]provider.TransactionStatus{"00":provider.StatusSuccess,"39":provider.StatusPending,"201":provider.StatusPending,"06":provider.StatusFailed,"07":provider.StatusFailed,"10":provider.StatusFailed,"12":provider.StatusFailed,"13":provider.StatusFailed,"14":provider.StatusFailed,"16":provider.StatusFailed,"17":provider.StatusFailed,"18":provider.StatusFailed,"19":provider.StatusFailed,"20":provider.StatusFailed,"21":provider.StatusFailed,"102":provider.StatusFailed,"106":provider.StatusFailed,"107":provider.StatusFailed,"110":provider.StatusFailed,"117":provider.StatusFailed,"121":provider.StatusFailed,"131":provider.StatusFailed,"132":provider.StatusFailed,"141":provider.StatusFailed,"142":provider.StatusFailed,"202":provider.StatusFailed,"203":provider.StatusFailed,"204":provider.StatusFailed,"205":provider.StatusFailed,"206":provider.StatusFailed,"207":provider.StatusFailed}
+	cases:=map[string]provider.TransactionStatus{"00":provider.StatusSuccess,"39":provider.StatusPending,"201":provider.StatusPending,"06":provider.StatusFailed,"07":provider.StatusFailed,"10":provider.StatusFailed,"12":provider.StatusFailed,"13":provider.StatusFailed,"14":provider.StatusFailed,"16":provider.StatusFailed,"17":provider.StatusFailed,"18":provider.StatusFailed,"19":provider.StatusFailed,"20":provider.StatusFailed,"21":provider.StatusFailed,"102":provider.StatusFailed,"106":provider.StatusFailed,"107":provider.StatusFailed,"110":provider.StatusFailed,"117":provider.StatusFailed,"121":provider.StatusFailed,"131":provider.StatusFailed,"132":provider.StatusFailed,"141":provider.StatusFailed,"142":provider.StatusFailed,"202":provider.StatusFailed,"203":provider.StatusFailed,"204":provider.StatusFailed,"205":provider.StatusFailed,"206":provider.StatusFailed,"207":provider.StatusFailed,"301":provider.StatusFailed}
 	for rc,want:=range cases { t.Run(rc,func(t *testing.T){ got,err:=mapResponseCode(rc); if err!=nil||got!=want{t.Fatalf("rc %s => %q,%v; want %q",rc,got,err,want)} }) }
 }
 func TestIAKMapResponseCodeRejectsUnknown(t *testing.T) {
@@ -603,7 +603,7 @@ func TestIAKResponseCodeMapperMatchesCurrentPrepaidContract(t *testing.T) {
 	for _, rc := range failed {
 		if got, err := mapResponseCode(rc); err != nil || got != provider.StatusFailed { t.Fatalf("rc %q: got=%q err=%v, want failed", rc, got, err) }
 	}
-	for _, rc := range []string{"01", "02", "03", "04", "05", "08", "09", "11", "15", "30", "40", "43", "76", "77", "91", "92", "93", "94", "100", "101", "103", "105", "108", "109", "143", "301", "999"} {
+	for _, rc := range []string{"01", "02", "03", "04", "05", "08", "09", "11", "15", "30", "40", "43", "76", "77", "91", "92", "93", "94", "100", "101", "103", "105", "108", "109", "143", "999"} {
 		if _, err := mapResponseCode(rc); err == nil { t.Fatalf("undocumented prepaid response code %q must fail closed", rc) }
 	}
 }
