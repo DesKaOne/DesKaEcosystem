@@ -4368,3 +4368,39 @@ Added regression coverage for:
 ### Next Concrete Engineering Task
 
 Continue the IAK adapter audit only against documented, already-supported capabilities. Review remaining response/error semantics and provider-neutral boundary behavior without introducing speculative APIs or provider-specific financial mutation.
+
+
+## IAK PLN Inquiry Contract Hardening
+
+**Date:** 2026-09-30
+
+### Source Basis
+
+The current IAK PLN Inquiry v2 contract requires status, customer_id, meter_no, subscriber_id, name, segment_power, message, and rc; status is limited to 1=SUCCESS and 2=FAILED. The adapter already enforced status and customer identity, but did not previously require all documented PLN response fields or explicitly require/validate rc consistency.
+
+### Implementation
+
+- IAK PLN Inquiry now requires the documented meter_no, subscriber_id, name, and segment_power fields.
+- data.rc is now mandatory.
+- The response-code mapper is used directly for Inquiry and must agree with the documented transaction status.
+- A status/RC conflict is rejected instead of allowing RC to silently override the response status.
+- Existing product restriction (pln only), customer ID presence, customer ID equality, message validation, and status validation remain unchanged.
+- No provider-specific financial mutation, retry, resubmission, refund automation, or routing behavior was introduced.
+
+### Deterministic Coverage
+
+Added regression coverage for:
+
+- missing rc;
+- missing meter_no;
+- missing subscriber_id;
+- missing name;
+- missing segment_power;
+- status=1 with failed rc=07;
+- successful documented PLN Inquiry fixture with all mandatory response fields.
+
+### Verification Boundary
+
+- Tests remain deterministic and credential-free.
+- External IAK validation remains credential-gated.
+- Final CI for this batch must be GREEN before closure.
