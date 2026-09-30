@@ -5050,3 +5050,15 @@ The failure was deterministic: the new contract test's explicit failed-code fixt
 ### Verification Boundary
 
 The correction must receive a new GREEN CI run with test, vet, race, and service-backed validation before the IAK response-code batch is considered complete.
+
+
+## IAK RC 301 Fixture Correction
+
+**Date:** 2026-09-30
+
+CI #3308 reproduced a test-fixture inconsistency: RC `301` was correctly mapped as failed in production and included in the documented failed-code contract set, but the legacy coverage table still treated `301` as an unknown code. The correction adds `301` to the documented failed-code table and removes it from the unknown-code set.
+
+- Production mapping remains unchanged.
+- Deterministic response-code coverage now consistently treats `301` as documented failed.
+- No routing, financial authority, retry/failover, or provider operational behavior changed.
+- CI must be GREEN on the resulting HEAD before this batch is considered complete.
