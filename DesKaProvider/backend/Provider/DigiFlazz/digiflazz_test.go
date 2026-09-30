@@ -285,23 +285,41 @@ func TestDigiFlazzGetProductsRejectsIncompleteProduct(t *testing.T) {
 	}
 }
 
-func TestDigiFlazzInquiryPLNUsesOfficialEndpoint(t *testing.T) {
+func TestDigiFlazzInquiryPLNUsesOfficialTransactionEndpoint(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v1/inquiry-pln" { t.Fatalf("unexpected path: %s", r.URL.Path) }
+		if r.URL.Path != "/v1/transaction" { t.Fatalf("unexpected path: %s", r.URL.Path) }
 		var got map[string]any
 		if err := json.NewDecoder(r.Body).Decode(&got); err != nil { t.Fatal(err) }
-		if got["username"] != "buyer" || got["customer_no"] != "1234554321" { t.Fatalf("unexpected request: %#v", got) }
-		h := md5.Sum([]byte("buyersecret1234554321"))
+		if got["commands"] != "inq-pasca" || got["username"] != "buyer" || got["buyer_sku_code"] != "pln" || got["customer_no"] != "1234554321" || got["ref_id"] != "ref-inq-1" {
+			t.Fatalf("unexpected request: %#v", got)
+		}
+		h := md5.Sum([]byte("buyersecretref-inq-1"))
 		if got["sign"] != hex.EncodeToString(h[:]) { t.Fatalf("unexpected signature: %v", got["sign"]) }
-		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"message":"Transaksi Sukses","status":"Sukses","rc":"00"}})
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{
+			"ref_id":"ref-inq-1","customer_no":"1234554321","buyer_sku_code":"pln","message":"Transaksi Sukses","status":"Sukses","rc":"00",
+		}})
 	}))
 	defer server.Close()
-	c, err := New(config.DigiFlazzConfig{Username:"buyer", APIKey:"secret", InquiryPLNEndpoint:server.URL + "/v1/inquiry-pln"}, server.Client())
+	c, err := New(config.DigiFlazzConfig{Username:"buyer", APIKey:"secret", Endpoint:server.URL + "/v1/transaction"}, server.Client())
 	if err != nil { t.Fatal(err) }
-	got, err := c.Inquiry(context.Background(), provider.InquiryRequest{ProductCode:"pln", CustomerNo:"1234554321", ReferenceID:"ref-1"})
+	got, err := c.Inquiry(context.Background(), provider.InquiryRequest{ProductCode:"pln", CustomerNo:"1234554321", ReferenceID:"ref-inq-1"})
 	if err != nil { t.Fatal(err) }
 	if got.Status != provider.StatusSuccess || got.ProviderCode != "00" { t.Fatalf("unexpected inquiry result: %#v", got) }
 }
+
+func TestDigiFlazzInquiryRejectsResponseIdentityMismatch(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{
+			"ref_id":"other-ref","customer_no":"1234554321","buyer_sku_code":"pln","message":"Transaksi Sukses","status":"Sukses","rc":"00",
+		}})
+	}))
+	defer server.Close()
+	c, err := New(config.DigiFlazzConfig{Username:"buyer", APIKey:"secret", Endpoint:server.URL + "/v1/transaction"}, server.Client())
+	if err != nil { t.Fatal(err) }
+	_, err = c.Inquiry(context.Background(), provider.InquiryRequest{ProductCode:"pln", CustomerNo:"1234554321", ReferenceID:"ref-inq-1"})
+	if err == nil || !strings.Contains(err.Error(), "identity mismatch") { t.Fatalf("expected inquiry identity mismatch, got %v", err) }
+}
+
 func TestDigiFlazzInquiryRejectsUnsupportedProduct(t *testing.T) {
 	c, err := New(config.DigiFlazzConfig{Username:"buyer", APIKey:"secret"}, nil)
 	if err != nil { t.Fatal(err) }
