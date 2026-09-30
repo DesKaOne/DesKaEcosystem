@@ -21,6 +21,9 @@ import (
 
 const defaultHTTPTimeout = 15 * time.Second
 
+type iakHTTPStatusError struct { StatusCode int }
+func (e *iakHTTPStatusError) Error() string { return fmt.Sprintf("IAK HTTP status %d", e.StatusCode) }
+
 type Client struct {
  username, apiKey string
  priceListEndpoint, inquiryPLNEndpoint, topUpEndpoint, statusEndpoint, balanceEndpoint string
@@ -97,7 +100,13 @@ func (c *Client) Purchase(ctx context.Context, req provider.PurchaseRequest)(pro
  if req.ProductCode==""||req.CustomerNo==""||req.ReferenceID==""{return provider.PurchaseResult{},errors.New("product code, customer number, and reference ID are required")}
  var d map[string]any
  p:=map[string]string{"username":c.username,"ref_id":req.ReferenceID,"customer_id":req.CustomerNo,"product_code":req.ProductCode,"sign":c.sig(req.ReferenceID)}
- if err:=c.do(ctx,c.topUpEndpoint,p,&d);err!=nil{return provider.PurchaseResult{},err}
+ if err:=c.do(ctx,c.topUpEndpoint,p,&d);err!=nil{
+  var httpErr *iakHTTPStatusError
+  if errors.As(err,&httpErr) && httpErr.StatusCode != http.StatusBadRequest {
+   return provider.PurchaseResult{ReferenceID:req.ReferenceID,CustomerNo:req.CustomerNo,ProductCode:req.ProductCode,Status:provider.StatusPending,Message:fmt.Sprintf("IAK HTTP status %d",httpErr.StatusCode)},nil
+  }
+  return provider.PurchaseResult{},err
+ }
  result, err := purchase(d)
  if err != nil { return provider.PurchaseResult{}, err }
  if result.ReferenceID != req.ReferenceID { return provider.PurchaseResult{}, errors.New("IAK purchase response reference ID mismatch") }
@@ -109,7 +118,13 @@ func (c *Client) Purchase(ctx context.Context, req provider.PurchaseRequest)(pro
 func (c *Client) GetStatus(ctx context.Context, req provider.StatusRequest)(provider.PurchaseStatus,error) {
  if req.ReferenceID==""{return provider.PurchaseStatus{},errors.New("reference ID is required")}
  var d map[string]any
- if err:=c.do(ctx,c.statusEndpoint,map[string]string{"username":c.username,"ref_id":req.ReferenceID,"sign":c.sig(req.ReferenceID)},&d);err!=nil{return provider.PurchaseStatus{},err}
+ if err:=c.do(ctx,c.statusEndpoint,map[string]string{"username":c.username,"ref_id":req.ReferenceID,"sign":c.sig(req.ReferenceID)},&d);err!=nil{
+  var httpErr *iakHTTPStatusError
+  if errors.As(err,&httpErr) && httpErr.StatusCode != http.StatusBadRequest {
+   return provider.PurchaseStatus{ReferenceID:req.ReferenceID,CustomerNo:req.CustomerNo,ProductCode:req.ProductCode,Status:provider.StatusPending,Message:fmt.Sprintf("IAK HTTP status %d",httpErr.StatusCode)},nil
+  }
+  return provider.PurchaseStatus{},err
+ }
  x:=obj(d,"data")
  result, err := purchaseStatus(x)
  if err != nil { return provider.PurchaseStatus{}, err }
@@ -129,24 +144,30 @@ func (c *Client) GetBalance(ctx context.Context)(int64,error) {
 func (c *Client) HandleWebhook(_ context.Context, req provider.WebhookRequest)(provider.WebhookEvent,error) {
  var p map[string]any
  if err:=json.Unmarshal(req.Body,&p);err!=nil{return provider.WebhookEvent{},fmt.Errorf("decode IAK webhook: %w",err)}
+ payload:=p
+ if rawData, ok := p["data"]; ok {
+  data, ok := rawData.(map[string]any)
+  if !ok { return provider.WebhookEvent{}, errors.New("IAK webhook response has invalid data envelope") }
+  payload=data
+ }
 
- ref:=strings.TrimSpace(str(p,"ref_id"))
- customerV2:=strings.TrimSpace(str(p,"customer_id"))
- customerV1:=strings.TrimSpace(str(p,"hp"))
+ ref:=strings.TrimSpace(str(payload,"ref_id"))
+ customerV2:=strings.TrimSpace(str(payload,"customer_id"))
+ customerV1:=strings.TrimSpace(str(payload,"hp"))
  if customerV2!="" && customerV1!="" && customerV2!=customerV1 {
   return provider.WebhookEvent{}, errors.New("IAK webhook response has conflicting customer ID fields")
  }
  customerNo:=customerV2
  if customerNo=="" { customerNo=customerV1 }
- productV2:=strings.TrimSpace(str(p,"product_code"))
- productV1:=strings.TrimSpace(str(p,"code"))
+ productV2:=strings.TrimSpace(str(payload,"product_code"))
+ productV1:=strings.TrimSpace(str(payload,"code"))
  if productV2!="" && productV1!="" && productV2!=productV1 {
   return provider.WebhookEvent{}, errors.New("IAK webhook response has conflicting product code fields")
  }
  productCode:=productV2
  if productCode=="" { productCode=productV1 }
- rc:=strings.TrimSpace(str(p,"rc"))
- bodySign:=strings.TrimSpace(str(p,"sign"))
+ rc:=strings.TrimSpace(str(payload,"rc"))
+ bodySign:=strings.TrimSpace(str(payload,"sign"))
  if ref == "" || customerNo == "" || productCode == "" {
   return provider.WebhookEvent{}, errors.New("IAK webhook response is missing transaction identity")
  }
@@ -159,8 +180,8 @@ func (c *Client) HandleWebhook(_ context.Context, req provider.WebhookRequest)(p
   if subtle.ConstantTimeCompare([]byte(bodySign),[]byte(want))!=1{return provider.WebhookEvent{},errors.New("invalid IAK webhook signature")}
  }
 
- rawStatus:=fmt.Sprint(p["status"])
- status, statusOK:=transactionStatus(p["status"])
+ rawStatus:=fmt.Sprint(payload["status"])
+ status, statusOK:=transactionStatus(payload["status"])
  if !statusOK || (status != provider.StatusSuccess && status != provider.StatusFailed) {
   return provider.WebhookEvent{}, fmt.Errorf("IAK webhook response has invalid callback status %q", strings.TrimSpace(rawStatus))
  }
@@ -170,16 +191,16 @@ func (c *Client) HandleWebhook(_ context.Context, req provider.WebhookRequest)(p
   return provider.WebhookEvent{}, fmt.Errorf("IAK webhook response status %q conflicts with rc %q", status, rc)
  }
 
- message:=strings.TrimSpace(str(p,"message"))
- price,priceOK:=requiredInt64Num(p,"price")
- _,balanceOK:=requiredNum(p,"balance")
- _,trIDOK:=requiredInt64Num(p,"tr_id")
+ message:=strings.TrimSpace(str(payload,"message"))
+ price,priceOK:=requiredInt64Num(payload,"price")
+ _,balanceOK:=requiredNum(payload,"balance")
+ _,trIDOK:=requiredInt64Num(payload,"tr_id")
  if message=="" { return provider.WebhookEvent{}, errors.New("IAK webhook response is missing message") }
  if !priceOK { return provider.WebhookEvent{}, errors.New("IAK webhook response is missing or invalid price") }
  if !balanceOK { return provider.WebhookEvent{}, errors.New("IAK webhook response is missing or invalid balance") }
  if !trIDOK { return provider.WebhookEvent{}, errors.New("IAK webhook response is missing or invalid tr_id") }
 
- return provider.WebhookEvent{ReferenceID:ref,CustomerNo:customerNo,ProductCode:productCode,Status:status,ProviderCode:rc,Message:message,SerialNumber:str(p,"sn"),Price:price},nil
+ return provider.WebhookEvent{ReferenceID:ref,CustomerNo:customerNo,ProductCode:productCode,Status:status,ProviderCode:rc,Message:message,SerialNumber:str(payload,"sn"),Price:price},nil
 }
 
 func (c *Client) do(ctx context.Context, endpoint string, payload any, out *map[string]any) error {
@@ -192,6 +213,9 @@ func (c *Client) do(ctx context.Context, endpoint string, payload any, out *map[
     if json.Unmarshal(body,&errorResponse)==nil && errorResponse.ErrorDetails!=nil {
       return fmt.Errorf("IAK HTTP status 400: error_details=%v",errorResponse.ErrorDetails)
     }
+  }
+  if resp.StatusCode != http.StatusBadRequest {
+   return &iakHTTPStatusError{StatusCode:resp.StatusCode}
   }
   return fmt.Errorf("IAK HTTP status %d: %s",resp.StatusCode,strings.TrimSpace(string(body)))
 }
