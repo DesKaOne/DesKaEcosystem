@@ -5347,3 +5347,32 @@ Implementation commit: `d37ffa238ea8bd5c525b7e342a71578a3323ed8d`.
 Deterministic test commit: `91824df691fd08c26da3f68faf4ff207152de664`.
 
 The resulting HEAD must receive GREEN Push and PR CI. Credential-gated DigiFlazz live validation may remain skipped while provider IP allowlisting is unresolved.
+
+
+## DigiFlazz Webhook Status / RC Entry-Point Regression Coverage
+
+**Date:** 2026-09-30
+
+### Audit Finding
+
+The official DigiFlazz webhook contract delivers prepaid transaction payloads containing the transaction status and response code, while the provider adapter already normalizes those two fields through the same documented response-code/status mapper used by synchronous transactions. The mapper rejects conflicting status/RC combinations. citeturn2search1turn2search0
+
+### Deterministic Coverage
+
+- Added a webhook entry-point regression fixture where status `Sukses` conflicts with rc `03` (documented Pending).
+- Verified `HandleWebhook()` fails closed on the conflict instead of emitting a provider-neutral success event.
+- Kept the existing signature, serial-number, identity, idempotency, and financial-authority boundaries unchanged.
+
+### Safety Boundary
+
+- This is deterministic webhook contract coverage only; no retry, resubmission, failover, duplicate purchase creation, refund automation, ledger/customer-balance mutation, treasury movement, provider funding, or routing change was introduced.
+- No undocumented webhook field was promoted into the provider-neutral interface.
+- DigiFlazz status polling remains unsupported because the documented pending-status mechanism reuses the top-up flow with the same `ref_id`, which can introduce transaction side effects/race risk; this audit does not change that boundary. citeturn2search0
+
+### Verification Boundary
+
+Webhook regression commit: `930c0d83d899c1a882db6874d386e3d00c583c59`.
+
+The resulting HEAD must receive GREEN Push and PR CI. Credential-gated DigiFlazz live validation may remain skipped while provider IP allowlisting/credentials are unavailable.
+
+No authorized live-provider transaction was executed by this audit.
