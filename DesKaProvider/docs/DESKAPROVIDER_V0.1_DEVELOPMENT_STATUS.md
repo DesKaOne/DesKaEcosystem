@@ -5475,3 +5475,53 @@ Implementation commit: `fd52cdb7d576f638e35c3af680f0de2cfc3e9b20`.
 Deterministic test commit: `c49d27d60240e6b6181099f5972f6ed811b8e429`.
 
 The final status-doc HEAD must receive GREEN Push and PR CI, including test, vet, and race. Credential-gated live-provider validation may remain skipped when credentials are unavailable.
+
+
+## DigiFlazz Topup Required Price Hardening
+
+**Date:** 2026-09-30
+
+### Source Basis
+
+The official DigiFlazz Buyer Topup response contract marks `price` as required, alongside `ref_id`, `customer_no`, `buyer_sku_code`, `message`, `status`, and `rc`. The response is wrapped under `data`. Source: https://developer.digiflazz.com/api/buyer/topup/
+
+### Audit Finding
+
+The adapter previously decoded `price` directly into an `int64`. That representation could not distinguish a missing JSON field from an explicit zero value, so a structurally incomplete provider response could reach the provider-neutral purchase result without proving the documented required field was present.
+
+### Implementation
+
+- Changed the internal DigiFlazz transaction response `price` representation to a nullable pointer so field presence is observable after JSON decoding.
+- `Purchase` now rejects a structured response that is missing the documented required `price` field.
+- The existing internal purchase-status mapper applies the same required-field boundary if used by a future documented status path.
+- Existing numeric price values continue to map unchanged into the provider-neutral `int64` field.
+- Updated the structured HTTP-error fixture to include the documented required price field.
+- Added deterministic coverage for a successful-looking response that omits `price`; the adapter fails closed instead of emitting a provider-neutral purchase result.
+
+### Safety Boundary
+
+- This is response-shape validation only and does not infer a price, substitute a catalog price, or mutate financial state.
+- No retry, transaction resubmission, failover, duplicate purchase creation, refund automation, customer-balance mutation, ledger mutation, treasury movement, or provider funding behavior was introduced.
+- The provider-neutral interface remains unchanged.
+- No live-provider transaction was executed by this audit.
+
+### Verification Boundary
+
+Implementation commit: `084e79bab198c1ff292899fa923285ca52044768`.
+
+Deterministic regression commit: `ddfd893ce20aa0d848eaa7ef1adbe58c68650b94`.
+
+The resulting HEAD must receive GREEN Push CI for test, vet, race, and applicable service-backed validation before this batch is considered complete. Credential-gated live-provider validation may remain skipped when credentials are unavailable.
+
+## CI Follow-up — 2026-09-30 — DigiFlazz Price-List Hardening GREEN
+
+The previous DigiFlazz price-list required-field batch is verified complete:
+
+- HEAD `df000da7e205f96ce96eeda7ae4025603a40aa1e`
+- Push CI #3385 / run `36744675487`: **GREEN**
+  - test: PASS
+  - race: PASS
+  - credential-gated `iak-read-only`, `digiflazz-validation`, `midtrans-sandbox`, and `xp-sindonesia-read-only`: skipped as expected
+
+The GREEN result confirms the required product-field hardening batch before this new transaction-response audit.
+
