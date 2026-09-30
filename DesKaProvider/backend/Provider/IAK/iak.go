@@ -103,7 +103,7 @@ func (c *Client) GetStatus(ctx context.Context, req provider.StatusRequest)(prov
 func (c *Client) GetBalance(ctx context.Context)(int64,error) {
  var d map[string]any
  if err:=c.do(ctx,c.balanceEndpoint,map[string]string{"username":c.username,"sign":c.sig("bl")},&d);err!=nil{return 0,err}; x:=obj(d,"data"); raw,ok:=x["balance"]; if !ok{return 0,errors.New("IAK balance response is missing data.balance")}; switch v:=raw.(type){case float64:
- if math.Trunc(v)!=v || v < math.MinInt64 || v > math.MaxInt64 { return 0,fmt.Errorf("invalid IAK balance: value outside int64 range or non-integer %v",v) }
+ if math.Trunc(v)!=v || v < -math.Exp2(63) || v >= math.Exp2(63) { return 0,fmt.Errorf("invalid IAK balance: value outside int64 range or non-integer %v",v) }
  return int64(v),nil;case string:n,err:=strconv.ParseInt(strings.TrimSpace(v),10,64);if err!=nil{return 0,fmt.Errorf("invalid IAK balance: %w",err)};return n,nil;default:return 0,fmt.Errorf("invalid IAK balance type %T",raw)}
 }
 
@@ -175,7 +175,7 @@ func str(m map[string]any,k string)string{x,_:=m[k].(string);return x}
 func num(m map[string]any,k string)float64{n,_:=requiredNum(m,k);return n}
 func requiredNum(m map[string]any,k string)(float64,bool){x,ok:=m[k];if !ok{return 0,false};switch v:=x.(type){case float64:return v,true;case string:n,err:=strconv.ParseFloat(strings.TrimSpace(v),64);return n,err==nil};return 0,false}
 func requiredIntegerNum(m map[string]any,k string)(float64,bool){n,ok:=requiredNum(m,k);if !ok||math.Trunc(n)!=n{return 0,false};return n,true}
-func requiredInt64Num(m map[string]any,k string)(int64,bool){n,ok:=requiredIntegerNum(m,k);if !ok||n<math.MinInt64||n>math.MaxInt64{return 0,false};return int64(n),true}
+func requiredInt64Num(m map[string]any,k string)(int64,bool){n,ok:=requiredIntegerNum(m,k);if !ok||n < -math.Exp2(63) || n >= math.Exp2(63){return 0,false};return int64(n),true}
 func status(n float64)provider.TransactionStatus{switch int(n){case 1:return provider.StatusSuccess;case 0:return provider.StatusPending;case 2:return provider.StatusFailed;default:return provider.TransactionStatus(strconv.Itoa(int(n)))}}
 func transactionStatus(v any)(provider.TransactionStatus,bool){switch x:=v.(type){case float64:if math.Trunc(x)!=x{return "",false};switch int(x){case 0:return provider.StatusPending,true;case 1:return provider.StatusSuccess,true;case 2:return provider.StatusFailed,true};case string:switch strings.TrimSpace(x){case "0":return provider.StatusPending,true;case "1":return provider.StatusSuccess,true;case "2":return provider.StatusFailed,true}};return "",false}
 func mapResponseCode(rc string) (provider.TransactionStatus, error) {
