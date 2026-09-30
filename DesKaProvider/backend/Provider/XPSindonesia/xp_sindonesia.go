@@ -36,7 +36,8 @@ type orderResponse struct { Success string; Error string; Status string; Trx str
 
 func (c *Client) Purchase(ctx context.Context, req provider.PurchaseRequest) (provider.PurchaseResult,error) {
  if req.ProductCode=="" || req.CustomerNo=="" || req.ReferenceID=="" { return provider.PurchaseResult{},errors.New("product code, customer number, and reference ID are required") }
- values:=url.Values{}; values.Set("id",c.id);values.Set("key",c.key);values.Set("api",c.api);values.Set("url","");values.Set("trx",req.ReferenceID);values.Set("kod",req.ProductCode);values.Set("isi",req.CustomerNo);values.Set("sms","")
+ if strings.TrimSpace(c.callbackURL)=="" { return provider.PurchaseResult{},errors.New("XP order callback URL is required") }
+ values:=url.Values{}; values.Set("id",c.id);values.Set("key",c.key);values.Set("api",c.api);values.Set("url",c.callbackURL);values.Set("trx",req.ReferenceID);values.Set("kod",req.ProductCode);values.Set("isi",req.CustomerNo);values.Set("sms","")
  var out orderResponse
  if err:=c.postJSON(ctx,c.orderEndpoint,values,&out);err!=nil{return provider.PurchaseResult{},err}
  if out.Trx==""||out.Kode==""||out.Isi==""{return provider.PurchaseResult{},errors.New("XP order response is missing transaction identity")}
