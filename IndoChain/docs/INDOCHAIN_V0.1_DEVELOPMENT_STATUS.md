@@ -1952,3 +1952,62 @@ Milestone ini **bukan production BFT completion** dan bukan durable consensus re
 **4.43 — Consensus Runtime Persistence Contract & Recovery Test Matrix:** definisikan snapshot/WAL boundary untuk RoundState, lock proof, round-local evidence, finality certificate, authority context, serta deterministic restore/replay tests sebelum implementasi persistence production.
 
 **Milestone 4.42 implementation/test status:** GREEN pada exact implementation/test HEAD `c33fe9ccc65f609f0a5446e152b761d0f606612b`, CI #1408 / run `36722964026`. Documentation follow-up ini wajib diverifikasi kembali pada exact documentation HEAD sebagai final gate.
+
+
+### 4.43 Consensus Runtime Persistence Contract & Recovery Test Matrix
+
+**Tanggal:** 2026-09-30
+
+**Objective**
+
+Mendefinisikan boundary persistence consensus secara eksplisit dan menambahkan recovery regression matrix sebelum ada implementasi production WAL/snapshot. Milestone ini membedakan durable consensus context, ephemeral evidence, authenticated lock/finality evidence, dan canonical node commit.
+
+**Implementation**
+
+Dokumen kontrak: `IndoChain/docs/consensus-runtime-persistence-contract-v0.1.md`.
+
+Test matrix: `IndoChain/internal/consensus/runtime_recovery_boundary_test.go`.
+
+Coverage:
+
+1. protocol/chain context mismatch saat reconstruction ditolak;
+2. state reconstruction tidak menghidupkan proposal/precommit evidence secara implicit;
+3. restored runtime tidak dapat finalize tanpa explicit authenticated precommit evidence;
+4. failed post-restore finality attempt atomic dan tidak mengubah state;
+5. persistence contract mendefinisikan versioned protocol/chain/epoch/height/round/phase, validator authority, voting power, quorum threshold, dan proposer policy sebagai recovery context;
+6. ephemeral proposal/vote/transport evidence tidak menjadi authority hanya karena tersimpan atau replay;
+7. LockProof/FinalityCertificate wajib divalidasi penuh bila kelak dipersist;
+8. restore harus transactional dan canonical commit tetap berada di node boundary.
+
+**Production code impact**
+
+Tidak ada production WAL, snapshot storage, crash-recovery engine, atau canonical persistence implementation baru. Milestone ini sengaja menyelesaikan **contract + test boundary** terlebih dahulu.
+
+**Recovery invariants locked**
+
+1. Restore tidak boleh mencampur chain/protocol context.
+2. Restore tidak boleh menurunkan round.
+3. Restore tidak boleh menginventarisasi evidence ephemeral sebagai finality.
+4. LockProof hanya boleh dipulihkan setelah authenticated validation.
+5. FinalityCertificate hanya boleh dipulihkan setelah authenticated validation dan exact context binding.
+6. Recovery failure harus atomic.
+7. Replayed stale evidence tidak boleh mengubah restored runtime.
+8. Consensus recovery tidak otomatis berarti canonical block/state commit.
+
+**Verification**
+
+- Recovery matrix: `IndoChain/internal/consensus/runtime_recovery_boundary_test.go`
+- Persistence contract: `IndoChain/docs/consensus-runtime-persistence-contract-v0.1.md`
+- Implementation/test/documentation current HEAD: `39d8e7b50bf3b2d7f701dff15d08935e0bf378df`
+- CI #1414, run `36723489808`: verification in progress at documentation update time; final milestone gate requires this exact documentation HEAD to be GREEN.
+- PostgreSQL: tidak relevan; milestone hanya consensus persistence contract/recovery boundary.
+
+**Safety boundary**
+
+Milestone ini **bukan production BFT completion** dan bukan durable consensus persistence. Storage engine, WAL record format, snapshot format, fsync/crash semantics, distributed recovery, peer-state persistence, validator lifecycle persistence, serta formal BFT safety/liveness analysis tetap belum didefinisikan/diimplementasikan.
+
+**Next milestone**
+
+**4.44 — Production Consensus Persistence Design Review:** review contract v0.1 terhadap existing storage interfaces dan canonical commit semantics, lalu buat deterministic serialization/versioning test vectors tanpa mengaktifkan production restore sebelum format dan atomicity contract disetujui oleh test matrix.
+
+**Milestone 4.43 implementation status:** pending final exact documentation HEAD CI gate.
