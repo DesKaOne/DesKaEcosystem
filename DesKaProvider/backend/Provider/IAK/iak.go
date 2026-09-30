@@ -13,10 +13,13 @@ import (
  "net/http"
  "strconv"
  "strings"
+ "time"
 
  "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/config"
  provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
 )
+
+const defaultHTTPTimeout = 15 * time.Second
 
 type Client struct {
  username, apiKey string
@@ -26,7 +29,7 @@ type Client struct {
 
 func New(cfg config.IAKConfig, httpClient *http.Client) (*Client,error) {
  if cfg.Username==""||cfg.APIKey=="" { return nil,errors.New("IAK username and API key are required") }
- if httpClient==nil { httpClient=http.DefaultClient }
+ if httpClient==nil { httpClient=&http.Client{Timeout:defaultHTTPTimeout} } else if httpClient.Timeout<=0 { copy:=*httpClient; copy.Timeout=defaultHTTPTimeout; httpClient=&copy }
  return &Client{cfg.Username,cfg.APIKey,cfg.PriceListEndpoint,cfg.InquiryPLNEndpoint,cfg.TopUpEndpoint,cfg.StatusEndpoint,cfg.BalanceEndpoint,httpClient},nil
 }
 
