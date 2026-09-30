@@ -230,12 +230,27 @@ func (c *Client) HandleWebhook(_ context.Context, req provider.WebhookRequest) (
 		if subtle.ConstantTimeCompare([]byte(strings.TrimSpace(req.Signature)), []byte(expectedHeader)) != 1 { return provider.WebhookEvent{}, ErrInvalidWebhookSignature }
 	}
 	var payload struct { Data struct {
-		ReferenceID string `json:"ref_id"`; CustomerNo string `json:"customer_no"`; BuyerSKUCode string `json:"buyer_sku_code"`; Message string `json:"message"`; Status string `json:"status"`; RC string `json:"rc"`; SN string `json:"sn"`; Price int64 `json:"price"`
+		ReferenceID string `json:"ref_id"`; CustomerNo string `json:"customer_no"`; BuyerSKUCode string `json:"buyer_sku_code"`; Message string `json:"message"`; Status string `json:"status"`; RC string `json:"rc"`; SN string `json:"sn"`; Price *int64 `json:"price"`
 	} `json:"data"` }
 	if err := json.Unmarshal(req.Body, &payload); err != nil { return provider.WebhookEvent{}, fmt.Errorf("decode DigiFlazz webhook: %w", err) }
+	if strings.TrimSpace(payload.Data.ReferenceID) == "" {
+		return provider.WebhookEvent{}, errors.New("DigiFlazz webhook response is missing required ref_id")
+	}
+	if strings.TrimSpace(payload.Data.CustomerNo) == "" {
+		return provider.WebhookEvent{}, errors.New("DigiFlazz webhook response is missing required customer_no")
+	}
+	if strings.TrimSpace(payload.Data.BuyerSKUCode) == "" {
+		return provider.WebhookEvent{}, errors.New("DigiFlazz webhook response is missing required buyer_sku_code")
+	}
+	if strings.TrimSpace(payload.Data.Message) == "" {
+		return provider.WebhookEvent{}, errors.New("DigiFlazz webhook response is missing required message")
+	}
+	if payload.Data.Price == nil {
+		return provider.WebhookEvent{}, errors.New("DigiFlazz webhook response is missing required price")
+	}
 	status, err := mapResponseStatus(payload.Data.Status, payload.Data.RC)
 	if err != nil { return provider.WebhookEvent{}, err }
-	return provider.WebhookEvent{ReferenceID:payload.Data.ReferenceID, CustomerNo:payload.Data.CustomerNo, ProductCode:payload.Data.BuyerSKUCode, Status:status, ProviderCode:payload.Data.RC, Message:payload.Data.Message, SerialNumber:payload.Data.SN, Price:payload.Data.Price}, nil
+	return provider.WebhookEvent{ReferenceID:payload.Data.ReferenceID, CustomerNo:payload.Data.CustomerNo, ProductCode:payload.Data.BuyerSKUCode, Status:status, ProviderCode:payload.Data.RC, Message:payload.Data.Message, SerialNumber:payload.Data.SN, Price:*payload.Data.Price}, nil
 }
 
 func (c *Client) transaction(ctx context.Context, req transactionRequest) (transactionResponse, error) {
