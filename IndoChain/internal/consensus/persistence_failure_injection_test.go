@@ -36,10 +36,10 @@ func newPersistenceTestAdapter(contextDigest [32]byte) *persistenceTestAdapter {
 }
 
 func (a *persistenceTestAdapter) append(recordType uint8, payload []byte) error {
-	sequence := a.nextSequence
-	if recordType == PersistenceRecordTypeSnapshot && len(a.records) > 0 {
-		sequence = a.records[len(a.records)-1].Sequence + 1
-	}
+	return a.appendAt(recordType, a.nextSequence, payload)
+}
+
+func (a *persistenceTestAdapter) appendAt(recordType uint8, sequence uint64, payload []byte) error {
 	if a.fault == persistenceFaultBeforeAppend {
 		return errInjectedBeforeAppend
 	}
@@ -220,7 +220,7 @@ func TestPersistenceFailureInjectionSnapshotWALReplayPublishesAtomically(t *test
 	digest := PersistenceContextDigest(context)
 	adapter := newPersistenceTestAdapter(digest)
 
-	if err := adapter.append(PersistenceRecordTypeSnapshot, []byte("snapshot-10")); err != nil {
+	if err := adapter.appendAt(PersistenceRecordTypeSnapshot, 10, []byte("snapshot-10")); err != nil {
 		t.Fatal(err)
 	}
 	if err := adapter.append(PersistenceRecordTypeWAL, []byte("wal-11")); err != nil {
