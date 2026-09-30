@@ -10,6 +10,7 @@ import (
  "net/http/httptest"
  "strings"
  "testing"
+ "time"
  "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/config"
  provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
 )
@@ -754,4 +755,32 @@ func TestIAKWebhookRequiresBodySignatureEvenWhenTransportSignatureProvided(t *te
  body:=[]byte(`{"ref_id":"order-1","status":1,"code":"xld25000","hp":"08123","price":25000,"balance":997061249,"tr_id":3482,"message":"SUCCESS","rc":"00"}`)
  _,err:=c.HandleWebhook(context.Background(),provider.WebhookRequest{Body:body,Signature:ts("order-1"),SignatureSecret:"secret"})
  if err==nil { t.Fatal("expected missing callback body sign error") }
+}
+
+func TestIAKHTTPClientGetsBoundedTimeout(t *testing.T) {
+ c, err := New(config.IAKConfig{Username: "user", APIKey: "secret"}, nil)
+ if err != nil { t.Fatal(err) }
+ if c.httpClient.Timeout != defaultHTTPTimeout {
+  t.Fatalf("default timeout=%v, want %v", c.httpClient.Timeout, defaultHTTPTimeout)
+ }
+
+ zero := &http.Client{}
+ c, err = New(config.IAKConfig{Username: "user", APIKey: "secret"}, zero)
+ if err != nil { t.Fatal(err) }
+ if c.httpClient.Timeout != defaultHTTPTimeout {
+  t.Fatalf("zero-client timeout=%v, want %v", c.httpClient.Timeout, defaultHTTPTimeout)
+ }
+ if zero.Timeout != 0 {
+  t.Fatalf("caller client was mutated: timeout=%v", zero.Timeout)
+ }
+
+ custom := &http.Client{Timeout: 2 * time.Second}
+ c, err = New(config.IAKConfig{Username: "user", APIKey: "secret"}, custom)
+ if err != nil { t.Fatal(err) }
+ if c.httpClient.Timeout != 2*time.Second {
+  t.Fatalf("custom timeout=%v, want %v", c.httpClient.Timeout, 2*time.Second)
+ }
+ if c.httpClient != custom {
+  t.Fatal("custom client with explicit timeout should be preserved")
+ }
 }
