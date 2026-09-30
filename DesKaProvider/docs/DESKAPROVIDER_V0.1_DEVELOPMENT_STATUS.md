@@ -5230,3 +5230,26 @@ The failure was isolated to `DesKaProvider/backend/runtime/runtime_test.go` in `
 Correction commit: `f3488e23bcae7b5a01801d66863ca7b27576ee36`.
 
 This is a test-contract correction only; no provider routing, retry, financial authority, persistence authority, or provider behavior was changed. The new HEAD must receive GREEN Push and PR CI before the batch is considered complete.
+
+
+## CI Follow-up — 2026-09-30 — Runtime Deadline Error Contract Correction
+
+The previous test-contract correction commit `f3488e23bcae7b5a01801d66863ca7b27576ee36` was itself invalidated by CI #3346/#3347.
+
+### Verification Finding
+
+- Push CI #3346 and PR CI #3347 for HEAD `acfac6224c37451a610914e6c59e1fbafde84321` both failed in `test` and `race`.
+- The deterministic failure was `TestServiceRunShutdownTimeoutKeepsDatabaseOwnershipUntilWorkerStops`.
+- After the Run context deadline expires, the owned worker retains `context.DeadlineExceeded` as its terminal error. Releasing the blocking provider allows the worker to exit, but does not convert that terminal deadline error into `context.Canceled`.
+- `SyncWorkerLifecycle.Shutdown()` returns the worker's terminal error and only normalizes `context.Canceled` to nil. Therefore the original assertion preserving `context.DeadlineExceeded` is the correct lifecycle contract for this test.
+
+### Correction
+
+- Restored the assertion to require `context.DeadlineExceeded` after provider release.
+- No production lifecycle, provider, routing, financial-authority, persistence-authority, retry, failover, or resubmission behavior changed.
+
+Correction commit: `9d3c9f1e4c4d33cba6581ce0584866215b6d452e`.
+
+### Verification Boundary
+
+The new HEAD must receive GREEN Push and PR CI before this correction is considered complete.
