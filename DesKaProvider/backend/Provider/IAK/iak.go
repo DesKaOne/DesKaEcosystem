@@ -21,8 +21,11 @@ import (
 
 const defaultHTTPTimeout = 15 * time.Second
 
-type iakHTTPStatusError struct { StatusCode int }
-func (e *iakHTTPStatusError) Error() string { return fmt.Sprintf("IAK HTTP status %d", e.StatusCode) }
+type iakHTTPStatusError struct { StatusCode int; Body string }
+func (e *iakHTTPStatusError) Error() string {
+ if strings.TrimSpace(e.Body) != "" { return fmt.Sprintf("IAK HTTP status %d: %s", e.StatusCode, strings.TrimSpace(e.Body)) }
+ return fmt.Sprintf("IAK HTTP status %d", e.StatusCode)
+}
 
 type Client struct {
  username, apiKey string
@@ -215,7 +218,7 @@ func (c *Client) do(ctx context.Context, endpoint string, payload any, out *map[
     }
   }
   if resp.StatusCode != http.StatusBadRequest {
-   return &iakHTTPStatusError{StatusCode:resp.StatusCode}
+   return &iakHTTPStatusError{StatusCode:resp.StatusCode, Body:string(body)}
   }
   return fmt.Errorf("IAK HTTP status %d: %s",resp.StatusCode,strings.TrimSpace(string(body)))
 }
