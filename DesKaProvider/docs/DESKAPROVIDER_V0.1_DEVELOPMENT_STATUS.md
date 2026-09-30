@@ -5808,3 +5808,39 @@ This review prevents an undocumented or lossy provider-to-provider-neutral catal
 ### Verification Boundary
 
 No production code change was required for this audit. The current branch HEAD remains the previously verified GREEN commit `658b9520a4684567fea35a077706c78ae38b76a4`.
+
+
+## XP SINDONESIA Callback Key Authentication Hardening
+
+**Date:** 2026-10-01
+
+### Source Basis
+
+The authoritative XP SINDONESIA API document's callback example accepts the callback only when both the configured member `id` and configured `key` match the received values.
+
+### Audit Finding
+
+The adapter previously verified the callback key only when the transport supplied `WebhookRequest.SignatureSecret`. That made callback authentication dependent on caller-provided metadata even though the provider contract already defines the configured XP member key as the authentication value.
+
+### Implementation
+
+- HandleWebhook now always verifies the received callback `key` against the configured XP member key.
+- If `WebhookRequest.SignatureSecret` is supplied, it must also match the configured provider key; a mismatched transport secret fails closed.
+- Existing member-ID validation, terminal status restriction, transaction identity validation, and serial-number mapping remain unchanged.
+- No retry, callback acknowledgement mutation, duplicate purchase, balance mutation, ledger mutation, treasury movement, or provider funding behavior was introduced.
+
+### Deterministic Coverage
+
+Added:
+
+- `TestXPCallbackRejectsKeyWithoutSignatureSecret`
+- `TestXPCallbackRejectsMismatchedSignatureSecret`
+- Updated the successful/invalid/status callback fixtures to use the documented configured-key boundary.
+
+### Verification Boundary
+
+Production hardening commit: `1645aafd90332d2958d00d0b9dbf12eae4123d62`.
+
+Deterministic regression commits: `94067ebefa7c3ada43db95790e946d6b954c7a42` and `9c57f7a81b7fec525b82eeaf73c8ed9882b03ff7`.
+
+The resulting HEAD must receive GREEN Push and PR CI, including test, vet, race, and applicable service-backed validation. Credential-gated provider validation may remain skipped when credentials/configuration are unavailable.
