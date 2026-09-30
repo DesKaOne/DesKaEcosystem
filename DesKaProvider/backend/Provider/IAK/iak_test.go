@@ -416,6 +416,28 @@ func TestIAKInquiryRequiresMessage(t *testing.T) {
 	if err == nil { t.Fatal("expected missing inquiry message error") }
 }
 
+func TestIAKWebhookAcceptsDocumentedV2IdentityFields(t *testing.T) {
+ c,_:=New(config.IAKConfig{Username:"user",APIKey:"secret"},http.DefaultClient)
+ body:=[]byte(`{"ref_id":"order-v2","status":"1","product_code":"xld25000","customer_id":"08123","price":"25000","balance":"997061249","tr_id":"3482","message":"SUCCESS","rc":"00","sign":"sig"}`)
+ event,err:=c.HandleWebhook(context.Background(),provider.WebhookRequest{Body:body})
+ if err!=nil || event.ReferenceID!="order-v2" || event.CustomerNo!="08123" || event.ProductCode!="xld25000" || event.Status!=provider.StatusSuccess || event.Price!=25000 {
+  t.Fatalf("event=%#v err=%v",event,err)
+ }
+}
+
+func TestIAKWebhookRejectsConflictingIdentityAliases(t *testing.T) {
+ c,_:=New(config.IAKConfig{Username:"user",APIKey:"secret"},http.DefaultClient)
+ cases:=[]string{
+  `{"ref_id":"order-1","status":"1","product_code":"xld25000","code":"xld50000","customer_id":"08123","hp":"08123","price":"25000","balance":"997061249","tr_id":"3482","message":"SUCCESS","rc":"00","sign":"sig"}`,
+  `{"ref_id":"order-1","status":"1","product_code":"xld25000","customer_id":"08123","hp":"08999","price":"25000","balance":"997061249","tr_id":"3482","message":"SUCCESS","rc":"00","sign":"sig"}`,
+ }
+ for _,body:=range cases {
+  if _,err:=c.HandleWebhook(context.Background(),provider.WebhookRequest{Body:[]byte(body)}); err==nil {
+   t.Fatalf("expected conflicting identity aliases to be rejected: %s",body)
+  }
+ }
+}
+
 func TestIAKWebhookRejectsMalformedTransaction(t *testing.T) {
 	c, _ := New(config.IAKConfig{Username:"user", APIKey:"secret"}, http.DefaultClient)
 	_, err := c.HandleWebhook(context.Background(), provider.WebhookRequest{Body:[]byte(`{"ref_id":"order-1","status":"9","code":"xld25000","hp":"08123"}`), SignatureSecret:"secret", Signature:ts("order-1")})
