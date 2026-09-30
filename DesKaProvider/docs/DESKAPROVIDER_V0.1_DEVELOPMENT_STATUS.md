@@ -4327,3 +4327,44 @@ Added regression coverage for:
 ### Safety Boundary
 
 This batch only hardens provider response-contract validation. No routing, retry, failover, resubmission, refund automation, ledger mutation, customer-balance mutation, treasury movement, or provider funding behavior was introduced.
+
+
+## IAK Callback Contract Hardening
+
+**Date:** 2026-09-30
+
+### Source Basis
+
+The IAK Prepaid callback contract documents ref_id, status, code, hp, price, message, balance, tr_id, rc, and sign as mandatory callback fields. The documented callback examples use status=1 with rc=00 for success and status=2 with rc=07 for failure; the callback documentation states that success/failed responses are sent and documents the signature as MD5 of username + api_key + ref_id.
+
+### Implementation
+
+- IAK callback now requires transaction identity (ref_id, hp, code) and the documented rc and sign fields.
+- Callback status is restricted to the documented terminal states 1=SUCCESS and 2=FAILED; PROCESS/Pending callbacks are rejected.
+- rc is mapped through the existing IAK response-code contract and must agree with the callback status.
+- Mandatory numeric price, balance, and tr_id fields are validated.
+- Existing constant-time signature verification remains active when WebhookRequest.SignatureSecret is configured; the callback payload/request signature must still be present even when no verification secret is supplied by the outer webhook boundary.
+- No financial mutation, retry, callback replay, resubmission, refund automation, or provider failover was introduced.
+
+### Deterministic Coverage
+
+Added regression coverage for:
+
+- missing rc;
+- missing sign;
+- unsupported callback PROCESS status;
+- status/rc conflict;
+- missing balance;
+- missing tr_id;
+- documented failed callback status=2 / rc=07;
+- existing valid success callback signature path.
+
+### Verification Boundary
+
+- Deterministic callback contract tests do not require live IAK credentials.
+- Credential-gated IAK validation remains separate and must not be promoted by deterministic tests.
+- Final CI for this implementation batch must be GREEN before the batch is considered complete.
+
+### Next Concrete Engineering Task
+
+Continue the IAK adapter audit only against documented, already-supported capabilities. Review remaining response/error semantics and provider-neutral boundary behavior without introducing speculative APIs or provider-specific financial mutation.
