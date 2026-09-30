@@ -9,6 +9,7 @@ import (
 type simulatedValidator struct {
 	id     []byte
 	signer timeoutTestSigner
+	public  ed25519.PublicKey
 }
 
 func newSimulatedRuntimeCluster(t *testing.T, state RoundState) ([]*ValidatorRuntime, []simulatedValidator, ValidatorSet, VotingPowerSet) {
@@ -28,8 +29,8 @@ func newSimulatedRuntimeCluster(t *testing.T, state RoundState) ([]*ValidatorRun
 	}
 	simulated := make([]simulatedValidator, 0, len(ids))
 	for _, id := range ids {
-		signer, _ := newTimeoutTestSigner(t)
-		simulated = append(simulated, simulatedValidator{id: append([]byte(nil), id...), signer: signer})
+		signer, public := newTimeoutTestSigner(t)
+		simulated = append(simulated, simulatedValidator{id: append([]byte(nil), id...), signer: signer, public: public})
 	}
 	rules := ValidationRules{
 		ProtocolVersion: state.ProtocolVersion,
@@ -75,7 +76,7 @@ func TestDeterministicRoundDriverSimulationThreeNodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runtimes, validatorsFixture, validators, power := newSimulatedRuntimeCluster(t, state)
+	runtimes, validatorsFixture, validators, _ := newSimulatedRuntimeCluster(t, state)
 	proposer, err := runtimes[0].ExpectedProposer()
 	if err != nil {
 		t.Fatal(err)
@@ -112,7 +113,7 @@ func TestDeterministicRoundDriverSimulationThreeNodes(t *testing.T) {
 	resolver := timeoutRuntimeAuthorityResolver{keys: map[string]ed25519.PublicKey{
 		"validator-a": publicA,
 		"validator-b": publicB,
-		"validator-c": validatorsFixture[2].signer.PublicKey(),
+		"validator-c": validatorsFixture[2].public,
 	}}
 	timeoutA, err := NewTimeoutMessage(runtimes[0].State(), validatorsFixture[0].id, 1, signerA)
 	if err != nil {
