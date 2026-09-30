@@ -5177,3 +5177,11 @@ The official IAK v2 Top Up response contract documents `ref_id`, `status`, `prod
 ### Verification Boundary
 
 The resulting branch HEAD must receive GREEN CI for test, vet, race, and service-backed validation before this batch is considered complete. Credential-gated provider validation may remain skipped when credentials are unavailable.
+
+
+### CI Follow-up — 2026-09-30
+
+- CI #3334 for HEAD `7f2ac5c` failed because the newly added regression test contained literal backslash characters before Go tabs (`U+005C`) and therefore did not compile.
+- Root cause was test-file formatting only; the provider implementation change itself was not implicated by the compiler failure.
+- Corrected the test syntax in commit `eff4d275522bce02e39d7cb20c965db2a1af5b36`.
+- CI for the corrected HEAD must be GREEN before this batch is considered complete.
