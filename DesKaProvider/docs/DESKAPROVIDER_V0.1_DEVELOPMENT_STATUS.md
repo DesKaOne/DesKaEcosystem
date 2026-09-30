@@ -3873,3 +3873,27 @@ The verified baseline remains the previous green HEAD and the repository continu
 - `Router.Select()` remains the sole routing authority;
 - diagnostics remain observational and must continue to represent partial/invalid readiness states without mutating operational authority;
 - next concrete work remains external provider evidence unless a fresh repository inspection identifies a separately evidenced internal boundary.
+
+## Post-Audit — Internal v0.1 Boundary Review
+
+**Date:** 2026-09-30
+
+A follow-up internal audit reviewed the current v0.1 transaction, webhook, live-integration, persistence/recovery, capability-drift, and runtime composition boundaries.
+
+### Verified Internal Boundaries
+
+- live integration requires an explicit global enable switch, explicit provider selection, and an explicit host allowlist;
+- payment submission uses a durable create-if-absent claim keyed by the caller reference ID and does not resubmit an existing pending claim after restart;
+- ambiguous provider submission errors remain pending for reconciliation rather than being automatically retried;
+- provider result identity is checked before a payment transition is persisted;
+- payment webhook transport is provider-neutral, bounded by a request-body limit, and delegates provider-specific validation to the service/provider boundary;
+- persisted transaction state is reloaded during service initialization and invalid persisted identity is rejected rather than treated as an empty store;
+- transaction audit storage is append-only;
+- operational provider state and enabled capabilities remain separate from registry capability metadata;
+- no new public API or DesKaCash-specific provider coupling was introduced.
+
+### Decision
+
+No new numbered milestone is opened from this audit. The reviewed internal boundaries are already covered by the current implementation and test suite, while the remaining v0.1 readiness bottleneck is external provider evidence.
+
+The next concrete readiness sequence remains: DigiFlazz IP allowlist and official test tuple/balance validation, then IAK read-only validation, XP SINDONESIA balance validation, and Midtrans sandbox validation. `LiveTested` and `ProductionReady` must remain unpromoted until their explicit evidence gates are satisfied.
