@@ -31,6 +31,7 @@ func TestXPCallbackMapping(t *testing.T) {
  e,err:=c.HandleWebhook(context.Background(),provider.WebhookRequest{Body:[]byte("id=123&key=secret&trx=ref-1&status=sukses&kod=i5&isi=0856&sn=SN1"),SignatureSecret:"secret"});if err!=nil{t.Fatal(err)}
  if e.Status!=provider.StatusSuccess||e.SerialNumber!="SN1"{t.Fatalf("unexpected event: %#v",e)}
  _,err=c.HandleWebhook(context.Background(),provider.WebhookRequest{Body:[]byte("id=123&key=bad&trx=ref-1&status=sukses&kod=i5&isi=0856"),SignatureSecret:"secret"});if err==nil{t.Fatal("expected invalid callback key")}
+ _,err=c.HandleWebhook(context.Background(),provider.WebhookRequest{Body:[]byte("id=123&key=secret&trx=ref-1&status=proses&kod=i5&isi=0856"),SignatureSecret:"secret"});if err==nil{t.Fatal("expected unsupported callback status")}
 }
 
 func TestXPUnsupportedOperationsAreExplicit(t *testing.T) {
