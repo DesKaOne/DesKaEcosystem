@@ -593,7 +593,7 @@ func TestIAKMapResponseCodeRejectsUnknown(t *testing.T) {
 func TestIAKResponseCodeMapperMatchesCurrentPrepaidContract(t *testing.T) {
 	success := []string{"00"}
 	pending := []string{"39", "201"}
-	failed := []string{"06", "07", "10", "12", "13", "14", "16", "17", "18", "19", "20", "21", "102", "106", "107", "110", "117", "121", "131", "132", "141", "142", "202", "203", "204", "205", "206", "207"}
+	failed := []string{"06", "07", "10", "12", "13", "14", "16", "17", "18", "19", "20", "21", "102", "106", "107", "110", "117", "121", "131", "132", "141", "142", "202", "203", "204", "205", "206", "207", "301"}
 	for _, rc := range success {
 		if got, err := mapResponseCode(rc); err != nil || got != provider.StatusSuccess { t.Fatalf("rc %q: got=%q err=%v, want success", rc, got, err) }
 	}
