@@ -281,10 +281,25 @@ func mapResponseCode(rc string) (provider.TransactionStatus, error) {
 }
 
 func mapResponseStatus(status, rc string) (provider.TransactionStatus, error) {
-	if strings.TrimSpace(rc) != "" {
-		return mapResponseCode(rc)
+	rawStatus := strings.TrimSpace(status)
+	rawRC := strings.TrimSpace(rc)
+	if rawRC != "" {
+		mappedRC, err := mapResponseCode(rawRC)
+		if err != nil {
+			return "", err
+		}
+		if rawStatus != "" {
+			mappedStatus, err := mapStatus(rawStatus)
+			if err != nil {
+				return "", err
+			}
+			if mappedStatus != mappedRC {
+				return "", fmt.Errorf("DigiFlazz response status %q conflicts with rc %q", rawStatus, rawRC)
+			}
+		}
+		return mappedRC, nil
 	}
-	return mapStatus(status)
+	return mapStatus(rawStatus)
 }
 
 func mapStatus(status string) (provider.TransactionStatus, error) { switch strings.ToLower(strings.TrimSpace(status)) { case "sukses": return provider.StatusSuccess, nil; case "pending": return provider.StatusPending, nil; case "gagal": return provider.StatusFailed, nil; default: return "", fmt.Errorf("%w: %q", ErrUnknownTransactionStatus, strings.TrimSpace(status)) } }
