@@ -65,13 +65,17 @@ func (r PersistenceRecordEnvelope) Validate(expectedContext [32]byte, previousSe
 	if r.RecordType != PersistenceRecordTypeSnapshot && r.RecordType != PersistenceRecordTypeWAL {
 		return ErrInvalidPersistenceRecord
 	}
-	if r.Sequence == 0 || r.Sequence <= previousSequence {
+	if r.Sequence == 0 {
+		return ErrPersistenceSequence
+	}
+	if previousSequence > 0 && r.Sequence != previousSequence+1 {
 		return ErrPersistenceSequence
 	}
 	if !bytes.Equal(r.ContextDigest[:], expectedContext[:]) {
 		return ErrPersistenceContextMismatch
 	}
-	if !bytes.Equal(r.Checksum[:], r.computeChecksum()[:]) {
+	expectedChecksum := r.computeChecksum()
+	if !bytes.Equal(r.Checksum[:], expectedChecksum[:]) {
 		return ErrPersistenceChecksum
 	}
 	return nil
