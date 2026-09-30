@@ -2375,4 +2375,4 @@ Exact-head CI gate: pending.
 
 **Next milestone**
 
-Ditentukan setelah 4.50 exact-head CI gate GREEN.
+4.50 implementation/test gate GREEN; final documentation HEAD masih memerlukan exact-head CI gate tersendiri.
