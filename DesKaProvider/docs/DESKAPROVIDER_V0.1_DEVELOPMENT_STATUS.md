@@ -4884,3 +4884,27 @@ This batch only strengthens deterministic transport/error coverage. No retry, fa
 - Tests are credential-free and deterministic.
 - Live/sandbox IAK validation remains credential-gated.
 - This batch remains open until the resulting HEAD has GREEN CI.
+
+
+## IAK Check Balance Request Contract Audit
+
+**Date:** 2026-09-30
+
+### Source Basis
+
+The current official IAK V1 Check Balance documentation defines the request as POST to `v1/legacy/index` with mandatory `commands=balance`, `username`, and `sign=md5(username+api_key+'bl')`. Its documented response contains mandatory `data.balance`. citeturn2view0
+
+The current IAK API Guide lists a separate V2 Check Balance endpoint. The repository's configured default endpoint is the V2-style `/api/check-balance`, while the public V2 Check Balance page could not be retrieved during this audit because the upstream documentation request timed out. citeturn0search10
+
+### Implementation Decision
+
+- No `commands=balance` field was added to the existing request payload.
+- The reason is endpoint-version ambiguity: adding the V1-only request field to the repository's default V2 endpoint would be an unsupported protocol assumption.
+- Existing request behavior remains limited to the documented/common fields already used by the adapter: `username` and `sign=md5(username+api_key+'bl')`.
+- Existing deterministic coverage continues to verify the balance signature and response balance parsing.
+
+### Safety / Verification Boundary
+
+This audit deliberately avoids inventing V2 request semantics. A future endpoint-version-specific change requires the official V2 Check Balance request contract to be retrievable or otherwise supplied as authoritative source material.
+
+No retry, failover, resubmission, refund automation, ledger mutation, customer-balance mutation, treasury movement, or provider funding behavior was introduced.
