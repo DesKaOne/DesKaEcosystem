@@ -48,6 +48,22 @@ func TestXPBalanceRejectsInvalidSaldo(t *testing.T) {
  if _,err:=c.GetBalance(context.Background());err==nil{t.Fatal("expected invalid saldo error")}
 }
 
+func TestXPBalanceRejectsInvalidSuccessDiscriminator(t *testing.T) {
+ srv:=httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){
+  _=json.NewEncoder(w).Encode(map[string]string{"success":"2","id":"123","saldo":"123000"})
+ }));defer srv.Close()
+ c,err:=New(config.XPSindonesiaConfig{ID:"123",Key:"key",API:"api",SaldoEndpoint:srv.URL},srv.Client());if err!=nil{t.Fatal(err)}
+ if _,err:=c.GetBalance(context.Background());err==nil{t.Fatal("expected invalid success discriminator error")}
+}
+
+func TestXPBalanceRejectsMemberIDMismatch(t *testing.T) {
+ srv:=httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){
+  _=json.NewEncoder(w).Encode(map[string]string{"success":"1","id":"999","saldo":"123000"})
+ }));defer srv.Close()
+ c,err:=New(config.XPSindonesiaConfig{ID:"123",Key:"key",API:"api",SaldoEndpoint:srv.URL},srv.Client());if err!=nil{t.Fatal(err)}
+ if _,err:=c.GetBalance(context.Background());err==nil{t.Fatal("expected balance member ID mismatch")}
+}
+
 func TestXPBalanceRejectsProviderError(t *testing.T) {
  srv:=httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){
   _=json.NewEncoder(w).Encode(map[string]string{"success":"0","error":"invalid api"})
