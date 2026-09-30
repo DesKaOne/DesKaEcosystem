@@ -117,6 +117,21 @@ func TestXPOrderStatusMappingCoversDocumentedErrorStates(t *testing.T) {
 }
 
 
+func TestXPPurchaseRejectsInvalidSuccessDiscriminator(t *testing.T) {
+ srv:=httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){
+  _=json.NewEncoder(w).Encode(map[string]string{"success":"2","status":"proses","trx":"ref-1","kode":"i5","isi":"0856","harga":"5700"})
+ }));defer srv.Close()
+ c,err:=New(config.XPSindonesiaConfig{ID:"123",Key:"key",API:"api",OrderEndpoint:srv.URL,CallbackURL:"https://callback.example/xp"},srv.Client());if err!=nil{t.Fatal(err)}
+ _,err=c.Purchase(context.Background(),provider.PurchaseRequest{ProductCode:"i5",CustomerNo:"0856",ReferenceID:"ref-1"})
+ if err==nil{t.Fatal("expected invalid success discriminator rejection")}
+}
+
+func TestXPCallbackRejectsMemberIDMismatch(t *testing.T) {
+ c,err:=New(config.XPSindonesiaConfig{ID:"123",Key:"key",API:"api"},nil);if err!=nil{t.Fatal(err)}
+ _,err=c.HandleWebhook(context.Background(),provider.WebhookRequest{Body:[]byte("id=999&key=secret&trx=ref-1&status=sukses&kod=i5&isi=0856"),SignatureSecret:"secret"})
+ if err==nil{t.Fatal("expected callback member ID mismatch")}
+}
+
 func TestXPPurchaseMapsDocumentedEmptyFailure(t *testing.T) {
  srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
   _ = json.NewEncoder(w).Encode(map[string]string{
