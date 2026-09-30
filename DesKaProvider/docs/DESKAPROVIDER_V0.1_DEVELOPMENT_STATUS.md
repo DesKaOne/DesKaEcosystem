@@ -4665,3 +4665,35 @@ Pull Request CI #3235 / run 36687499645: GREEN
 - midtrans-sandbox: skipped as expected
 
 No authorized live-provider transaction was executed by this batch.
+
+
+## IAK Webhook Numeric Boundary Alignment
+
+**Date:** 2026-09-30
+
+### Source Basis
+
+Current IAK callback documentation defines price, balance, and tr_id as String fields and requires them in the callback response. Current Check Status documentation defines transaction price and balance as Double and tr_id as Integer. citeturn0search0turn0search1
+
+### Implementation
+
+- IAK webhook tr_id validation now uses the shared exact int64 boundary instead of the older float64-only integer validator.
+- Shared numeric parsing now rejects non-finite numeric values (NaN, +Inf, -Inf) for both JSON numbers and numeric strings.
+- Existing webhook price validation continues to use exact int64 parsing, while balance remains a validated numeric field without financial-state mutation.
+
+### Deterministic Coverage
+
+Added tests for:
+
+- webhook tr_id above the signed int64 range → rejected;
+- webhook balance values NaN, +Inf, and -Inf → rejected.
+
+### Safety Boundary
+
+This is callback/response representation validation only. No retry, failover, resubmission, refund automation, ledger mutation, customer-balance mutation, treasury movement, provider funding, or routing behavior was introduced.
+
+### Verification Boundary
+
+- Deterministic tests are credential-free.
+- External IAK callback validation remains credential-gated.
+- Final CI for the resulting HEAD must be GREEN before this batch is considered complete.
