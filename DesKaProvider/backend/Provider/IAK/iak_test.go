@@ -541,3 +541,22 @@ func TestIAKTransactionRejectsOutOfRangeTrID(t *testing.T) {
  _, err = c.GetStatus(context.Background(), provider.StatusRequest{ReferenceID:"order-1", CustomerNo:"08123", ProductCode:"xld25000"})
  if err == nil { t.Fatal("expected out-of-range transaction ID to be rejected") }
 }
+
+
+func TestIAKWebhookRejectsOutOfRangeTrID(t *testing.T) {
+ c, _ := New(config.IAKConfig{Username:"user", APIKey:"secret"}, http.DefaultClient)
+ body := []byte(`{"ref_id":"order-1","status":"1","code":"xld25000","hp":"08123","price":"25000","balance":"997061249","tr_id":"9223372036854775808","message":"SUCCESS","rc":"00","sign":"sig"}`)
+ _, err := c.HandleWebhook(context.Background(), provider.WebhookRequest{Body:body})
+ if err == nil { t.Fatal("expected out-of-range webhook transaction ID to be rejected") }
+}
+
+func TestIAKWebhookRejectsNonFiniteBalance(t *testing.T) {
+ c, _ := New(config.IAKConfig{Username:"user", APIKey:"secret"}, http.DefaultClient)
+ for _, balance := range []string{"NaN", "+Inf", "-Inf"} {
+  t.Run(balance, func(t *testing.T) {
+   body := []byte(`{"ref_id":"order-1","status":"1","code":"xld25000","hp":"08123","price":"25000","balance":"`+balance+`","tr_id":"3482","message":"SUCCESS","rc":"00","sign":"sig"}`)
+   _, err := c.HandleWebhook(context.Background(), provider.WebhookRequest{Body:body})
+   if err == nil { t.Fatalf("expected non-finite webhook balance %q to be rejected", balance) }
+  })
+ }
+}
