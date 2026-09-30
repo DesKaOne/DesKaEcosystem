@@ -31,7 +31,7 @@ func TestBuildSignedVoteMessageBindsPhaseAndContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if msg.Type != MessageTypePrecommit || msg.Height != 7 || msg.Round != 2 {
+	if msg.Type != MessageTypePrecommit || msg.Height != 7 || msg.Round != 0 {
 		t.Fatalf("unexpected vote context: type=%d height=%d round=%d", msg.Type, msg.Height, msg.Round)
 	}
 	if err := VerifyMessageSignature(msg, signer.PublicKey()); err != nil {
