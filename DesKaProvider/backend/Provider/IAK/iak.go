@@ -175,7 +175,7 @@ func str(m map[string]any,k string)string{x,_:=m[k].(string);return x}
 func num(m map[string]any,k string)float64{n,_:=requiredNum(m,k);return n}
 func requiredNum(m map[string]any,k string)(float64,bool){x,ok:=m[k];if !ok{return 0,false};switch v:=x.(type){case float64:return v,true;case string:n,err:=strconv.ParseFloat(strings.TrimSpace(v),64);return n,err==nil};return 0,false}
 func requiredIntegerNum(m map[string]any,k string)(float64,bool){n,ok:=requiredNum(m,k);if !ok||math.Trunc(n)!=n{return 0,false};return n,true}
-func requiredInt64Num(m map[string]any,k string)(int64,bool){x,ok:=m[k];if !ok{return 0,false};if s,ok:=x.(string);ok{n,err:=strconv.ParseInt(strings.TrimSpace(s),10,64);return n,err==nil};n,ok:=requiredIntegerNum(m,k);if !ok||n < -math.Exp2(63) || n >= math.Exp2(63){return 0,false};return int64(n),true}
+func requiredInt64Num(m map[string]any,k string)(int64,bool){x,ok:=m[k];if !ok{return 0,false};if s,ok:=x.(string);ok{n,err:=strconv.ParseInt(strings.TrimSpace(s),10,64);return n,err==nil};n,ok:=requiredIntegerNum(m,k);if !ok||n <= -math.Exp2(63) || n >= math.Exp2(63){return 0,false};return int64(n),true}
 func status(n float64)provider.TransactionStatus{switch int(n){case 1:return provider.StatusSuccess;case 0:return provider.StatusPending;case 2:return provider.StatusFailed;default:return provider.TransactionStatus(strconv.Itoa(int(n)))}}
 func transactionStatus(v any)(provider.TransactionStatus,bool){switch x:=v.(type){case float64:if math.Trunc(x)!=x{return "",false};switch int(x){case 0:return provider.StatusPending,true;case 1:return provider.StatusSuccess,true;case 2:return provider.StatusFailed,true};case string:switch strings.TrimSpace(x){case "0":return provider.StatusPending,true;case "1":return provider.StatusSuccess,true;case "2":return provider.StatusFailed,true}};return "",false}
 func mapResponseCode(rc string) (provider.TransactionStatus, error) {
@@ -235,6 +235,6 @@ func purchaseStatus(x map[string]any)(provider.PurchaseStatus,error){
  if err!=nil{return provider.PurchaseStatus{},err}
  ref,customer,product:=str(x,"ref_id"),str(x,"customer_id"),str(x,"product_code")
  if ref==""||customer==""||product==""{return provider.PurchaseStatus{},errors.New("IAK status response is missing transaction identity")}
- price,_:=requiredNum(x,"price")
- return provider.PurchaseStatus{ReferenceID:ref,CustomerNo:customer,ProductCode:product,Status:st,ProviderCode:str(x,"rc"),Message:str(x,"message"),SerialNumber:str(x,"sn"),Price:int64(price)},nil
+ price,_:=requiredInt64Num(x,"price")
+ return provider.PurchaseStatus{ReferenceID:ref,CustomerNo:customer,ProductCode:product,Status:st,ProviderCode:str(x,"rc"),Message:str(x,"message"),SerialNumber:str(x,"sn"),Price:price},nil
 }
