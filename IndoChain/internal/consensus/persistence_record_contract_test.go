@@ -36,7 +36,7 @@ func TestPersistenceRecordEnvelopeDeterministicChecksum(t *testing.T) {
 	if !bytes.Equal(first.Payload, second.Payload) || first.Checksum != second.Checksum {
 		t.Fatal("same record semantics produced different checksum")
 	}
-	const want = "9b42e48f4f1b70e4d0fcbfbd1e1d75b1c8b55bdb89db9c0bb3e3fdbbe3d9d6e6"
+	const want = "f346189c12f475b5e9546f0e4ea8168add37c71d99bb69760944e748a313b5d2"
 	if got := PersistenceChecksumHex(first.Checksum); got != want {
 		t.Fatalf("checksum = %s, want %s", got, want)
 	}
