@@ -4600,3 +4600,40 @@ This is response-schema validation only. No retry, failover, resubmission, refun
 - Deterministic status parsing is credential-free.
 - External IAK validation remains credential-gated.
 - Final CI for the resulting HEAD must be GREEN before this batch is considered complete.
+
+
+## IAK Integer-to-int64 Numeric Boundary Hardening
+
+**Date:** 2026-09-30
+
+### Source Basis
+
+The current IAK transaction and balance contracts expose numeric price, balance, and transaction identifiers while the DesKaProvider-neutral transaction/balance results expose int64. Existing hardening already rejected fractional values; this batch closes the remaining representation gap for integer-valued values outside the provider-neutral int64 range.
+
+### Implementation
+
+- Added a shared requiredInt64Num() boundary that requires an integer-valued numeric/string representation and rejects values outside the safely representable int64 range.
+- IAK transaction price and tr_id validation now use the int64 boundary before provider-neutral conversion.
+- IAK webhook price and tr_id validation use the same boundary.
+- IAK balance JSON-number conversion now rejects integer-valued values outside the safely representable int64 range.
+- Exact int64 boundary values remain accepted when supplied as decimal strings, avoiding false acceptance caused by float64 precision limits.
+
+### Deterministic Coverage
+
+Added tests for:
+
+- balance values above and below the int64 range;
+- transaction price above the int64 range;
+- webhook price above the int64 range;
+- exact MaxInt64 transaction price supplied as a decimal string.
+
+### Safety Boundary
+
+This is representation-boundary validation only. No retry, failover, resubmission, refund automation, ledger mutation, customer-balance mutation, treasury movement, provider funding, or routing behavior was introduced.
+
+### Verification Boundary
+
+- Deterministic numeric-boundary tests are credential-free.
+- External IAK validation remains credential-gated.
+- JSON numeric values near int64 limits are handled conservatively because Go's float64 representation cannot distinguish every adjacent int64 value; exact boundary acceptance is therefore covered through the documented string-number compatibility path.
+- This batch is not considered complete until the resulting HEAD has GREEN CI.
