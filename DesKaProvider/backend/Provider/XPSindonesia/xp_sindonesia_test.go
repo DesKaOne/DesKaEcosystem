@@ -90,10 +90,10 @@ func TestXPBalanceAcceptsNumericSaldo(t *testing.T) {
 
 func TestXPCallbackMapping(t *testing.T) {
  c,err:=New(config.XPSindonesiaConfig{ID:"123",Key:"key",API:"api"},nil);if err!=nil{t.Fatal(err)}
- e,err:=c.HandleWebhook(context.Background(),provider.WebhookRequest{Body:[]byte("id=123&key=secret&trx=ref-1&status=sukses&kod=i5&isi=0856&sn=SN1"),SignatureSecret:"secret"});if err!=nil{t.Fatal(err)}
+ e,err:=c.HandleWebhook(context.Background(),provider.WebhookRequest{Body:[]byte("id=123&key=secret&trx=ref-1&status=sukses&kod=i5&isi=0856&sn=SN1"),SignatureSecret:"key"});if err!=nil{t.Fatal(err)}
  if e.Status!=provider.StatusSuccess||e.SerialNumber!="SN1"{t.Fatalf("unexpected event: %#v",e)}
- _,err=c.HandleWebhook(context.Background(),provider.WebhookRequest{Body:[]byte("id=123&key=bad&trx=ref-1&status=sukses&kod=i5&isi=0856"),SignatureSecret:"secret"});if err==nil{t.Fatal("expected invalid callback key")}
- _,err=c.HandleWebhook(context.Background(),provider.WebhookRequest{Body:[]byte("id=123&key=secret&trx=ref-1&status=proses&kod=i5&isi=0856"),SignatureSecret:"secret"});if err==nil{t.Fatal("expected unsupported callback status")}
+ _,err=c.HandleWebhook(context.Background(),provider.WebhookRequest{Body:[]byte("id=123&key=bad&trx=ref-1&status=sukses&kod=i5&isi=0856"),SignatureSecret:"key"});if err==nil{t.Fatal("expected invalid callback key")}
+ _,err=c.HandleWebhook(context.Background(),provider.WebhookRequest{Body:[]byte("id=123&key=secret&trx=ref-1&status=proses&kod=i5&isi=0856"),SignatureSecret:"key"});if err==nil{t.Fatal("expected unsupported callback status")}
 }
 
 func TestXPUnsupportedOperationsAreExplicit(t *testing.T) {
@@ -140,6 +140,18 @@ func TestXPPurchaseRejectsInvalidSuccessDiscriminator(t *testing.T) {
  c,err:=New(config.XPSindonesiaConfig{ID:"123",Key:"key",API:"api",OrderEndpoint:srv.URL,CallbackURL:"https://callback.example/xp"},srv.Client());if err!=nil{t.Fatal(err)}
  _,err=c.Purchase(context.Background(),provider.PurchaseRequest{ProductCode:"i5",CustomerNo:"0856",ReferenceID:"ref-1"})
  if err==nil{t.Fatal("expected invalid success discriminator rejection")}
+}
+
+func TestXPCallbackRejectsKeyWithoutSignatureSecret(t *testing.T) {
+ c,err:=New(config.XPSindonesiaConfig{ID:"123",Key:"key",API:"api"},nil);if err!=nil{t.Fatal(err)}
+ _,err=c.HandleWebhook(context.Background(),provider.WebhookRequest{Body:[]byte("id=123&key=bad&trx=ref-1&status=sukses&kod=i5&isi=0856")})
+ if err==nil{t.Fatal("expected callback key rejection without signature secret")}
+}
+
+func TestXPCallbackRejectsMismatchedSignatureSecret(t *testing.T) {
+ c,err:=New(config.XPSindonesiaConfig{ID:"123",Key:"key",API:"api"},nil);if err!=nil{t.Fatal(err)}
+ _,err=c.HandleWebhook(context.Background(),provider.WebhookRequest{Body:[]byte("id=123&key=key&trx=ref-1&status=sukses&kod=i5&isi=0856"),SignatureSecret:"wrong"})
+ if err==nil{t.Fatal("expected callback signature secret mismatch")}
 }
 
 func TestXPCallbackRejectsMemberIDMismatch(t *testing.T) {
