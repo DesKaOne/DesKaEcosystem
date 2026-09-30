@@ -53,7 +53,16 @@ func (c *Client) Inquiry(ctx context.Context, req provider.InquiryRequest)(provi
  if req.CustomerNo==""{return provider.InquiryResult{},errors.New("customer number is required for IAK PLN inquiry")}
  var d map[string]any
  if err:=c.do(ctx,c.inquiryPLNEndpoint,map[string]string{"username":c.username,"customer_id":req.CustomerNo,"sign":c.sig(req.CustomerNo)},&d);err!=nil{return provider.InquiryResult{},err}
- x:=obj(d,"data"); status,statusErr:=mapResponseStatus(str(x,"status"),str(x,"rc")); message:=str(x,"message"); if statusErr!=nil { return provider.InquiryResult{}, statusErr }; if message=="" { return provider.InquiryResult{}, errors.New("IAK inquiry response is missing data.message") }; return provider.InquiryResult{Status:status,ProviderCode:str(x,"rc"),Message:message},nil
+ x:=obj(d,"data")
+ rawStatus:=strings.TrimSpace(str(x,"status"))
+ if rawStatus!="1" && rawStatus!="2" { return provider.InquiryResult{}, fmt.Errorf("IAK inquiry response has invalid data.status %q", rawStatus) }
+ customerID:=strings.TrimSpace(str(x,"customer_id"))
+ if customerID=="" { return provider.InquiryResult{}, errors.New("IAK inquiry response is missing data.customer_id") }
+ if customerID!=strings.TrimSpace(req.CustomerNo) { return provider.InquiryResult{}, errors.New("IAK inquiry response customer ID mismatch") }
+ status,statusErr:=mapResponseStatus(rawStatus,str(x,"rc")); message:=str(x,"message")
+ if statusErr!=nil { return provider.InquiryResult{}, statusErr }
+ if message=="" { return provider.InquiryResult{}, errors.New("IAK inquiry response is missing data.message") }
+ return provider.InquiryResult{Status:status,ProviderCode:str(x,"rc"),Message:message},nil
 }
 
 func (c *Client) Purchase(ctx context.Context, req provider.PurchaseRequest)(provider.PurchaseResult,error) {
