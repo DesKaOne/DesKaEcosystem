@@ -195,6 +195,12 @@ func (c *Client) GetStatus(ctx context.Context, req provider.StatusRequest) (pro
 }
 
 func (c *Client) HandleWebhook(_ context.Context, req provider.WebhookRequest) (provider.WebhookEvent, error) {
+	if event := strings.ToLower(strings.TrimSpace(req.Event)); event != "" && event != "create" && event != "update" {
+		return provider.WebhookEvent{}, fmt.Errorf("unsupported DigiFlazz prepaid webhook event: %q", req.Event)
+	}
+	if userAgent := strings.TrimSpace(req.UserAgent); userAgent != "" && userAgent != "Digiflazz-Hookshot" {
+		return provider.WebhookEvent{}, fmt.Errorf("unsupported DigiFlazz webhook user-agent: %q", req.UserAgent)
+	}
 	if req.SignatureSecret != "" {
 		expected := hmac.New(sha1.New, []byte(req.SignatureSecret)); _, _ = expected.Write(req.Body)
 		expectedHeader := "sha1=" + hex.EncodeToString(expected.Sum(nil))
