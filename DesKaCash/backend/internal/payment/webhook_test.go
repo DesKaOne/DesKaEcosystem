@@ -14,10 +14,10 @@ func TestNewWebhookEvent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if event.Provider != "demo" {
+	if event.ExternalReference != "provider-1" {
 		t.Fatalf("expected provider demo, got %q", event.Provider)
 	}
-	if event.ProviderID != "provider-1" {
+	if event.ExternalReference != "provider-1" {
 		t.Fatalf("expected provider id provider-1, got %q", event.ProviderID)
 	}
 	if event.Status != StatusSucceeded {
@@ -32,11 +32,11 @@ func TestNewWebhookEvent(t *testing.T) {
 }
 
 func TestNewWebhookEventRejectsInvalidInput(t *testing.T) {
-	if _, err := NewWebhookEvent("", "demo", "provider-1", StatusSucceeded, 100_000); err != ErrInvalidWebhookEvent {
+	if _, err := NewWebhookEvent("", "provider-1", StatusSucceeded, 100_000); err != ErrInvalidWebhookEvent {
 		t.Fatalf("expected invalid webhook event error, got %v", err)
 	}
 
-	if _, err := NewWebhookEvent("event-1", "demo", "provider-1", StatusSucceeded, 0); err != ErrInvalidWebhookEvent {
+	if _, err := NewWebhookEvent("event-1", "provider-1", StatusSucceeded, 0); err != ErrInvalidWebhookEvent {
 		t.Fatalf("expected invalid webhook event error, got %v", err)
 	}
 }
