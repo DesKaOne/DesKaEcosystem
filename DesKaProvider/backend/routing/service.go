@@ -903,6 +903,29 @@ func (s *Service) selectProvider(ctx context.Context, req PurchaseRequest) (stri
 }
 
 func (s *Service) executePurchase(ctx context.Context, providerName string, req PurchaseRequest) (PurchaseExecution, error) {
+	// Router.Select() is the routing authority, but selection and the external
+	// provider call are separate operations. Re-check the durable operational
+	// gate immediately before the side effect so a concurrent disable cannot
+	// turn a previously eligible selection into an unauthorized submission.
+	if s.Router.ProviderState != nil {
+		state, found := s.Router.ProviderState.Get(providerName)
+		if !found || !state.Enabled() || !state.Supports(operational.CapabilityPPOB) {
+			return PurchaseExecution{}, fmt.Errorf("%w: %s", ErrNoProviderAvailable, providerName)
+		}
+		descriptor, err := s.Router.Registry.Capabilities(providerName)
+		if err != nil {
+			return PurchaseExecution{}, fmt.Errorf("get selected provider capabilities: %w", err)
+		}
+		if len(descriptor.Capabilities) > 0 {
+			if drift := operational.DetectCapabilityDrift(state, descriptor); drift.Drifted() {
+				return PurchaseExecution{}, fmt.Errorf("%w: %s", ErrProviderCapabilityDrift, providerName)
+			}
+			capability, ok := descriptor.Status(provider.CapabilityPPOB)
+			if !ok || !capability.AdapterImplemented || !capability.Enabled {
+				return PurchaseExecution{}, fmt.Errorf("%w: %s", ErrNoProviderAvailable, providerName)
+			}
+		}
+	}
 	p, err := s.Router.Registry.Get(providerName)
 	if err != nil {
 		return PurchaseExecution{}, fmt.Errorf("get selected provider: %w", err)
