@@ -113,6 +113,41 @@ func TestJSONFileStoreAmbiguousPersistenceFailsClosedInMemory(t *testing.T) {
 	}
 }
 
+func TestJSONFileStoreAmbiguousFirstWriteFailsClosed(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "snapshots.json")
+	store, err := NewJSONFileStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.persistHook = func(stage operationalStorePersistStage) error {
+		if stage == operationalStoreAfterReplace {
+			return errors.New("directory durability uncertain")
+		}
+		return nil
+	}
+	requested := Snapshot{
+		ProviderName: "new-provider",
+		Balance: 1000,
+		Currency: "IDR",
+		Health: HealthHealthy,
+		LastCheckedAt: time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC),
+		LastSuccessAt: time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC),
+	}
+	if err := store.Put(requested); !errors.Is(err, ErrOperationalPersistenceAmbiguous) {
+		t.Fatalf("expected ambiguous first-write error, got %v", err)
+	}
+	got, ok := store.Get("new-provider")
+	if !ok {
+		t.Fatal("expected fail-closed in-memory snapshot")
+	}
+	if got.Health != HealthUnknown || got.Balance != 0 || !got.LastCheckedAt.Equal(requested.LastCheckedAt) {
+		t.Fatalf("ambiguous first write must fail closed: %#v", got)
+	}
+	if got.LastSuccessAt != (time.Time{}) || got.ConsecutiveFailures != 0 {
+		t.Fatalf("ambiguous first write must not retain success evidence: %#v", got)
+	}
+}
+
 func TestJSONFileStoreAmbiguousPermissiveWriteDoesNotPromoteMemory(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "snapshots.json")
 	store, err := NewJSONFileStore(path)
