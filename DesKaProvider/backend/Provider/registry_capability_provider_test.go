@@ -68,3 +68,35 @@ func TestRegisterCapabilityProviderRejectsDuplicateCapability(t *testing.T) {
         t.Fatal("expected duplicate capability registration to fail")
     }
 }
+
+
+func TestCapabilitiesConcurrentWithCapabilityRegistration(t *testing.T) {
+    r := NewRegistry()
+    status := CapabilityStatus{AdapterImplemented: true}
+    if err := r.RegisterCapabilityProvider("xp-sindonesia", CapabilityBalance, balanceOnlyProvider{}, status); err != nil {
+        t.Fatal(err)
+    }
+
+    const iterations = 200
+    done := make(chan struct{})
+    go func() {
+        defer close(done)
+        for i := 0; i < iterations; i++ {
+            // Each registration targets a distinct canonical capability so the
+            // registry lock protects descriptor/map access under concurrent reads.
+            capability := CapabilityPPOB
+            if i%2 == 0 {
+                capability = CapabilityCatalog
+            }
+            name := "provider-" + string(rune('a'+(i%26)))
+            _ = r.RegisterCapabilityProvider(name, capability, balanceOnlyProvider{}, status)
+        }
+    }()
+
+    for i := 0; i < iterations; i++ {
+        if _, err := r.Capabilities("xp-sindonesia"); err != nil {
+            t.Fatal(err)
+        }
+    }
+    <-done
+}
