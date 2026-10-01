@@ -15,7 +15,9 @@ func TestJSONFileTransactionStoreAmbiguousPutKeepsRenamedStateInMemory(t *testin
 	path := filepath.Join(t.TempDir(), "transactions.json")
 	store, err := NewJSONFileTransactionStore(path)
 	if err != nil { t.Fatal(err) }
-	pending := testPaymentTransactionState("tx-ambiguous-memory", payment.StatusPending)
+	pending, err := NewPaymentTransactionState(payment.PaymentRequest{ReferenceID: "tx-ambiguous-memory", Amount: 1000, Currency: "IDR", CustomerID: "cust-ambiguous-memory"}, "mock")
+	if err != nil { t.Fatal(err) }
+	pending.Payment.Status = payment.StatusPending
 	if err := store.Put(pending); err != nil { t.Fatal(err) }
 	store.persistHook = func(stage transactionStorePersistStage) error {
 		if stage == transactionStoreAfterReplace { return errors.New("directory durability uncertain") }
@@ -44,7 +46,9 @@ func TestJSONFileTransactionStoreAmbiguousPutIfCurrentKeepsRenamedStateInMemory(
 	path := filepath.Join(t.TempDir(), "transactions.json")
 	store, err := NewJSONFileTransactionStore(path)
 	if err != nil { t.Fatal(err) }
-	pending := testPaymentTransactionState("tx-ambiguous-cas", payment.StatusPending)
+	pending, err := NewPaymentTransactionState(payment.PaymentRequest{ReferenceID: "tx-ambiguous-cas", Amount: 1000, Currency: "IDR", CustomerID: "cust-ambiguous-cas"}, "mock")
+	if err != nil { t.Fatal(err) }
+	pending.Payment.Status = payment.StatusPending
 	if err := store.Put(pending); err != nil { t.Fatal(err) }
 	store.persistHook = func(stage transactionStorePersistStage) error {
 		if stage == transactionStoreAfterReplace { return errors.New("directory durability uncertain") }
