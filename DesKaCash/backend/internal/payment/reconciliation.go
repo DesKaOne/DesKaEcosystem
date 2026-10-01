@@ -73,7 +73,7 @@ func (r *Reconciler) ReconcileWebhook(ctx context.Context, event WebhookEvent, p
 	}
 
 	if existing, err := r.webhooks.Get(ctx, event.ID); err == nil {
-		if existing.Provider != event.Provider || existing.ProviderID != event.ExternalReference ||
+		if existing.ExternalReference != event.ExternalReference ||
 			existing.Status != event.Status || existing.Amount != event.Amount {
 			return Payment{}, ErrWebhookPaymentMismatch
 		}
