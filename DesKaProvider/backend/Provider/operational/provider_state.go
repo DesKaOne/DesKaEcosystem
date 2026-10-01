@@ -178,7 +178,7 @@ func (s *ProviderStateStore) SetCapabilityEnabled(name string, capability Capabi
 
 	current, ok := s.states[name]
 	if !ok {
-		return ProviderState{}, errors.New("provider not found")
+		return ProviderState{}, ErrProviderNotFound
 	}
 	implemented := false
 	for _, value := range current.Capabilities {
@@ -188,7 +188,7 @@ func (s *ProviderStateStore) SetCapabilityEnabled(name string, capability Capabi
 		}
 	}
 	if !implemented {
-		return ProviderState{}, errors.New("provider capability is not available")
+		return ProviderState{}, ErrCapabilityNotAvailable
 	}
 
 	updated := current
