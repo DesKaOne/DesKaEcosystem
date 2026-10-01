@@ -267,5 +267,14 @@ func (s *JSONFileTransactionStore) persistLocked() error {
     if err := os.Rename(tmpName, s.path); err != nil {
         return fmt.Errorf("replace transaction store: %w", err)
     }
+
+    dirFile, err := os.Open(dir)
+    if err != nil {
+        return fmt.Errorf("open transaction store directory for sync: %w", err)
+    }
+    defer dirFile.Close()
+    if err := dirFile.Sync(); err != nil {
+        return fmt.Errorf("sync transaction store directory: %w", err)
+    }
     return nil
 }
