@@ -73,16 +73,16 @@ func newReconciler(payment Payment) (*Reconciler, *memoryLedgerReconciler) {
 }
 
 func TestReconcilerUpdatesPaymentStatusAndCreditsLedger(t *testing.T) {
-	payment, err := NewPayment("pay-1", "acct-1", "demo", "idem-1", ledger.FromDIDR(100))
+	payment, err := NewPayment("pay-1", "acct-1", "idem-1", ledger.FromDIDR(100))
 	if err != nil {
 		t.Fatal(err)
 	}
-	payment.ProviderID = "provider-1"
+	payment.ExternalReference = "provider-1"
 
 	reconciler, creditor := newReconciler(payment)
 	receivedAt := time.Now().UTC()
 	event := WebhookEvent{
-		ID: "event-1", Provider: "demo", ProviderID: "provider-1",
+		ID: "event-1", ExternalReference: "provider-1",
 		Status: StatusSucceeded, Amount: payment.Amount.BaseUnits,
 		ReceivedAt: receivedAt,
 	}
@@ -106,15 +106,15 @@ func TestReconcilerUpdatesPaymentStatusAndCreditsLedger(t *testing.T) {
 }
 
 func TestReconcilerRejectsMismatchedWebhook(t *testing.T) {
-	payment, err := NewPayment("pay-1", "acct-1", "demo", "idem-1", ledger.FromDIDR(100))
+	payment, err := NewPayment("pay-1", "acct-1", "idem-1", ledger.FromDIDR(100))
 	if err != nil {
 		t.Fatal(err)
 	}
-	payment.ProviderID = "provider-1"
+	payment.ExternalReference = "provider-1"
 
 	reconciler, _ := newReconciler(payment)
 	event := WebhookEvent{
-		ID: "event-1", Provider: "other", ProviderID: "provider-1",
+		ID: "event-1", ExternalReference: "other",
 		Status: StatusSucceeded, Amount: payment.Amount.BaseUnits,
 	}
 
@@ -124,15 +124,15 @@ func TestReconcilerRejectsMismatchedWebhook(t *testing.T) {
 }
 
 func TestReconcilerRejectsMismatchedAmount(t *testing.T) {
-	payment, err := NewPayment("pay-1", "acct-1", "demo", "idem-1", ledger.FromDIDR(100))
+	payment, err := NewPayment("pay-1", "acct-1", "idem-1", ledger.FromDIDR(100))
 	if err != nil {
 		t.Fatal(err)
 	}
-	payment.ProviderID = "provider-1"
+	payment.ExternalReference = "provider-1"
 
 	reconciler, _ := newReconciler(payment)
 	event := WebhookEvent{
-		ID: "event-1", Provider: "demo", ProviderID: "provider-1",
+		ID: "event-1", ExternalReference: "provider-1",
 		Status: StatusSucceeded, Amount: payment.Amount.BaseUnits + 1,
 	}
 
@@ -142,15 +142,15 @@ func TestReconcilerRejectsMismatchedAmount(t *testing.T) {
 }
 
 func TestReconcilerTreatsDuplicateWebhookAsIdempotent(t *testing.T) {
-	payment, err := NewPayment("pay-1", "acct-1", "demo", "idem-1", ledger.FromDIDR(100))
+	payment, err := NewPayment("pay-1", "acct-1", "idem-1", ledger.FromDIDR(100))
 	if err != nil {
 		t.Fatal(err)
 	}
-	payment.ProviderID = "provider-1"
+	payment.ExternalReference = "provider-1"
 
 	reconciler, creditor := newReconciler(payment)
 	event := WebhookEvent{
-		ID: "event-1", Provider: "demo", ProviderID: "provider-1",
+		ID: "event-1", ExternalReference: "provider-1",
 		Status: StatusSucceeded, Amount: payment.Amount.BaseUnits,
 	}
 
@@ -166,16 +166,16 @@ func TestReconcilerTreatsDuplicateWebhookAsIdempotent(t *testing.T) {
 }
 
 func TestReconcilerRejectsTerminalStatusRegression(t *testing.T) {
-	payment, err := NewPayment("pay-1", "acct-1", "demo", "idem-1", ledger.FromDIDR(100))
+	payment, err := NewPayment("pay-1", "acct-1", "idem-1", ledger.FromDIDR(100))
 	if err != nil {
 		t.Fatal(err)
 	}
-	payment.ProviderID = "provider-1"
+	payment.ExternalReference = "provider-1"
 	payment.Status = StatusSucceeded
 
 	reconciler, creditor := newReconciler(payment)
 	event := WebhookEvent{
-		ID: "event-1", Provider: "demo", ProviderID: "provider-1",
+		ID: "event-1", ExternalReference: "provider-1",
 		Status: StatusFailed, Amount: payment.Amount.BaseUnits,
 	}
 
@@ -189,15 +189,15 @@ func TestReconcilerRejectsTerminalStatusRegression(t *testing.T) {
 }
 
 func TestReconcilerDoesNotReprocessDuplicateWebhookPayload(t *testing.T) {
-	payment, err := NewPayment("pay-1", "acct-1", "demo", "idem-1", ledger.FromDIDR(100))
+	payment, err := NewPayment("pay-1", "acct-1", "idem-1", ledger.FromDIDR(100))
 	if err != nil {
 		t.Fatal(err)
 	}
-	payment.ProviderID = "provider-1"
+	payment.ExternalReference = "provider-1"
 
 	reconciler, creditor := newReconciler(payment)
 	event := WebhookEvent{
-		ID: "event-1", Provider: "demo", ProviderID: "provider-1",
+		ID: "event-1", ExternalReference: "provider-1",
 		Status: StatusSucceeded, Amount: payment.Amount.BaseUnits,
 	}
 
@@ -216,15 +216,15 @@ func TestReconcilerDoesNotReprocessDuplicateWebhookPayload(t *testing.T) {
 }
 
 func TestReconcilerRejectsInvalidWebhookStatus(t *testing.T) {
-	payment, err := NewPayment("pay-1", "acct-1", "demo", "idem-1", ledger.FromDIDR(100))
+	payment, err := NewPayment("pay-1", "acct-1", "idem-1", ledger.FromDIDR(100))
 	if err != nil {
 		t.Fatal(err)
 	}
-	payment.ProviderID = "provider-1"
+	payment.ExternalReference = "provider-1"
 
 	reconciler, creditor := newReconciler(payment)
 	event := WebhookEvent{
-		ID: "event-1", Provider: "demo", ProviderID: "provider-1",
+		ID: "event-1", ExternalReference: "provider-1",
 		Status: Status("provider_unknown"), Amount: payment.Amount.BaseUnits,
 	}
 
@@ -238,16 +238,16 @@ func TestReconcilerRejectsInvalidWebhookStatus(t *testing.T) {
 }
 
 func TestReconcilerReversesSucceededPaymentWithLedgerDebit(t *testing.T) {
-	payment, err := NewPayment("pay-1", "acct-1", "demo", "idem-1", ledger.FromDIDR(100))
+	payment, err := NewPayment("pay-1", "acct-1", "idem-1", ledger.FromDIDR(100))
 	if err != nil {
 		t.Fatal(err)
 	}
-	payment.ProviderID = "provider-1"
+	payment.ExternalReference = "provider-1"
 	payment.Status = StatusSucceeded
 
 	reconciler, ledgerStore := newReconciler(payment)
 	event := WebhookEvent{
-		ID: "event-reversal", Provider: "demo", ProviderID: "provider-1",
+		ID: "event-reversal", ExternalReference: "provider-1",
 		Status: StatusReversed, Amount: payment.Amount.BaseUnits,
 	}
 
@@ -267,16 +267,16 @@ func TestReconcilerReversesSucceededPaymentWithLedgerDebit(t *testing.T) {
 }
 
 func TestReconcilerRefundsSucceededPaymentWithLedgerDebit(t *testing.T) {
-	payment, err := NewPayment("pay-1", "acct-1", "demo", "idem-1", ledger.FromDIDR(100))
+	payment, err := NewPayment("pay-1", "acct-1", "idem-1", ledger.FromDIDR(100))
 	if err != nil {
 		t.Fatal(err)
 	}
-	payment.ProviderID = "provider-1"
+	payment.ExternalReference = "provider-1"
 	payment.Status = StatusSucceeded
 
 	reconciler, ledgerStore := newReconciler(payment)
 	event := WebhookEvent{
-		ID: "event-refund", Provider: "demo", ProviderID: "provider-1",
+		ID: "event-refund", ExternalReference: "provider-1",
 		Status: StatusRefunded, Amount: payment.Amount.BaseUnits,
 	}
 
@@ -318,12 +318,12 @@ func TestReconcilerReversalDebitsActualLedgerBalance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	payment.ProviderID = "provider-1"
+	payment.ExternalReference = "provider-1"
 	payment.Status = StatusSucceeded
 	payments := newMemoryPaymentStore(payment)
 	reconciler := NewReconciler(payments, NewMemoryWebhookStore(), store)
 
-	event := WebhookEvent{ID: "event-reversal", Provider: "demo", ProviderID: "provider-1", Status: StatusReversed, Amount: payment.Amount.BaseUnits}
+	event := WebhookEvent{ID: "event-reversal", ExternalReference: "provider-1", Status: StatusReversed, Amount: payment.Amount.BaseUnits}
 	got, err := reconciler.ReconcileWebhook(ctx, event, payment.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -363,12 +363,12 @@ func TestReconcilerRefundInsufficientFundsLeavesPaymentSucceeded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	payment.ProviderID = "provider-1"
+	payment.ExternalReference = "provider-1"
 	payment.Status = StatusSucceeded
 	payments := newMemoryPaymentStore(payment)
 	reconciler := NewReconciler(payments, NewMemoryWebhookStore(), store)
 
-	event := WebhookEvent{ID: "event-refund", Provider: "demo", ProviderID: "provider-1", Status: StatusRefunded, Amount: payment.Amount.BaseUnits}
+	event := WebhookEvent{ID: "event-refund", ExternalReference: "provider-1", Status: StatusRefunded, Amount: payment.Amount.BaseUnits}
 	if _, err := reconciler.ReconcileWebhook(ctx, event, payment.ID); !errors.Is(err, ledger.ErrInsufficientFunds) {
 		t.Fatalf("expected insufficient funds, got %v", err)
 	}
