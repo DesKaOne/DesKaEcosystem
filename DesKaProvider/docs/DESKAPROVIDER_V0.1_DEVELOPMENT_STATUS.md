@@ -6709,3 +6709,60 @@ Overall DesKaProvider v0.1 remains approximately **82%**. This milestone hardens
 After GREEN CI, audit the caller-side handling of `ErrTransactionPersistenceAmbiguous` so ambiguous transaction persistence cannot be mistaken for a safe retry condition or silently converted into an external provider side effect.
 
 No automatic retry, payment resubmission, provider failover, provider funding, customer ledger mutation, treasury movement, duplicate purchase creation, or public API exposure is included.
+
+
+## Caller-Side Ambiguous Persistence / No-Retry Boundary Audit
+
+**Date:** 2026-10-01
+
+### Audit Finding
+
+The service layer already preserves the intended fail-closed behavior when transaction persistence fails after an external provider side effect:
+
+- `Purchase()` keeps the durable PPOB transaction pending when the provider call has returned but the terminal persistence operation fails;
+- `SubmitPayment()` keeps the durable payment claim pending when terminal payment-result persistence fails;
+- persistence errors are wrapped with `%w`, so `ErrTransactionPersistenceAmbiguous` remains discoverable by callers through `errors.Is`;
+- the in-process purchase/payment ownership gates prevent a second provider submission for the same ReferenceID;
+- service restart loads the durable pending transaction and returns that state rather than authorizing a second external submission;
+- `Reconcile()` / `ReconcilePayment()` remain the recovery path for an already-created transaction and do not call Purchase/CreatePayment;
+- no caller interprets ambiguous persistence as authorization to retry, fail over, or recreate the external transaction.
+
+### Deterministic Regression Coverage
+
+Added:
+
+- `TestPurchaseAmbiguousPersistencePreservesPendingAndForbidsRetry`;
+- `TestSubmitPaymentAmbiguousPersistencePreservesClaimAndForbidsRetry`.
+
+The tests verify:
+
+- the ambiguous persistence error survives service-layer wrapping;
+- the external provider is called exactly once;
+- durable state remains pending after terminal persistence failure;
+- same-process retry does not create another provider side effect;
+- reconstructed service state does not resubmit the transaction.
+
+### Safety Boundary
+
+`ErrTransactionPersistenceAmbiguous` is treated as an operational/persistence uncertainty, not as evidence that the external provider did not receive the request. The service therefore does not retry the external operation automatically.
+
+No automatic retry, payment resubmission, provider failover, provider funding, customer ledger mutation, treasury movement, duplicate purchase creation, or public API exposure is introduced.
+
+### Verification Boundary
+
+Implementation/test commits:
+
+- `7672198ee2ae5e21a60390b62d0c9705f433cce7` — payment no-retry regression;
+- `2d7a57c422af805fe28e8ec695682958c6194f86` — PPOB no-retry regression.
+
+Latest CI for this audit must be GREEN before the milestone is considered complete.
+
+### Current Completion Assessment
+
+Overall DesKaProvider v0.1 remains approximately **82%**. This audit hardens caller-side recovery semantics and does not add provider capabilities.
+
+### Next Concrete Engineering Task
+
+After GREEN CI, continue auditing database-backed transaction-store parity against the JSON persistence boundary, especially whether PostgreSQL transaction persistence can surface ambiguous commit outcomes without allowing caller-side automatic retry/resubmission.
+
+No automatic retry, payment resubmission, provider failover, provider funding, customer ledger mutation, treasury movement, duplicate purchase creation, or public API exposure is included.
