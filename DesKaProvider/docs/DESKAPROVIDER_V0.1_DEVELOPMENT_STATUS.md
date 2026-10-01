@@ -6329,3 +6329,46 @@ Overall DesKaProvider v0.1 remains approximately **82%**. This is a concurrency-
 ### Next Concrete Engineering Task
 
 After current CI is GREEN, continue auditing the provider-to-routing/service boundary for the same invariants: Router.Select() remains routing authority, administrative explanation remains observational, operational state is not financial authority, and provider capability metadata does not itself mutate or authorize financial state.
+
+
+## Provider-to-Payment Service Operational Lifecycle Gate Hardening
+
+**Date:** 2026-10-01
+
+### Finding
+
+The provider-to-payment service boundary allowed `SubmitPayment()` to authorize an external payment submission from registry payment capability metadata alone. A provider could therefore retain `CapabilityPayment.Enabled=true` while its persisted operational lifecycle was explicitly `Disabled`, allowing the payment path to bypass the operational gate used by routing.
+
+### Change
+
+- `SubmitPayment()` now requires the provider's persisted operational lifecycle to be explicitly enabled when a ProviderStateStore is present.
+- The operational state must also explicitly support `CapabilityPayment`.
+- Capability metadata drift is fail-closed before the external payment call.
+- The existing registry capability gate remains separate; this change does not promote registry readiness or alter capability metadata.
+- Added deterministic regression coverage proving a disabled operational lifecycle blocks the provider call before `CreatePayment()` and returns the existing `ErrPaymentCapabilityDisabled` boundary.
+
+### Safety Boundary / Invariants
+
+- external payment submission is blocked by explicit operational disablement;
+- Router.Select() remains routing authority for PPOB purchase routing;
+- provider capability metadata remains separate from operational lifecycle state;
+- reconciliation and webhook paths remain observational/correlation paths and are not converted into payment submission paths;
+- no automatic retry, provider failover, or transaction resubmission is introduced;
+- no duplicate payment creation is introduced;
+- no customer-balance mutation, ledger mutation, treasury movement, or provider funding is introduced;
+- durable ReferenceID ownership, CAS/idempotency, webhook idempotency, and transaction persistence authority remain unchanged.
+
+### Verification Boundary
+
+Implementation commit: `55f71f2d2e331aae53c3f4c8ec49e569c478eda0`.
+Regression test commit: `7791a781edce307f2f3f9c3c6ee6d5145ff2f913`.
+
+Fresh Push and PR CI for the final status-doc HEAD are required before this hardening batch is considered complete.
+
+### Current Completion Assessment
+
+Overall DesKaProvider v0.1 remains approximately **82%**. This is a provider-to-service safety hardening of the existing payment path, not a new provider capability or completion milestone.
+
+### Next Concrete Engineering Task
+
+After GREEN CI, continue auditing the remaining provider-to-routing/service boundaries for direct provider execution paths, preserving the distinction between external side effects, reconciliation, webhook observation, operational state, and routing authority.
