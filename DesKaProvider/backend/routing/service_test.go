@@ -845,7 +845,7 @@ func TestServiceHandleWebhookAmbiguousPersistencePreservesPending(t *testing.T) 
 		t.Fatal(err)
 	}
 	base := NewMemoryTransactionStore()
-	store := &failPutTransactionStore{base: base, failAfter: 2}
+	store := &failPutTransactionStore{base: base, failAfter: 3}
 	service, err := NewServiceWithStore(router, store)
 	if err != nil {
 		t.Fatal(err)
