@@ -2778,3 +2778,66 @@ Masih terbuka:
 Masuk ke **precommit quorum → finality evidence boundary**: setelah authenticated precommit quorum terbentuk, expose/transport finality evidence secara eksplisit sebelum canonical commit, tanpa mencampur evidence validation dengan storage mutation.
 
 **Milestone 4.56 status:** implementation/test completed; exact implementation HEAD CI GREEN; status-document commit requires its own exact-head CI gate.
+
+### 4.57 Precommit Quorum → Finality Evidence Boundary
+
+**Tanggal:** 2026-10-01
+
+**Objective**
+
+Mengubah finality dari implicit FinalizeProposal step menjadi evidence boundary yang dapat dibangun, di-encode, dipublikasikan, diterima, dan divalidasi secara eksplisit setelah authenticated precommit quorum, tanpa memutasi phase runtime atau canonical storage pada publication/admission path.
+
+**Implementation**
+
+- IndoChain/internal/consensus/finality_evidence.go
+  - BuildFinalityEvidence membangun FinalityCertificate dari authenticated precommit quorum dan lock state yang sudah terbentuk;
+  - seluruh precommit signature diverifikasi sebelum evidence dianggap valid;
+  - ValidateFinalityEvidence memeriksa exact context, proposal/lock binding, quorum, validator authority, dan signature setiap vote secara non-mutating;
+  - EncodeFinalityCertificate / DecodeFinalityCertificate menyediakan development-only deterministic evidence encoding untuk transport, tanpa membekukan canonical block serialization;
+  - AcceptAuthenticatedFinalityEvidence memvalidasi signed finality-evidence envelope + embedded precommit quorum evidence, tetapi tidak mengubah phase menjadi Finalized dan tidak melakukan canonical commit.
+- IndoChain/internal/p2p/consensus_finality.go
+  - PublishFinalityEvidence membangun evidence dari runtime, membungkusnya dalam authenticated MessageTypeFinalityEvidence, lalu mengirim melalui existing consensus transport;
+  - AcceptFinalityEvidence menjadi explicit receiver boundary dan hanya mengembalikan evidence yang sudah lolos validation.
+- Tests:
+  - evidence dibangun hanya setelah authenticated precommit quorum;
+  - build/encode/decode/validate tidak memutasi runtime;
+  - tampered precommit signature ditolak;
+  - precommit quorum yang belum tercapai ditolak;
+  - P2P publication + receiver acceptance mempertahankan PhasePrecommit dan tidak melakukan finalization.
+
+**Locked invariants**
+
+1. Finality evidence hanya berasal dari authenticated precommit quorum.
+2. Evidence harus terikat exact protocol/chain/epoch/height/round dan proposal payload.
+3. Semua constituent precommit harus berjenis Precommit, unik, memiliki voting power, dan memiliki signature yang valid.
+4. Evidence encoding hanya untuk consensus evidence transport; canonical block serialization tetap belum frozen.
+5. Evidence publication/admission tidak mengubah phase menjadi Finalized.
+6. Evidence validation tidak melakukan canonical state/block storage mutation.
+7. Canonical finalization tetap menjadi downstream boundary setelah evidence validation.
+
+**Production boundary**
+
+Milestone ini menutup executable evidence publication/admission boundary, tetapi **belum full production BFT**.
+
+Masih terbuka:
+
+- peer-wide finality evidence broadcast/retransmission policy;
+- canonical commit trigger setelah evidence validation;
+- multi-node multi-height canonical commit loop;
+- timeout/failure detector dan automatic round-change;
+- validator-set lifecycle;
+- durable consensus recovery;
+- final canonical block serialization freeze.
+
+**Verification**
+
+- Finality evidence implementation/test commits were added incrementally on branch dev/indochain-v0.1.
+- Exact final documentation HEAD must be verified by the CI gate after this status update.
+- PostgreSQL: tidak relevan.
+
+**Next integration target**
+
+Masuk ke **finality evidence → canonical commit admission boundary**: node harus menerima finality evidence yang sudah authenticated/validated, mencocokkan candidate block + execution/state root, lalu melakukan canonical commit secara atomic dan replay-safe. Evidence validation tetap terpisah dari storage mutation.
+
+**Milestone 4.57 status:** implementation/test completed; exact-head CI verification required after the status-document update.
+
