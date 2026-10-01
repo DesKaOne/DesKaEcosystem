@@ -11,11 +11,11 @@ import (
 func TestMemoryPaymentStoreRejectsDuplicateIdempotencyKey(t *testing.T) {
 	store := NewMemoryPaymentStore()
 
-	first, err := NewPayment("pay-1", "acct-1", "demo", "idem-1", ledger.FromDIDR(100))
+	first, err := NewPayment("pay-1", "acct-1", "idem-1", ledger.FromDIDR(100))
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := NewPayment("pay-2", "acct-1", "demo", "idem-1", ledger.FromDIDR(100))
+	second, err := NewPayment("pay-2", "acct-1", "idem-1", ledger.FromDIDR(100))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,7 +30,7 @@ func TestMemoryPaymentStoreRejectsDuplicateIdempotencyKey(t *testing.T) {
 
 func TestMemoryPaymentStoreRoundTripAndSave(t *testing.T) {
 	store := NewMemoryPaymentStore()
-	payment, err := NewPayment("pay-1", "acct-1", "demo", "idem-1", ledger.FromDIDR(100))
+	payment, err := NewPayment("pay-1", "acct-1", "idem-1", ledger.FromDIDR(100))
 	if err != nil {
 		t.Fatal(err)
 	}
