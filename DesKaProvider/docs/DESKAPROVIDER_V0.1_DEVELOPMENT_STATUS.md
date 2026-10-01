@@ -7666,3 +7666,71 @@ The preceding implementation/test commit remains 0416719e4112535bc070155d452de7e
 ### Next Step
 
 No artificial milestone is opened. Continue the v0.1 readiness audit from the next concrete persistence, recovery, identity, concurrency, caller-boundary, or authoritative provider-contract gap.
+
+## Operational Snapshot Persistence Ambiguity Hardening
+
+**Date:** 2026-10-02
+
+### Source Finding
+
+The JSON operational balance/health snapshot store used atomic temp-file replacement, but a directory fsync failure after `os.Rename()` returned an ordinary persistence error. Because the store also keeps an in-memory snapshot cache, an ambiguous write could leave memory less restrictive than the durable file. For routing inputs, that could temporarily preserve a healthy/high-balance snapshot after a durable unhealthy/lower-balance update.
+
+This was a concrete persistence-safety gap separate from the provider lifecycle/capability persistence ambiguity already hardened previously.
+
+### Implementation
+
+- added the provider-neutral `ErrOperationalPersistenceAmbiguous` sentinel;
+- classified post-replacement persistence-hook and directory-sync failures as ambiguous;
+- added a conservative in-memory merge for ambiguous updates:
+  - lower balance wins;
+  - more restrictive health wins;
+  - older freshness/success timestamps win;
+  - higher consecutive-failure count wins;
+  - existing failure evidence is preserved;
+- added a fail-closed first-write path for ambiguous creation: `unknown` health, zero balance, no success evidence, while retaining the observation timestamp so the state remains structurally valid;
+- preserved the durable renamed file for restart/recovery validation;
+- added deterministic regressions for restrictive updates, permissive updates, and ambiguous first writes;
+- no Router.Select() authority, transaction submission, retry/failover, ledger, customer balance, treasury, provider funding, webhook, or public API behavior was changed.
+
+### Safety Boundary / Invariants
+
+- persistence ambiguity never promotes provider routing eligibility;
+- ambiguous health/balance writes fail closed in the active JSON-backed runtime;
+- restart/recovery reads the durable file and remains authoritative;
+- operational balance/health remains advisory routing input and separate from provider lifecycle/capability readiness;
+- no automatic retry, provider failover, transaction resubmission, duplicate transaction creation, provider funding, ledger mutation, customer-balance mutation, treasury movement, or public API exposure is introduced.
+
+### Changed Files
+
+- DesKaProvider/backend/Provider/operational/operational.go
+- DesKaProvider/backend/Provider/operational/json_store.go
+- DesKaProvider/backend/Provider/operational/json_store_test.go
+- DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md
+
+### Verification
+
+Final implementation/test HEAD:
+
+`df83ac0db8679fc2aec5d4cb69dd8add5c4cc710`
+
+- DesKaProvider CI #3779 / run 36911939502: **GREEN**
+  - test: PASS
+  - vet: PASS
+  - race: PASS
+  - credential-gated provider validation jobs: SKIPPED
+- Earlier CI attempts exposed and corrected only deterministic test/fixture issues during this change:
+  - #3761 exposed an intentionally incompatible readiness-validation experiment; that experiment was reverted.
+  - #3769 exposed a missing `time` import and snapshot fixture validation issue.
+  - #3771 exposed the test hook not being wired into the persistence path and an incomplete unhealthy fixture.
+  - #3779 passed the corrected implementation.
+
+No authorized live-provider transaction or external provider request was executed.
+
+### External Validation
+
+No new external provider validation was required for this persistence-only hardening. DigiFlazz, IAK, XP SINDONESIA, and Midtrans credential-gated validation remain SKIPPED unless explicitly authorized and credentials/provider access are available.
+
+### Next Concrete Engineering Task
+
+Continue the v0.1 readiness audit from the next evidence-based persistence, recovery, identity, concurrency, caller-boundary, or authoritative provider-contract gap. No artificial milestone is introduced.
+
