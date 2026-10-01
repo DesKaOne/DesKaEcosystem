@@ -680,7 +680,7 @@ func TestPostgresConcurrentServiceReconcileConvergesWithoutResubmission(t *testi
 		Products:       []provider.Product{{Code: "pln20", Name: "PLN 20"}},
 		ProviderCode:   "00",
 		Message:        "pending",
-		PurchaseStatus: provider.StatusSuccess,
+		PurchaseStatus: provider.StatusPending,
 		Price:          20000,
 	})
 	if err := registry.Register("mock", mock); err != nil {
