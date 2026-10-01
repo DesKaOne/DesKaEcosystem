@@ -178,9 +178,11 @@ func (c *Client) HandleWebhook(_ context.Context, req provider.WebhookRequest)(p
  if bodySign == "" {
   return provider.WebhookEvent{}, errors.New("IAK webhook response is missing sign")
  }
+ want:=signature(c.apiKey,c.username,ref)
+ if subtle.ConstantTimeCompare([]byte(bodySign),[]byte(want))!=1{return provider.WebhookEvent{},errors.New("invalid IAK webhook signature")}
  if req.SignatureSecret!="" {
-  want:=signature(req.SignatureSecret,c.username,ref)
-  if subtle.ConstantTimeCompare([]byte(bodySign),[]byte(want))!=1{return provider.WebhookEvent{},errors.New("invalid IAK webhook signature")}
+  transportWant:=signature(req.SignatureSecret,c.username,ref)
+  if subtle.ConstantTimeCompare([]byte(bodySign),[]byte(transportWant))!=1{return provider.WebhookEvent{},errors.New("invalid IAK webhook signature")}
  }
 
  rawStatus:=fmt.Sprint(payload["status"])
