@@ -3135,3 +3135,71 @@ Masih terbuka:
 Masuk ke **durable evidence replay policy / restart continuation**: tentukan subset evidence yang aman untuk direplay ke runtime setelah restart, termasuk urutan Proposal → Prevote → Precommit, timeout/round-change evidence, serta finality evidence yang belum sempat mencapai canonical commit.
 
 **Milestone 4.61 status:** implementation/test completed; status-document update requires its own exact-head CI gate.
+
+
+### 4.62 Durable Evidence Replay / Restart Continuation
+
+**Tanggal:** 2026-10-01
+
+**Objective**
+
+Menghubungkan durable authenticated evidence dari 4.61 ke runtime recovery melalui replay policy deterministik, sehingga restart dapat melanjutkan state round secara terkontrol tanpa menjadikan seluruh evidence sebagai implicit state mutation.
+
+**Implementation**
+
+- `IndoChain/internal/consensus/evidence_replay.go`
+  - `ReplayAuthenticatedEvidence` menerima evidence yang sudah authenticated/validated;
+  - evidence diurutkan deterministic berdasarkan round → phase/type → sender;
+  - Proposal direplay melalui authenticated proposal admission;
+  - Prevote/Precommit direplay melalui authenticated vote admission;
+  - Timeout dikumpulkan per round dan hanya dapat memajukan runtime melalui existing `AdvanceRoundWithTimeoutEvidence`;
+  - Finality Evidence hanya divalidasi terhadap runtime yang telah direkonstruksi dan tidak otomatis mem-finalize runtime atau commit canonical storage;
+  - round gap, conflicting proposal, unsupported evidence, dan nil authority/runtime ditolak;
+  - replay gagal tidak mengembalikan partially-replayed runtime ke caller.
+- `IndoChain/internal/node/consensus_recovery.go`
+  - menambahkan `ReconstructConsensusRuntimeAndReplayEvidence`;
+  - canonical recovery tetap berasal dari durable canonical state;
+  - evidence recovery tetap terpisah dari canonical storage;
+  - replay hanya dijalankan setelah seluruh evidence berhasil di-load dan divalidasi.
+- Tests:
+  - deterministic proposal/vote replay;
+  - round-gap rejection tanpa mutation;
+  - replay tidak implicit finalize;
+  - integration boundary tetap mempertahankan canonical recovery source.
+
+**Locked invariants**
+
+1. Replay tidak membuat consensus evidence menjadi canonical block/state data.
+2. Evidence harus lolos authentication/context validation sebelum replay.
+3. Replay dimulai dari canonical recovered height dan round 0.
+4. Proposal harus diterima sebelum vote pada round yang sama.
+5. Timeout hanya dapat memajukan round melalui existing timeout certificate validation.
+6. Round gap tidak boleh dilewati secara implicit.
+7. Conflicting proposal tetap tunduk pada lock semantics runtime.
+8. Finality evidence tidak otomatis mem-finalize atau commit.
+9. Failed replay tidak boleh mengekspos runtime yang hanya ter-replay sebagian.
+10. Canonical storage tetap tidak dimiliki oleh replay layer.
+
+**Production boundary**
+
+Belum full production BFT restart continuation. Masih terbuka:
+
+- replay policy untuk partial precommit/finality setelah crash;
+- durable validator-set/epoch lifecycle;
+- evidence retention/pruning;
+- multi-node coordinated restart/recovery;
+- automatic multi-height consensus loop;
+- canonical serialization freeze;
+- end-to-end crash/restart cluster validation.
+
+**Verification**
+
+Implementation HEAD: `11d38ed3bfb52e12b5960c159d0b5a63e1803fe4`.
+
+CI untuk implementation HEAD wajib diselesaikan GREEN sebelum milestone dinyatakan complete. Status document update akan memicu CI baru dan exact final HEAD juga harus GREEN.
+
+**Next integration target**
+
+**4.63 — Partial Finality / Crash Boundary:** menentukan recovery semantics ketika precommit quorum atau finality evidence sudah durable tetapi canonical commit belum selesai, termasuk idempotent resume tanpa double-commit.
+
+**Milestone 4.62 status:** implementation/test completed; final completion gated on exact final documentation HEAD CI GREEN.
