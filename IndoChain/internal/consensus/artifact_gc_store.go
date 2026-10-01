@@ -2,7 +2,6 @@ package consensus
 
 import (
 	"bytes"
-	"crypto/sha256"
 	"encoding/gob"
 	"errors"
 	"sort"
