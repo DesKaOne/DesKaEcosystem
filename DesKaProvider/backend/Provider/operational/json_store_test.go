@@ -212,3 +212,15 @@ func TestJSONFileStoreDoesNotMutateMemoryWhenPersistenceFails(t *testing.T) {
 	}
 }
 
+
+
+func TestJSONFileStoreRejectsProviderIdentityMismatch(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "snapshots.json")
+	data := []byte(`{"snapshots":{"digiflazz":{"ProviderName":"different-provider","Balance":1000,"Currency":"IDR","Health":"healthy","LastCheckedAt":"2026-10-02T10:00:00Z","LastSuccessAt":"2026-10-02T10:00:00Z","LastError":"","ConsecutiveFailures":0}}}`)
+	if err := writeFile(path, data); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewJSONFileStore(path); err == nil {
+		t.Fatal("expected provider identity mismatch to be rejected")
+	}
+}
