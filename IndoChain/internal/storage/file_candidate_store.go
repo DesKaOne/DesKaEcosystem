@@ -62,6 +62,21 @@ func (s *FileCandidateStore) GetCandidate(key CandidateKey) (block.Block, error)
 	return cloneBlock(stored.Block), nil
 }
 
+// DeleteCandidate is idempotent and atomically rewrites the candidate snapshot.
+func (s *FileCandidateStore) DeleteCandidate(key CandidateKey) error {
+	if s == nil { return ErrNilCandidateStore }
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.data.Candidates[key]; !ok {
+		return nil
+	}
+	next := candidateSnapshot{Candidates:make(map[CandidateKey]StoredBlock,len(s.data.Candidates)-1)}
+	for k,v := range s.data.Candidates {
+		if k != key { next.Candidates[k] = v }
+	}
+	return s.persistLocked(next)
+}
+
 func (s *FileCandidateStore) persistLocked(data candidateSnapshot) error {
 	tmp, err := os.CreateTemp(filepath.Dir(s.path), ".indochain-candidate-*")
 	if err != nil { return err }
