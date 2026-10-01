@@ -117,7 +117,7 @@ func TestIAKWebhookRejectsInvalidSignature(t *testing.T) {
 
 func TestIAKWebhookAcceptsDocumentedFailedState(t *testing.T) {
  c,_:=New(config.IAKConfig{Username:"user",APIKey:"secret"},http.DefaultClient)
- body:=[]byte(`{"ref_id":"order-1","status":2,"code":"xld25000","hp":"08123","price":25000,"balance":997061249,"tr_id":3482,"message":"FAILED","rc":"07","sign":"sig"}`)
+ body:=[]byte(`{"ref_id":"order-1","status":2,"code":"xld25000","hp":"08123","price":25000,"balance":997061249,"tr_id":3482,"message":"FAILED","rc":"07","sign":"` + ts("order-1") + `"}`)
  event,err:=c.HandleWebhook(context.Background(),provider.WebhookRequest{Body:body})
  if err!=nil || event.Status!=provider.StatusFailed || event.ProviderCode!="07" { t.Fatalf("event=%#v err=%v",event,err) }
 }
@@ -510,7 +510,7 @@ func TestIAKInquiryRequiresMessage(t *testing.T) {
 
 func TestIAKWebhookAcceptsDocumentedV2IdentityFields(t *testing.T) {
  c,_:=New(config.IAKConfig{Username:"user",APIKey:"secret"},http.DefaultClient)
- body:=[]byte(`{"ref_id":"order-v2","status":"1","product_code":"xld25000","customer_id":"08123","price":"25000","balance":"997061249","tr_id":"3482","message":"SUCCESS","rc":"00","sign":"sig"}`)
+ body:=[]byte(`{"ref_id":"order-v2","status":"1","product_code":"xld25000","customer_id":"08123","price":"25000","balance":"997061249","tr_id":"3482","message":"SUCCESS","rc":"00","sign":"` + ts("order-v2") + `"}`)
  event,err:=c.HandleWebhook(context.Background(),provider.WebhookRequest{Body:body})
  if err!=nil || event.ReferenceID!="order-v2" || event.CustomerNo!="08123" || event.ProductCode!="xld25000" || event.Status!=provider.StatusSuccess || event.Price!=25000 {
   t.Fatalf("event=%#v err=%v",event,err)
