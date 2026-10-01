@@ -2851,5 +2851,14 @@ Masuk ke **finality evidence → canonical commit admission boundary**: node har
 - The test was corrected to publish/deliver the prevote first, then deliver the generated precommit.
 - Corrected implementation/test HEAD: `c33772be397746b4e4aa2b51651fe38d1771352c`.
 
-**Milestone 4.57 status:** implementation/test completed; final exact-head CI verification required after this status-document update.
+**Verification**
+
+- Corrected exact-head CI run `36794502112`: **GREEN**.
+- Tidy: PASS.
+- `go test ./...`: PASS.
+- `go test -race ./...`: PASS.
+- `go vet ./...`: PASS.
+- PostgreSQL: tidak relevan.
+
+**Milestone 4.57 status:** implementation/test completed; exact-head CI gate for the corrected implementation is GREEN.
 
