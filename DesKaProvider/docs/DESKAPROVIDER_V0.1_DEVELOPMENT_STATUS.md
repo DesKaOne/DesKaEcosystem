@@ -6861,3 +6861,56 @@ After fresh GREEN CI, verify the PostgreSQL ambiguous-write sentinel through the
 - correction commit: be6d72d39d03a3823c47d90419b6338964ff7f54;
 - changed the ambiguous persistence wrapper from string-only error formatting to Go multi-error wrapping so both ErrTransactionPersistenceAmbiguous and the original database error remain discoverable through errors.Is;
 - fresh Push/PR CI is required for the corrected HEAD.
+
+
+## Caller Boundary Verification — Reconciliation Ambiguous Persistence
+
+**Date:** 2026-10-01
+
+### Implementation
+
+- verified the existing purchase-path regression `TestPurchaseAmbiguousPersistencePreservesPendingAndForbidsRetry`: ambiguous persistence remains pending, same-process retry does not resubmit, and restart does not resubmit;
+- added `TestServiceReconcileAmbiguousPersistencePreservesPending` covering the reconciliation transition when durable persistence fails ambiguously;
+- the new test verifies reconciliation returns `ErrTransactionPersistenceAmbiguous` while the durable pending transaction remains authoritative;
+- the test uses the mock provider only as deterministic status evidence; no live provider call is involved;
+- no production retry, failover, resubmission, ledger mutation, or customer-balance mutation was introduced.
+
+### Changed File
+
+- `DesKaProvider/backend/routing/service_test.go`
+
+### Verification
+
+- CI run #3644 / workflow run `36830977572`: **GREEN**
+- HEAD: `9c8496b00d39ad083fdff21695dd5160c29273bb`
+- `go test ./...`: PASS
+- `go test -race ./...`: PASS
+- PostgreSQL service-backed test environment: PASS as part of CI
+- DigiFlazz integration: SKIP — external credential/IP allowlist gate
+- IAK read-only: SKIP — credential gate
+- XP SINDONESIA read-only: SKIP — credential/allowlist gate
+- Midtrans sandbox: SKIP — credential gate
+- no live provider transaction executed
+
+### Provider Validation Status
+
+Implementation status is unchanged:
+
+- DigiFlazz: COMPLETE for documented contract currently represented in repository; external validation remains blocked/gated.
+- IAK: COMPLETE for documented contract currently represented in repository; external validation remains credential-gated.
+- XP SINDONESIA: COMPLETE for documented contract currently represented in repository; external validation remains credential/allowlist-gated.
+- Midtrans: COMPLETE for current payment/webhook contract boundary; sandbox validation remains credential-gated.
+- RCB: FAIL-CLOSED / NOT IMPLEMENTED for PPOB pending authoritative provider-issued contract.
+
+### Production Safety Result
+
+The caller boundary now has deterministic evidence for both important paths:
+
+1. provider submission succeeds but durable result persistence becomes ambiguous;
+2. reconciliation obtains an external status but durable transition persistence becomes ambiguous.
+
+Both paths preserve the durable pending state and do not create an automatic external resubmission path.
+
+### Next Concrete Engineering Task
+
+Continue production-readiness work at the PostgreSQL/service boundary only where a concrete invariant or missing test exists. Provider-specific implementation should resume only when authoritative documentation exposes an uncovered contract field/status/error, or when credential-gated external validation becomes available.
