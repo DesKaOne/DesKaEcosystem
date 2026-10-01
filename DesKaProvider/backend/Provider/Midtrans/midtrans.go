@@ -63,7 +63,6 @@ type transactionResponse struct {
 	OrderID           string `json:"order_id"`
 	TransactionStatus string `json:"transaction_status"`
 	GrossAmount       string `json:"gross_amount"`
-	FraudStatus       string `json:"fraud_status"`
 }
 
 type notification struct {
@@ -74,6 +73,7 @@ type notification struct {
 	OrderID           string `json:"order_id"`
 	TransactionStatus string `json:"transaction_status"`
 	GrossAmount       string `json:"gross_amount"`
+	FraudStatus       string `json:"fraud_status"`
 }
 
 func (c *Client) CreatePayment(ctx context.Context, req payment.PaymentRequest) (payment.PaymentResult, error) {
