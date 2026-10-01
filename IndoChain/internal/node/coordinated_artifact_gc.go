@@ -30,7 +30,7 @@ func (n *Node) ApplyCoordinatedArtifactGC(
 		return FinalityArtifactPruneResult{}, ErrNilStore
 	}
 	if validatorResolver == nil {
-		return FinalityArtifactPruneResult{}, ErrInvalidValidatorAuthority
+		return FinalityArtifactPruneResult{}, consensus.ErrInvalidValidatorAuthority
 	}
 	if err := decision.Validate(validators, votingPower, validatorResolver); err != nil {
 		return FinalityArtifactPruneResult{}, err
