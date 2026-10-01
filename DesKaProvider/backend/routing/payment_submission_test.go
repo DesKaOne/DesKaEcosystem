@@ -320,6 +320,62 @@ func TestHandlePaymentWebhookTransitionsDurablePaymentWithoutResubmission(t *tes
 	if !ok||state.Payment==nil||state.Payment.Status!=payment.StatusSuccess||state.Payment.ProviderReference!="midtrans-tx-webhook-1"{t.Fatalf("expected durable webhook transition: %#v",state)}
 }
 
+func TestHandlePaymentWebhookAmbiguousPersistencePreservesPendingAndForbidsRetry(t *testing.T) {
+	p := &paymentSubmissionProvider{
+		result: payment.PaymentResult{
+			ReferenceID:       "pay-webhook-ambiguous",
+			ProviderReference: "mid-webhook-ambiguous",
+			Status:            payment.StatusPending,
+			Amount:            60000,
+			Currency:          "IDR",
+		},
+		webhookResult: payment.StatusResult{
+			ReferenceID:       "pay-webhook-ambiguous",
+			ProviderReference: "midtrans-tx-webhook-ambiguous",
+			Status:            payment.StatusSuccess,
+			Amount:            60000,
+			Currency:          "IDR",
+			Message:           "settlement",
+		},
+	}
+	store := &ambiguousPaymentPersistenceStore{MemoryTransactionStore: NewMemoryTransactionStore()}
+	reg := provider.NewRegistry()
+	if err := reg.RegisterCapabilityProvider("midtrans", provider.CapabilityPayment, p, provider.CapabilityStatus{AdapterImplemented: true, Tested: true, Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	s := &Service{
+		Router: &Router{Registry: reg},
+		Store: store,
+		AuditStore: NewMemoryTransactionAuditStore(),
+	}
+	req := payment.PaymentRequest{ReferenceID: "pay-webhook-ambiguous", Amount: 60000, Currency: "IDR", CustomerID: "cust-webhook-ambiguous"}
+	if _, err := s.SubmitPayment(context.Background(), "midtrans", req); err != nil {
+		t.Fatal(err)
+	}
+	store.failTerminalPut = true
+
+	result, err := s.HandlePaymentWebhook(context.Background(), "midtrans", []byte("{}"))
+	if !errors.Is(err, ErrTransactionPersistenceAmbiguous) {
+		t.Fatalf("expected ambiguous persistence from payment webhook, got result=%#v err=%v", result, err)
+	}
+	if p.calls != 1 || p.webhookCalls != 1 {
+		t.Fatalf("webhook must not resubmit payment: create=%d webhook=%d", p.calls, p.webhookCalls)
+	}
+	state, ok := store.Get(req.ReferenceID)
+	if !ok {
+		t.Fatal("expected durable payment claim to remain")
+	}
+	if state.Payment == nil || state.Payment.Status != payment.StatusPending {
+		t.Fatalf("ambiguous webhook persistence must preserve durable pending payment: %#v", state.Payment)
+	}
+	if _, err := s.HandlePaymentWebhook(context.Background(), "midtrans", []byte("{}")); !errors.Is(err, ErrTransactionPersistenceAmbiguous) {
+		t.Fatalf("repeated webhook must remain blocked by ambiguity, got %v", err)
+	}
+	if p.calls != 1 || p.webhookCalls != 2 {
+		t.Fatalf("repeated webhook must never resubmit payment: create=%d webhook=%d", p.calls, p.webhookCalls)
+	}
+}
+
 func TestHandlePaymentWebhookRejectsProviderOwnershipMismatch(t *testing.T) {
 	p:=&paymentSubmissionProvider{webhookResult:payment.StatusResult{ReferenceID:"pay-webhook-2",ProviderReference:"tx-2",Status:payment.StatusSuccess,Amount:70000,Currency:"IDR"}}
 	s:=newPaymentSubmissionService(t,p,true)
