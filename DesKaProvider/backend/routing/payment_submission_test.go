@@ -57,6 +57,16 @@ func (s *ambiguousPaymentPersistenceStore) Put(state TransactionState) error {
 	return s.MemoryTransactionStore.Put(state)
 }
 
+func (s *ambiguousPaymentPersistenceStore) PutIfCurrentContext(ctx context.Context, referenceID string, previous, next TransactionState) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if s.failTerminalPut && next.Payment != nil && next.Payment.Status != payment.StatusPending {
+		return ErrTransactionPersistenceAmbiguous
+	}
+	return s.MemoryTransactionStore.PutIfCurrentContext(ctx, referenceID, previous, next)
+}
+
 func TestSubmitPaymentAmbiguousPersistencePreservesClaimAndForbidsRetry(t *testing.T) {
 	p := &paymentSubmissionProvider{
 		result: payment.PaymentResult{
