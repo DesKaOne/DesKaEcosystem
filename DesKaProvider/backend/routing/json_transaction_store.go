@@ -38,7 +38,7 @@ func NewJSONFileTransactionStore(path string) (*JSONFileTransactionStore, error)
         return nil, fmt.Errorf("read transaction store: %w", err)
     }
     if len(data) == 0 {
-        return store, nil
+        return nil, errors.New("transaction store is empty")
     }
     var state jsonTransactionState
     if err := json.Unmarshal(data, &state); err != nil {
@@ -121,8 +121,7 @@ func (s *JSONFileTransactionStore) reloadLocked() error {
 		return fmt.Errorf("read transaction store: %w", err)
 	}
 	if len(data) == 0 {
-		s.transactions = make(map[string]TransactionState)
-		return nil
+		return errors.New("transaction store is empty")
 	}
 	var state jsonTransactionState
 	if err := json.Unmarshal(data, &state); err != nil {
