@@ -151,6 +151,9 @@ func (s *failPutTransactionStore) Get(referenceID string) (TransactionState, boo
 func (s *failPutTransactionStore) Put(state TransactionState) error {
 	s.puts++
 	if s.failAfter > 0 && s.puts >= s.failAfter {
+		if state.Execution.Result.Status != provider.StatusPending {
+			return ErrTransactionPersistenceAmbiguous
+		}
 		return errors.New("injected transaction store failure")
 	}
 	return s.base.Put(state)
@@ -158,6 +161,76 @@ func (s *failPutTransactionStore) Put(state TransactionState) error {
 
 func (s *failPutTransactionStore) All() []TransactionState {
 	return s.base.All()
+}
+
+func TestPurchaseAmbiguousPersistencePreservesPendingAndForbidsRetry(t *testing.T) {
+	registry := provider.NewRegistry()
+	mock := Mock.New(Mock.Config{
+		Products:       []provider.Product{{Code: "pln20", Name: "PLN 20"}},
+		PurchaseStatus: provider.StatusSuccess,
+	})
+	if err := registry.Register("mock", mock); err != nil {
+		t.Fatal(err)
+	}
+	ops := operational.NewMemoryStore()
+	if err := ops.Put(operational.Snapshot{ProviderName: "mock", Balance: 100000, Health: operational.HealthHealthy}); err != nil {
+		t.Fatal(err)
+	}
+	router, err := New(registry, ops, map[string]int{"mock": 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := &failPutTransactionStore{base: NewMemoryTransactionStore(), failAfter: 2}
+	service, err := NewServiceWithStore(router, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := PurchaseRequest{
+		ProductCode: "pln20",
+		CustomerNo:  "081234567890",
+		ReferenceID: "ppob-ambiguous-persist",
+		Amount:      20000,
+	}
+	got, err := service.Purchase(context.Background(), req)
+	if !errors.Is(err, ErrTransactionPersistenceAmbiguous) && err == nil {
+		t.Fatalf("expected persistence error, got result=%#v err=%v", got, err)
+	}
+	if !errors.Is(err, ErrTransactionPersistenceAmbiguous) {
+		t.Fatalf("expected ambiguous persistence to survive Purchase wrapping, got %v", err)
+	}
+	if got.Result.Status != provider.StatusPending {
+		t.Fatalf("expected caller to receive pending state after ambiguous persistence, got %#v", got)
+	}
+	if mock.PurchaseCount(req.ReferenceID) != 1 {
+		t.Fatalf("expected exactly one external purchase, count=%d", mock.PurchaseCount(req.ReferenceID))
+	}
+	state, ok := store.Get(req.ReferenceID)
+	if !ok || state.Execution.Result.Status != provider.StatusPending {
+		t.Fatalf("expected durable pending state to remain authoritative: %#v", state)
+	}
+
+	retried, retryErr := service.Purchase(context.Background(), req)
+	if !errors.Is(retryErr, ErrTransactionPersistenceAmbiguous) {
+		t.Fatalf("same-process retry must return the original ambiguous outcome, got result=%#v err=%v", retried, retryErr)
+	}
+	if mock.PurchaseCount(req.ReferenceID) != 1 {
+		t.Fatalf("same-process retry must not resubmit purchase, count=%d", mock.PurchaseCount(req.ReferenceID))
+	}
+
+	restarted, err := NewServiceWithStore(router, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recovered, recoveryErr := restarted.Purchase(context.Background(), req)
+	if recoveryErr != nil {
+		t.Fatalf("restart must recover the durable pending transaction without resubmission: %v", recoveryErr)
+	}
+	if recovered.Result.Status != provider.StatusPending {
+		t.Fatalf("restart must preserve pending transaction outcome, got %#v", recovered)
+	}
+	if mock.PurchaseCount(req.ReferenceID) != 1 {
+		t.Fatalf("restart must not resubmit ambiguous purchase, count=%d", mock.PurchaseCount(req.ReferenceID))
+	}
 }
 
 func TestServiceReconcilePropagatesDatabaseReadErrorWithoutResubmission(t *testing.T) {
