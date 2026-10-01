@@ -37,7 +37,8 @@ func TestConsensusRoundDriverPublishesAndAcceptsFinalityEvidence(t *testing.T) {
 	if err != nil { t.Fatal(err) }
 	if precommit.Type != consensus.MessageTypePrecommit { t.Fatalf("type=%d, want precommit", precommit.Type) }
 
-	// Deliver the precommit to B so both runtimes have the same lock/finality context.
+	// Deliver prevote then precommit to B so both runtimes have the same lock/finality context.
+	if _, err := b.ReceiveAndHandle(); err != nil { t.Fatal(err) }
 	if _, err := b.ReceiveAndHandle(); err != nil { t.Fatal(err) }
 
 	before := a.Runtime().State()
