@@ -6967,3 +6967,46 @@ No artificial milestone is introduced.
 - the failure is recorded as an existing timing-sensitive race-test flake, not as a failure of the JSON persistence parity change.
 
 No production behavior or provider capability state changed during this CI correction.
+
+## Caller Boundary Verification — Webhook Ambiguous Persistence
+
+**Date:** 2026-10-01
+
+### Implementation
+
+- added deterministic regression coverage for Service.HandleWebhook() when the durable transition returns ErrTransactionPersistenceAmbiguous;
+- the test establishes a durable pending transaction, injects ambiguity only at the webhook terminal transition, and verifies the durable pending state remains authoritative;
+- a repeated webhook event remains blocked by the same ambiguous persistence boundary rather than being treated as authorization to retry or overwrite state;
+- provider submission count remains exactly one, proving webhook recovery does not resubmit the external purchase operation;
+- no production retry, failover, duplicate transaction creation, ledger mutation, customer-balance mutation, treasury movement, or provider funding was introduced.
+
+### Changed File
+
+- DesKaProvider/backend/routing/service_test.go
+
+### Verification
+
+Implementation/test HEAD:
+
+5dc7740964938bcf05a079b03a5aec8fa6b71fb5
+
+- Push CI #3656 / run 36833782330: **GREEN**
+  - test: PASS
+  - race: PASS
+  - credential-gated provider validation jobs: skipped as expected
+- Pull Request CI #3657 / run 36833785843: **GREEN**
+  - test: PASS
+  - race: PASS
+  - credential-gated provider validation jobs: skipped as expected
+
+No authorized live-provider transaction was executed.
+
+### Safety Result
+
+The three state-transition recovery entry points now have deterministic caller-boundary evidence: provider submission result persistence, reconciliation persistence, and webhook persistence all fail closed on ambiguous durable-write outcomes. None converts persistence uncertainty into an external provider retry or duplicate submission path.
+
+### Next Concrete Engineering Task
+
+Continue production-readiness audit only where a concrete concurrency, persistence, recovery, or caller-boundary invariant remains untested. Provider-specific implementation remains gated on authoritative documentation or credential-backed external validation.
+
+No artificial milestone is introduced.
