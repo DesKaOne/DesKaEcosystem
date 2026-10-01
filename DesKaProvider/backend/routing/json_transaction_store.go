@@ -19,8 +19,6 @@ const (
     transactionStoreAfterReplace  transactionStorePersistStage = "after-replace"
 )
 
-var ErrTransactionPersistenceAmbiguous = errors.New("transaction persistence outcome is ambiguous")
-
 type JSONFileTransactionStore struct {
     mu           sync.RWMutex
     path         string
