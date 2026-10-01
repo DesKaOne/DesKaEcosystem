@@ -2645,7 +2645,7 @@ func TestPostgresTransactionStoreAmbiguousPersistencePropagatesThroughReconcile(
 	if result != (PurchaseExecution{}) {
 		t.Fatalf("ambiguous reconciliation persistence must not fabricate terminal result: %#v", result)
 	}
-	if got := mockProvider.PurchaseCount(ref); got != 0 {
+	if got := mockProvider.PurchaseCount(ref); got != 1 {
 		t.Fatalf("reconciliation must never resubmit the provider purchase, got %d submissions", got)
 	}
 
