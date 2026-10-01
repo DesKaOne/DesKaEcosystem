@@ -314,7 +314,7 @@ func TestReconcilerReversalDebitsActualLedgerBalance(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	payment, err := NewPayment("pay-1", account.ID, "demo", "idem-1", ledger.FromDIDR(100))
+	payment, err := NewPayment("pay-1", account.ID, "idem-1", ledger.FromDIDR(100))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -359,7 +359,7 @@ func TestReconcilerRefundInsufficientFundsLeavesPaymentSucceeded(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	payment, err := NewPayment("pay-1", account.ID, "demo", "idem-1", ledger.FromDIDR(100))
+	payment, err := NewPayment("pay-1", account.ID, "idem-1", ledger.FromDIDR(100))
 	if err != nil {
 		t.Fatal(err)
 	}
