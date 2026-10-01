@@ -269,6 +269,116 @@ func TestJSONFileTransactionStorePutFailureDoesNotChangeExistingMemoryState(t *t
 }
 
 
+func TestJSONFileTransactionStorePreReplacementFailurePreservesDurableState(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "transactions", "state.json")
+	store, err := NewJSONFileTransactionStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending := TransactionState{
+		Request: PurchaseRequest{
+			ProductCode: "TEST",
+			CustomerNo:  "081234567890",
+			ReferenceID: "ppob-pre-replace-failure",
+			Amount:      10000,
+		},
+		Execution: PurchaseExecution{
+			ProviderName: "mock",
+			Result: provider.PurchaseResult{
+				ReferenceID: "ppob-pre-replace-failure",
+				ProductCode: "TEST",
+				CustomerNo:  "081234567890",
+				Status:      provider.StatusPending,
+			},
+		},
+	}
+	if err := store.Put(pending); err != nil {
+		t.Fatal(err)
+	}
+
+	injected := errors.New("injected pre-replacement failure")
+	store.persistHook = func(stage transactionStorePersistStage) error {
+		if stage == transactionStoreBeforeReplace {
+			return injected
+		}
+		return nil
+	}
+	updated := pending
+	updated.Execution.Result.Status = provider.StatusSuccess
+	if err := store.Put(updated); !errors.Is(err, injected) {
+		t.Fatalf("expected injected pre-replacement failure, got %v", err)
+	}
+	if current, ok := store.Get(pending.Request.ReferenceID); !ok || !sameTransactionState(current, pending) {
+		t.Fatalf("in-memory state changed before replacement: %#v", current)
+	}
+
+	restarted, err := NewJSONFileTransactionStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	durable, ok := restarted.Get(pending.Request.ReferenceID)
+	if !ok || !sameTransactionState(durable, pending) {
+		t.Fatalf("durable state changed before replacement: %#v", durable)
+	}
+}
+
+func TestJSONFileTransactionStorePostReplacementFailureIsAmbiguous(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "transactions", "state.json")
+	store, err := NewJSONFileTransactionStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending := TransactionState{
+		Request: PurchaseRequest{
+			ProductCode: "TEST",
+			CustomerNo:  "081234567890",
+			ReferenceID: "ppob-post-replace-failure",
+			Amount:      10000,
+		},
+		Execution: PurchaseExecution{
+			ProviderName: "mock",
+			Result: provider.PurchaseResult{
+				ReferenceID: "ppob-post-replace-failure",
+				ProductCode: "TEST",
+				CustomerNo:  "081234567890",
+				Status:      provider.StatusPending,
+			},
+		},
+	}
+	if err := store.Put(pending); err != nil {
+		t.Fatal(err)
+	}
+
+	injected := errors.New("injected post-replacement failure")
+	store.persistHook = func(stage transactionStorePersistStage) error {
+		if stage == transactionStoreAfterReplace {
+			return injected
+		}
+		return nil
+	}
+	updated := pending
+	updated.Execution.Result.Status = provider.StatusSuccess
+	err = store.Put(updated)
+	if !errors.Is(err, ErrTransactionPersistenceAmbiguous) {
+		t.Fatalf("expected ambiguous persistence error, got %v", err)
+	}
+	if current, ok := store.Get(pending.Request.ReferenceID); !ok || !sameTransactionState(current, pending) {
+		t.Fatalf("in-memory state was not rolled back after ambiguous persistence: %#v", current)
+	}
+
+	restarted, err := NewJSONFileTransactionStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	durable, ok := restarted.Get(pending.Request.ReferenceID)
+	if !ok {
+		t.Fatal("expected replaced durable state after ambiguous persistence")
+	}
+	if durable.Execution.Result.Status != provider.StatusSuccess {
+		t.Fatalf("expected durable replacement to contain new state, got %#v", durable.Execution.Result)
+	}
+}
+
 func TestJSONFileTransactionStoreRejectsEmptyStateOnRestart(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "transactions", "state.json")
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
