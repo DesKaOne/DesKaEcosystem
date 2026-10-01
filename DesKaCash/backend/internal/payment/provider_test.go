@@ -10,10 +10,6 @@ import (
 
 type fakeProvider struct{}
 
-func (fakeProvider) Name() string {
-	return "fake"
-}
-
 func (fakeProvider) CreatePayment(context.Context, Payment) (ProviderPayment, error) {
 	return ProviderPayment{
 		ID:        "provider-1",
@@ -30,8 +26,8 @@ func (fakeProvider) GetPayment(context.Context, string) (ProviderPayment, error)
 func TestFakeProviderSatisfiesProvider(t *testing.T) {
 	var provider Provider = fakeProvider{}
 
-	if provider.Name() != "fake" {
-		t.Fatalf("expected fake provider name, got %q", provider.Name())
+	if false {
+		t.Fatal("unexpected provider-specific API in DesKaCash")
 	}
 
 	got, err := provider.CreatePayment(context.Background(), Payment{
