@@ -13,13 +13,13 @@ func TestProviderCreateServiceStoresProviderResult(t *testing.T) {
 	provider := &fakeProvider{}
 	service := NewProviderCreateService(store, provider)
 
-	payment, err := service.Create(context.Background(), "pay-1", "acct-1", "fake", "idem-1", ledger.FromDIDR(100))
+	payment, err := service.Create(context.Background(), "pay-1", "acct-1", "idem-1", ledger.FromDIDR(100))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if payment.ProviderID != "provider-1" {
-		t.Fatalf("expected provider-1, got %q", payment.ProviderID)
+	if payment.ExternalReference != "provider-1" {
+		t.Fatalf("expected provider-1, got %q", payment.ExternalReference)
 	}
 	if payment.Reference != "ref-1" {
 		t.Fatalf("expected ref-1, got %q", payment.Reference)
@@ -32,8 +32,8 @@ func TestProviderCreateServiceStoresProviderResult(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.ProviderID != "provider-1" {
-		t.Fatalf("expected stored provider id provider-1, got %q", got.ProviderID)
+	if got.ExternalReference != "provider-1" {
+		t.Fatalf("expected stored provider id provider-1, got %q", got.ExternalReference)
 	}
 }
 
@@ -42,7 +42,7 @@ func TestProviderCreateServicePropagatesProviderError(t *testing.T) {
 	provider := &failingProvider{}
 	service := NewProviderCreateService(store, provider)
 
-	_, err := service.Create(context.Background(), "pay-1", "acct-1", "fake", "idem-1", ledger.FromDIDR(100))
+	_, err := service.Create(context.Background(), "pay-1", "acct-1", "idem-1", ledger.FromDIDR(100))
 	if err == nil {
 		t.Fatal("expected provider error")
 	}
@@ -61,7 +61,7 @@ func TestProviderCreateServiceRejectsAmountMismatch(t *testing.T) {
 	provider := &mismatchProvider{}
 	service := NewProviderCreateService(store, provider)
 
-	_, err := service.Create(context.Background(), "pay-1", "acct-1", "fake", "idem-1", ledger.FromDIDR(100))
+	_, err := service.Create(context.Background(), "pay-1", "acct-1", "idem-1", ledger.FromDIDR(100))
 	if !errors.Is(err, ErrProviderAmountMismatch) {
 		t.Fatalf("expected amount mismatch, got %v", err)
 	}
@@ -80,12 +80,12 @@ func TestProviderCreateServiceIsIdempotent(t *testing.T) {
 	provider := &countingProvider{}
 	service := NewProviderCreateService(store, provider)
 
-	first, err := service.Create(context.Background(), "pay-1", "acct-1", "fake", "idem-1", ledger.FromDIDR(100))
+	first, err := service.Create(context.Background(), "pay-1", "acct-1", "idem-1", ledger.FromDIDR(100))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	second, err := service.Create(context.Background(), "pay-2", "acct-1", "fake", "idem-1", ledger.FromDIDR(100))
+	second, err := service.Create(context.Background(), "pay-2", "acct-1", "idem-1", ledger.FromDIDR(100))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +120,7 @@ func (mismatchProvider) Name() string {
 
 func (mismatchProvider) CreatePayment(context.Context, Payment) (ProviderPayment, error) {
 	return ProviderPayment{
-		ID:     "provider-1",
+		ExternalReference: "provider-1",
 		Status: StatusPending,
 		Amount: ledger.FromDIDR(99),
 	}, nil
@@ -141,7 +141,7 @@ func (p *countingProvider) Name() string {
 func (p *countingProvider) CreatePayment(context.Context, Payment) (ProviderPayment, error) {
 	p.calls++
 	return ProviderPayment{
-		ID:        "provider-1",
+		ExternalReference: "provider-1",
 		Status:    StatusPending,
 		Amount:    ledger.FromDIDR(100),
 		Reference: "ref-1",
