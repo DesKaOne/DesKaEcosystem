@@ -2534,6 +2534,123 @@ func TestPostgresConcurrentReadDuringAtomicTransitionSeesCompleteState(t *testin
 }
 
 
+type postgresFailingExecDBTX struct {
+	DBTX
+	err error
+}
+
+func (db postgresFailingExecDBTX) ExecContext(context.Context, string, ...any) (sql.Result, error) {
+	return nil, db.err
+}
+
+func TestPostgresTransactionStoreAmbiguousPersistencePropagatesThroughReconcile(t *testing.T) {
+	db := postgresIntegrationDB(t)
+	schema := "ambiguous_reconcile_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatalf("create isolated schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
+	})
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
+		t.Fatalf("set search path: %v", err)
+	}
+	applyPostgresMigration(t, db)
+
+	mockProvider := Mock.New(Mock.Config{
+		Products:       []provider.Product{{Code: "pln20", Name: "PLN 20"}},
+		ProviderCode:   "00",
+		Message:        "pending",
+		PurchaseStatus: provider.StatusPending,
+		Price:          20000,
+	})
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", mockProvider); err != nil {
+		t.Fatal(err)
+	}
+	operationalStore := operational.NewMemoryStore()
+	if err := operationalStore.Put(operational.Snapshot{
+		ProviderName: "mock",
+		Balance:      100000,
+		Health:       operational.HealthHealthy,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	router, err := New(registry, operationalStore, map[string]int{"mock": 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ref := postgresIntegrationReference()
+	req := PurchaseRequest{
+		ProductCode: "pln20",
+		CustomerNo:  "08123456789",
+		ReferenceID: ref,
+		Amount:      20000,
+	}
+	store, err := NewPostgresTransactionStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending := TransactionState{
+		Request: req,
+		Execution: PurchaseExecution{
+			ProviderName: "mock",
+			Result: provider.PurchaseResult{
+				ReferenceID: ref,
+				ProductCode: req.ProductCode,
+				CustomerNo: req.CustomerNo,
+				Status: provider.StatusPending,
+			},
+		},
+	}
+	if err := store.PutContext(ctx, pending); err != nil {
+		t.Fatalf("seed pending transaction: %v", err)
+	}
+
+	if ok := mockProvider.SetTransactionStatus(ref, provider.StatusSuccess, "provider reports success"); !ok {
+		t.Fatal("expected mock provider status mutation to succeed")
+	}
+
+	wantErr := errors.New("connection lost after reconcile transition")
+	failingStore, err := NewPostgresTransactionStore(postgresFailingExecDBTX{DBTX: db, err: wantErr})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewServiceWithStoreContext(ctx, router, failingStore)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := service.Reconcile(ctx, ref)
+	if err == nil {
+		t.Fatal("expected reconciliation persistence ambiguity")
+	}
+	if !errors.Is(err, ErrTransactionPersistenceAmbiguous) {
+		t.Fatalf("expected ambiguous persistence sentinel through reconcile, got %v", err)
+	}
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("expected underlying database error through reconcile, got %v", err)
+	}
+	if result != (PurchaseExecution{}) {
+		t.Fatalf("ambiguous reconciliation persistence must not fabricate terminal result: %#v", result)
+	}
+	if got := mockProvider.PurchaseCount(ref); got != 0 {
+		t.Fatalf("reconciliation must never resubmit the provider purchase, got %d submissions", got)
+	}
+
+	durable, ok := store.GetContext(ctx, ref)
+	if !ok {
+		t.Fatal("expected durable pending transaction to remain")
+	}
+	if durable.Execution.Result.Status != provider.StatusPending {
+		t.Fatalf("ambiguous reconciliation must leave durable pending state authoritative, got %q", durable.Execution.Result.Status)
+	}
+}
+
 func TestPostgresPersistenceErrorPropagationThroughReconcileBoundary(t *testing.T) {
 	db := postgresIntegrationDB(t)
 	schema := "persistence_error_reconcile_" + strconv.FormatInt(time.Now().UnixNano(), 10)
