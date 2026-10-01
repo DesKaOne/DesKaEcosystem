@@ -3,8 +3,9 @@ package config
 import "os"
 
 type Config struct {
-	HTTPAddr       string
-	IndoChainRPCURL string
+	HTTPAddr          string
+	DesKaProviderURL  string
+	DesKaProviderAPIKey string
 }
 
 func Load() Config {
@@ -14,7 +15,8 @@ func Load() Config {
 	}
 
 	return Config{
-		HTTPAddr:        addr,
-		IndoChainRPCURL: os.Getenv("INDOCHAIN_RPC_URL"),
+		HTTPAddr:           addr,
+		DesKaProviderURL:   os.Getenv("DESKAPROVIDER_URL"),
+		DesKaProviderAPIKey: os.Getenv("DESKAPROVIDER_API_KEY"),
 	}
 }
