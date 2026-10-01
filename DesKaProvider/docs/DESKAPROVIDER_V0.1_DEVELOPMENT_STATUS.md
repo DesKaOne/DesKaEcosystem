@@ -7251,3 +7251,62 @@ No authorized live-provider transaction was executed.
 Continue provider audit with the next concrete adapter boundary (XP SINDONESIA) and deterministic contract evidence. Do not infer undocumented provider behavior.
 
 No artificial milestone is introduced.
+
+
+## XP SINDONESIA Adapter Contract Audit
+
+**Date:** 2026-10-01
+
+### Repository Contract Review
+
+The existing XP SINDONESIA adapter was reviewed end-to-end against the provider-neutral PPOB boundary and the deterministic tests already present in the repository.
+
+Verified in source/tests:
+
+- purchase requests use the configured `id`, `key`, `api`, callback `url`, caller `trx`, product `kod`, customer `isi`, and empty `sms` form fields;
+- purchase responses validate the success discriminator, transaction identity (`trx`/`kode`/`isi`), price, and recognized transaction status before returning a result;
+- documented repository status fixtures cover `sukses`, `gagal`, `kosong`, `proses`, and `lambat`, with unknown statuses rejected fail-closed;
+- balance requests validate the success discriminator, member ID, and numeric/string `saldo` response;
+- callback handling validates member ID, callback key, optional signature-secret consistency, transaction identity, and supported terminal/pending status values;
+- unsupported catalog, inquiry, and status operations remain explicitly `ErrUnsupportedOperation` rather than being guessed;
+- live balance validation remains explicitly credential/provider-gated and read-only.
+
+### External Contract Evidence
+
+Current public XP SINDONESIA pages were reviewed as external evidence. They establish that XP SINDONESIA operates PPOB services and publishes product catalogs with product codes, prices, and availability/status values. citeturn3search1turn3search2
+
+However, the publicly discoverable material reviewed does **not** provide a sufficiently authoritative H2H technical contract for the adapter's concrete `order.php`, `saldo.php`, callback authentication, exact response schema, error semantics, idempotency behavior, or retry/uncertain-outcome rules. The provider API endpoints themselves were not accessible through the public documentation index/search surface used for this audit.
+
+Therefore the existing adapter behavior cannot be promoted from repository-tested implementation to externally verified provider-contract compliance on the basis of the available public evidence alone.
+
+### Decision / Implementation Gate
+
+- no production code change is justified by this audit;
+- do not infer undocumented XP SINDONESIA authentication, signature, callback, status, error, idempotency, or retry semantics;
+- keep deterministic contract fixtures as the current implementation evidence;
+- keep live validation credential-gated and read-only;
+- do not promote XP SINDONESIA to LiveTested or ProductionReady from public catalog evidence;
+- obtain provider-issued H2H/API documentation or equivalent authoritative technical material before extending the adapter contract or claiming external protocol verification.
+
+### Safety Boundary
+
+No automatic retry, provider failover, transaction resubmission, duplicate transaction creation, provider funding, ledger mutation, customer-balance mutation, treasury movement, or public API exposure was introduced.
+
+### Verification State
+
+No source-code change was made by this audit. The branch implementation HEAD remains:
+
+`7d5e7d537e14141b2d030acdb060dfbb9d5fdafa`
+
+Latest CI for that HEAD was already GREEN:
+
+- Push CI #3682 / run 36836491926: **GREEN**
+- Pull Request CI #3683 / run 36836496430: **GREEN**
+
+No authorized live XP SINDONESIA transaction was executed.
+
+### Next Concrete Engineering Task
+
+Continue the production-readiness audit with the next concrete provider boundary or caller/persistence invariant supported by authoritative evidence. Do not invent XP SINDONESIA protocol details while the provider-issued H2H contract remains unavailable.
+
+No artificial milestone is introduced.
