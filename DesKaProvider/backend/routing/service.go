@@ -206,6 +206,21 @@ func (s *Service) SubmitPayment(ctx context.Context, providerName string, req pa
 		Message: "durable payment submission claim created",
 	})
 
+	// Re-check the operational gate after the durable claim and immediately
+	// before the external side effect. This closes the same TOCTOU window
+	// already enforced for PPOB submissions: an explicit lifecycle disable
+	// that happens after routing/claiming must not authorize a new provider call.
+	if s.Router.ProviderState != nil {
+		state, found := s.Router.ProviderState.Get(providerName)
+		if !found || !state.Enabled() || !state.Supports(operational.CapabilityPayment) {
+			return payment.PaymentResult{}, fmt.Errorf("%w: %s", ErrPaymentCapabilityDisabled, providerName)
+		}
+		drift := operational.DetectCapabilityDrift(state, status)
+		if drift.Drifted() {
+			return payment.PaymentResult{}, fmt.Errorf("%w: %s", ErrPaymentCapabilityDisabled, providerName)
+		}
+	}
+
 	result, err := p.CreatePayment(ctx, req)
 	if err != nil {
 		_ = s.appendAudit(TransactionAuditEvent{
