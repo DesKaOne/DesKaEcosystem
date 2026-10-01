@@ -208,11 +208,21 @@ func (s *JSONFileStore) persist(snapshots map[string]Snapshot) error {
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("close operational store: %w", err)
 	}
+	if s.persistHook != nil {
+		if err := s.persistHook(operationalStoreBeforeReplace); err != nil {
+			return fmt.Errorf("operational store replacement interrupted: %w", err)
+		}
+	}
 	if err := os.Rename(tmpName, s.path); err != nil {
 		return fmt.Errorf("replace operational store: %w", err)
 	}
+	if s.persistHook != nil {
+		if err := s.persistHook(operationalStoreAfterReplace); err != nil {
+			return fmt.Errorf("%w: %w", ErrOperationalPersistenceAmbiguous, err)
+		}
+	}
 	if err := syncJSONStoreDirectory(dir); err != nil {
-		return fmt.Errorf("sync operational store directory: %w", err)
+		return fmt.Errorf("%w: sync operational store directory: %w", ErrOperationalPersistenceAmbiguous, err)
 	}
 	return nil
 }
