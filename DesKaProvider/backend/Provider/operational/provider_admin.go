@@ -67,42 +67,20 @@ func (s *ProviderAdminService) SetCapabilityEnabled(name string, capability Capa
 	if s == nil || s.states == nil {
 		return ProviderState{}, errors.New("provider state store is required")
 	}
-	name = strings.TrimSpace(strings.ToLower(name))
-	if name == "" {
-		return ProviderState{}, ErrProviderNotFound
-	}
-	state, ok := s.states.Get(name)
-	if !ok {
-		return ProviderState{}, ErrProviderNotFound
-	}
-	implemented := false
-	for _, value := range state.Capabilities {
-		if value == capability {
-			implemented = true
-			break
+	state, err := s.states.SetCapabilityEnabled(name, capability, enabled)
+	if err != nil {
+		if strings.TrimSpace(strings.ToLower(name)) == "" {
+			return ProviderState{}, ErrProviderNotFound
 		}
-	}
-	if !implemented {
-		return ProviderState{}, ErrCapabilityNotAvailable
-	}
-	if state.EnabledCapabilities == nil {
-		state.EnabledCapabilities = append([]Capability(nil), state.Capabilities...)
-	}
-	result := state.EnabledCapabilities[:0]
-	for _, value := range state.EnabledCapabilities {
-		if value != capability {
-			result = append(result, value)
+		if errors.Is(err, errors.New("provider not found")) {
+			return ProviderState{}, ErrProviderNotFound
 		}
-	}
-	if enabled {
-		result = append(result, capability)
-	}
-	state.EnabledCapabilities = result
-	if err := s.states.Put(state); err != nil {
+		if errors.Is(err, errors.New("provider capability is not available")) {
+			return ProviderState{}, ErrCapabilityNotAvailable
+		}
 		return ProviderState{}, err
 	}
-	updated, _ := s.states.Get(name)
-	return updated, nil
+	return state, nil
 }
 
 func (s *ProviderAdminService) EnableCapability(name string, capability Capability) (ProviderState, error) {
