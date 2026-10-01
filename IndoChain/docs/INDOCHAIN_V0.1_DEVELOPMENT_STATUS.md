@@ -3203,3 +3203,82 @@ CI untuk implementation HEAD wajib diselesaikan GREEN sebelum milestone dinyatak
 **4.63 — Partial Finality / Crash Boundary:** menentukan recovery semantics ketika precommit quorum atau finality evidence sudah durable tetapi canonical commit belum selesai, termasuk idempotent resume tanpa double-commit.
 
 **Milestone 4.62 status:** implementation/test completed; final completion gated on exact final documentation HEAD CI GREEN.
+
+
+
+### 4.63 Partial Finality / Crash Boundary
+
+**Tanggal:** 2026-10-01
+
+**Objective**
+
+Menutup crash boundary ketika finality evidence sudah durable tetapi proses berhenti sebelum canonical block commit selesai. Recovery harus membedakan tiga kondisi secara eksplisit: commit masih pending dan dapat dilanjutkan, block sudah canonical sehingga resume bersifat idempotent, atau candidate/evidence tidak cocok sehingga recovery berhenti tanpa mutation.
+
+**Implementation**
+
+- `IndoChain/internal/consensus/finality_recovery.go`
+  - menambahkan `ValidatorRuntime.RestoreFinalizedEvidence` sebagai explicit recovery-only transition;
+  - certificate divalidasi ulang terhadap exact round-state context, validator set, voting power, quorum, payload, dan authenticated precommit votes sebelum runtime masuk `PhaseFinalized`;
+  - restoration tidak menyentuh canonical storage dan sengaja dipisahkan dari ordinary evidence replay 4.62;
+  - restored runtime membawa proposal/lock/certificate minimum yang diperlukan oleh existing canonical publication boundary.
+- `IndoChain/internal/node/finality_recovery.go`
+  - menambahkan `Node.ResumeFinalityCommit` sebagai explicit crash-resume boundary;
+  - canonical head dibandingkan lebih dulu untuk mendeteksi already-committed exact block dan mencegah double execution/commit;
+  - candidate wajib berada tepat pada `canonicalHeight + 1`, tidak boleh stale/future;
+  - candidate hash harus identik dengan finality certificate payload;
+  - candidate execution/state validation tetap dijalankan terhadap recovered canonical context sebelum storage mutation;
+  - consensus publication dipreflight terhadap restored finalized runtime sebelum canonical mutation;
+  - existing `CommitFinalityEvidence` tetap menjadi node-owned atomic canonical commit path;
+  - consensus hanya dipublikasikan ke next height setelah durable canonical commit sukses.
+- Tests:
+  - finality runtime dapat direstore setelah restart;
+  - incomplete/conflicting recovery evidence ditolak tanpa runtime mutation;
+  - pending finality dapat di-resume sampai canonical commit + next-height publication;
+  - exact already-committed candidate bersifat idempotent;
+  - mismatched candidate ditolak tanpa canonical mutation;
+  - storage commit failure mempertahankan canonical head dan recovered finalized runtime.
+
+**Locked invariants**
+
+1. Durable finality evidence tidak otomatis menjadi canonical block.
+2. Recovery candidate wajib tersedia dan harus diverifikasi terhadap certificate payload.
+3. Candidate hanya boleh ditargetkan ke canonical height + 1.
+4. Future/stale candidate tidak boleh memajukan atau memundurkan canonical state.
+5. Exact already-committed block menghasilkan idempotent recovery result tanpa re-execution.
+6. Finality certificate dan seluruh precommit votes diverifikasi sebelum runtime restoration.
+7. Candidate execution/state validation tetap menjadi prerequisite sebelum canonical mutation.
+8. Storage commit failure tidak memajukan canonical node state maupun menghilangkan recovered finality.
+9. Consensus next-height publication hanya terjadi setelah canonical commit sukses.
+10. Recovery boundary tidak mengambil ownership atas canonical storage dan tidak mengubah ordinary replay policy.
+
+**Production boundary**
+
+Milestone ini menutup explicit single-node partial-finality crash/resume boundary, tetapi **belum full production BFT crash recovery**.
+
+Masih terbuka:
+
+- automatic discovery/selection of durable finality evidence across multiple validators;
+- durable candidate-block availability/recovery as a first-class crash artifact;
+- validator-set/epoch lifecycle recovery;
+- evidence retention/pruning;
+- coordinated multi-node restart/recovery;
+- automatic multi-height consensus loop;
+- crash/restart validation across an end-to-end multi-node cluster;
+- final canonical block serialization freeze.
+
+**Verification**
+
+- Implementation/test HEAD: `b9a0e644ed1c0f870b80842ad6f312bacc3f6dd7`.
+- CI run `36827405747`: **GREEN**.
+- Tidy: PASS.
+- Test: PASS.
+- Race Test: PASS.
+- Vet: PASS.
+- PostgreSQL: tidak relevan.
+- Status-document update memerlukan exact-head CI gate baru.
+
+**Next integration target**
+
+**4.64 — Durable Candidate Recovery / Finality Resume Source:** menutup gap candidate availability setelah restart, sehingga finality evidence yang sudah durable dapat menemukan candidate block secara deterministic tanpa bergantung pada transient in-memory state.
+
+**Milestone 4.63 status:** implementation/test completed; final completion gated on exact final documentation HEAD CI GREEN.
