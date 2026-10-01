@@ -6462,14 +6462,14 @@ After GREEN CI, continue auditing remaining provider-to-service persistence and 
 
 The transaction persistence audit found a concrete payment-state gap in the JSON-backed transaction store: JSONFileTransactionStore used TransactionState.Request.ReferenceID as its storage identity, while payment transactions intentionally carry their durable identity in Payment.ReferenceID. This could reject or mishandle persisted payment submissions even though the generic TransactionStore contract already defines transactionReferenceID() for both PPOB and payment states.
 
-The audit also found that payment ProviderReference was not protected as durable provider-reference ownership across pending -> terminal transitions. Once a non-empty provider reference is durably established, a later conflicting provider reference must fail closed rather than silently replacing the correlation token.
+The audit also verified the existing terminal-state invariant for payment ProviderReference: a terminal payment observation cannot be overwritten with a divergent provider reference, while a pending transaction may legitimately transition from an initiation token to a provider's authoritative transaction reference when the documented provider flow requires that correlation update.
 
 ### Change
 
 - JSONFileTransactionStore.CreateIfAbsentContext() now uses the provider-neutral transactionReferenceID() and sameTransactionIdentity() boundaries.
 - JSON-store Put() and PutIfCurrent() now resolve transaction identity through the same provider-neutral reference function rather than assuming PPOB request layout.
 - JSON-store create/put paths validate the complete transaction state before persistence.
-- Payment transition validation now preserves an already-owned non-empty ProviderReference; a conflicting replacement returns ErrReferenceConflict.
+- Existing payment transition validation remains authoritative for terminal immutability and allows documented pending -> terminal provider-reference canonicalization.
 - Initial population of an empty ProviderReference from a documented provider result remains allowed.
 - No retry, resubmission, failover, ledger mutation, customer-balance mutation, treasury movement, or provider funding was introduced.
 
@@ -6483,10 +6483,11 @@ Added DesKaProvider/backend/routing/json_transaction_store_test.go covering:
 
 ### Verification Boundary
 
-Production commits: 2ad064e0876799aaf03a83d51944820c2bd42a72 and b77c441112187043d3b1c144d88e505117ded65d.
-Regression test commit: ed1ca5a9c5e1fb964eb4c3ed2f766675502f0edd.
+Production commit: bdea3266e4609d9fe5ceb68f566a0a3d0e3d4307.
+Regression test commits: ed1ca5a9c5e1fb964eb4c3ed2f766675502f0edd and 5726cae040552bfe9dbd08d457cdc5d5a62df7a8.
+CI correction: Push #3553 / run 36803365910 exposed that the first JSON-store change had not actually updated CreateIfAbsentContext and that the initial provider-reference assertion was too strict for documented pending -> terminal canonicalization. The create-if-absent implementation was corrected, the incorrect production restriction was reverted, and the regression test now verifies terminal provider-reference immutability instead.
 
-Fresh Push and PR CI for the final status-doc HEAD are mandatory before this hardening batch is considered complete.
+Fresh Push and PR CI for the corrected final status-doc HEAD are mandatory before this hardening batch is considered complete.
 
 ### Current Completion Assessment
 
@@ -6495,4 +6496,3 @@ Overall DesKaProvider v0.1 remains approximately **82%**. This is persistence/id
 ### Next Concrete Engineering Task
 
 After GREEN CI, continue auditing durable transaction persistence failure semantics and multi-instance CAS behavior, including atomic rollback/recovery after filesystem persistence failure, without introducing automatic retry/resubmission or unsafe financial recovery execution.
-
