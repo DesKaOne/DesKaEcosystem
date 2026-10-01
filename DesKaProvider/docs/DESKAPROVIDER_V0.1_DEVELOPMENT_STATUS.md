@@ -6485,7 +6485,7 @@ Added DesKaProvider/backend/routing/json_transaction_store_test.go covering:
 
 Production commit: bdea3266e4609d9fe5ceb68f566a0a3d0e3d4307.
 Regression test commits: ed1ca5a9c5e1fb964eb4c3ed2f766675502f0edd and 5726cae040552bfe9dbd08d457cdc5d5a62df7a8.
-CI correction: Push #3553 / run 36803365910 exposed that the first JSON-store change had not actually updated CreateIfAbsentContext and that the initial provider-reference assertion was too strict for documented pending -> terminal canonicalization. The create-if-absent implementation was corrected, the incorrect production restriction was reverted, and the regression test now verifies terminal provider-reference immutability instead.
+CI correction: Push #3553 / run 36803365910 exposed two issues in the first correction: the CreateIfAbsentContext replacement had not been applied, and the initial provider-reference assertion was too strict for documented pending -> terminal canonicalization. A subsequent partial-file update also corrupted json_transaction_store.go; the full file was restored from the intact prior revision and the generic identity fix was applied against the current file. The incorrect production restriction was reverted, and the regression test now verifies terminal provider-reference immutability instead.
 
 Fresh Push and PR CI for the corrected final status-doc HEAD are mandatory before this hardening batch is considered complete.
 
