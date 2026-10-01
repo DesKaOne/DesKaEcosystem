@@ -3504,11 +3504,11 @@ Masih terbuka:
 - Test: PASS.
 - Race Test: PASS.
 - Vet: PASS.
-- Exact final status-document HEAD requires a new CI gate.
+- Exact final status-document HEAD CI is GREEN; milestone completion verified.
 
 **Next integration target**
 
 **4.67 — Coordinated Artifact GC Boundary:** mendefinisikan bagaimana retention decision dikomunikasikan/di-koordinasikan lintas validator tanpa menjadikan GC sebagai bagian dari consensus commit.
 
-**Milestone 4.66 status:** implementation/test completed; final completion gated on exact final documentation HEAD CI GREEN.
+**Milestone 4.66 status:** implementation/test completed; exact final documentation HEAD CI GREEN; milestone complete.
 
