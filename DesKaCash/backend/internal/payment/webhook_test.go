@@ -15,10 +15,10 @@ func TestNewWebhookEvent(t *testing.T) {
 	}
 
 	if event.ExternalReference != "provider-1" {
-		t.Fatalf("expected provider demo, got %q", event.Provider)
+		t.Fatalf("expected external reference provider-1, got %q", event.ExternalReference)
 	}
 	if event.ExternalReference != "provider-1" {
-		t.Fatalf("expected provider id provider-1, got %q", event.ProviderID)
+		t.Fatalf("expected external reference provider-1, got %q", event.ExternalReference)
 	}
 	if event.Status != StatusSucceeded {
 		t.Fatalf("expected succeeded status, got %s", event.Status)
