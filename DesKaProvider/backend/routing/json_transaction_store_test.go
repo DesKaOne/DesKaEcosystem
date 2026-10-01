@@ -11,6 +11,58 @@ import (
     payment "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/internal/Payment"
 )
 
+func TestJSONFileTransactionStoreAmbiguousPutKeepsRenamedStateInMemory(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "transactions.json")
+	store, err := NewJSONFileTransactionStore(path)
+	if err != nil { t.Fatal(err) }
+	pending := testPaymentTransactionState("tx-ambiguous-memory", payment.StatusPending)
+	if err := store.Put(pending); err != nil { t.Fatal(err) }
+	store.persistHook = func(stage transactionStorePersistStage) error {
+		if stage == transactionStoreAfterReplace { return errors.New("directory durability uncertain") }
+		return nil
+	}
+	terminal := pending
+	terminal.Payment.Status = payment.StatusSuccess
+	terminal.Payment.ProviderReference = "provider-terminal"
+	terminal.Version++
+	if err := store.Put(terminal); !errors.Is(err, ErrTransactionPersistenceAmbiguous) {
+		t.Fatalf("expected ambiguous persistence, got %v", err)
+	}
+	got, ok := store.Get(pending.Payment.ReferenceID)
+	if !ok || got.Payment == nil || got.Payment.Status != payment.StatusSuccess || got.Payment.ProviderReference != "provider-terminal" {
+		t.Fatalf("ambiguous renamed transaction must remain terminal in memory: %#v", got)
+	}
+	recovered, err := NewJSONFileTransactionStore(path)
+	if err != nil { t.Fatal(err) }
+	durable, ok := recovered.Get(pending.Payment.ReferenceID)
+	if !ok || durable.Payment == nil || durable.Payment.Status != payment.StatusSuccess {
+		t.Fatalf("renamed durable state must be terminal after ambiguous persistence: %#v", durable)
+	}
+}
+
+func TestJSONFileTransactionStoreAmbiguousPutIfCurrentKeepsRenamedStateInMemory(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "transactions.json")
+	store, err := NewJSONFileTransactionStore(path)
+	if err != nil { t.Fatal(err) }
+	pending := testPaymentTransactionState("tx-ambiguous-cas", payment.StatusPending)
+	if err := store.Put(pending); err != nil { t.Fatal(err) }
+	store.persistHook = func(stage transactionStorePersistStage) error {
+		if stage == transactionStoreAfterReplace { return errors.New("directory durability uncertain") }
+		return nil
+	}
+	terminal := pending
+	terminal.Payment.Status = payment.StatusSuccess
+	terminal.Payment.ProviderReference = "provider-cas-terminal"
+	terminal.Version++
+	if err := store.PutIfCurrent(pending.Payment.ReferenceID, pending, terminal); !errors.Is(err, ErrTransactionPersistenceAmbiguous) {
+		t.Fatalf("expected ambiguous persistence, got %v", err)
+	}
+	got, ok := store.Get(pending.Payment.ReferenceID)
+	if !ok || got.Payment == nil || got.Payment.Status != payment.StatusSuccess {
+		t.Fatalf("ambiguous CAS rename must remain terminal in memory: %#v", got)
+	}
+}
+
 func TestJSONFileTransactionStorePersistsPaymentIdentityAcrossRestart(t *testing.T) {
     path := filepath.Join(t.TempDir(), "transactions", "state.json")
     store, err := NewJSONFileTransactionStore(path)
