@@ -84,6 +84,7 @@ func TestJSONFileStoreAmbiguousPersistenceFailsClosedInMemory(t *testing.T) {
 	requested := initial
 	requested.Balance = 500
 	requested.Health = HealthUnhealthy
+	requested.LastError = "provider unavailable"
 	requested.LastCheckedAt = initial.LastCheckedAt.Add(time.Minute)
 	requested.LastSuccessAt = requested.LastCheckedAt
 	requested.ConsecutiveFailures = 3
@@ -139,6 +140,7 @@ func TestJSONFileStoreAmbiguousPermissiveWriteDoesNotPromoteMemory(t *testing.T)
 	requested := initial
 	requested.Balance = 1000
 	requested.Health = HealthHealthy
+	requested.LastError = ""
 	requested.LastCheckedAt = initial.LastCheckedAt.Add(time.Minute)
 	requested.LastSuccessAt = requested.LastCheckedAt
 	requested.ConsecutiveFailures = 0
