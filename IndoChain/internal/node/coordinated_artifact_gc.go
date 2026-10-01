@@ -1,12 +1,10 @@
 package node
 
 import (
-	"bytes"
 	"errors"
 	"sort"
 
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/consensus"
-	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/types"
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/storage"
 )
 
@@ -84,5 +82,3 @@ func (n *Node) ApplyCoordinatedArtifactGC(
 	)
 }
 
-var _ = bytes.Equal
-var _ types.Height
