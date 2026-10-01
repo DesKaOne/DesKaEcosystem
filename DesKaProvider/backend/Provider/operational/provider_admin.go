@@ -72,12 +72,6 @@ func (s *ProviderAdminService) SetCapabilityEnabled(name string, capability Capa
 		if strings.TrimSpace(strings.ToLower(name)) == "" {
 			return ProviderState{}, ErrProviderNotFound
 		}
-		if errors.Is(err, errors.New("provider not found")) {
-			return ProviderState{}, ErrProviderNotFound
-		}
-		if errors.Is(err, errors.New("provider capability is not available")) {
-			return ProviderState{}, ErrCapabilityNotAvailable
-		}
 		return ProviderState{}, err
 	}
 	return state, nil
