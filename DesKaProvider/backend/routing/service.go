@@ -9,6 +9,7 @@ import (
 	"time"
 
 	provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
+	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider/operational"
 	payment "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/internal/Payment"
 )
 
@@ -160,6 +161,19 @@ func (s *Service) SubmitPayment(ctx context.Context, providerName string, req pa
 	capability, exists := status.Status(provider.CapabilityPayment)
 	if !exists || !capability.AdapterImplemented || !capability.Enabled {
 		return payment.PaymentResult{}, fmt.Errorf("%w: %s", ErrPaymentCapabilityDisabled, providerName)
+	}
+	// Payment submission is an external side effect, so an explicit operational
+	// lifecycle disable must block it even when registry payment metadata remains
+	// enabled. Capability metadata and operational lifecycle are separate gates.
+	if s.Router.ProviderState != nil {
+		state, found := s.Router.ProviderState.Get(providerName)
+		if !found || !state.Enabled() || !state.Supports(operational.CapabilityPayment) {
+			return payment.PaymentResult{}, fmt.Errorf("%w: %s", ErrPaymentCapabilityDisabled, providerName)
+		}
+		drift := operational.DetectCapabilityDrift(state, status)
+		if drift.Drifted() {
+			return payment.PaymentResult{}, fmt.Errorf("%w: %s", ErrPaymentCapabilityDisabled, providerName)
+		}
 	}
 	p, err := s.Router.Registry.GetPaymentProvider(providerName)
 	if err != nil {
