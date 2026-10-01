@@ -3427,7 +3427,11 @@ Masih terbuka:
 **Verification**
 
 - Implementation/test HEAD: `4751d6387c939236d8803c11b72903f699e97462`.
-- CI run `36839353693`: **IN PROGRESS** saat status document ini diperbarui; Tidy dan Test sudah PASS, Race Test masih berjalan.
+- CI run `36839353693`: **GREEN**.
+- Tidy: PASS.
+- Test: PASS.
+- Race Test: PASS.
+- Vet: PASS.
 - Exact final status-document HEAD wajib kembali diverifikasi GREEN sebelum milestone dinyatakan complete.
 - PostgreSQL: tidak relevan.
 
@@ -3435,5 +3439,5 @@ Masih terbuka:
 
 **4.66 — Retention Window / Safe Historical Pruning:** menentukan policy berbasis height/epoch untuk membedakan artifact yang masih recovery-relevant dari artifact yang aman dipruning, tanpa menjadikan GC sebagai bagian dari canonical consensus commit.
 
-**Milestone 4.65 status:** implementation/test completed; final completion gated on exact final documentation HEAD CI GREEN.
+**Milestone 4.65 status:** implementation/test completed; implementation CI GREEN; final completion remains gated on exact final documentation HEAD CI GREEN.
 
