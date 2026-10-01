@@ -9,31 +9,17 @@ import (
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/storage"
 )
 
-type evidenceTestSigner struct {
-	key ed25519.PrivateKey
-}
-
-func (s evidenceTestSigner) Sign(message []byte) ([]byte, error) {
-	return s.key.Sign(nil, message, cryptoHashOptions{})
-}
-
-// cryptoHashOptions is a zero-value placeholder because ed25519.PrivateKey.Sign
-// accepts a crypto.SignerOpts argument; the development tests do not need a
-// pre-hash mode.
-type cryptoHashOptions struct{}
-
-func (cryptoHashOptions) HashFunc() cryptoHash {
-	return cryptoHash(0)
-}
-
-type cryptoHash uint
-
-func signedEvidenceMessage(t *testing.T, state RoundState, id []byte, typ MessageType, payload []byte) (Message, StaticValidatorAuthority) {
+func evidenceState(t *testing.T) (RoundState, ValidatorSet) {
 	t.Helper()
-	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	state, err := NewRoundState(1, 1, 9, 3)
 	if err != nil { t.Fatal(err) }
-	authority, err := NewStaticValidatorAuthority(map[string][]byte{string(id): publicKey})
+	validators, err := NewValidatorSet([][]byte{[]byte("validator-a")})
 	if err != nil { t.Fatal(err) }
+	return state, validators
+}
+
+func signedEvidenceMessage(t *testing.T, state RoundState, id []byte, typ MessageType, payload []byte, privateKey ed25519.PrivateKey) Message {
+	t.Helper()
 	msg := Message{
 		ProtocolVersion: state.ProtocolVersion,
 		ChainID: state.ChainID,
@@ -45,43 +31,45 @@ func signedEvidenceMessage(t *testing.T, state RoundState, id []byte, typ Messag
 		Payload: append([]byte(nil), payload...),
 	}
 	msg.Signature = ed25519.Sign(privateKey, msg.SigningBytes())
-	return msg, authority
+	return msg
 }
 
-func evidenceState(t *testing.T) (RoundState, ValidatorSet) {
+func testAuthority(t *testing.T, id []byte) (StaticValidatorAuthority, ed25519.PrivateKey) {
 	t.Helper()
-	state, err := NewRoundState(1, 1, 9, 3)
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil { t.Fatal(err) }
-	validators, err := NewValidatorSet([][]byte{[]byte("validator-a")})
+	authority, err := NewStaticValidatorAuthority(map[string][]byte{string(id): publicKey})
 	if err != nil { t.Fatal(err) }
-	return state, validators
+	return authority, privateKey
 }
 
 func TestPersistAuthenticatedEvidenceIsIdempotentAndConflictSafe(t *testing.T) {
 	state, validators := evidenceState(t)
-	msg, authority := signedEvidenceMessage(t, state, []byte("validator-a"), MessageTypePrevote, []byte("proposal-hash"))
+	id := []byte("validator-a")
+	authority, privateKey := testAuthority(t, id)
+	msg := signedEvidenceMessage(t, state, id, MessageTypePrevote, []byte("proposal-hash"), privateKey)
 	store := storage.NewMemoryConsensusEvidenceStore()
 
 	if err := PersistAuthenticatedEvidence(store, msg, state, validators, authority); err != nil { t.Fatal(err) }
 	if err := PersistAuthenticatedEvidence(store, msg, state, validators, authority); err != nil { t.Fatal(err) }
 
-	conflicting := msg
-	conflicting.Payload = []byte("different-proposal")
-	conflicting.Signature = ed25519.Sign(mustPrivateKeyForTest(t), conflicting.SigningBytes())
-	if err := PersistAuthenticatedEvidence(store, conflicting, state, validators, authority); !errors.Is(err, ErrInvalidSignature) && !errors.Is(err, ErrConflictingEvidence) {
-		t.Fatalf("conflicting replay error = %v", err)
+	conflicting := signedEvidenceMessage(t, state, id, MessageTypePrevote, []byte("different-proposal"), privateKey)
+	if err := PersistAuthenticatedEvidence(store, conflicting, state, validators, authority); !errors.Is(err, ErrConflictingEvidence) {
+		t.Fatalf("conflicting replay error = %v, want %v", err, ErrConflictingEvidence)
 	}
 }
 
 func TestRecoverAuthenticatedEvidenceAllowsMultipleRoundsDeterministically(t *testing.T) {
 	state, validators := evidenceState(t)
+	id := []byte("validator-a")
+	authority, privateKey := testAuthority(t, id)
 	store := storage.NewMemoryConsensusEvidenceStore()
-	ids := [][]byte{[]byte("validator-a")}
-	msg0, authority := signedEvidenceMessage(t, state, ids[0], MessageTypeProposal, []byte("p0"))
+
+	msg0 := signedEvidenceMessage(t, state, id, MessageTypeProposal, []byte("p0"), privateKey)
 	if err := PersistAuthenticatedEvidence(store, msg0, state, validators, authority); err != nil { t.Fatal(err) }
 
 	state.Round = 2
-	msg2, _ := signedEvidenceMessage(t, state, ids[0], MessageTypePrecommit, []byte("p2"))
+	msg2 := signedEvidenceMessage(t, state, id, MessageTypePrecommit, []byte("p2"), privateKey)
 	if err := PersistAuthenticatedEvidence(store, msg2, state, validators, authority); err != nil { t.Fatal(err) }
 
 	state.Round = 0
@@ -94,7 +82,9 @@ func TestRecoverAuthenticatedEvidenceAllowsMultipleRoundsDeterministically(t *te
 
 func TestRecoverAuthenticatedEvidenceRejectsCorruptRecord(t *testing.T) {
 	state, validators := evidenceState(t)
-	msg, authority := signedEvidenceMessage(t, state, []byte("validator-a"), MessageTypeProposal, []byte("proposal"))
+	id := []byte("validator-a")
+	authority, privateKey := testAuthority(t, id)
+	msg := signedEvidenceMessage(t, state, id, MessageTypeProposal, []byte("proposal"), privateKey)
 	key, err := ConsensusEvidenceKey(msg)
 	if err != nil { t.Fatal(err) }
 	store := storage.NewMemoryConsensusEvidenceStore()
@@ -114,13 +104,4 @@ func TestFileConsensusEvidenceStoreSurvivesReopen(t *testing.T) {
 	records, err := reopened.LoadConsensusEvidence()
 	if err != nil { t.Fatal(err) }
 	if string(records["key"]) != "evidence" { t.Fatalf("reopened evidence = %q", records["key"]) }
-}
-
-// mustPrivateKeyForTest exists only to generate a different signature for the
-// conflict-path test; the authority intentionally does not contain this key.
-func mustPrivateKeyForTest(t *testing.T) ed25519.PrivateKey {
-	t.Helper()
-	_, privateKey, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil { t.Fatal(err) }
-	return privateKey
 }
