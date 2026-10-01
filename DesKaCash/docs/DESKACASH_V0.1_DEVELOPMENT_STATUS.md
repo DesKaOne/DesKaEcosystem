@@ -561,3 +561,47 @@ Commit implementasi: `1a991d8699333248a7220f7ce3b5b679a2360189`.
 Commit tests: `bca6858a1efbc31a5fc9c489f64d7f8e199559c5`.
 
 Catatan: validator ini baru merupakan domain invariant. Persistence transaction yang atomically menulis pasangan posting dan balance projection belum diubah pada tahap ini.
+
+### Architectural correction progress — 2026-10-01
+
+Status: PARTIAL — DesKaProvider boundary enforced in DesKaCash; separate DesKaProvider runtime contract is still a gap.
+
+Audit aktual pada branch menemukan violation yang nyata:
+- DesKaCash/backend/internal/config/config.go masih membaca INDOCHAIN_RPC_URL melalui field IndoChainRPCURL.
+- README dan feature-scope masih menggambarkan beberapa flow seolah DesKaCash dapat berbicara langsung dengan IndoChain atau menanam provider adapter di application layer.
+- DesKaProvider pada repository saat ini belum menyediakan API/service contract implementation yang dapat dikonsumsi DesKaCash; struktur yang tersedia masih skeleton. Karena itu tidak dibuat endpoint atau RPC contract baru secara spekulatif.
+
+Perubahan yang sudah diterapkan:
+- Menghapus INDOCHAIN_RPC_URL dan IndoChainRPCURL dari configuration runtime DesKaCash.
+- Menambahkan configuration boundary DESKAPROVIDER_URL dan DESKAPROVIDER_API_KEY.
+- Mengubah payment infrastructure boundary dari generic external Provider menjadi DesKaProviderClient.
+- Menghapus provider selection/name dari payment creation flow.
+- Mengubah payment record agar hanya menyimpan ExternalReference sebagai reference opaque/normalized; provider-specific routing tetap di luar DesKaCash.
+- Mengubah webhook/reconciliation model agar tidak menerima Provider atau provider-specific routing fields.
+- Menambahkan architecture guard test untuk mencegah direct IndoChain RPC/configuration masuk kembali ke production Go code.
+- Menambahkan configuration tests untuk memastikan DesKaCash menggunakan DesKaProvider configuration.
+- Memperbarui README dan feature scope agar dependency graph menjadi DesKaCash -> DesKaProvider -> IndoChain / External Providers.
+
+Dependency/module audit:
+- DesKaCash/backend/go.mod hanya mendeklarasikan github.com/jackc/pgx/v5 sebagai direct dependency; tidak ditemukan IndoChain RPC SDK atau external-provider SDK pada module manifest aktual.
+- DesKaCash belum memiliki HTTP/RPC client ke DesKaProvider karena contract runtime DesKaProvider belum tersedia pada repository saat audit.
+- Status integration contract: PARTIAL / BLOCKED BY PROVIDER CONTRACT GAP, bukan dianggap implemented.
+
+Testing:
+- Architecture/configuration tests ditambahkan untuk dependency isolation.
+- Local go test, go vet, dan go test -race belum dapat dijalankan dari working environment ini karena repository tidak tersedia sebagai local checkout dan outbound GitHub clone tidak tersedia. Verifikasi final harus menggunakan CI pada commit branch terbaru.
+
+Financial core:
+- Immutable posting domain + balancing validator tetap IMPLEMENTED pada level domain.
+- Immutable posting persistence tetap PARTIAL dan belum menjadi financial source of truth.
+- Transactional balanced posting persistence, reservation/hold, full ledger state machine, balance projection, dan concurrency invariant tests masih PLANNED.
+
+Remaining gaps:
+- DesKaProvider belum memiliki normalized API/service contract implementation yang dapat dipakai DesKaCash.
+- HTTP client/service authentication DesKaCash -> DesKaProvider belum diimplementasikan.
+- Provider-specific webhook gateway tetap berada di DesKaProvider dan belum tersedia sebagai runtime service.
+- Direct IndoChain integration di DesKaCash harus tetap NOT IMPLEMENTED; bila capability dibutuhkan, implementasi harus dilakukan pada DesKaProvider.
+- Full double-entry ledger migration masih belum selesai.
+
+Next recommended step:
+Selesaikan contract DesKaProvider lintas service (normalized payment/wallet capability + service authentication/error model), lalu implement client/fake di DesKaCash. Setelah boundary stabil, lanjutkan transactional balanced posting persistence + reservation/hold + concurrency/idempotency hardening.
