@@ -1,6 +1,7 @@
 package operational
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -56,6 +57,103 @@ func writeFile(path string, data []byte) error {
 	return os.WriteFile(path, data, 0o600)
 }
 
+
+func TestJSONFileStoreAmbiguousPersistenceFailsClosedInMemory(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "snapshots.json")
+	store, err := NewJSONFileStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	initial := Snapshot{
+		ProviderName: "mock",
+		Balance: 1000,
+		Currency: "IDR",
+		Health: HealthHealthy,
+		LastCheckedAt: time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC),
+		LastSuccessAt: time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC),
+	}
+	if err := store.Put(initial); err != nil {
+		t.Fatal(err)
+	}
+	store.persistHook = func(stage operationalStorePersistStage) error {
+		if stage == operationalStoreAfterReplace {
+			return errors.New("directory durability uncertain")
+		}
+		return nil
+	}
+	requested := initial
+	requested.Balance = 500
+	requested.Health = HealthUnhealthy
+	requested.LastCheckedAt = initial.LastCheckedAt.Add(time.Minute)
+	requested.LastSuccessAt = requested.LastCheckedAt
+	requested.ConsecutiveFailures = 3
+	err = store.Put(requested)
+	if !errors.Is(err, ErrOperationalPersistenceAmbiguous) {
+		t.Fatalf("expected ambiguous persistence error, got %v", err)
+	}
+	got, ok := store.Get("mock")
+	if !ok {
+		t.Fatal("expected conservative snapshot to remain in memory")
+	}
+	if got.Health != HealthUnhealthy || got.Balance != 500 {
+		t.Fatalf("ambiguous restrictive write must fail closed in memory: %#v", got)
+	}
+	if !got.LastCheckedAt.Equal(initial.LastCheckedAt) {
+		t.Fatalf("ambiguous write must not promote freshness: got %v want %v", got.LastCheckedAt, initial.LastCheckedAt)
+	}
+
+	recovered, err := NewJSONFileStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	durable, ok := recovered.Get("mock")
+	if !ok || durable.Health != HealthUnhealthy || durable.Balance != 500 {
+		t.Fatalf("rename-completed ambiguous write should remain recoverable from durable state: %#v", durable)
+	}
+}
+
+func TestJSONFileStoreAmbiguousPermissiveWriteDoesNotPromoteMemory(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "snapshots.json")
+	store, err := NewJSONFileStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	initial := Snapshot{
+		ProviderName: "mock",
+		Balance: 500,
+		Currency: "IDR",
+		Health: HealthUnhealthy,
+		LastCheckedAt: time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC),
+		LastSuccessAt: time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC),
+		ConsecutiveFailures: 3,
+	}
+	if err := store.Put(initial); err != nil {
+		t.Fatal(err)
+	}
+	store.persistHook = func(stage operationalStorePersistStage) error {
+		if stage == operationalStoreAfterReplace {
+			return errors.New("directory durability uncertain")
+		}
+		return nil
+	}
+	requested := initial
+	requested.Balance = 1000
+	requested.Health = HealthHealthy
+	requested.LastCheckedAt = initial.LastCheckedAt.Add(time.Minute)
+	requested.LastSuccessAt = requested.LastCheckedAt
+	requested.ConsecutiveFailures = 0
+	err = store.Put(requested)
+	if !errors.Is(err, ErrOperationalPersistenceAmbiguous) {
+		t.Fatalf("expected ambiguous persistence error, got %v", err)
+	}
+	got, ok := store.Get("mock")
+	if !ok {
+		t.Fatal("expected conservative snapshot to remain in memory")
+	}
+	if got.Health != HealthUnhealthy || got.Balance != 500 || !got.LastCheckedAt.Equal(initial.LastCheckedAt) || got.ConsecutiveFailures != 3 {
+		t.Fatalf("ambiguous permissive write must not promote memory: %#v", got)
+	}
+}
 
 func TestJSONFileStoreDoesNotMutateMemoryWhenPersistenceFails(t *testing.T) {
 	blocked := filepath.Join(t.TempDir(), "blocked")
