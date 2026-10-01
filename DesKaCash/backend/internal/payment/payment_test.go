@@ -21,10 +21,7 @@ func TestNewPayment(t *testing.T) {
 	if payment.Status != StatusPending {
 		t.Fatalf("expected pending status, got %s", payment.Status)
 	}
-	if payment.Provider != "demo" {
-		t.Fatalf("expected provider demo, got %s", payment.Provider)
-	}
-	if payment.IdempotencyKey != "idempotency-1" {
+		if payment.IdempotencyKey != "idempotency-1" {
 		t.Fatalf("expected idempotency key, got %s", payment.IdempotencyKey)
 	}
 	if payment.Amount.BaseUnits != 100_000 {
@@ -53,7 +50,7 @@ func TestNewPaymentRejectsInvalidInput(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if _, err := NewPayment(tt.id, tt.accountID, tt.provider, tt.idempotencyKey, tt.amount); err != ErrInvalidPayment {
+			if _, err := NewPayment(tt.id, tt.accountID, tt.idempotencyKey, tt.amount); err != ErrInvalidPayment {
 				t.Fatalf("expected invalid payment error, got %v", err)
 			}
 		})
