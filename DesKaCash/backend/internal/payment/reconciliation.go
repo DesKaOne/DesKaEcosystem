@@ -63,7 +63,7 @@ func (r *Reconciler) ReconcileWebhook(ctx context.Context, event WebhookEvent, p
 		return Payment{}, err
 	}
 
-	if event.ID == "" || event.Provider == "" || event.ProviderID == "" || event.Amount <= 0 || !validWebhookStatus(event.Status) {
+	if event.ID == "" || event.ExternalReference == "" || event.Amount <= 0 || !validWebhookStatus(event.Status) {
 		return Payment{}, ErrInvalidWebhookEvent
 	}
 
@@ -73,7 +73,7 @@ func (r *Reconciler) ReconcileWebhook(ctx context.Context, event WebhookEvent, p
 	}
 
 	if existing, err := r.webhooks.Get(ctx, event.ID); err == nil {
-		if existing.Provider != event.Provider || existing.ProviderID != event.ProviderID ||
+		if existing.Provider != event.Provider || existing.ProviderID != event.ExternalReference ||
 			existing.Status != event.Status || existing.Amount != event.Amount {
 			return Payment{}, ErrWebhookPaymentMismatch
 		}
@@ -82,7 +82,7 @@ func (r *Reconciler) ReconcileWebhook(ctx context.Context, event WebhookEvent, p
 		return Payment{}, err
 	}
 
-	if event.Provider != payment.Provider || event.ProviderID != payment.ProviderID {
+	if event.ExternalReference != payment.ExternalReference {
 		return Payment{}, ErrWebhookPaymentMismatch
 	}
 	if event.Amount != payment.Amount.BaseUnits {
