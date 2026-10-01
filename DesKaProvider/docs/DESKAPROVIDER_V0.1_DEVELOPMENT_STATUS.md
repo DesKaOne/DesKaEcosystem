@@ -7802,3 +7802,47 @@ No new external provider validation was required. Existing DigiFlazz, IAK, XP SI
 
 Continue the readiness audit from the next evidence-based transaction persistence/recovery or caller-boundary gap. In particular, inspect whether PostgreSQL transaction-store ambiguous outcomes have the same post-commit versus pre-commit distinction before adding any new architecture.
 
+
+
+## PostgreSQL Transaction Persistence Ambiguity Audit
+
+**Date:** 2026-10-02
+
+### Source Finding
+
+The PostgreSQL transaction store was audited against the JSON transaction-store persistence-ambiguity hardening. The current PostgreSQL path already fails closed for uncertain write outcomes:
+
+- PutContext() and PutIfCurrentContext() wrap database execution errors as ErrTransactionPersistenceAmbiguous;
+- RowsAffected() errors are also treated as ambiguous because the caller cannot establish whether the conditional transition reached the database;
+- CreateIfAbsentContext() likewise preserves the ambiguous-write boundary when the insert outcome cannot be established;
+- no ambiguous database write is collapsed into ErrTransactionStateConflict.
+
+The remaining limitation is structural rather than a demonstrated correctness regression: PostgresTransactionStore currently depends on the DBTX interface and single-statement/autocommit database operations. The store therefore does not possess enough information to distinguish a failure known to have occurred before commit from a connection/driver outcome where the statement may already have committed.
+
+### Safety Decision
+
+No speculative transaction-wrapper or driver-specific error classification was introduced.
+
+Adding BEGIN/COMMIT, savepoints, or SQLSTATE-based classification without an authoritative database/driver contract would change the persistence architecture without evidence that the repository requires it. The existing ambiguity sentinel is the conservative behavior for the current boundary: callers must reconcile durable transaction state rather than retrying an external provider side effect.
+
+### Verification
+
+Audited source:
+
+- DesKaProvider/backend/routing/postgres_transaction_store.go
+- DesKaProvider/backend/routing/postgres_transaction_store_test.go
+- DesKaProvider/backend/routing/transaction_store.go
+
+Existing deterministic coverage confirms ambiguous execution and RowsAffected() failures remain distinguishable from state conflicts.
+
+No production provider behavior, routing authority, transaction authorization boundary, ledger/customer balance/treasury mutation, retry/failover, provider funding, or public API behavior was changed.
+
+### External Validation
+
+No authorized live-provider transaction or external provider request was executed.
+
+No PostgreSQL production failure was fabricated. A future implementation should only refine pre-commit versus commit-uncertain classification after the repository establishes the concrete PostgreSQL driver/version and authoritative transaction/error semantics.
+
+### Next Concrete Engineering Task
+
+Continue the readiness audit from the next evidence-based persistence/recovery or caller-boundary gap. For PostgreSQL transaction ambiguity, first establish the concrete driver/database contract and add deterministic failure-injection coverage at that boundary before considering any architectural change.
