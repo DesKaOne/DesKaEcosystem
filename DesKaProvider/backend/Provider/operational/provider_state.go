@@ -111,6 +111,11 @@ func safeStateAfterAmbiguousPersistence(current, requested ProviderState) Provid
 			}
 		}
 		result.EnabledCapabilities = filtered
+	} else if current.EnabledCapabilities == nil && requested.EnabledCapabilities != nil {
+		// Legacy nil means all implemented capabilities. A requested explicit
+		// set is never broader than that effective set, so retaining it is safe
+		// even when the persistence outcome is uncertain.
+		result.EnabledCapabilities = cloneCapabilities(requested.EnabledCapabilities)
 	}
 	return result
 }
