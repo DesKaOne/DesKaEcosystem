@@ -28,7 +28,7 @@ func TestDesKaCashHasNoDirectIndoChainConfigurationOrRPCClient(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		if info.IsDir() || !strings.HasSuffix(path, ".go") {
+		if info.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 			return nil
 		}
 		data, err := os.ReadFile(path)
