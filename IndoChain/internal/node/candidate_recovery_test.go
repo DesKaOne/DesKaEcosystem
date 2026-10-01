@@ -5,8 +5,6 @@ import (
 	"testing"
 
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/consensus"
-	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/block"
-	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/types"
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/storage"
 )
 
@@ -48,5 +46,3 @@ func TestResumeFinalityCommitFromCandidateStoreMissingCandidate(t *testing.T) {
 	if !errors.Is(err, ErrFinalityRecoveryCandidateRequired) { t.Fatalf("error=%v", err) }
 }
 
-var _ block.Block
-var _ types.Hash
