@@ -83,6 +83,38 @@ type ProviderStatePersistence interface {
 	Save([]ProviderState) error
 }
 
+var ErrProviderStatePersistenceAmbiguous = errors.New("provider state persistence outcome is ambiguous")
+
+func wrapProviderStatePersistenceAmbiguous(err error) error {
+	if err == nil {
+		return nil
+	}
+	return errors.Join(ErrProviderStatePersistenceAmbiguous, err)
+}
+
+func safeStateAfterAmbiguousPersistence(current, requested ProviderState) ProviderState {
+	// Ambiguous persistence must fail closed: lifecycle enablement and
+	// capability enablement are never promoted from an uncertain write.
+	result := current
+	if requested.Lifecycle == LifecycleDisabled {
+		result.Lifecycle = LifecycleDisabled
+	}
+	if current.EnabledCapabilities != nil && requested.EnabledCapabilities != nil {
+		allowed := make(map[Capability]struct{}, len(requested.EnabledCapabilities))
+		for _, capability := range requested.EnabledCapabilities {
+			allowed[capability] = struct{}{}
+		}
+		filtered := make([]Capability, 0, len(current.EnabledCapabilities))
+		for _, capability := range current.EnabledCapabilities {
+			if _, ok := allowed[capability]; ok {
+				filtered = append(filtered, capability)
+			}
+		}
+		result.EnabledCapabilities = filtered
+	}
+	return result
+}
+
 func NewPersistentProviderStateStore(persistence ProviderStatePersistence) (*ProviderStateStore, error) {
 	if persistence == nil {
 		return nil, errors.New("provider state persistence is required")
@@ -210,6 +242,9 @@ func (s *ProviderStateStore) SetLifecycle(name string, lifecycle Lifecycle) (Pro
 		}
 		sort.Slice(states, func(i, j int) bool { return states[i].ProviderName < states[j].ProviderName })
 		if err := s.persistence.Save(states); err != nil {
+			if errors.Is(err, ErrProviderStatePersistenceAmbiguous) {
+				s.states[name] = safeStateAfterAmbiguousPersistence(current, updated)
+			}
 			return ProviderState{}, err
 		}
 	}
@@ -274,6 +309,9 @@ func (s *ProviderStateStore) SetCapabilityEnabled(name string, capability Capabi
 		}
 		sort.Slice(states, func(i, j int) bool { return states[i].ProviderName < states[j].ProviderName })
 		if err := s.persistence.Save(states); err != nil {
+			if errors.Is(err, ErrProviderStatePersistenceAmbiguous) {
+				s.states[name] = safeStateAfterAmbiguousPersistence(current, updated)
+			}
 			return ProviderState{}, err
 		}
 	}
