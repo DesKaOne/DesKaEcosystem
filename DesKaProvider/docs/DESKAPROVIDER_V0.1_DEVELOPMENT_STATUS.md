@@ -7846,3 +7846,45 @@ No PostgreSQL production failure was fabricated. A future implementation should 
 ### Next Concrete Engineering Task
 
 Continue the readiness audit from the next evidence-based persistence/recovery or caller-boundary gap. For PostgreSQL transaction ambiguity, first establish the concrete driver/database contract and add deterministic failure-injection coverage at that boundary before considering any architectural change.
+
+
+## PostgreSQL Operational Snapshot Persistence Ambiguity Hardening
+
+**Date:** 2026-10-02
+
+### Source Finding
+
+The PostgreSQL operational snapshot store persisted routing-adjacent health/balance observations through a single `INSERT ... ON CONFLICT DO UPDATE` statement, but write failures were returned as ordinary errors. The JSON operational store already exposes `ErrOperationalPersistenceAmbiguous` for outcomes where durability cannot be established. Keeping PostgreSQL writes outside that same ambiguity boundary could let a caller incorrectly interpret a failed write as a known pre-commit failure.
+
+### Implementation
+
+- PostgreSQL operational snapshot write failures now wrap `ErrOperationalPersistenceAmbiguous` while preserving the original database error text;
+- no database transaction wrapper, retry, failover, or speculative commit classification was introduced;
+- added deterministic coverage using a closed PostgreSQL database handle to verify write failures expose the ambiguity sentinel;
+- existing validation and read/recovery behavior remains unchanged.
+
+### Safety Boundary / Invariants
+
+- uncertain operational snapshot persistence is never treated as proof that the requested state did not commit;
+- callers can distinguish ambiguity with `errors.Is(err, ErrOperationalPersistenceAmbiguous)`;
+- operational health/balance remains advisory and separate from lifecycle, capability readiness, transaction authorization, and financial source-of-truth;
+- no automatic retry, provider failover, transaction resubmission, provider funding, ledger mutation, customer-balance mutation, treasury movement, or public API exposure is introduced;
+- `Router.Select()` remains the sole routing authority.
+
+### Changed Files
+
+- `DesKaProvider/backend/Provider/operational/postgres_store.go`
+- `DesKaProvider/backend/Provider/operational/postgres_store_integration_test.go`
+- `DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md`
+
+### Verification
+
+The deterministic closed-database regression was added specifically to cover the new ambiguity contract. Full repository test, vet, race, and CI verification is required on the resulting HEAD before this change is considered complete.
+
+### External Validation
+
+No authorized live-provider transaction or external provider request was executed. PostgreSQL integration tests requiring `DESKAPROVIDER_POSTGRES_DSN` remain credential/environment-gated.
+
+### Next Concrete Engineering Task
+
+Continue the readiness audit from the next evidence-based caller/persistence boundary. For PostgreSQL transaction persistence, keep the existing ambiguity sentinel until a concrete driver/database contract supports a safe pre-commit versus commit-uncertain distinction.
