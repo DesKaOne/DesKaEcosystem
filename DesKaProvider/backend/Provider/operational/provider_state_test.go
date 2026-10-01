@@ -100,7 +100,7 @@ func (p *ambiguousProviderStatePersistence) Save(states []ProviderState) error {
 
 func TestProviderStateStoreAmbiguousLifecycleDisableFailsClosedInMemory(t *testing.T) {
 	cause := errors.New("directory fsync failed")
-	persistence := &ambiguousProviderStatePersistence{err: errors.Join(ErrProviderStatePersistenceAmbiguous, cause)}
+	persistence := &ambiguousProviderStatePersistence{}
 	store, err := NewPersistentProviderStateStore(persistence)
 	if err != nil { t.Fatal(err) }
 	if err := store.Put(ProviderState{
@@ -109,6 +109,7 @@ func TestProviderStateStoreAmbiguousLifecycleDisableFailsClosedInMemory(t *testi
 		Capabilities: []Capability{CapabilityPPOB},
 	}); err != nil { t.Fatal(err) }
 
+	persistence.err = errors.Join(ErrProviderStatePersistenceAmbiguous, cause)
 	_, err = store.SetLifecycle("mock", LifecycleDisabled)
 	if !errors.Is(err, ErrProviderStatePersistenceAmbiguous) || !errors.Is(err, cause) {
 		t.Fatalf("expected ambiguous persistence and cause, got %v", err)
@@ -122,7 +123,7 @@ func TestProviderStateStoreAmbiguousLifecycleDisableFailsClosedInMemory(t *testi
 
 func TestProviderStateStoreAmbiguousLifecycleEnableDoesNotPromote(t *testing.T) {
 	cause := errors.New("directory fsync failed")
-	persistence := &ambiguousProviderStatePersistence{err: errors.Join(ErrProviderStatePersistenceAmbiguous, cause)}
+	persistence := &ambiguousProviderStatePersistence{}
 	store, err := NewPersistentProviderStateStore(persistence)
 	if err != nil { t.Fatal(err) }
 	if err := store.Put(ProviderState{
@@ -131,6 +132,7 @@ func TestProviderStateStoreAmbiguousLifecycleEnableDoesNotPromote(t *testing.T) 
 		Capabilities: []Capability{CapabilityPPOB},
 	}); err != nil { t.Fatal(err) }
 
+	persistence.err = errors.Join(ErrProviderStatePersistenceAmbiguous, cause)
 	_, err = store.SetLifecycle("mock", LifecycleEnabled)
 	if !errors.Is(err, ErrProviderStatePersistenceAmbiguous) || !errors.Is(err, cause) {
 		t.Fatalf("expected ambiguous persistence and cause, got %v", err)
@@ -144,7 +146,7 @@ func TestProviderStateStoreAmbiguousLifecycleEnableDoesNotPromote(t *testing.T) 
 
 func TestProviderStateStoreAmbiguousCapabilityDisableFailsClosed(t *testing.T) {
 	cause := errors.New("directory fsync failed")
-	persistence := &ambiguousProviderStatePersistence{err: errors.Join(ErrProviderStatePersistenceAmbiguous, cause)}
+	persistence := &ambiguousProviderStatePersistence{}
 	store, err := NewPersistentProviderStateStore(persistence)
 	if err != nil { t.Fatal(err) }
 	if err := store.Put(ProviderState{
@@ -154,6 +156,7 @@ func TestProviderStateStoreAmbiguousCapabilityDisableFailsClosed(t *testing.T) {
 		EnabledCapabilities: []Capability{CapabilityPPOB, CapabilityBalance},
 	}); err != nil { t.Fatal(err) }
 
+	persistence.err = errors.Join(ErrProviderStatePersistenceAmbiguous, cause)
 	_, err = store.SetCapabilityEnabled("mock", CapabilityPPOB, false)
 	if !errors.Is(err, ErrProviderStatePersistenceAmbiguous) || !errors.Is(err, cause) {
 		t.Fatalf("expected ambiguous persistence and cause, got %v", err)
@@ -170,7 +173,7 @@ func TestProviderStateStoreAmbiguousCapabilityDisableFailsClosed(t *testing.T) {
 
 func TestProviderStateStoreAmbiguousLegacyCapabilityMutationRemainsFailClosed(t *testing.T) {
 	cause := errors.New("directory fsync failed")
-	persistence := &ambiguousProviderStatePersistence{err: errors.Join(ErrProviderStatePersistenceAmbiguous, cause)}
+	persistence := &ambiguousProviderStatePersistence{}
 	store, err := NewPersistentProviderStateStore(persistence)
 	if err != nil { t.Fatal(err) }
 	if err := store.Put(ProviderState{
@@ -179,6 +182,7 @@ func TestProviderStateStoreAmbiguousLegacyCapabilityMutationRemainsFailClosed(t 
 		Capabilities: []Capability{CapabilityPPOB, CapabilityBalance},
 	}); err != nil { t.Fatal(err) }
 
+	persistence.err = errors.Join(ErrProviderStatePersistenceAmbiguous, cause)
 	_, err = store.SetCapabilityEnabled("mock", CapabilityPPOB, false)
 	if !errors.Is(err, ErrProviderStatePersistenceAmbiguous) {
 		t.Fatalf("expected ambiguous persistence, got %v", err)
