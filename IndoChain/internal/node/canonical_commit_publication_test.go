@@ -2,6 +2,7 @@ package node
 
 import (
 	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/consensus"
@@ -163,7 +164,7 @@ func TestCommitFinalityEvidenceAndPublishConsensusRejectsDuplicateAfterAdvance(t
 	if err := n.CommitFinalityEvidenceAndPublishConsensus(ctx, candidate, certificate, validators, power, validatorResolver, senderResolver, runtime); err == nil {
 		t.Fatal("expected duplicate handoff rejection")
 	}
-	if n.Head != beforeHead || n.HeadHash != beforeHash || n.State.Root() != beforeRoot {
+	if !reflect.DeepEqual(n.Head, beforeHead) || n.HeadHash != beforeHash || n.State.Root() != beforeRoot {
 		t.Fatal("duplicate handoff mutated canonical node state")
 	}
 }
