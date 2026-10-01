@@ -80,12 +80,3 @@ func (r *ValidatorRuntime) PublishCanonicalCommit(commit CanonicalCommit) error 
 	return nil
 }
 
-func (r *ValidatorRuntime) LastCanonicalCommit() (CanonicalCommit, error) {
-	if r == nil {
-		return CanonicalCommit{}, ErrInvalidConsensusRuntime
-	}
-	if r.lastCanonicalCommit == nil {
-		return CanonicalCommit{}, ErrNoCanonicalCommitPublication
-	}
-	return *r.lastCanonicalCommit, nil
-}
