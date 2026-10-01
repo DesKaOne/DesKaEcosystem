@@ -50,6 +50,19 @@ func (s *MemoryConsensusEvidenceStore) PutConsensusEvidence(key string, encoded 
 	return nil
 }
 
+func (s *MemoryConsensusEvidenceStore) DeleteConsensusEvidence(key string) error {
+	if s == nil {
+		return ErrConsensusEvidenceCorrupt
+	}
+	if key == "" {
+		return ErrConsensusEvidenceCorrupt
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.records, key)
+	return nil
+}
+
 func (s *MemoryConsensusEvidenceStore) LoadConsensusEvidence() (map[string][]byte, error) {
 	if s == nil {
 		return nil, ErrConsensusEvidenceCorrupt
@@ -130,6 +143,23 @@ func (s *FileConsensusEvidenceStore) PutConsensusEvidence(key string, encoded []
 	return s.persistLocked(next)
 }
 
+func (s *FileConsensusEvidenceStore) DeleteConsensusEvidence(key string) error {
+	if s == nil {
+		return ErrConsensusEvidenceCorrupt
+	}
+	if key == "" {
+		return ErrConsensusEvidenceCorrupt
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.records[key]; !ok {
+		return nil
+	}
+	next := cloneEvidenceRecords(s.records)
+	delete(next, key)
+	return s.persistLocked(next)
+}
+
 func (s *FileConsensusEvidenceStore) LoadConsensusEvidence() (map[string][]byte, error) {
 	if s == nil {
 		return nil, ErrConsensusEvidenceCorrupt
@@ -175,9 +205,11 @@ func cloneEvidenceRecords(in map[string][]byte) map[string][]byte {
 var _ interface {
 	PutConsensusEvidence(string, []byte) error
 	LoadConsensusEvidence() (map[string][]byte, error)
+	DeleteConsensusEvidence(string) error
 } = (*MemoryConsensusEvidenceStore)(nil)
 
 var _ interface {
 	PutConsensusEvidence(string, []byte) error
 	LoadConsensusEvidence() (map[string][]byte, error)
+	DeleteConsensusEvidence(string) error
 } = (*FileConsensusEvidenceStore)(nil)
