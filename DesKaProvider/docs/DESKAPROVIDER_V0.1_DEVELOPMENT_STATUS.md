@@ -6541,3 +6541,12 @@ Overall DesKaProvider v0.1 remains approximately **82%**. This batch hardens exi
 ### Next Concrete Engineering Task
 
 After GREEN CI, continue auditing transaction persistence/recovery boundaries for crash consistency and restart semantics, especially durability of the atomic replacement boundary and recovery behavior after process/filesystem interruption, without introducing automatic retry/resubmission or unsafe financial recovery execution.
+
+
+### CI Correction — Lock Directory Ordering
+
+Push CI #3577 / run 36805620990 exposed a deterministic test failure: the first implementation attempted to create the transaction-store lock file before creating its parent directory. Existing restart/persistence tests therefore failed with a missing lock-directory error.
+
+Correction commit: 070ade7a958741dfedfdc69e23392ce28ec90f04 — the lock-directory path is now created before opening the advisory lock file.
+
+Fresh Push and PR CI for the corrected HEAD remain mandatory before this batch is complete.
