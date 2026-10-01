@@ -2914,3 +2914,77 @@ Masuk ke **canonical commit → consensus state publication / next-height bounda
 
 **Milestone 4.58 status:** implementation/test completed; exact-head CI verification required after this status-document update.
 
+
+
+### 4.59 Canonical Commit → Consensus State Publication / Next-Height Boundary
+
+**Tanggal:** 2026-10-01
+
+**Objective**
+
+Menutup handoff setelah canonical block/state commit: consensus menerima exact canonical height, block hash, dan resulting state root hanya setelah node berhasil melakukan durable commit, lalu reset round-local/finality state dan memulai height berikutnya pada PhaseProposal tanpa double-advance.
+
+**Implementation**
+
+- IndoChain/internal/consensus/canonical_commit.go
+  - menambahkan CanonicalCommit sebagai publication record untuk height, canonical block hash, dan resulting state root;
+  - NewCanonicalCommit menolak height/hash/state-root kosong;
+  - ValidateCanonicalCommit memastikan runtime masih berada di PhaseFinalized, target tepat currentHeight + 1, dan canonical block hash identik dengan finalized proposal payload;
+  - PublishCanonicalCommit hanya memutasi runtime setelah seluruh next-height aggregator berhasil dibuat;
+  - publication mereset round ke zero, phase ke PhaseProposal, proposal/lock/finality evidence height lama, dan menyimpan exact canonical publication terakhir;
+  - duplicate/late publication ditolak karena runtime sudah berada pada next-height proposal state.
+- IndoChain/internal/consensus/runtime.go
+  - runtime menyimpan lastCanonicalCommit publication tanpa memberi ownership storage kepada consensus.
+- IndoChain/internal/node/canonical_commit_publication.go
+  - menambahkan Node.CommitFinalityEvidenceAndPublishConsensus;
+  - melakukan preflight consensus validation sebelum storage mutation;
+  - menjalankan existing CommitFinalityEvidence sebagai canonical atomic commit boundary;
+  - setelah commit sukses, publication dibangun ulang dari actual node head/hash/state root, lalu diteruskan ke runtime;
+  - storage failure tidak pernah memajukan consensus runtime.
+- Tests:
+  - finalized runtime berhasil maju tepat satu height dan kembali ke Proposal/round zero;
+  - publication hash/state-root tersimpan persis dari canonical commit;
+  - pre-finalization dan hash mismatch ditolak tanpa mutation;
+  - duplicate publication tidak memajukan height kedua kali;
+  - node handoff berhasil menyamakan runtime publication dengan canonical node state;
+  - storage commit failure mempertahankan runtime pada finalized height;
+  - duplicate node handoff tidak memutasi canonical node state.
+
+**Locked invariants**
+
+1. Consensus tidak maju ke next height sebelum canonical storage commit berhasil.
+2. Published height harus tepat current consensus height + 1.
+3. Published block hash harus identik dengan finalized proposal payload dan actual canonical node head hash.
+4. Published state root harus berasal dari actual committed node state.
+5. Next height selalu dimulai pada round 0 / PhaseProposal.
+6. Proposal, lock proof, precommit/prevote aggregators, dan finality certificate height lama tidak dibawa ke next height.
+7. Storage failure tidak mengubah consensus runtime.
+8. Repeated/late publication tidak boleh menghasilkan double-advance.
+9. Consensus hanya menerima publication metadata; canonical storage tetap menjadi ownership node.
+
+**Production boundary**
+
+Milestone ini menutup executable canonical-commit → next-height publication boundary, tetapi **belum full production BFT**.
+
+Masih terbuka:
+
+- multi-node automatic multi-height consensus loop;
+- peer-wide finality evidence broadcast/retransmission;
+- timeout/failure detector dan automatic round-change;
+- validator-set lifecycle dan epoch transition;
+- durable consensus recovery/reconstruction from canonical storage;
+- automatic proposer scheduling;
+- final canonical block serialization freeze;
+- end-to-end multi-node crash/restart/recovery validation.
+
+**Verification**
+
+- 4.59 implementation/test commits are now on branch dev/indochain-v0.1.
+- Exact-head CI gate must be verified after this status-document update.
+- PostgreSQL: tidak relevan.
+
+**Next integration target**
+
+Masuk ke **multi-height consensus reconstruction/recovery boundary**: setelah node restart atau runtime replacement, consensus harus dapat direkonstruksi dari canonical node height/hash/state-root tanpa mengandalkan state in-memory lama, lalu melanjutkan proposal pada height berikutnya secara deterministic.
+
+**Milestone 4.59 status:** implementation/test completed; exact-head CI verification required after this status-document update.
