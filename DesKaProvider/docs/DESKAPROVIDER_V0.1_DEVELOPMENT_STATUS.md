@@ -6217,3 +6217,42 @@ The first CI attempt for this audit failed at compile time because `fraud_status
 Correction commits: `b964556d715e867e22c5f9f3425991cb74903d77`, `cd72c3cb4138ee518cc3d34fd0a073f09c75e97a`.
 
 The current documentation HEAD requires fresh GREEN Push and PR CI before the batch is closed.
+
+
+## XP SINDONESIA Documented-Contract Audit — No Safe Change Without Authoritative Source
+
+**Date:** 2026-10-01
+
+### Audit Basis
+
+The current XP SINDONESIA adapter was reviewed as the next provider scope after the completed Midtrans hardening. The repository currently exposes explicit configuration for saldo, harga, daftar harga, order, and callback endpoints, plus deterministic coverage for purchase identity, balance parsing, callback authentication, documented status mappings already encoded by the adapter, bounded HTTP timeout behavior, and explicit unsupported operations.
+
+A public web search performed during this audit did not locate authoritative XP SINDONESIA API documentation sufficient to independently verify the adapter's request fields, endpoint semantics, callback authentication contract, complete status vocabulary, or response-code semantics. Search results surfaced unrelated/third-party PPOB documentation and historical references, which are not treated as authoritative XP SINDONESIA contract sources. Therefore no provider-specific behavior was inferred or changed from those sources.
+
+### Existing Safety Review
+
+- Purchase requires product code, customer number, and durable reference ID.
+- The configured callback URL is required before purchase submission.
+- Purchase response identity must match the submitted reference, product, and customer.
+- Unknown purchase status fails closed.
+- Balance response validates success discriminator, member identity, presence and numeric format of saldo.
+- Callback validates provider key, optional transport secret consistency, member identity, transaction identity, and supported terminal callback statuses.
+- GetProducts, Inquiry, and GetStatus remain explicitly unsupported rather than being implemented speculatively.
+- HTTP client timeout is bounded without mutating a caller-owned client with an explicit timeout.
+- No automatic retry/resubmission, failover, duplicate purchase, customer-balance mutation, ledger mutation, treasury movement, or provider funding is introduced.
+
+### Decision
+
+No production-code change is justified by this audit until an authoritative XP SINDONESIA provider contract is available. In particular, do not infer undocumented price-list, inquiry, status-check, callback-signature, or response-code behavior from third-party PPOB documentation.
+
+### External Validation Boundary
+
+The existing XP SINDONESIA read-only balance integration remains explicitly gated by provider credentials, integration enablement, and endpoint allowlisting. No live provider call was executed by this audit.
+
+### Current Completion Assessment
+
+Overall DesKaProvider v0.1 remains approximately **82%**. This audit closes the currently safe XP SINDONESIA contract-audit scope without speculative provider behavior.
+
+### Next Concrete Engineering Task
+
+Proceed to the next provider adapter audit using the same workflow: authoritative provider documentation -> provider contract comparison -> safe implementation only -> deterministic fixtures/tests -> GREEN CI -> external validation separately.
