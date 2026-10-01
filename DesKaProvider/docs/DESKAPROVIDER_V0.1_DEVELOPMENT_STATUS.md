@@ -6256,3 +6256,46 @@ Overall DesKaProvider v0.1 remains approximately **82%**. This audit closes the 
 ### Next Concrete Engineering Task
 
 Proceed to the next provider adapter audit using the same workflow: authoritative provider documentation -> provider contract comparison -> safe implementation only -> deterministic fixtures/tests -> GREEN CI -> external validation separately.
+
+
+## RCB / Raga Cipta Bersama Adapter Audit — Contract Insufficient for Safe Implementation
+
+**Date:** 2026-10-01
+
+### Source Basis
+
+The official RCB Bisnis site identifies PT Raga Cipta Bersama as the operator and documents an RCB Gateway integration path for custom websites. The official integration article documents an HTTP API checkout request to `https://api.ragaciptabersama.web.id/api/orders`, Bearer API-key authentication, and request fields including `order_id`, `toko_uid`, `harga`, `produk_nama`, `buyer_nama`, `buyer_email`, and `source`. It also documents a successful response carrying an `order_id` used for the hosted payment page. citeturn2search0
+
+### Repository Finding
+
+The current RCB implementation surface is only a placeholder package declaration; there is no provider adapter implementation or deterministic contract test suite to harden in place.
+
+### Contract Gap
+
+The authoritative material located is insufficient to safely implement the provider-neutral transaction contract because it does not establish, with enough detail:
+
+- complete response schema and status vocabulary;
+- durable transaction/reference semantics beyond the example `order_id`;
+- documented read-only status endpoint semantics;
+- webhook payload schema, authentication/signature rules, and terminal-state mapping;
+- failure/duplicate-order semantics required for safe idempotent transaction handling.
+
+The official RCB site confirms webhook-based real-time payment detection at the product level, but this does not by itself define a transaction webhook contract suitable for implementation. citeturn0search0turn1view1
+
+### Decision
+
+No RCB production adapter implementation is introduced in this batch. Do not infer missing status, webhook, signature, retry, or duplicate-order behavior from examples or third-party material.
+
+This preserves the provider-neutral safety boundary: no automatic retry/resubmission, no duplicate purchase/payment creation, no unsafe failover, no ledger mutation, no customer-balance mutation, no treasury movement, and no provider funding.
+
+### External Validation Boundary
+
+No RCB live API transaction was executed. RCB remains a placeholder provider until an authoritative, sufficiently complete API contract is available.
+
+### Current Completion Assessment
+
+Overall DesKaProvider v0.1 remains approximately **82%**. This audit records the available RCB documentation boundary without widening the provider-neutral interface or introducing speculative behavior.
+
+### Next Concrete Engineering Task
+
+Proceed to the next implemented provider adapter or documented-contract audit. Preserve the workflow: authoritative provider documentation -> provider contract comparison -> safe implementation only -> deterministic fixtures/tests -> GREEN CI -> external validation separately.
