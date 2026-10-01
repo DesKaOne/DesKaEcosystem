@@ -6167,3 +6167,44 @@ Overall DesKaProvider v0.1 remains approximately **82%**. This audit closes the 
 ### Next Concrete Engineering Task
 
 Proceed to the next provider adapter audit, preserving the same workflow: authoritative provider documentation -> provider contract comparison -> implementation only where the existing neutral interface can represent the behavior safely -> deterministic fixtures/tests -> GREEN CI -> external validation separately.
+
+
+## Midtrans Payment Webhook Contract Hardening
+
+**Date:** 2026-10-01
+
+### Source Basis
+
+The authoritative Midtrans notification documentation requires signature verification and states that successful payment confirmation should validate `status_code=200`, `fraud_status=accept`, and `transaction_status=capture/settlement`. Midtrans also documents `fraud_status=challenge` as requiring approval and possible later cancellation. citeturn8search9turn10search0
+
+### Audit Finding
+
+The existing adapter verified the notification signature and normalized transaction status, but did not decode or validate `fraud_status` and could therefore map a `capture` notification with an unapproved fraud state as provider-neutral success.
+
+### Implementation
+
+- Added `fraud_status` to the Midtrans notification model.
+- For provider-neutral success (`capture` / `settlement`), require HTTP notification `status_code=200`.
+- For provider-neutral success, require `fraud_status=accept` case-insensitively; challenge/deny states fail closed.
+- Preserved existing SHA-512 signature verification, transaction identity, amount parsing, and status mapping.
+- No retry, resubmission, failover, duplicate payment creation, refund automation, ledger mutation, customer-balance mutation, treasury movement, or provider funding was introduced.
+
+### Deterministic Coverage
+
+- Updated the valid settlement webhook fixture to include documented `fraud_status=accept`.
+- Added `TestWebhookRejectsSuccessWithUnacceptableFraudStatus` using a documented challenge state.
+
+### Verification Boundary
+
+Production implementation commit: `2b1a73aee84180b0b41f098a2ee6e2443da9b5ed`.
+Deterministic regression commit: `727ef872f4500fecfd4b402c0bd6638aafcd10e1`.
+
+Fresh GREEN Push and PR CI are required before this batch is considered complete. Midtrans sandbox validation remains separately credential-gated.
+
+### External Validation Boundary
+
+No authorized live-provider transaction was executed by this batch. External Midtrans sandbox validation remains independent of deterministic contract verification.
+
+### Current Completion Assessment
+
+Overall DesKaProvider v0.1 remains approximately **82%**. This closes a concrete Midtrans webhook contract-validation gap without widening the provider-neutral payment interface.
