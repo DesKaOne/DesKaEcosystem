@@ -6410,3 +6410,47 @@ Overall DesKaProvider v0.1 remains approximately **82%**. This closes a race-win
 ### Next Concrete Engineering Task
 
 After GREEN CI, continue auditing remaining service-side provider execution boundaries, especially webhook authentication/normalization and reconciliation paths, without turning observational recovery into automatic financial execution.
+
+## Service-Side Webhook / Reconciliation Boundary Audit
+
+**Date:** 2026-10-01
+
+### Audit Finding
+
+The provider-to-service boundary was reviewed after PPOB lifecycle TOCTOU hardening. The current implementation already keeps external financial execution separate from webhook observation and reconciliation:
+
+- provider webhook ingress is normalized/authenticated by the provider-specific adapter before the payment service applies a provider-neutral payment observation;
+- normalized PPOB webhook processing requires the durable transaction reference, product/customer identity, and, for provider-aware ingress, the durable ProviderName;
+- webhook state transitions use the transaction store compare-and-set transition path and reject divergent terminal observations;
+- reconciliation reads the durable ProviderName and ReferenceID, calls only the provider status operation, validates returned transaction identity, and persists through the same CAS boundary;
+- neither webhook handling nor reconciliation calls Purchase or CreatePayment, so recovery cannot become an automatic financial resubmission;
+- operational lifecycle disablement does not block webhook observation or reconciliation of an already-created transaction, because operational state is not financial authority;
+- new PPOB execution remains blocked by the operational lifecycle gate, including the final pre-provider-call TOCTOU gate.
+
+### Deterministic Regression Coverage
+
+Added DesKaProvider/backend/routing/webhook_reconciliation_boundary_test.go covering:
+
+- a disabled provider can still accept a normalized provider-aware webhook for an existing durable pending transaction;
+- the same disabled provider cannot authorize a new PPOB purchase;
+- reconciliation remains available for an existing pending transaction while the provider lifecycle is disabled;
+- reconciliation does not resubmit the provider purchase.
+
+### Decision
+
+No production-code change was justified by this boundary audit. The existing service-side separation is preserved: webhook/reconciliation are observational state-correlation paths, while Router.Select() and the explicit execution gates remain responsible for authorizing new external financial side effects.
+
+### Verification Boundary
+
+Regression test commit: 3c75fd9bd00328c5316cf59ef51d56d65ec09e3b.
+
+Fresh Push and PR CI for the final HEAD are mandatory before this audit batch is considered complete.
+
+### Current Completion Assessment
+
+Overall DesKaProvider v0.1 remains approximately **82%**. This batch adds deterministic boundary coverage and confirms the existing webhook/reconciliation separation without widening provider behavior or the provider-neutral interface.
+
+### Next Concrete Engineering Task
+
+After GREEN CI, continue auditing remaining provider-to-service persistence and external side-effect boundaries, especially transaction-store CAS behavior across restart/concurrency and provider-reference ownership, without introducing automatic retry/resubmission or unsafe recovery execution.
+
