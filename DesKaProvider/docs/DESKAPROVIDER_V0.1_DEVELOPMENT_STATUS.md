@@ -6442,9 +6442,9 @@ No production-code change was justified by this boundary audit. The existing ser
 
 ### Verification Boundary
 
-Regression test commit: 3c75fd9bd00328c5316cf59ef51d56d65ec09e3b.
+Regression test commits: 3c75fd9bd00328c5316cf59ef51d56d65ec09e3b, 8d40323d80c9f5a53c24fb89602a905ffa07df65, and a856a3c8c1e3820edd4f3eb3e1ea19ca28054a0e.
 
-Fresh Push and PR CI for the final HEAD are mandatory before this audit batch is considered complete.
+CI correction: Push/PR workflow #3539 / run 36798678114 initially failed because the new reconciliation fixture did not create the Mock provider transaction required by GetStatus; the fixture was corrected to perform one authorized initial purchase before disabling the lifecycle, then verify reconciliation does not resubmit it. Fresh Push and PR CI for the corrected HEAD are mandatory before this audit batch is considered complete.
 
 ### Current Completion Assessment
 
@@ -6453,4 +6453,3 @@ Overall DesKaProvider v0.1 remains approximately **82%**. This batch adds determ
 ### Next Concrete Engineering Task
 
 After GREEN CI, continue auditing remaining provider-to-service persistence and external side-effect boundaries, especially transaction-store CAS behavior across restart/concurrency and provider-reference ownership, without introducing automatic retry/resubmission or unsafe recovery execution.
-
