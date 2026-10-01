@@ -95,7 +95,8 @@ func (s *JSONFileTransactionStore) All() []TransactionState {
 }
 
 func (s *JSONFileTransactionStore) Put(state TransactionState) error {
-    if state.Request.ReferenceID == "" {
+    referenceID := transactionReferenceID(state)
+    if referenceID == "" {
         return errors.New("transaction reference ID is required")
     }
     if state.Execution.ProviderName == "" {
@@ -104,17 +105,17 @@ func (s *JSONFileTransactionStore) Put(state TransactionState) error {
 
     s.mu.Lock()
     defer s.mu.Unlock()
-    if previous, ok := s.transactions[state.Request.ReferenceID]; ok {
+    if previous, ok := s.transactions[referenceID]; ok {
         if err := validateTransactionTransition(previous, state); err != nil {
             return err
         }
     }
-    s.transactions[state.Request.ReferenceID] = state
+    s.transactions[referenceID] = state
     return s.persistLocked()
 }
 
 func (s *JSONFileTransactionStore) PutIfCurrent(referenceID string, previous, next TransactionState) error {
-    if referenceID == "" || next.Request.ReferenceID != referenceID || previous.Request.ReferenceID != referenceID {
+    if referenceID == "" || transactionReferenceID(next) != referenceID || transactionReferenceID(previous) != referenceID {
         return ErrReferenceConflict
     }
     s.mu.Lock()
