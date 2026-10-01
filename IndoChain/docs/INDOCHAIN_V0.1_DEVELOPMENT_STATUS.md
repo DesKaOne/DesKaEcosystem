@@ -3441,3 +3441,74 @@ Masih terbuka:
 
 **Milestone 4.65 status:** implementation/test completed; implementation CI GREEN; exact final documentation HEAD CI GREEN; milestone complete.
 
+### 4.66 Retention Window / Safe Historical Pruning
+
+**Tanggal:** 2026-10-01
+
+**Objective**
+
+Menambahkan policy retention deterministik berbasis height dan epoch untuk membedakan finality artifact yang masih recovery-relevant dari artifact yang aman dipruning. Policy tidak melakukan storage scan, tidak memutasi consensus runtime, dan tidak menjadi bagian dari canonical commit.
+
+**Implementation**
+
+- `IndoChain/internal/consensus/artifact_retention.go`
+  - `ArtifactRetentionPolicy` dengan `KeepRecentHeights` dan `KeepRecentEpochs`;
+  - policy wajib memiliki minimal satu retention window aktif;
+  - candidate hanya dinilai melalui height window karena `CandidateStore` belum memiliki epoch metadata;
+  - evidence harus berada di luar height window **dan** epoch window ketika keduanya dikonfigurasi;
+  - future height/epoch terhadap canonical context ditolak.
+- `IndoChain/internal/node/historical_artifact_pruning.go`
+  - `Node.PruneHistoricalFinalityArtifacts` menerapkan policy sebelum memanggil cleanup boundary 4.65;
+  - seluruh eligibility dipreflight sebelum deletion, sehingga artifact yang masih retained tidak menghasilkan partial cleanup.
+- Tests:
+  - candidate height window;
+  - evidence height + epoch window;
+  - future context rejection;
+  - invalid empty policy;
+  - retained artifact tidak mengubah store;
+  - artifact yang melewati kedua window dapat dipruning.
+
+**Locked invariants**
+
+1. Retention policy bersifat pure/deterministik dan tidak melakukan deletion sendiri.
+2. Minimal satu retention window harus dikonfigurasi.
+3. Candidate pruning hanya menggunakan height karena candidate artifact belum membawa epoch metadata.
+4. Evidence yang masih berada pada salah satu configured recovery window wajib dipertahankan.
+5. Future height/epoch tidak pernah dianggap aman untuk pruning.
+6. Eligibility seluruh artifact dipastikan sebelum deletion dimulai.
+7. Cleanup tetap melewati `PruneFinalityArtifacts` dari milestone 4.65.
+8. Retention policy tidak memutasi canonical block/state.
+9. Retention policy tidak memutasi `ValidatorRuntime`.
+10. Retention window bukan validator-set/epoch lifecycle dan bukan automatic distributed GC.
+
+**Production boundary**
+
+Milestone ini menutup local deterministic retention policy, tetapi **belum full production BFT historical GC**.
+
+Masih terbuka:
+
+- coordinated retention policy across validators;
+- durable validator-set/epoch lifecycle;
+- candidate epoch metadata jika diperlukan untuk epoch-aware candidate GC;
+- crash-safe garbage collection coordination across multiple stores/processes;
+- automatic multi-node restart/recovery coordination;
+- automatic multi-height consensus loop;
+- end-to-end cluster crash/restart validation;
+- final canonical serialization freeze.
+
+**Verification**
+
+- Implementation/test HEAD: `2026ac1bfa456b03f5a737919ab19c0427780681`.
+- CI run `36854315789`: **GREEN**.
+- Tidy: PASS.
+- Test: PASS.
+- Race Test: PASS.
+- Vet: PASS.
+- Exact final status-document HEAD requires a new CI gate.
+
+**Next integration target**
+
+**4.67 — Coordinated Artifact GC Boundary:** mendefinisikan bagaimana retention decision dikomunikasikan/di-koordinasikan lintas validator tanpa menjadikan GC sebagai bagian dari consensus commit.
+
+**Milestone 4.66 status:** implementation/test completed; final completion gated on exact final documentation HEAD CI GREEN.
+
