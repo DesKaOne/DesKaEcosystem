@@ -3587,3 +3587,82 @@ Masih terbuka:
 
 **Milestone 4.67 status:** implementation/test completed; implementation CI GREEN; final completion gated on exact final documentation HEAD CI GREEN.
 
+### 4.68 Durable GC Decision / Audit Recovery
+
+**Tanggal:** 2026-10-02
+
+**Objective**
+
+Menambahkan persistence dan deterministic recovery untuk coordinated artifact GC decision dari milestone 4.67. Durable decision menjadi audit/recovery artifact terpisah dan tidak otomatis menjalankan cleanup, mengubah canonical state, atau memutasi consensus runtime.
+
+**Implementation**
+
+- `IndoChain/internal/consensus/artifact_gc_store.go`
+  - `GCDecisionStore` menjadi persistence boundary terpisah dari `ChainStore` dan `EvidenceStore`;
+  - `ArtifactGCDecisionKey` memakai plan digest sebagai exact durable identity;
+  - `EncodeArtifactGCDecision` / `DecodeArtifactGCDecision` menyediakan encoding durable;
+  - `PersistArtifactGCDecision` memvalidasi ulang full quorum decision sebelum persistence;
+  - identical replay bersifat idempotent;
+  - conflicting bytes pada identity yang sama ditolak;
+  - `RecoverArtifactGCDecisions` memvalidasi ulang plan, validator membership, signature, voting power, dan quorum;
+  - recovery mengembalikan decision secara deterministic dan tidak melakukan deletion.
+- `IndoChain/internal/storage/artifact_gc_decision_store.go`
+  - memory + file-backed decision store;
+  - exact-key idempotent deletion;
+  - file persistence memakai atomic snapshot replacement;
+  - store tetap terpisah dari canonical chain dan consensus evidence storage.
+- Tests:
+  - durable persist + identical replay;
+  - authenticated recovery;
+  - tampered decision conflict rejection;
+  - corrupt durable record rejection;
+  - deterministic recovery ordering across multiple plans;
+  - file store survives reopen.
+
+**Locked invariants**
+
+1. Durable GC decision bukan canonical block/state.
+2. Durable GC decision bukan consensus finality evidence.
+3. Decision identity berasal dari exact deterministic plan digest.
+4. Persistence hanya menerima decision yang sudah lolos validator membership, signature, voting power, dan quorum validation.
+5. Identical persistence replay bersifat idempotent.
+6. Conflicting bytes pada identity yang sama ditolak.
+7. Corrupt/mismatched durable records menghentikan recovery.
+8. Recovery memvalidasi ulang authenticated approvals sebelum mengembalikan decision.
+9. Recovery bersifat non-mutating: tidak menghapus candidate/evidence dan tidak mengubah `ValidatorRuntime`.
+10. File decision store menggunakan atomic replacement untuk crash-safe snapshot updates.
+11. Durable GC audit/recovery tetap operational boundary dan tidak menjadi production BFT consensus state machine.
+
+**Production boundary**
+
+Milestone ini menutup local durable decision/audit recovery, tetapi **belum full production distributed GC lifecycle**.
+
+Masih terbuka:
+
+- durable validator-set/epoch lifecycle;
+- GC decision dissemination/retry over production P2P;
+- coordinated GC lease/ownership across multiple processes;
+- crash-safe multi-store cleanup transaction semantics;
+- validator replacement and membership changes during GC;
+- evidence/decision pruning policy for the GC audit log itself;
+- automatic multi-node restart/recovery coordination;
+- automatic multi-height consensus loop;
+- end-to-end cluster crash/restart validation;
+- final canonical serialization freeze.
+
+**Verification**
+
+- Implementation/test HEAD: `162742e99e0e5d380ebcee3ad34e866a93e4b7b5`.
+- CI run `36911400141`: **GREEN**.
+- Tidy: PASS.
+- Test: PASS.
+- Race Test: PASS.
+- Vet: PASS.
+- Exact final status-document HEAD still requires its own CI gate after this documentation commit.
+
+**Next integration target**
+
+**4.69 — GC Decision Dissemination / P2P Audit Boundary:** menghubungkan durable GC decision dengan dissemination/retry boundary di P2P tanpa menjadikannya canonical consensus traffic.
+
+**Milestone 4.68 status:** implementation/test completed; implementation CI GREEN; final completion gated on exact final documentation HEAD CI GREEN.
+
