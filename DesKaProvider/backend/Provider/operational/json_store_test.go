@@ -159,6 +159,7 @@ func TestJSONFileStoreAmbiguousPermissiveWriteDoesNotPromoteMemory(t *testing.T)
 		Balance: 500,
 		Currency: "IDR",
 		Health: HealthUnhealthy,
+		LastError: "provider unavailable",
 		LastCheckedAt: time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC),
 		LastSuccessAt: time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC),
 		ConsecutiveFailures: 3,
