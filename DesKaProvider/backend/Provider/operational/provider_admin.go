@@ -42,16 +42,7 @@ func (s *ProviderAdminService) SetLifecycle(name string, lifecycle Lifecycle) (P
 		return ProviderState{}, ErrProviderNotFound
 	}
 
-	state, ok := s.states.Get(name)
-	if !ok {
-		return ProviderState{}, ErrProviderNotFound
-	}
-	state.Lifecycle = lifecycle
-	if err := s.states.Put(state); err != nil {
-		return ProviderState{}, err
-	}
-	updated, _ := s.states.Get(name)
-	return updated, nil
+	return s.states.SetLifecycle(name, lifecycle)
 }
 
 func (s *ProviderAdminService) Enable(name string) (ProviderState, error) {
