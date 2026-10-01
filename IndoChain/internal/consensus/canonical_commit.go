@@ -11,7 +11,6 @@ import (
 var (
 	ErrInvalidCanonicalCommit         = errors.New("invalid canonical commit")
 	ErrCanonicalCommitContextMismatch = errors.New("canonical commit context mismatch")
-	ErrNoCanonicalCommitPublication   = errors.New("no canonical commit publication")
 )
 
 // CanonicalCommit is the deterministic publication produced by the node only
@@ -76,7 +75,6 @@ func (r *ValidatorRuntime) PublishCanonicalCommit(commit CanonicalCommit) error 
 	r.lockedRound = 0
 	r.lockedProof = nil
 	r.certificate = nil
-	r.lastCanonicalCommit = &CanonicalCommit{Height: commit.Height, BlockHash: commit.BlockHash, StateRoot: commit.StateRoot}
 	return nil
 }
 
