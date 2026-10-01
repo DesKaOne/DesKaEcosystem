@@ -7167,3 +7167,49 @@ Payment submission, payment reconciliation, and payment webhook recovery paths n
 Continue production-readiness audit only where a concrete persistence, concurrency, recovery, or caller-boundary invariant remains untested. Provider-specific implementation remains gated on authoritative documentation or credential-backed external validation.
 
 No artificial milestone is introduced.
+
+## Purchase Result Identity Boundary
+
+**Date:** 2026-10-01
+
+### Implementation
+
+- audited the direct PPOB Purchase() caller boundary against the already-protected webhook and reconciliation paths;
+- identified that a provider adapter result was persisted without first proving that its ReferenceID, ProductCode, and CustomerNo matched the durable request;
+- added an explicit purchase-result identity validation before terminal result persistence;
+- unsupported provider transaction statuses are rejected at the same boundary;
+- when the provider returns an identity-mismatched result, the durable pending transaction remains authoritative so recovery can reconcile the external outcome without authorizing a duplicate submission;
+- added deterministic regression coverage using a provider wrapper that deliberately returns a foreign ReferenceID;
+- no automatic retry, provider failover, duplicate transaction creation, ledger mutation, customer-balance mutation, treasury movement, provider funding, or public API was introduced.
+
+### Changed Files
+
+- DesKaProvider/backend/routing/service.go
+- DesKaProvider/backend/routing/service_test.go
+
+### Verification
+
+Implementation/test HEAD:
+
+a743cd3cd29ce9e7590285c3ef61d0912d413e95
+
+- Push CI #3687 / run 36837616758: **GREEN**
+  - test: PASS
+  - race: PASS
+  - credential-gated provider validation jobs: skipped as expected
+- Pull Request CI #3688 / run 36837619775: **GREEN**
+  - test: PASS
+  - race: PASS
+  - credential-gated provider validation jobs: skipped as expected
+
+No authorized live-provider transaction was executed.
+
+### Safety Result
+
+Direct PPOB submission now has the same ownership invariant already enforced by reconciliation and webhook paths: an external provider result cannot overwrite durable transaction execution data unless its transaction identity matches the request that authorized the submission. Invalid provider output leaves the durable pending claim intact for recovery instead of creating an unsafe terminal record.
+
+### Next Concrete Engineering Task
+
+Continue production-readiness audit only where a concrete persistence, concurrency, recovery, identity, or caller-boundary invariant remains untested. Provider-specific implementation remains gated on authoritative documentation or credential-backed external validation.
+
+No artificial milestone is introduced.
