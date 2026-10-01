@@ -97,6 +97,7 @@ func TestSubmitPaymentAmbiguousPersistencePreservesClaimAndForbidsRetry(t *testi
 	}
 	if p.calls != 1 {
 		t.Fatalf("same-process retry must not resubmit payment, calls=%d", p.calls)
+	}
 
 	restarted, err := NewServiceWithStoreAndAudit(s.Router, store, NewMemoryTransactionAuditStore())
 	if err != nil {
