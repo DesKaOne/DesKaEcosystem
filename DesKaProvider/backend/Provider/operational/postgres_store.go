@@ -82,7 +82,7 @@ func (s *PostgresStore) Put(snapshot Snapshot) error {
         snapshot.ConsecutiveFailures,
     )
     if err != nil {
-        return fmt.Errorf("persist provider operational snapshot: %w", err)
+        return fmt.Errorf("%w: persist provider operational snapshot: %v", ErrOperationalPersistenceAmbiguous, err)
     }
     return nil
 }
