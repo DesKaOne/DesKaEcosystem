@@ -3512,3 +3512,78 @@ Masih terbuka:
 
 **Milestone 4.66 status:** implementation/test completed; exact final documentation HEAD CI GREEN; milestone complete.
 
+### 4.67 Coordinated Artifact GC Boundary
+
+**Tanggal:** 2026-10-01
+
+**Objective**
+
+Mendefinisikan boundary koordinasi GC lintas validator untuk finality artifacts tanpa menjadikan garbage collection sebagai bagian dari canonical consensus commit atau consensus runtime.
+
+**Implementation**
+
+- `IndoChain/internal/consensus/artifact_gc.go`
+  - `ArtifactGCPlan` menjadi identitas deterministik cleanup: protocol/chain context, canonical height, candidate identity, retention policy, dan exact evidence identity keys;
+  - plan memiliki digest deterministik yang menjadi payload approval validator;
+  - `ArtifactGCVote` memakai signature domain terpisah dari consensus finality messages;
+  - `NewArtifactGCDecision` memvalidasi membership, authenticated approvals, duplicate rejection, voting power, dan quorum;
+  - `ArtifactGCDecision` adalah cleanup authorization terkoordinasi, bukan finality certificate dan tidak dapat membuat block menjadi canonical.
+- `IndoChain/internal/node/coordinated_artifact_gc.go`
+  - `Node.ApplyCoordinatedArtifactGC` memvalidasi decision terhadap canonical node context;
+  - local evidence identity set wajib exact-match dengan plan;
+  - setelah semua preflight lolos, pruning tetap melewati retention/lifecycle boundary 4.66/4.65;
+  - canonical head/state dan consensus runtime tidak disentuh oleh GC coordination.
+- Tests:
+  - deterministic plan digest;
+  - authenticated quorum decision;
+  - tampered plan digest rejection;
+  - duplicate/insufficient approval rejection;
+  - local coordinated pruning deletes only the authorized candidate;
+  - local evidence-set mismatch is rejected without cleanup.
+
+**Locked invariants**
+
+1. GC coordination tidak memiliki ownership atas canonical block/state.
+2. GC approval menggunakan signing domain terpisah dari consensus finality.
+3. Setiap approval terikat pada exact deterministic plan digest.
+4. Validator membership, signature, voting power, dan quorum diverifikasi sebelum decision diterima.
+5. Duplicate validator approval ditolak.
+6. Coordinated decision tidak mengubah `ValidatorRuntime`, finality phase, atau canonical commit state.
+7. Node hanya menerapkan decision bila protocol/chain/canonical-height context cocok.
+8. Evidence identity keys pada node harus exact-match dengan coordinated plan.
+9. Local retention policy dan artifact lifecycle tetap menjadi final pruning gate.
+10. GC coordination failure tidak mengubah canonical state dan tidak memaksa consensus progress.
+11. Coordinated GC tetap merupakan operational/recovery boundary, bukan production BFT consensus protocol.
+
+**Production boundary**
+
+Milestone ini menutup local quorum-backed coordination boundary untuk artifact GC, tetapi **belum full production BFT garbage-collection protocol**.
+
+Masih terbuka:
+
+- durable validator-set/epoch lifecycle;
+- persistent GC decision/audit log dan replay semantics;
+- coordinated GC message dissemination/retry over production P2P;
+- crash-safe multi-store GC transaction/lease coordination;
+- validator replacement and membership changes during GC;
+- automatic multi-node restart/recovery coordination;
+- automatic multi-height consensus loop;
+- end-to-end cluster crash/restart validation;
+- final canonical serialization freeze.
+
+**Verification**
+
+- Implementation/test HEAD: `cd339e7be938d6ddb502f2c5c7e35cc125752552`.
+- CI run `36856687284`: **GREEN**.
+- Tidy: PASS.
+- Test: PASS.
+- Race Test: PASS.
+- Vet: PASS.
+- Exact final status-document HEAD masih memerlukan CI gate baru setelah dokumentasi ini di-commit.
+
+**Next integration target**
+
+**4.68 — Durable GC Decision / Audit Recovery:** menentukan persistence dan deterministic replay untuk coordinated GC decision agar cleanup coordination aman terhadap crash/restart tanpa mengangkatnya menjadi canonical consensus state.
+
+**Milestone 4.67 status:** implementation/test completed; implementation CI GREEN; final completion gated on exact final documentation HEAD CI GREEN.
+
