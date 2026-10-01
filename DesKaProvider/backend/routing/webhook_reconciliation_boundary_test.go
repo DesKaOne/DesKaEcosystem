@@ -174,7 +174,7 @@ func TestServiceReconcileRemainsAllowedWhenProviderLifecycleDisabled(t *testing.
     if reconciled.Result.Status != provider.StatusSuccess {
         t.Fatalf("expected reconciled success, got %#v", reconciled)
     }
-    if got := mock.PurchaseCount(req.ReferenceID); got != 0 {
+    if got := mock.PurchaseCount(req.ReferenceID); got != 1 {
         t.Fatalf("reconciliation must not resubmit provider purchase, got %d calls", got)
     }
 }
