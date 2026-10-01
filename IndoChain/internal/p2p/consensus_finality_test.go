@@ -24,15 +24,13 @@ func TestConsensusRoundDriverPublishesAndAcceptsFinalityEvidence(t *testing.T) {
 	proposal, err := proposal.Sign(signer)
 	if err != nil { t.Fatal(err) }
 	if err := a.Publish(PeerID("node-b"), proposal); err != nil { t.Fatal(err) }
+	if err := a.Runtime().AcceptAuthenticatedProposal(proposal, authority); err != nil { t.Fatal(err) }
 	if _, err := b.ReceiveAndHandle(); err != nil { t.Fatal(err) }
 
 	prevote, err := consensus.BuildSignedVoteMessage(
 		state, []byte("validator-a"), consensus.MessageTypePrevote, proposal.Payload, signer,
 	)
 	if err != nil { t.Fatal(err) }
-	if err := a.Publish(PeerID("node-b"), prevote); err != nil { t.Fatal(err) }
-	if _, err := b.ReceiveAndHandle(); err != nil { t.Fatal(err) }
-
 	precommit, err := a.PublishAuthenticatedPrevoteAndMaybePrecommit(
 		PeerID("node-b"), prevote, []byte("validator-a"), signer,
 	)
