@@ -6914,3 +6914,47 @@ Both paths preserve the durable pending state and do not create an automatic ext
 ### Next Concrete Engineering Task
 
 Continue production-readiness work at the PostgreSQL/service boundary only where a concrete invariant or missing test exists. Provider-specific implementation should resume only when authoritative documentation exposes an uncovered contract field/status/error, or when credential-gated external validation becomes available.
+
+## JSON / PostgreSQL Ambiguous Persistence Error Parity
+
+**Date:** 2026-10-01
+
+### Implementation
+
+- audited the JSON transaction-store ambiguous persistence boundary against the PostgreSQL boundary;
+- corrected JSON post-replacement and directory-sync ambiguity wrappers to preserve both ErrTransactionPersistenceAmbiguous and the underlying persistence error through Go error unwrapping;
+- added deterministic regression coverage proving callers can discover the injected post-replacement failure with errors.Is while the durable replacement remains authoritative;
+- preserved the existing rollback-in-memory / durable-read recovery semantics;
+- no retry, provider resubmission, failover, duplicate transaction creation, ledger mutation, customer-balance mutation, treasury movement, or provider funding was introduced.
+
+### Changed Files
+
+- DesKaProvider/backend/routing/json_transaction_store.go
+- DesKaProvider/backend/routing/json_transaction_store_test.go
+
+### Verification
+
+Implementation/test HEAD:
+
+a5fa7ec92a5ec3b4149c997ae605ab780c5df6ac
+
+- Push CI #3648 / run 36832715479: **GREEN**
+  - test: PASS
+  - race: PASS
+  - credential-gated provider validation jobs: skipped as expected
+- Pull Request CI #3649 / run 36832717365: **GREEN**
+  - test: PASS
+  - race: PASS
+  - credential-gated provider validation jobs: skipped as expected
+
+No authorized live-provider transaction was executed.
+
+### Safety Result
+
+JSON and PostgreSQL transaction stores now expose the same caller-visible ambiguity contract: an attempted durable mutation whose final outcome cannot be established is marked ambiguous, while the underlying persistence error remains discoverable. Callers must reconcile durable state rather than interpret the error as permission to retry an external provider operation.
+
+### Next Concrete Engineering Task
+
+Continue production-readiness audit only where a concrete persistence, concurrency, recovery, or caller-boundary invariant is missing from deterministic coverage. Provider-specific implementation remains gated on authoritative documentation or credential-backed external validation.
+
+No artificial milestone is introduced.
