@@ -6563,3 +6563,43 @@ Final corrected implementation/status-doc HEAD: 8916cf1f4a5eacabdfc7a0c33ad5e589
 - credential-gated provider validation jobs: skipped as expected
 
 No authorized live-provider transaction was executed by this hardening batch.
+
+
+## Transaction Store Crash-Consistency / Restart Boundary Hardening
+
+**Date:** 2026-10-01
+
+### Finding
+
+The JSON transaction store already used temp-file write + Sync + close + atomic Rename. The remaining crash-consistency gap was durability of the directory-entry replacement itself: after Rename, the parent directory was not explicitly synchronized.
+
+### Change
+
+- after atomic replacement, the transaction-store parent directory is opened and Sync is required before persistence reports success;
+- restart remains fail-closed when the durable JSON document is malformed or otherwise cannot be decoded;
+- no automatic recovery from an ambiguous/corrupt durable state is introduced;
+- no transaction resubmission, provider failover, duplicate purchase creation, ledger mutation, customer-balance mutation, treasury movement, or provider funding is introduced.
+
+### Deterministic Regression Coverage
+
+Added coverage verifying:
+
+- a malformed transaction-store document is rejected on restart instead of being interpreted as an empty or recoverable transaction set;
+- existing payment identity, cross-instance CAS, and persistence-failure rollback tests remain part of the same store boundary.
+
+### Verification Boundary
+
+Implementation commits:
+
+- 21a5709f98e53b41dc209f150c881b1be25e5d04 — synchronize transaction-store parent directory after atomic rename;
+- 5fe6155a677bfd5a69cfbcbadf4f8957b577e896 — deterministic corrupt-state restart regression.
+
+Fresh Push and PR CI for the resulting HEAD are mandatory before this hardening batch is considered complete.
+
+### Current Completion Assessment
+
+Overall DesKaProvider v0.1 remains approximately **82%**. This batch hardens persistence durability/restart semantics and does not add provider capabilities.
+
+### Next Concrete Engineering Task
+
+After GREEN CI, continue auditing transaction-store filesystem recovery semantics for interrupted writes and directory replacement failures, keeping ambiguous durable state fail-closed and avoiding automatic financial recovery execution.
