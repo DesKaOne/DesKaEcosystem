@@ -259,6 +259,9 @@ func TestServiceReconcileAmbiguousPersistencePreservesPending(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	if !mock.SetTransactionStatus("reconcile-ambiguous-persist", provider.StatusSuccess, "success") {
+		t.Fatal("expected seeded mock transaction")
+	}
 	req := PurchaseRequest{
 		ProductCode: "pln20",
 		CustomerNo:  "081234567890",
