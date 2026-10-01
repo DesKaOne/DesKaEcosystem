@@ -5,7 +5,6 @@ import "testing"
 func TestNewWebhookEvent(t *testing.T) {
 	event, err := NewWebhookEvent(
 		"event-1",
-		"demo",
 		"provider-1",
 		StatusSucceeded,
 		100_000,
@@ -14,9 +13,6 @@ func TestNewWebhookEvent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if event.ExternalReference != "provider-1" {
-		t.Fatalf("expected external reference provider-1, got %q", event.ExternalReference)
-	}
 	if event.ExternalReference != "provider-1" {
 		t.Fatalf("expected external reference provider-1, got %q", event.ExternalReference)
 	}
