@@ -615,6 +615,18 @@ func (s *Service) Purchase(ctx context.Context, req PurchaseRequest) (PurchaseEx
 		s.finishPurchase(call, pending, err)
 		return pending, err
 	}
+	if !samePurchaseRequestIdentity(req, result.Result) || (result.Result.Status != provider.StatusPending && result.Result.Status != provider.StatusSuccess && result.Result.Status != provider.StatusFailed) {
+		_ = s.appendAudit(TransactionAuditEvent{
+			ReferenceID: req.ReferenceID,
+			Action: "PURCHASE_INVALID_PROVIDER_RESULT",
+			Previous: string(provider.StatusPending),
+			Next: string(result.Result.Status),
+			ProviderName: providerName,
+			Message: "provider purchase result did not match durable request identity",
+		})
+		s.finishPurchase(call, pending, ErrReferenceConflict)
+		return pending, ErrReferenceConflict
+	}
 	if storeErr := putTransactionContext(ctx, s.Store, TransactionState{Request: req, Execution: result}); storeErr != nil {
 		err = fmt.Errorf("persist transaction result: %w", storeErr)
 		_ = s.appendAudit(TransactionAuditEvent{
@@ -971,6 +983,12 @@ func validateWebhookEvent(event provider.WebhookEvent) error {
 		return fmt.Errorf("%w: unsupported transaction status", ErrInvalidWebhookEvent)
 	}
 	return nil
+}
+
+func samePurchaseRequestIdentity(req PurchaseRequest, result provider.PurchaseResult) bool {
+	return result.ReferenceID == req.ReferenceID &&
+		result.CustomerNo == req.CustomerNo &&
+		result.ProductCode == req.ProductCode
 }
 
 func samePurchaseResult(a, b provider.PurchaseResult) bool {
