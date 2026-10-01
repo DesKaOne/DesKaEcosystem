@@ -269,6 +269,19 @@ func TestJSONFileTransactionStorePutFailureDoesNotChangeExistingMemoryState(t *t
 }
 
 
+func TestJSONFileTransactionStoreRejectsEmptyStateOnRestart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "transactions", "state.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewJSONFileTransactionStore(path); err == nil {
+		t.Fatal("expected empty durable state to fail closed on restart")
+	}
+}
+
 func TestJSONFileTransactionStoreRejectsCorruptStateOnRestart(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "transactions", "state.json")
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
