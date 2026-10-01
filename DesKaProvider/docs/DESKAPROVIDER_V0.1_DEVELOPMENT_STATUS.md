@@ -7079,3 +7079,47 @@ The PostgreSQL caller-boundary evidence now covers the concrete reconciliation c
 Continue production-readiness audit only where a concrete persistence, concurrency, recovery, or caller-boundary invariant remains untested. Provider-specific implementation remains gated on authoritative documentation or credential-backed external validation.
 
 No artificial milestone is introduced.
+
+## Payment Reconciliation / Ambiguous Persistence Caller Boundary
+
+**Date:** 2026-10-01
+
+### Implementation
+
+- added deterministic regression coverage for Service.ReconcilePayment() when the provider status is successfully observed as terminal but the durable terminal transition returns ErrTransactionPersistenceAmbiguous;
+- the test starts from a durable pending payment claim and a provider-side status observation, then injects ambiguity only at the terminal persistence boundary;
+- verified the service preserves ErrTransactionPersistenceAmbiguous through reconciliation error wrapping;
+- verified the durable payment remains pending/claimed and no payment creation is resubmitted;
+- verified repeated reconciliation remains blocked by the same ambiguity rather than becoming an authorization to retry the external payment;
+- no provider-specific production behavior, retry policy, failover, ledger mutation, customer-balance mutation, treasury movement, or public API was introduced.
+
+### Changed File
+
+- DesKaProvider/backend/routing/payment_submission_test.go
+
+### Verification
+
+Implementation/test HEAD:
+
+0f201a2dd3aa189d8db4e071ae298f8ccc23ad89
+
+- Push CI #3678 / run 36835931011: **GREEN**
+  - test: PASS
+  - race: PASS
+  - credential-gated provider validation jobs: skipped as expected
+- Pull Request CI #3679 / run 36835936038: **GREEN**
+  - test: PASS
+  - race: PASS
+  - credential-gated provider validation jobs: skipped as expected
+
+No authorized live-provider transaction was executed.
+
+### Safety Result
+
+The payment submission/reconciliation boundary now has deterministic evidence for the same recovery invariant already established for PPOB flows: a successful external status observation does not authorize a new external submission when durable terminal persistence is uncertain.
+
+### Next Concrete Engineering Task
+
+Continue production-readiness audit only where a concrete persistence, concurrency, recovery, or caller-boundary invariant remains untested. Provider-specific implementation remains gated on authoritative documentation or credential-backed external validation.
+
+No artificial milestone is introduced.
