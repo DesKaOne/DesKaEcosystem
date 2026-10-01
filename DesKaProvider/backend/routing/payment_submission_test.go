@@ -5,6 +5,7 @@ import (
  "errors"
  "testing"
  provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
+ operational "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/backend/Provider/operational"
  payment "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/internal/Payment"
 )
 
