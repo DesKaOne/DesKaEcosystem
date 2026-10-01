@@ -50,6 +50,9 @@ func NewJSONFileStore(path string) (*JSONFileStore, error) {
 	}
 	if state.Snapshots != nil {
 		for name, snapshot := range state.Snapshots {
+			if name == "" || snapshot.ProviderName != name {
+				return nil, fmt.Errorf("validate operational snapshot %q: provider identity mismatch", name)
+			}
 			if err := ValidateSnapshot(snapshot); err != nil {
 				return nil, fmt.Errorf("validate operational snapshot %q: %w", name, err)
 			}
