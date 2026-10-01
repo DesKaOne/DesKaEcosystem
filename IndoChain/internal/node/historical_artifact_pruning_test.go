@@ -6,8 +6,20 @@ import (
 
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/consensus"
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/block"
+	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/types"
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/storage"
 )
+
+func testNodeWithCanonicalHeight(t *testing.T, height types.Height) *Node {
+	t.Helper()
+	n, err := NewDevnet(storage.NewMemoryStore())
+	if err != nil {
+		t.Fatal(err)
+	}
+	n.Head.Header.Height = height
+	n.HeadHash = types.Hash{1}
+	return n
+}
 
 func TestPruneHistoricalFinalityArtifactsRejectsRetainedArtifactAtomically(t *testing.T) {
 	n := testNodeWithCanonicalHeight(t, 10)
