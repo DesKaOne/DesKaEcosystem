@@ -31,6 +31,7 @@ func TestConsensusRoundDriverPublishesAndAcceptsFinalityEvidence(t *testing.T) {
 		state, []byte("validator-a"), consensus.MessageTypePrevote, proposal.Payload, signer,
 	)
 	if err != nil { t.Fatal(err) }
+	if err := a.Publish(PeerID("node-b"), prevote); err != nil { t.Fatal(err) }
 	precommit, err := a.PublishAuthenticatedPrevoteAndMaybePrecommit(
 		PeerID("node-b"), prevote, []byte("validator-a"), signer,
 	)
