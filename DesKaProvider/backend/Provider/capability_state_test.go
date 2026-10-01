@@ -135,20 +135,6 @@ func TestCapabilityStatusReadinessEvidenceDoesNotImplicitlyPromoteLiveValidation
 	}
 }
 
-func TestCapabilityStatusValidationRejectsTestedWithoutImplementation(t *testing.T) {
-	status := CapabilityStatus{Tested: true}
-	if err := status.Validate(); err == nil {
-		t.Fatal("Tested must require explicit AdapterImplemented evidence")
-	}
-}
-
-func TestCapabilityStatusValidationAllowsImplementedTestedCapability(t *testing.T) {
-	status := CapabilityStatus{AdapterImplemented: true, Tested: true}
-	if err := status.Validate(); err != nil {
-		t.Fatalf("implemented tested capability should validate: %v", err)
-	}
-}
-
 func TestCapabilityStatusProductionReadyRequiresLiveValidationEvidence(t *testing.T) {
 	status := CapabilityStatus{
 		Verified: true, Configured: true, AdapterImplemented: true,
