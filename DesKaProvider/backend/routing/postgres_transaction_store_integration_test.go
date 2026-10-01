@@ -2610,7 +2610,13 @@ func TestPostgresTransactionStoreAmbiguousPersistencePropagatesThroughReconcile(
 	if err := store.PutContext(ctx, pending); err != nil {
 		t.Fatalf("seed pending transaction: %v", err)
 	}
-	if _, err := mockProvider.Purchase(ctx, req); err != nil {
+	if _, err := mockProvider.Purchase(ctx, provider.PurchaseRequest{
+		ProductCode: req.ProductCode,
+		CustomerNo:  req.CustomerNo,
+		ReferenceID: ref,
+		Amount:      req.Amount,
+		Testing:     req.Testing,
+	}); err != nil {
 		t.Fatalf("seed deterministic provider transaction: %v", err)
 	}
 	if got := mockProvider.PurchaseCount(ref); got != 1 {
