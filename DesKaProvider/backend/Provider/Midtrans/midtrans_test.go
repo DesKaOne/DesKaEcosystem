@@ -163,3 +163,17 @@ func TestWebhookRejectsSuccessWithUnacceptableFraudStatus(t *testing.T) {
 		t.Fatal("expected success webhook with challenge fraud status to fail closed")
 	}
 }
+
+func TestGetPaymentStatusUsesOrderIDWhenProviderReferenceIsSnapToken(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v2/ref-1/status" { t.Fatalf("unexpected status lookup path: %s", r.URL.Path) }
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status_code":"200","status_message":"Success","transaction_id":"trx-1","order_id":"ref-1","transaction_status":"pending","gross_amount":"10000.00"}`))
+	}))
+	defer ts.Close()
+	client, err := New(config.MidtransConfig{ServerKey:"server-key", SnapEndpoint:ts.URL, APIEndpoint:ts.URL}, ts.Client())
+	if err != nil { t.Fatalf("New: %v", err) }
+	result, err := client.GetPaymentStatus(context.Background(), payment.StatusRequest{ReferenceID:"ref-1", ProviderReference:"snap-token-1"})
+	if err != nil { t.Fatalf("GetPaymentStatus: %v", err) }
+	if result.ReferenceID != "ref-1" || result.ProviderReference != "trx-1" || result.Status != payment.StatusPending { t.Fatalf("unexpected result: %+v", result) }
+}
