@@ -206,8 +206,8 @@ func (r *Registry) CapabilityMatrix() CapabilityMatrix {
 func (r *Registry) Capabilities(name string) (CapabilityDescriptor, error) {
 	key := normalizeName(name)
 	r.mu.RLock()
+	defer r.mu.RUnlock()
 	entry, ok := r.providers[key]
-	r.mu.RUnlock()
 	if !ok {
 		return CapabilityDescriptor{}, fmt.Errorf("%w: %s", ErrProviderNotFound, key)
 	}
