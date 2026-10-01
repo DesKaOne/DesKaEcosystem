@@ -7213,3 +7213,41 @@ Direct PPOB submission now has the same ownership invariant already enforced by 
 Continue production-readiness audit only where a concrete persistence, concurrency, recovery, identity, or caller-boundary invariant remains untested. Provider-specific implementation remains gated on authoritative documentation or credential-backed external validation.
 
 No artificial milestone is introduced.
+
+## IAK Adapter Contract Audit
+
+**Date:** 2026-10-01
+
+### External Contract Cross-Check
+
+The IAK adapter was audited against the current official IAK prepaid API documentation:
+
+- Top Up v2 documents POST api/top-up, request fields username, ref_id, customer_id, product_code, and sign = md5(username+api_key+ref_id), with transaction states 0=PROCESS, 1=SUCCESS, 2=FAILED. The adapter sends the same request identity/signature fields and validates the documented response identity/status fields.
+- IAK documents prepaid processing as asynchronous: an initial top-up may be pending and the final state is obtained through callback or Check Status. The adapter preserves this model rather than treating an initial pending response as terminal.
+- IAK documents HTTP 400 as a failed request and other HTTP statuses as pending for prepaid transactions. The adapter maps HTTP 400 to an error and non-400 HTTP status failures to a pending PurchaseResult, matching the documented safety model for uncertain upstream transaction outcome.
+- Check Status v2 uses ref_id plus the same signature construction and returns ref_id, status, product/customer identity, price, message, balance, transaction ID, and response code. The adapter validates the returned transaction identity before exposing the status.
+- IAK callbacks are documented as success/failed notifications with ref_id, status, product/customer identity, price, message, balance, transaction ID, response code, and sign = md5(username+api_key+ref_id). The adapter requires the transaction identity, signature, terminal callback status, required numeric fields, and status/response-code consistency.
+- IAK documents response code 39 as PROCESS/Pending and 201 as Undefined/Pending; the adapter maps both to pending and rejects unknown response codes rather than guessing a terminal outcome.
+
+### Result
+
+No production code change was justified by this audit. The adapter already fails closed on malformed identity/status/signature data and preserves the documented asynchronous transaction model.
+
+Live validation remains credential-gated and separate from deterministic contract implementation.
+
+### Evidence
+
+Official documentation reviewed on 2026-10-01:
+- IAK Top Up v2
+- IAK Check Status v2
+- IAK Prepaid Response Code
+- IAK Callback
+- IAK Security / request authentication guidance
+
+No authorized live-provider transaction was executed.
+
+### Next Concrete Engineering Task
+
+Continue provider audit with the next concrete adapter boundary (XP SINDONESIA) and deterministic contract evidence. Do not infer undocumented provider behavior.
+
+No artificial milestone is introduced.
