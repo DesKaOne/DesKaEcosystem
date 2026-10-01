@@ -49,7 +49,7 @@ func (s *PostgresTransactionStore) CreateIfAbsentContext(ctx context.Context, st
 		return state, true, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
-		return TransactionState{}, false, fmt.Errorf("create transaction: %w", err)
+		return TransactionState{}, false, wrapTransactionPersistenceAmbiguous(fmt.Errorf("create transaction: %w", err))
 	}
 	current, ok, readErr := s.GetContextE(ctx, transactionReferenceID(state))
 	if readErr != nil {
@@ -107,7 +107,7 @@ func (s *PostgresTransactionStore) PutContext(ctx context.Context, state Transac
    }
    return ErrTransactionStateConflict
   }
-  return fmt.Errorf("insert transaction: %w", err)
+  return wrapTransactionPersistenceAmbiguous(fmt.Errorf("insert transaction: %w", err))
  }
  if err := validateTransactionTransition(current, state); err != nil { return err }
  if sameTransactionObservedResult(current, state) {
@@ -123,9 +123,9 @@ func (s *PostgresTransactionStore) PutContext(ctx context.Context, state Transac
   next.Execution.Result.Message, next.Execution.Result.SerialNumber, next.Execution.Result.Price,
   paymentProviderReference(next), current.Version, string(normalizeTransactionKind(current.Kind)),
   current.Request.ProductCode, current.Request.CustomerNo, current.Execution.ProviderName)
- if err != nil { return fmt.Errorf("update transaction: %w", err) }
+ if err != nil { return wrapTransactionPersistenceAmbiguous(fmt.Errorf("update transaction: %w", err)) }
  n, err := result.RowsAffected()
- if err != nil { return fmt.Errorf("read transaction update result: %w", err) }
+ if err != nil { return wrapTransactionPersistenceAmbiguous(fmt.Errorf("read transaction update result: %w", err)) }
  if n != 1 { return ErrTransactionStateConflict }
  return nil
 }
@@ -144,9 +144,9 @@ func (s *PostgresTransactionStore) PutIfCurrentContext(ctx context.Context, refe
  }
  if next.Execution.Result.Status != provider.StatusPending && next.Execution.Result.Status != provider.StatusSuccess && next.Execution.Result.Status != provider.StatusFailed { return ErrReferenceConflict }
  result, err := s.db.ExecContext(ctx, postgresTransitionSQL, referenceID, next.Execution.Result.Status, next.Execution.Result.ProviderCode, next.Execution.Result.Message, next.Execution.Result.SerialNumber, next.Execution.Result.Price, paymentProviderReference(next), previous.Version, string(normalizeTransactionKind(previous.Kind)), previous.Request.ProductCode, previous.Request.CustomerNo, previous.Execution.ProviderName)
- if err != nil { return fmt.Errorf("atomic transaction transition: %w", err) }
+ if err != nil { return wrapTransactionPersistenceAmbiguous(fmt.Errorf("atomic transaction transition: %w", err)) }
  n, err := result.RowsAffected()
- if err != nil { return fmt.Errorf("read atomic transition result: %w", err) }
+ if err != nil { return wrapTransactionPersistenceAmbiguous(fmt.Errorf("read atomic transition result: %w", err)) }
  if n != 1 { return ErrTransactionStateConflict }
  return nil
 }
