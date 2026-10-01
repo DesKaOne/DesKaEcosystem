@@ -826,6 +826,75 @@ func TestServiceHandleWebhookCorrelatesPendingTransaction(t *testing.T) {
 	if duplicate != updated { t.Fatalf("expected idempotent webhook result: %#v != %#v", duplicate, updated) }
 }
 
+
+func TestServiceHandleWebhookAmbiguousPersistencePreservesPending(t *testing.T) {
+	registry := provider.NewRegistry()
+	mock := Mock.New(Mock.Config{
+		Products:       []provider.Product{{Code: "pln20", Name: "PLN 20"}},
+		ProviderCode:   "00", PurchaseStatus: provider.StatusPending, Price: 20000,
+	})
+	if err := registry.Register("mock", mock); err != nil {
+		t.Fatal(err)
+	}
+	ops := operational.NewMemoryStore()
+	if err := ops.Put(operational.Snapshot{ProviderName: "mock", Balance: 100000, Health: operational.HealthHealthy}); err != nil {
+		t.Fatal(err)
+	}
+	router, err := New(registry, ops, map[string]int{"mock": 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := NewMemoryTransactionStore()
+	store := &failPutTransactionStore{base: base, failAfter: 2}
+	service, err := NewServiceWithStore(router, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := PurchaseRequest{ProductCode: "pln20", CustomerNo: "08123456789", ReferenceID: "ref-webhook-ambiguous", Amount: 20000}
+	if _, err := service.Purchase(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+
+	updated, err := service.HandleWebhook(context.Background(), provider.WebhookEvent{
+		ReferenceID: req.ReferenceID,
+		CustomerNo:  req.CustomerNo,
+		ProductCode: req.ProductCode,
+		Status:      provider.StatusSuccess,
+		ProviderCode: "00",
+		Message:     "success",
+		SerialNumber: "SN-1",
+		Price:       req.Amount,
+	})
+	if !errors.Is(err, ErrTransactionPersistenceAmbiguous) {
+		t.Fatalf("expected ambiguous webhook persistence error, got result=%#v err=%v", updated, err)
+	}
+	state, ok := store.Get(req.ReferenceID)
+	if !ok {
+		t.Fatal("pending transaction disappeared after ambiguous webhook persistence")
+	}
+	if state.Execution.Result.Status != provider.StatusPending {
+		t.Fatalf("ambiguous webhook persistence must preserve pending state, got %q", state.Execution.Result.Status)
+	}
+
+	recovered, err := service.HandleWebhook(context.Background(), provider.WebhookEvent{
+		ReferenceID: req.ReferenceID,
+		CustomerNo:  req.CustomerNo,
+		ProductCode: req.ProductCode,
+		Status:      provider.StatusSuccess,
+		ProviderCode: "00",
+		Message:     "success",
+		SerialNumber: "SN-1",
+		Price:       req.Amount,
+	})
+	if !errors.Is(err, ErrTransactionPersistenceAmbiguous) {
+		t.Fatalf("expected repeated webhook to remain blocked by ambiguous persistence, got result=%#v err=%v", recovered, err)
+	}
+	if got := mock.PurchaseCount(req.ReferenceID); got != 1 {
+		t.Fatalf("webhook ambiguity must not resubmit purchase, got %d submissions", got)
+	}
+}
+
+
 func TestServiceHandleWebhookRejectsUnknownAndConflictingReferences(t *testing.T) {
 	registry := provider.NewRegistry()
 	mock := Mock.New(Mock.Config{Products: []provider.Product{{Code: "pln20", Name: "PLN 20"}}, ProviderCode: "00", PurchaseStatus: provider.StatusPending})
