@@ -194,6 +194,62 @@ func TestNewServiceLoadsPersistedPaymentStateWithoutTreatingItAsPPOB(t *testing.
 }
 
 
+func TestReconcilePaymentAmbiguousPersistencePreservesPendingAndForbidsRetry(t *testing.T) {
+	p := &paymentSubmissionProvider{
+		result: payment.PaymentResult{
+			ReferenceID:      "pay-reconcile-ambiguous",
+			ProviderReference: "mid-reconcile-ambiguous",
+			Status:           payment.StatusPending,
+			Amount:           75000,
+			Currency:         "IDR",
+		},
+		statusResult: payment.StatusResult{
+			ReferenceID:      "pay-reconcile-ambiguous",
+			ProviderReference: "mid-reconcile-ambiguous",
+			Status:            payment.StatusSuccess,
+			Amount:            75000,
+			Currency:          "IDR",
+			Message:           "provider reports success",
+		},
+	}
+	store := &ambiguousPaymentPersistenceStore{MemoryTransactionStore: NewMemoryTransactionStore()}
+	reg := provider.NewRegistry()
+	if err := reg.RegisterCapabilityProvider("midtrans", provider.CapabilityPayment, p, provider.CapabilityStatus{AdapterImplemented: true, Tested: true, Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	s := &Service{
+		Router: &Router{Registry: reg},
+		Store: store,
+		AuditStore: NewMemoryTransactionAuditStore(),
+	}
+	req := payment.PaymentRequest{ReferenceID: "pay-reconcile-ambiguous", Amount: 75000, Currency: "IDR", CustomerID: "cust-reconcile-ambiguous"}
+	if _, err := s.SubmitPayment(context.Background(), "midtrans", req); err != nil {
+		t.Fatal(err)
+	}
+	store.failTerminalPut = true
+
+	result, err := s.ReconcilePayment(context.Background(), req.ReferenceID)
+	if !errors.Is(err, ErrTransactionPersistenceAmbiguous) {
+		t.Fatalf("expected ambiguous persistence to survive reconciliation wrapping, got result=%#v err=%v", result, err)
+	}
+	if p.calls != 1 {
+		t.Fatalf("reconciliation must never resubmit payment, create calls=%d", p.calls)
+	}
+	state, ok := store.Get(req.ReferenceID)
+	if !ok {
+		t.Fatal("expected durable payment claim to remain")
+	}
+	if state.Payment == nil || state.Payment.Status != payment.StatusPending {
+		t.Fatalf("ambiguous reconciliation must preserve durable pending payment state: %#v", state.Payment)
+	}
+	if _, err := s.ReconcilePayment(context.Background(), req.ReferenceID); !errors.Is(err, ErrTransactionPersistenceAmbiguous) {
+		t.Fatalf("repeated reconciliation must remain blocked by ambiguity, got %v", err)
+	}
+	if p.calls != 1 {
+		t.Fatalf("repeated reconciliation must never resubmit payment, create calls=%d", p.calls)
+	}
+}
+
 func TestReconcilePaymentUsesDurableReferenceWithoutResubmission(t *testing.T) {
 	p := &paymentSubmissionProvider{
 		result: payment.PaymentResult{
