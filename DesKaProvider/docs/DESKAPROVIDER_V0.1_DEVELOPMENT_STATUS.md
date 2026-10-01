@@ -6299,3 +6299,33 @@ Overall DesKaProvider v0.1 remains approximately **82%**. This audit records the
 ### Next Concrete Engineering Task
 
 Proceed to the next implemented provider adapter or documented-contract audit. Preserve the workflow: authoritative provider documentation -> provider contract comparison -> safe implementation only -> deterministic fixtures/tests -> GREEN CI -> external validation separately.
+
+
+## Provider Registry Capability Snapshot Concurrency Hardening
+
+**Date:** 2026-10-01
+
+### Finding
+
+The provider registry capability metadata accessor copied the registry entry while holding the read lock, released the lock, and only then iterated the shared capability map. A concurrent capability registration could therefore race with the snapshot copy.
+
+### Change
+
+- Registry.Capabilities() now keeps the read lock through the defensive capability-map copy.
+- Added deterministic concurrency regression coverage around Capabilities() while additional canonical capabilities are registered for the same provider.
+- No routing semantics, provider priority, operational-state authority, transaction behavior, retry behavior, failover behavior, ledger behavior, or customer-balance behavior were changed.
+
+### Verification Boundary
+
+Production fix commit: 9dec157506b6e5b944af0742406f37e582153b85.
+Regression test commit: 18cb2a4739b9c8abe87d7d03c04b4e59ea27b281.
+
+Fresh Push and PR CI for the current HEAD are mandatory before this hardening batch is considered complete. The previous HEAD f76dd890… had GREEN Push #3514 and PR #3515.
+
+### Current Completion Assessment
+
+Overall DesKaProvider v0.1 remains approximately **82%**. This is a concurrency-safety hardening of existing registry metadata access, not a new provider capability or completion milestone.
+
+### Next Concrete Engineering Task
+
+After current CI is GREEN, continue auditing the provider-to-routing/service boundary for the same invariants: Router.Select() remains routing authority, administrative explanation remains observational, operational state is not financial authority, and provider capability metadata does not itself mutate or authorize financial state.
