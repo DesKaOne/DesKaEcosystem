@@ -100,10 +100,6 @@ func TestProviderCreateServiceIsIdempotent(t *testing.T) {
 
 type failingProvider struct{}
 
-func (f *failingProvider) Name() string {
-	return "fake"
-}
-
 func (f *failingProvider) CreatePayment(context.Context, Payment) (ProviderPayment, error) {
 	return ProviderPayment{}, context.DeadlineExceeded
 }
@@ -113,10 +109,6 @@ func (f *failingProvider) GetPayment(context.Context, string) (ProviderPayment, 
 }
 
 type mismatchProvider struct{}
-
-func (mismatchProvider) Name() string {
-	return "fake"
-}
 
 func (mismatchProvider) CreatePayment(context.Context, Payment) (ProviderPayment, error) {
 	return ProviderPayment{
@@ -132,10 +124,6 @@ func (mismatchProvider) GetPayment(context.Context, string) (ProviderPayment, er
 
 type countingProvider struct {
 	calls int
-}
-
-func (p *countingProvider) Name() string {
-	return "fake"
 }
 
 func (p *countingProvider) CreatePayment(context.Context, Payment) (ProviderPayment, error) {
