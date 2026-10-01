@@ -7123,3 +7123,47 @@ The payment submission/reconciliation boundary now has deterministic evidence fo
 Continue production-readiness audit only where a concrete persistence, concurrency, recovery, or caller-boundary invariant remains untested. Provider-specific implementation remains gated on authoritative documentation or credential-backed external validation.
 
 No artificial milestone is introduced.
+
+## Payment Webhook / Ambiguous Persistence Caller Boundary
+
+**Date:** 2026-10-01
+
+### Implementation
+
+- added deterministic regression coverage for Service.HandlePaymentWebhook() when a terminal provider webhook observation is received but durable payment transition persistence returns ErrTransactionPersistenceAmbiguous;
+- verified the payment remains durably pending/claimed after the ambiguous transition;
+- verified the external payment creation is never resubmitted;
+- verified repeated webhook delivery remains blocked by the ambiguity boundary rather than becoming authorization to retry or overwrite the payment;
+- provider webhook normalization may be invoked again for the repeated delivery, but the payment creation count remains exactly one;
+- no provider-specific production behavior, retry policy, failover, ledger mutation, customer-balance mutation, treasury movement, or public API was introduced.
+
+### Changed File
+
+- DesKaProvider/backend/routing/payment_submission_test.go
+
+### Verification
+
+Implementation/test HEAD:
+
+7d5e7d537e14141b2d030acdb060dfbb9d5fdafa
+
+- Push CI #3682 / run 36836491926: **GREEN**
+  - test: PASS
+  - race: PASS
+  - credential-gated provider validation jobs: skipped as expected
+- Pull Request CI #3683 / run 36836496430: **GREEN**
+  - test: PASS
+  - race: PASS
+  - credential-gated provider validation jobs: skipped as expected
+
+No authorized live-provider transaction was executed.
+
+### Safety Result
+
+Payment submission, payment reconciliation, and payment webhook recovery paths now all have deterministic caller-boundary evidence that ambiguous durable persistence does not become an external payment retry/resubmission path.
+
+### Next Concrete Engineering Task
+
+Continue production-readiness audit only where a concrete persistence, concurrency, recovery, or caller-boundary invariant remains untested. Provider-specific implementation remains gated on authoritative documentation or credential-backed external validation.
+
+No artificial milestone is introduced.
