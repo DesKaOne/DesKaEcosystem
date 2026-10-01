@@ -11,8 +11,7 @@ func TestMemoryWebhookStoreIsIdempotent(t *testing.T) {
 	store := NewMemoryWebhookStore()
 	event := WebhookEvent{
 		ID:         "event-1",
-		Provider:   "demo",
-		ProviderID: "provider-1",
+		ExternalReference: "provider-1",
 		Status:     StatusSucceeded,
 		Amount:     100_000,
 		OccurredAt: time.Now().UTC(),
@@ -31,8 +30,8 @@ func TestMemoryWebhookStoreIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.ProviderID != event.ProviderID {
-		t.Fatalf("expected provider id %q, got %q", event.ProviderID, got.ProviderID)
+	if got.ExternalReference != event.ExternalReference {
+		t.Fatalf("expected external reference %q, got %q", event.ExternalReference, got.ExternalReference)
 	}
 }
 
