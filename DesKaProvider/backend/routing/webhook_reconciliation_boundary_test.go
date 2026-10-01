@@ -132,8 +132,9 @@ func TestServiceReconcileRemainsAllowedWhenProviderLifecycleDisabled(t *testing.
     if err != nil {
         t.Fatal(err)
     }
-    state.Lifecycle = operational.LifecycleDisabled
+    state.Lifecycle = operational.LifecycleEnabled
     state.Capabilities = []operational.Capability{operational.CapabilityPPOB}
+    state.EnabledCapabilities = []operational.Capability{operational.CapabilityPPOB}
     if err := stateStore.Put(state); err != nil {
         t.Fatal(err)
     }
@@ -153,19 +154,16 @@ func TestServiceReconcileRemainsAllowedWhenProviderLifecycleDisabled(t *testing.
         ReferenceID: "ref-disabled-reconcile",
         Amount:      20000,
     }
-    if err := service.Store.Put(TransactionState{
-        Request: req,
-        Execution: PurchaseExecution{
-            ProviderName: "mock",
-            Result: provider.PurchaseResult{
-                ReferenceID: req.ReferenceID,
-                CustomerNo:  req.CustomerNo,
-                ProductCode: req.ProductCode,
-                Status:      provider.StatusPending,
-                Price:       req.Amount,
-            },
-        },
-    }); err != nil {
+    if _, err := service.Purchase(context.Background(), req); err != nil {
+        t.Fatal(err)
+    }
+    if got := mock.PurchaseCount(req.ReferenceID); got != 1 {
+        t.Fatalf("expected one initial provider purchase, got %d", got)
+    }
+
+    state.Lifecycle = operational.LifecycleDisabled
+    state.EnabledCapabilities = nil
+    if err := stateStore.Put(state); err != nil {
         t.Fatal(err)
     }
 
