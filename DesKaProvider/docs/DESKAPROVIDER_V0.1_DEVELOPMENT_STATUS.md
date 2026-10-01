@@ -6603,3 +6603,47 @@ Overall DesKaProvider v0.1 remains approximately **82%**. This batch hardens per
 ### Next Concrete Engineering Task
 
 After GREEN CI, continue auditing transaction-store filesystem recovery semantics for interrupted writes and directory replacement failures, keeping ambiguous durable state fail-closed and avoiding automatic financial recovery execution.
+
+
+## Transaction Store Empty-State Fail-Closed Boundary
+
+**Date:** 2026-10-01
+
+### Implementation
+
+- changed JSON transaction-store startup/reload handling so an existing zero-byte durable state is treated as corruption/ambiguous persistence, not as a valid empty store;
+- preserved the distinction between a missing store file (valid first initialization) and an existing empty file (fail closed);
+- added deterministic restart coverage for an existing empty state file;
+- kept malformed JSON restart handling fail closed;
+- did not introduce automatic recovery, retry, resubmission, provider failover, ledger mutation, customer balance mutation, treasury movement, provider funding, or duplicate transaction creation.
+
+### Safety Boundary
+
+- a missing transaction-store file may initialize a new empty store;
+- an existing empty or malformed durable state is not interpreted as authoritative empty state;
+- transaction persistence remains atomic through temp-file write, file sync, rename, and parent-directory sync;
+- a persistence ambiguity remains an operational error and is not converted into a successful transaction transition;
+- restart does not infer, recreate, retry, or resubmit a transaction from an ambiguous durable state;
+- durable transaction/reference ownership, CAS/idempotency, webhook idempotency, and reconciliation boundaries remain unchanged.
+
+### Verification
+
+Implementation commits:
+
+- `43232db0667e258712cc7cfb3aa8b78371a9823e` — fail closed on empty durable state;
+- `cc7208130152bc71951cdb87144dda21acd07cf3` — deterministic empty-state restart regression test.
+
+CI verification is pending for the new HEAD; this milestone is not considered complete until the latest CI is GREEN.
+
+### Next Milestone
+
+**Crash-Consistency Failure Injection / Ambiguous Commit Boundary**
+
+Scope:
+
+- exercise deterministic filesystem replacement/sync failure paths without performing provider transactions;
+- verify in-memory state and durable state behavior for pre-replacement versus post-replacement failures;
+- preserve fail-closed semantics for ambiguous persistence outcomes;
+- keep transaction authorization, provider side effects, and financial state mutation separate from filesystem recovery.
+
+No automatic retry, payment resubmission, provider failover, provider funding, customer ledger mutation, treasury movement, duplicate purchase creation, or public API exposure is included.
