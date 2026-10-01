@@ -181,6 +181,11 @@ func (s *ProviderStateStore) SetLifecycle(name string, lifecycle Lifecycle) (Pro
 	if name == "" {
 		return ProviderState{}, ErrProviderNotFound
 	}
+	switch lifecycle {
+	case LifecycleEnabled, LifecycleDisabled:
+	default:
+		return ProviderState{}, ErrInvalidLifecycle
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
