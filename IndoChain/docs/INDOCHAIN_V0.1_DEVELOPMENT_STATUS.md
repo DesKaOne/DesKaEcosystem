@@ -3282,3 +3282,81 @@ Masih terbuka:
 **4.64 — Durable Candidate Recovery / Finality Resume Source:** menutup gap candidate availability setelah restart, sehingga finality evidence yang sudah durable dapat menemukan candidate block secara deterministic tanpa bergantung pada transient in-memory state.
 
 **Milestone 4.63 status:** implementation/test completed; final completion gated on exact final documentation HEAD CI GREEN.
+
+### 4.64 Durable Candidate Recovery / Finality Resume Source
+
+**Tanggal:** 2026-10-01
+
+**Objective**
+
+Menutup gap candidate availability setelah restart. Finality evidence yang sudah durable sekarang memiliki sumber candidate block yang terpisah dari canonical `ChainStore`, sehingga recovery tidak bergantung pada transient in-memory candidate.
+
+**Implementation**
+
+- `IndoChain/internal/storage/candidate_store.go`
+  - menambahkan `CandidateStore` terpisah dari `ChainStore`;
+  - identity candidate memakai `(block height, block hash)`;
+  - `MemoryCandidateStore` untuk deterministic development/recovery tests;
+  - save/get memvalidasi ulang height dan hash serta mengembalikan clone candidate.
+- `IndoChain/internal/storage/file_candidate_store.go`
+  - persistent candidate store berbasis file;
+  - atomic temporary-file replacement;
+  - reopen/restart mempertahankan pending candidate;
+  - storage format tetap implementation-only dan bukan canonical protocol serialization.
+- `IndoChain/internal/node/candidate_recovery.go`
+  - `Node.PersistCandidateForFinality` menyimpan hanya candidate untuk `canonicalHeight + 1` dengan exact previous hash;
+  - candidate persistence tidak memajukan canonical head;
+  - `Node.ResumeFinalityCommitFromCandidateStore` mengambil candidate berdasarkan exact finality payload/hash dan block height `certificate.Height + 1`, lalu mendelegasikan ke existing `ResumeFinalityCommit`;
+  - candidate yang ditemukan diverifikasi ulang sebelum commit.
+- Tests:
+  - memory candidate identity + cloning;
+  - file candidate persistence across reopen;
+  - candidate persistence tidak mengubah canonical head;
+  - restart recovery dapat mengambil candidate durable dan melanjutkan finality commit;
+  - missing candidate menghasilkan deferred recovery tanpa canonical mutation.
+
+**Locked invariants**
+
+1. CandidateStore bukan canonical ChainStore.
+2. Menyimpan candidate tidak mengubah canonical head/state.
+3. Candidate identity selalu diverifikasi dengan hash candidate aktual.
+4. Pending candidate hanya boleh berada pada `canonicalHeight + 1` dan exact previous hash saat dipersist.
+5. Finality certificate consensus height memetakan ke candidate block height `certificate.Height + 1`.
+6. Recovery mengambil candidate menggunakan exact finality payload/hash, bukan hanya height.
+7. Missing candidate tidak boleh memicu speculative block construction atau canonical mutation.
+8. Candidate storage tetap berada di luar ordinary consensus evidence replay.
+9. Canonical commit tetap melewati existing node-owned execution/storage boundary.
+10. File candidate persistence bukan canonical block serialization.
+
+**Production boundary**
+
+Milestone ini menutup local durable candidate source untuk crash-resume, tetapi **belum full production BFT candidate lifecycle**.
+
+Masih terbuka:
+
+- candidate retention/pruning policy;
+- coordinated candidate exchange across multiple validators after restart;
+- durable validator-set/epoch lifecycle;
+- evidence/candidate garbage collection policy;
+- automatic multi-node restart/recovery coordination;
+- automatic multi-height consensus loop;
+- crash/restart validation across an end-to-end multi-node cluster;
+- final canonical block serialization freeze.
+
+**Verification**
+
+- Implementation/test HEAD: `8ff5856d13a3803bed1baa71928412a68dd32d27`.
+- CI run `36835635188`: **GREEN**.
+- Tidy: PASS.
+- Test: PASS.
+- Race Test: PASS.
+- Vet: PASS.
+- PostgreSQL: tidak relevan.
+- Status-document update memerlukan exact-head CI gate baru.
+
+**Next integration target**
+
+**4.65 — Candidate Retention / Finality Artifact Lifecycle:** menentukan retention, idempotent replacement, dan cleanup semantics untuk durable candidate + finality evidence tanpa menghapus artifact yang masih dibutuhkan untuk crash recovery.
+
+**Milestone 4.64 status:** implementation/test completed; final completion gated on exact final documentation HEAD CI GREEN.
+
