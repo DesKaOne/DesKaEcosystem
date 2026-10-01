@@ -175,6 +175,45 @@ func (s *ProviderStateStore) Put(state ProviderState) error {
 }
 
 
+
+func (s *ProviderStateStore) SetLifecycle(name string, lifecycle Lifecycle) (ProviderState, error) {
+	name = strings.TrimSpace(strings.ToLower(name))
+	if name == "" {
+		return ProviderState{}, ErrProviderNotFound
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	current, ok := s.states[name]
+	if !ok {
+		return ProviderState{}, ErrProviderNotFound
+	}
+	updated := current
+	updated.Lifecycle = lifecycle
+
+	next := make(map[string]ProviderState, len(s.states))
+	for providerName, state := range s.states {
+		next[providerName] = state
+	}
+	next[name] = updated
+	if s.persistence != nil {
+		states := make([]ProviderState, 0, len(next))
+		for _, state := range next {
+			state.Capabilities = cloneCapabilities(state.Capabilities)
+			state.EnabledCapabilities = cloneCapabilities(state.EnabledCapabilities)
+			states = append(states, state)
+		}
+		sort.Slice(states, func(i, j int) bool { return states[i].ProviderName < states[j].ProviderName })
+		if err := s.persistence.Save(states); err != nil {
+			return ProviderState{}, err
+		}
+	}
+	s.states = next
+	updated.Capabilities = cloneCapabilities(updated.Capabilities)
+	updated.EnabledCapabilities = cloneCapabilities(updated.EnabledCapabilities)
+	return updated, nil
+}
+
 func (s *ProviderStateStore) SetCapabilityEnabled(name string, capability Capability, enabled bool) (ProviderState, error) {
 	name = strings.TrimSpace(strings.ToLower(name))
 	if name == "" {
