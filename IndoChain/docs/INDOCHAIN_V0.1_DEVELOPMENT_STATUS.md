@@ -3432,12 +3432,12 @@ Masih terbuka:
 - Test: PASS.
 - Race Test: PASS.
 - Vet: PASS.
-- Exact final status-document HEAD wajib kembali diverifikasi GREEN sebelum milestone dinyatakan complete.
+- Exact final status-document HEAD CI is GREEN; milestone completion verified.
 - PostgreSQL: tidak relevan.
 
 **Next integration target**
 
 **4.66 — Retention Window / Safe Historical Pruning:** menentukan policy berbasis height/epoch untuk membedakan artifact yang masih recovery-relevant dari artifact yang aman dipruning, tanpa menjadikan GC sebagai bagian dari canonical consensus commit.
 
-**Milestone 4.65 status:** implementation/test completed; implementation CI GREEN; final completion remains gated on exact final documentation HEAD CI GREEN.
+**Milestone 4.65 status:** implementation/test completed; implementation CI GREEN; exact final documentation HEAD CI GREEN; milestone complete.
 
