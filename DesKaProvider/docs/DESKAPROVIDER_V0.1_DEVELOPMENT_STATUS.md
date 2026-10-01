@@ -7540,3 +7540,58 @@ No authorized live-provider transaction or external provider request was execute
 ### Next Step
 
 No artificial milestone is opened. Continue the v0.1 readiness audit from the next concrete concurrency, persistence, recovery, identity, or authoritative provider-contract gap.
+
+## Atomic Lifecycle Mutation Validation Hardening
+
+**Date:** 2026-10-01
+
+### Source Finding
+
+After lifecycle mutation was moved to the atomic ProviderStateStore boundary, the store-level mutation path did not independently validate the requested lifecycle value. ProviderAdminService already validated it, but the atomic store boundary should preserve the same state invariant as Put() even when called directly.
+
+### Implementation
+
+- added lifecycle validation inside ProviderStateStore.SetLifecycle();
+- invalid lifecycle values now return ErrInvalidLifecycle before any state mutation or persistence attempt;
+- added regression coverage proving an invalid atomic lifecycle mutation leaves the existing provider state unchanged;
+- no routing, provider adapter, transaction, ledger, customer balance, treasury, retry/failover, or public API behavior was changed.
+
+### Changed Files
+
+- DesKaProvider/backend/Provider/operational/provider_state.go
+- DesKaProvider/backend/Provider/operational/provider_state_test.go
+
+### Safety Boundary / Invariants
+
+- ProviderStateStore.SetLifecycle() now enforces the same lifecycle domain as Put();
+- invalid lifecycle input cannot reach persistence or replace valid in-memory state;
+- lifecycle and capability controls remain atomic and independent;
+- persistence-before-memory-commit semantics remain unchanged;
+- Router.Select() remains the sole routing decision authority;
+- no automatic retry, provider failover, transaction resubmission, duplicate transaction creation, provider funding, ledger mutation, customer-balance mutation, treasury movement, or public API exposure is introduced.
+
+### Verification
+
+Source-code HEAD:
+
+01e9b195266a5879c400af2d94756987287a59ef
+
+- Push CI #3741 / run 36854273202: **GREEN**
+  - test: PASS
+  - vet: PASS
+  - race: PASS
+  - DigiFlazz validation: SKIPPED (credential-gated)
+  - IAK read-only: SKIPPED (credential-gated)
+  - XP SINDONESIA read-only: SKIPPED (credential-gated)
+  - Midtrans sandbox: SKIPPED (credential-gated)
+- Pull Request CI #3742 / run 36854278160: **GREEN**
+  - test: PASS
+  - vet: PASS
+  - race: PASS
+  - credential-gated provider validation jobs: SKIPPED
+
+No authorized live-provider transaction or external provider request was executed.
+
+### Next Step
+
+No artificial milestone is opened. Continue the v0.1 readiness audit from the next concrete persistence, recovery, identity, concurrency, or authoritative provider-contract gap.
