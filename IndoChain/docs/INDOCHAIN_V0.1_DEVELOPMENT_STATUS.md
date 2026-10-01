@@ -3058,3 +3058,80 @@ Masih terbuka:
 Masuk ke **durable consensus evidence recovery / restart safety**: tentukan record minimum yang perlu dipersist untuk authenticated round/evidence tanpa mencampurkan ephemeral vote state ke canonical block storage, lalu validasi replay/sequence/context setelah restart.
 
 **Milestone 4.60 status:** implementation/test completed; awaiting exact-head CI gate after status-document update.
+
+
+### 4.61 Durable Consensus Evidence Recovery / Restart Safety
+
+**Tanggal:** 2026-10-01
+
+**Objective**
+
+Menambahkan persistence terpisah untuk authenticated consensus evidence agar restart/runtime replacement tidak kehilangan evidence yang dibutuhkan untuk recovery, tanpa mencampurkan vote/proposal/timeout/finality evidence ke canonical block/state storage.
+
+**Implementation**
+
+- `IndoChain/internal/consensus/evidence_store.go`
+  - menambahkan `EvidenceStore` sebagai persistence interface terpisah dari `ChainStore`;
+  - `ConsensusEvidenceKey` membentuk identity key deterministik dari exact protocol/chain/epoch/height/round/sender/type, sementara payload dan signature tidak menjadi key sehingga conflicting replay dapat dideteksi;
+  - `ValidateDurableEvidenceMessage` mewajibkan message type yang didukung, exact context, validator membership, sender, dan signature authority sebelum persistence;
+  - `PersistAuthenticatedEvidence` melakukan validate-before-persist, replay identik bersifat idempotent, sedangkan record dengan identity yang sama tetapi bytes berbeda ditolak;
+  - `RecoverAuthenticatedEvidence` memuat seluruh record, memverifikasi encoding/key/context/signature, lalu mengembalikan evidence deterministik menurut round → type → sender;
+  - recovery dapat membaca beberapa round dalam satu canonical height, tetapi tidak melakukan implicit mutation/replay ke `ValidatorRuntime`.
+- `IndoChain/internal/storage/consensus_evidence_store.go`
+  - `MemoryConsensusEvidenceStore` untuk development/testing;
+  - `FileConsensusEvidenceStore` memakai file terpisah dan atomic temp-file replacement;
+  - persistence evidence tidak menjadi bagian dari `ChainStore` atau file snapshot canonical block/state.
+- `IndoChain/internal/node/consensus_recovery.go`
+  - menambahkan `ReconstructConsensusRuntimeWithEvidence`;
+  - canonical recovery tetap menggunakan `OpenDevnet` sebagai source of truth;
+  - evidence recovery dilakukan setelah canonical runtime context berhasil direkonstruksi;
+  - recovered evidence dikembalikan sebagai validated data, sementara runtime tetap dimulai round 0 / `PhaseProposal`.
+- Tests:
+  - authenticated evidence persistence;
+  - identical replay idempotency;
+  - conflicting replay rejection;
+  - corrupt record rejection;
+  - multiple-round deterministic recovery;
+  - file-store reopen persistence;
+  - node integration: canonical recovery + authenticated evidence recovery;
+  - recovery tidak meng-advance runtime secara implicit.
+
+**Locked invariants**
+
+1. Consensus evidence persistence terpisah dari canonical block/state storage.
+2. Hanya evidence yang sudah authenticated dan context-valid yang boleh dipersist.
+3. Identity key tidak memasukkan payload/signature sehingga conflicting evidence pada identity yang sama tidak tertimpa.
+4. Replay record yang byte-identical bersifat idempotent.
+5. Replay dengan identity sama tetapi content berbeda ditolak.
+6. Corrupt encoding atau key mismatch menghentikan recovery.
+7. Recovery hanya menerima exact protocol/chain/epoch/height canonical context; round boleh berbeda dan dikembalikan deterministically.
+8. Validator authority tetap diverifikasi pada saat persistence dan recovery.
+9. Evidence recovery tidak otomatis memutasi atau meng-advance `ValidatorRuntime`.
+10. Canonical block/state tetap dimiliki `ChainStore`; evidence store adalah persistence boundary terpisah.
+
+**Production boundary**
+
+Milestone ini menutup durable authenticated evidence persistence/recovery boundary, tetapi **belum full production BFT recovery**.
+
+Masih terbuka:
+
+- deterministic policy untuk evidence retention/pruning per height/epoch;
+- validator-set/epoch lifecycle recovery;
+- safe replay of recovered proposal/vote/timeout evidence into a production BFT state machine;
+- recovery policy untuk partially committed finality evidence;
+- peer-wide multi-node recovery coordination;
+- automatic multi-node multi-height consensus loop;
+- final canonical block serialization freeze;
+- crash/restart validation across an end-to-end multi-node cluster.
+
+**Verification**
+
+- Implementation/test HEAD: `69b087cb3b41649b771bfacde6fa9524f31aff61`.
+- Latest CI for implementation HEAD: **GREEN** pada Test; Race/Vet harus diverifikasi kembali pada exact final documentation HEAD setelah status update.
+- PostgreSQL: tidak relevan.
+
+**Next integration target**
+
+Masuk ke **durable evidence replay policy / restart continuation**: tentukan subset evidence yang aman untuk direplay ke runtime setelah restart, termasuk urutan Proposal → Prevote → Precommit, timeout/round-change evidence, serta finality evidence yang belum sempat mencapai canonical commit.
+
+**Milestone 4.61 status:** implementation/test completed; status-document update requires its own exact-head CI gate.
