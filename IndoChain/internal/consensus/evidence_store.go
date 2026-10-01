@@ -22,6 +22,20 @@ var (
 type EvidenceStore interface {
 	PutConsensusEvidence(key string, encoded []byte) error
 	LoadConsensusEvidence() (map[string][]byte, error)
+	DeleteConsensusEvidence(key string) error
+}
+
+// DeleteConsensusEvidence removes one exact evidence identity. Implementations
+// must treat an already-absent identity as a successful no-op so post-commit
+// cleanup remains idempotent across crash/restart retries.
+func DeleteConsensusEvidence(store EvidenceStore, key string) error {
+	if store == nil {
+		return ErrNilEvidenceStore
+	}
+	if key == "" {
+		return ErrInvalidEvidenceKey
+	}
+	return store.DeleteConsensusEvidence(key)
 }
 
 // ConsensusEvidenceKey identifies one validator's message in one exact
