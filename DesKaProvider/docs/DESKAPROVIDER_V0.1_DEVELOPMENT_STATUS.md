@@ -7010,3 +7010,38 @@ The three state-transition recovery entry points now have deterministic caller-b
 Continue production-readiness audit only where a concrete concurrency, persistence, recovery, or caller-boundary invariant remains untested. Provider-specific implementation remains gated on authoritative documentation or credential-backed external validation.
 
 No artificial milestone is introduced.
+
+## PostgreSQL / Reconcile Ambiguous Persistence Caller Boundary
+
+**Date:** 2026-10-01
+
+### Implementation
+
+- added a PostgreSQL integration regression covering the full Reconcile() caller boundary after an external status observation;
+- the test seeds a durable pending transaction, changes the deterministic mock provider observation to success, then injects a database mutation error only at the terminal reconciliation transition;
+- verified Reconcile() preserves ErrTransactionPersistenceAmbiguous and the underlying database error through service-layer wrapping;
+- verified Reconcile() does not fabricate a terminal result and does not resubmit the provider purchase;
+- verified the durable pending transaction remains authoritative when the terminal persistence mutation is ambiguous;
+- no automatic retry, provider failover, purchase resubmission, duplicate transaction creation, ledger mutation, customer-balance mutation, treasury movement, or provider funding was introduced.
+
+### Changed File
+
+- DesKaProvider/backend/routing/postgres_transaction_store_integration_test.go
+
+### Safety Result
+
+The PostgreSQL caller boundary now has deterministic integration evidence for the concrete recovery invariant: provider status may be observed successfully while the durable terminal transition remains uncertain. Reconcile() treats that condition as persistence uncertainty and leaves recovery to durable read/reconciliation semantics rather than opening an external retry path.
+
+### Verification Boundary
+
+Fresh Push and Pull Request CI for this HEAD are mandatory before this hardening batch is considered complete.
+
+### Current Completion Assessment
+
+Overall DesKaProvider v0.1 remains approximately **82%**. This batch closes a concrete PostgreSQL/service caller-boundary test gap and does not add provider capabilities.
+
+### Next Concrete Engineering Task
+
+After GREEN CI, continue production-readiness audit only where a concrete persistence, concurrency, recovery, or caller-boundary invariant remains untested. Provider-specific implementation remains gated on authoritative documentation or credential-backed external validation.
+
+No artificial milestone is introduced.
