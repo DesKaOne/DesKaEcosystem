@@ -7404,3 +7404,77 @@ No authorized live-provider transaction was executed.
 Continue the production-readiness audit only where a concrete concurrency, persistence, recovery, identity, or caller-boundary invariant remains untested. Provider-specific implementation remains gated on authoritative documentation or credential-backed external validation.
 
 No artificial milestone is introduced.
+
+
+## Operational Capability Control Concurrency Hardening
+
+**Date:** 2026-10-01
+
+### Source Finding
+
+The operational capability control introduced by #299 used read-modify-write through ProviderAdminService.SetCapabilityEnabled(). The underlying state store was mutex-protected, but the complete capability mutation was not atomic at the store boundary. Two concurrent administrative capability changes could overwrite each other's unrelated update.
+
+A second semantic issue was found during regression: an explicitly empty EnabledCapabilities set means all operational capabilities are disabled, while nil is reserved for legacy state and means fallback to implemented capabilities. Defensive slice copying must preserve that distinction.
+
+### Implementation
+
+- added an atomic ProviderStateStore.SetCapabilityEnabled() mutation boundary;
+- moved administrative capability enable/disable operations onto that atomic store operation;
+- preserved persistence-before-memory-commit semantics on capability mutation;
+- preserved ErrProviderNotFound and ErrCapabilityNotAvailable control-plane error semantics;
+- preserved explicit lifecycle state independently from capability mutation;
+- added cloneCapabilities() so nil and explicit empty capability sets remain semantically distinct through Get, All, persistence, and mutation copies;
+- added deterministic concurrent regression coverage where two simultaneous capability disables must both survive without re-enabling either capability;
+- verified an explicit all-disabled capability state does not fall back to legacy implemented-capability semantics.
+
+### Changed Files
+
+- DesKaProvider/backend/Provider/operational/provider_state.go
+- DesKaProvider/backend/Provider/operational/provider_admin.go
+- DesKaProvider/backend/Provider/operational/provider_admin_test.go
+
+No provider adapter, external provider contract, routing authority, transaction persistence, ledger, customer balance, treasury, retry/failover, or public API behavior was introduced or changed.
+
+### Safety Boundary / Invariants
+
+- operational capability enablement remains separate from registry capability readiness metadata;
+- concurrent capability control operations are serialized at the state-store mutation boundary;
+- persistence failure does not replace the existing in-memory state;
+- explicit empty EnabledCapabilities remains an intentional all-disabled state;
+- legacy nil EnabledCapabilities remains compatible with migration semantics;
+- Router.Select() remains the sole routing decision authority;
+- lifecycle enablement and capability enablement remain independent controls;
+- capability reconciliation does not silently re-enable an explicitly disabled operational capability;
+- no automatic retry, provider failover, transaction resubmission, duplicate transaction creation, provider funding, ledger mutation, customer-balance mutation, treasury movement, or public API exposure is introduced;
+- RCB remains unregistered, non-routable, and fail-closed pending an authoritative PPOB contract;
+- no DesKaCash provider-specific coupling is introduced.
+
+### Verification
+
+Final implementation/test HEAD:
+
+13b2789e292209dc9ad6c5644ceb5d94caa982a6
+
+- Push CI #3727 / run 36849445607: GREEN
+  - test: PASS
+  - race: PASS
+  - DigiFlazz validation: SKIPPED (credential-gated)
+  - IAK read-only: SKIPPED (credential-gated)
+  - XP SINDONESIA read-only: SKIPPED (credential-gated)
+  - Midtrans sandbox: SKIPPED (credential-gated)
+- Pull Request CI #3728 / run 36849451828: GREEN
+  - test: PASS
+  - race: PASS
+  - credential-gated provider validation jobs: SKIPPED
+
+CI correction history:
+- initial test revision failed on Go syntax in the concurrent test;
+- the corrected test then exposed the nil-vs-empty capability-state semantic bug;
+- both issues were corrected before final HEAD verification;
+- no production provider behavior or financial mutation was introduced by those corrections.
+
+No authorized live-provider transaction or external provider request was executed.
+
+### Next Step
+
+No artificial milestone is opened. Continue from the remaining v0.1 readiness gaps, prioritizing a concrete repository-level invariant or authoritative external-provider evidence when available.
