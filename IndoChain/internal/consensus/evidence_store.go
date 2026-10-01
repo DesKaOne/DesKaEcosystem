@@ -159,7 +159,10 @@ func RecoverAuthenticatedEvidence(
 		if msg.Epoch != state.Epoch || msg.Height != state.Height {
 			return nil, ErrEvidenceContextMismatch
 		}
-		if err := ValidateDurableEvidenceMessage(msg, state, validators, authority); err != nil {
+		messageState := state
+		messageState.Round = msg.Round
+		messageState.Phase = PhaseProposal
+		if err := ValidateDurableEvidenceMessage(msg, messageState, validators, authority); err != nil {
 			return nil, err
 		}
 		messages = append(messages, msg)
