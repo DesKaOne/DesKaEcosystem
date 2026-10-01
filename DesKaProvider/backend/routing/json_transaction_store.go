@@ -9,6 +9,7 @@ import (
     "path/filepath"
     "sort"
     "sync"
+    "syscall"
 )
 
 type JSONFileTransactionStore struct {
@@ -62,6 +63,14 @@ func (s *JSONFileTransactionStore) CreateIfAbsentContext(ctx context.Context, st
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	unlock, err := s.acquireFileLock()
+	if err != nil {
+		return TransactionState{}, false, err
+	}
+	defer unlock()
+	if err := s.reloadLocked(); err != nil {
+		return TransactionState{}, false, err
+	}
 	if current, ok := s.transactions[referenceID]; ok {
 		if !sameTransactionIdentity(current, state) {
 			return TransactionState{}, false, ErrReferenceConflict
@@ -74,6 +83,54 @@ func (s *JSONFileTransactionStore) CreateIfAbsentContext(ctx context.Context, st
 		return TransactionState{}, false, err
 	}
 	return state, true, nil
+}
+
+func sameTransactionState(a, b TransactionState) bool {
+	return transactionReferenceID(a) == transactionReferenceID(b) &&
+		sameTransactionIdentity(a, b) &&
+		a.Execution == b.Execution &&
+		a.Version == b.Version
+}
+
+func (s *JSONFileTransactionStore) acquireFileLock() (func(), error) {
+	lockPath := s.path + ".lock"
+	file, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("open transaction store lock: %w", err)
+	}
+	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX); err != nil {
+		_ = file.Close()
+		return nil, fmt.Errorf("lock transaction store: %w", err)
+	}
+	return func() {
+		_ = syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
+		_ = file.Close()
+	}, nil
+}
+
+func (s *JSONFileTransactionStore) reloadLocked() error {
+	data, err := os.ReadFile(s.path)
+	if errors.Is(err, os.ErrNotExist) {
+		s.transactions = make(map[string]TransactionState)
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read transaction store: %w", err)
+	}
+	if len(data) == 0 {
+		s.transactions = make(map[string]TransactionState)
+		return nil
+	}
+	var state jsonTransactionState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return fmt.Errorf("decode transaction store: %w", err)
+	}
+	if state.Transactions == nil {
+		s.transactions = make(map[string]TransactionState)
+	} else {
+		s.transactions = state.Transactions
+	}
+	return nil
 }
 
 func (s *JSONFileTransactionStore) Get(referenceID string) (TransactionState, bool) {
@@ -99,44 +156,74 @@ func (s *JSONFileTransactionStore) All() []TransactionState {
 }
 
 func (s *JSONFileTransactionStore) Put(state TransactionState) error {
-    referenceID := transactionReferenceID(state)
-    if referenceID == "" {
-        return errors.New("transaction reference ID is required")
-    }
-    if state.Execution.ProviderName == "" {
-        return errors.New("transaction provider name is required")
-    }
-
-    s.mu.Lock()
-    defer s.mu.Unlock()
-    if previous, ok := s.transactions[referenceID]; ok {
-        if err := validateTransactionTransition(previous, state); err != nil {
-            return err
-        }
-    }
-    s.transactions[referenceID] = state
-    return s.persistLocked()
+	referenceID := transactionReferenceID(state)
+	if referenceID == "" {
+		return errors.New("transaction reference ID is required")
+	}
+	if state.Execution.ProviderName == "" {
+		return errors.New("transaction provider name is required")
+	}
+	if err := validateTransactionState(state); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	unlock, err := s.acquireFileLock()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	if err := s.reloadLocked(); err != nil {
+		return err
+	}
+	previous, existed := s.transactions[referenceID]
+	if existed {
+		if err := validateTransactionTransition(previous, state); err != nil {
+			return err
+		}
+	}
+	s.transactions[referenceID] = state
+	if err := s.persistLocked(); err != nil {
+		if existed {
+			s.transactions[referenceID] = previous
+		} else {
+			delete(s.transactions, referenceID)
+		}
+		return err
+	}
+	return nil
 }
 
 func (s *JSONFileTransactionStore) PutIfCurrent(referenceID string, previous, next TransactionState) error {
-    if referenceID == "" || transactionReferenceID(next) != referenceID || transactionReferenceID(previous) != referenceID {
-        return ErrReferenceConflict
-    }
-    s.mu.Lock()
-    defer s.mu.Unlock()
-    current, ok := s.transactions[referenceID]
-    if !ok || current != previous {
-        return ErrTransactionStateConflict
-    }
-    if err := validateTransactionTransition(previous, next); err != nil {
-        return err
-    }
-    s.transactions[referenceID] = next
-    if err := s.persistLocked(); err != nil {
-        s.transactions[referenceID] = current
-        return err
-    }
-    return nil
+	if referenceID == "" || transactionReferenceID(next) != referenceID || transactionReferenceID(previous) != referenceID {
+		return ErrReferenceConflict
+	}
+	if err := validateTransactionState(next); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	unlock, err := s.acquireFileLock()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	if err := s.reloadLocked(); err != nil {
+		return err
+	}
+	current, ok := s.transactions[referenceID]
+	if !ok || !sameTransactionState(current, previous) {
+		return ErrTransactionStateConflict
+	}
+	if err := validateTransactionTransition(previous, next); err != nil {
+		return err
+	}
+	s.transactions[referenceID] = next
+	if err := s.persistLocked(); err != nil {
+		s.transactions[referenceID] = current
+		return err
+	}
+	return nil
 }
 
 func (s *JSONFileTransactionStore) persistLocked() error {
