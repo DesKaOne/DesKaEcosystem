@@ -24,6 +24,8 @@ func TestJSONFileTransactionStoreAmbiguousPutKeepsRenamedStateInMemory(t *testin
 		return nil
 	}
 	terminal := pending
+	paymentCopy := *pending.Payment
+	terminal.Payment = &paymentCopy
 	terminal.Payment.Status = payment.StatusSuccess
 	terminal.Payment.ProviderReference = "provider-terminal"
 	terminal.Version++
