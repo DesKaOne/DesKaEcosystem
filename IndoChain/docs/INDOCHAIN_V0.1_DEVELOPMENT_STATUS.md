@@ -2989,3 +2989,72 @@ Masih terbuka:
 Masuk ke **multi-height consensus reconstruction/recovery boundary**: setelah node restart atau runtime replacement, consensus harus dapat direkonstruksi dari canonical node height/hash/state-root tanpa mengandalkan state in-memory lama, lalu melanjutkan proposal pada height berikutnya secara deterministic.
 
 **Milestone 4.59 status:** implementation/test completed; exact implementation HEAD CI GREEN. Status-document update requires its own exact-head CI gate.
+
+
+### 4.60 Multi-height Consensus Reconstruction / Durable Recovery Boundary
+
+**Tanggal:** 2026-10-01
+
+**Objective**
+
+Menutup boundary recovery consensus setelah node restart atau runtime replacement: canonical durable store menjadi source of truth untuk height/hash/state-root, lalu consensus runtime baru dibangun pada `PhaseProposal` round 0 tanpa memulihkan proposal/vote/lock/finality evidence ephemeral.
+
+**Implementation**
+
+- `IndoChain/internal/node/consensus_recovery.go`
+  - menambahkan `Node.ReconstructConsensusRuntime`;
+  - memanggil existing `OpenDevnet` sehingga canonical head, block hash, state root, dan historical chain consistency diverifikasi dari durable store sebelum runtime dibangun;
+  - membangun `RoundState` baru dari canonical head height + explicit epoch;
+  - membangun fresh `ValidatorRuntime` dari validator set, voting power, quorum threshold, dan proposer policy yang diberikan;
+  - tidak memulihkan proposal, prevote, precommit, lock proof, atau finality certificate dari runtime lama;
+  - mengembalikan `ConsensusRecovery` yang membawa canonical previous hash, canonical block hash, state root, dan height;
+  - `NextBlockContext` mengambil proposer dari fresh runtime dan previous hash dari durable canonical snapshot.
+- Reuse existing `OpenDevnet` recovery path:
+  - stored head hash diverifikasi terhadap block hash;
+  - state root diverifikasi;
+  - historical blocks dan parent hashes diverifikasi;
+  - protocol/chain context diverifikasi.
+- `IndoChain/internal/node/consensus_recovery_test.go`
+  - recovery dari genesis canonical state;
+  - stale in-memory node head/state tidak menjadi source of truth;
+  - corrupt durable store ditolak;
+  - recovered next-block context memakai canonical previous hash dan deterministic proposer.
+
+**Locked invariants**
+
+1. Durable canonical storage adalah source of truth untuk recovery.
+2. Recovery tidak boleh menggunakan stale mutable node head/hash/state.
+3. Consensus height hasil recovery sama dengan canonical committed height.
+4. Recovery selalu dimulai pada round 0 / `PhaseProposal`.
+5. Ephemeral proposal/vote/lock/finality evidence tidak direstore.
+6. Previous hash untuk next block berasal dari canonical durable head.
+7. Validator set, voting power, quorum threshold, proposer policy harus diberikan secara eksplisit; recovery tidak menebak validator authority.
+8. Corrupt/inconsistent durable history menghentikan recovery sebelum runtime dibangun.
+9. Consensus runtime tidak mengambil ownership canonical storage.
+
+**Production boundary**
+
+Milestone ini menutup executable single-node/multi-height consensus reconstruction boundary, tetapi **belum full production BFT recovery**.
+
+Masih terbuka:
+
+- durable persistence/replay of authenticated consensus evidence;
+- validator-set/epoch lifecycle recovery;
+- timeout/round-change recovery policy;
+- peer-wide multi-node recovery coordination;
+- automatic multi-node multi-height consensus loop;
+- final canonical block serialization freeze;
+- crash/restart validation across an end-to-end multi-node cluster.
+
+**Verification**
+
+- Implementation/test HEAD: `2bb54e81cab11686e4dfa311b907199f29fd387d`.
+- CI is required to be GREEN before milestone closure.
+- Existing recovery tests and new reconstruction tests pass in the current CI Test step.
+- PostgreSQL: tidak relevan.
+
+**Next integration target**
+
+Masuk ke **durable consensus evidence recovery / restart safety**: tentukan record minimum yang perlu dipersist untuk authenticated round/evidence tanpa mencampurkan ephemeral vote state ke canonical block storage, lalu validasi replay/sequence/context setelah restart.
+
+**Milestone 4.60 status:** implementation/test completed; awaiting exact-head CI gate after status-document update.
