@@ -2614,7 +2614,6 @@ func TestPostgresTransactionStoreAmbiguousPersistencePropagatesThroughReconcile(
 		ProductCode: req.ProductCode,
 		CustomerNo:  req.CustomerNo,
 		ReferenceID: ref,
-		Amount:      req.Amount,
 		Testing:     req.Testing,
 	}); err != nil {
 		t.Fatalf("seed deterministic provider transaction: %v", err)
