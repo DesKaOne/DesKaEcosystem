@@ -38,6 +38,7 @@ type ValidatorRuntime struct {
 	lockedRound    uint64
 	lockedProof    *LockProof
 	certificate    *FinalityCertificate
+	lastCanonicalCommit *CanonicalCommit
 }
 
 func NewValidatorRuntime(config RuntimeConfig) (*ValidatorRuntime, error) {
