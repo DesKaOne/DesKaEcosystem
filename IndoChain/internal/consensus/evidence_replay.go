@@ -83,10 +83,7 @@ func ReplayAuthenticatedEvidence(
 			case MessageTypeProposal:
 				proposals = append(proposals, msg)
 			case MessageTypePrevote, MessageTypePrecommit, MessageTypeVote:
-				if err := runtime.AddAuthenticatedVote(msg, authority); err != nil {
-					// Votes are intentionally processed only after the proposal
-					// below; defer them until the proposal phase is entered.
-				}
+				// Applied below after proposal admission.
 			case MessageTypeTimeout:
 				timeouts = append(timeouts, msg)
 			case MessageTypeFinalityEvidence:
