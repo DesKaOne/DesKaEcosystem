@@ -605,3 +605,10 @@ Remaining gaps:
 
 Next recommended step:
 Selesaikan contract DesKaProvider lintas service (normalized payment/wallet capability + service authentication/error model), lalu implement client/fake di DesKaCash. Setelah boundary stabil, lanjutkan transactional balanced posting persistence + reservation/hold + concurrency/idempotency hardening.
+
+### Architectural correction verification follow-up — 2026-10-01
+
+- Test fixture yang terdampak refactor payment boundary diperbaiki sebelum CI verification.
+- Static review branch terbaru tidak lagi menunjukkan configuration field IndoChain RPC pada DesKaCash production config.
+- CI untuk head terbaru belum memiliki status check yang dapat dibaca melalui connector saat dokumentasi ini diperbarui; status: PENDING / NOT REPORTED.
+- Karena local checkout/network tidak tersedia untuk menjalankan command Go secara langsung, `go test ./...`, `go vet ./...`, dan `go test -race ./...` belum dapat diklaim PASS.
