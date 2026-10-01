@@ -7478,3 +7478,65 @@ No authorized live-provider transaction or external provider request was execute
 ### Next Step
 
 No artificial milestone is opened. Continue from the remaining v0.1 readiness gaps, prioritizing a concrete repository-level invariant or authoritative external-provider evidence when available.
+
+## Provider Lifecycle / Capability Mutation Atomicity Hardening
+
+**Date:** 2026-10-01
+
+### Source Finding
+
+The previous capability-control hardening made SetCapabilityEnabled() atomic at the ProviderStateStore boundary, but ProviderAdminService.SetLifecycle() still performed a read-modify-write sequence:
+
+- read current ProviderState;
+- modify Lifecycle in the caller;
+- write the complete state back through Put().
+
+This left a cross-control concurrency window: a concurrent lifecycle mutation could overwrite a capability mutation committed between the read and the write, or a concurrent capability mutation could be overwritten by a stale lifecycle write.
+
+### Implementation
+
+- added an atomic ProviderStateStore.SetLifecycle() mutation boundary;
+- changed ProviderAdminService.SetLifecycle() to use the atomic store operation instead of Get() + Put();
+- preserved persistence-before-memory-commit semantics;
+- preserved ErrProviderNotFound and ErrInvalidLifecycle behavior;
+- preserved lifecycle/capability separation;
+- added deterministic concurrent regression coverage where lifecycle disable and capability disable occur concurrently and both updates must survive;
+- no routing, provider adapter, transaction, ledger, customer balance, treasury, retry/failover, or public API behavior was changed.
+
+### Changed Files
+
+- DesKaProvider/backend/Provider/operational/provider_state.go
+- DesKaProvider/backend/Provider/operational/provider_admin.go
+- DesKaProvider/backend/Provider/operational/provider_admin_test.go
+
+### Safety Boundary / Invariants
+
+- lifecycle and capability controls are now both serialized at the ProviderStateStore mutation boundary;
+- a lifecycle mutation cannot restore a stale EnabledCapabilities slice;
+- a capability mutation cannot restore a stale Lifecycle value;
+- persistence failure does not replace the current in-memory state;
+- Router.Select() remains the sole routing decision authority;
+- explicit capability disable remains independent from lifecycle enablement;
+- no automatic retry, provider failover, transaction resubmission, duplicate transaction creation, provider funding, ledger mutation, customer-balance mutation, treasury movement, or public API exposure is introduced;
+- RCB remains unregistered, non-routable, and fail-closed pending an authoritative PPOB contract.
+
+### Verification
+
+Final implementation/test HEAD:
+
+90863b3096b9f66f5ba9db49788e5d1b33462564
+
+- Push CI #3736 / run 36851781152: **GREEN**
+  - test: PASS
+  - vet: PASS
+  - race: PASS
+  - DigiFlazz validation: SKIPPED (credential-gated)
+  - IAK read-only: SKIPPED (credential-gated)
+  - XP SINDONESIA read-only: SKIPPED (credential-gated)
+  - Midtrans sandbox: SKIPPED (credential-gated)
+
+No authorized live-provider transaction or external provider request was executed.
+
+### Next Step
+
+No artificial milestone is opened. Continue the v0.1 readiness audit from the next concrete concurrency, persistence, recovery, identity, or authoritative provider-contract gap.
