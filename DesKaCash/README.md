@@ -4,11 +4,11 @@
 
 DesKaCash dirancang untuk menyediakan berbagai layanan transaksi keuangan digital seperti pembayaran, transfer dana, top-up, withdrawal, pembayaran tagihan, pembayaran QR, serta integrasi dengan bank, payment gateway, dan layanan keuangan pihak ketiga.
 
-Yang membedakan DesKaCash dari e-wallet konvensional adalah **arsitektur ledger transaksi internalnya yang dirancang terintegrasi dengan IndoChain**, yaitu blockchain yang dikembangkan sebagai bagian dari DesKaEcosystem.
+Yang membedakan DesKaCash adalah pemisahan tegas antara **application/business layer** dan infrastructure/provider layer. DesKaCash memiliki wallet, business rules, transaction lifecycle, dan application ledger; akses ke blockchain maupun external provider tidak dilakukan secara langsung.
 
-Dengan pendekatan ini, DesKaCash tidak hanya berfungsi sebagai aplikasi e-wallet, tetapi juga menjadi salah satu **financial application layer** yang memanfaatkan IndoChain sebagai bagian dari infrastruktur pencatatan dan validasi transaksi.
+> **DesKaCash = Digital Wallet + Business Logic + Application Ledger**
 
-> **DesKaCash = Digital Wallet + Financial API Integration + IndoChain Ledger**
+Untuk kebutuhan infrastructure, DesKaCash hanya mengenal **DesKaProvider**. DesKaProvider menangani gateway IndoChain, provider router, webhook normalization, credential provider, dan integrasi external provider.
 
 ---
 
@@ -44,7 +44,7 @@ Pada sistem DesKaCash:
        Transaction Ledger
 ```
 
-IndoChain digunakan sebagai bagian dari infrastruktur ledger untuk mencatat dan memvalidasi aktivitas transaksi sesuai dengan desain sistem DesKaCash.
+IndoChain tidak diakses langsung oleh DesKaCash. Jika diperlukan, DesKaCash meminta capability application-level melalui DesKaProvider.
 
 Sementara itu, data operasional seperti profil pengguna, konfigurasi, metadata, session, dan kebutuhan aplikasi lainnya tetap dapat disimpan pada database tradisional seperti PostgreSQL.
 
@@ -72,14 +72,14 @@ DesKaCash API
  ├── Validate Transaction
  │
  ▼
-IndoChain
+DesKaProvider
  │
- ├── Create Transaction
- ├── Validate Transaction
- ├── Record Ledger
+ ├── normalized capability
+ ├── infrastructure/provider routing
+ └── IndoChain or external provider
  │
  ▼
-Transaction Confirmed
+Normalized result
  │
  ▼
 DesKaCash
@@ -322,16 +322,9 @@ PostgreSQL digunakan untuk menyimpan data aplikasi seperti:
 * Metadata.
 * Operational data.
 
-### IndoChain
+### DesKaProvider / IndoChain
 
-IndoChain digunakan sebagai bagian dari ledger transaksi untuk:
-
-* Transaction recording.
-* Transaction validation.
-* Ledger verification.
-* Transaction reference.
-* Auditability.
-* Interoperability dengan aplikasi DesKaEcosystem.
+DesKaCash tidak memiliki koneksi langsung ke IndoChain. Semua capability blockchain yang dibutuhkan aplikasi harus tersedia melalui DesKaProvider.
 
 Secara konseptual:
 
@@ -341,15 +334,18 @@ PostgreSQL
     ├── User
     ├── Account
     ├── Merchant
-    ├── Provider
     └── Application Data
 
-IndoChain
+DesKaCash
     │
-    ├── Transaction
-    ├── Ledger
-    ├── Validation
-    └── Transaction Reference
+    ▼
+DesKaProvider
+    ├── Financial Core
+    ├── IndoChain Gateway
+    └── External Provider Adapters
+             │
+             ▼
+        Infrastructure
 ```
 
 Dengan demikian, database aplikasi dan ledger transaksi tidak harus memiliki fungsi yang sama.
@@ -721,7 +717,8 @@ This branch is the dedicated development track for the DesKaCash v0.1 implementa
 
 - Backend: Go
 - Frontend: Flutter / Dart
-- Integration boundary: IndoChain RPC/API
-- External payment providers: application-layer integrations
+- Integration boundary: DesKaProvider API / service contract
+- External payment providers: DesKaProvider-owned integrations
+- IndoChain: never accessed directly by DesKaCash
 
 DesKaCash remains independently developed from IndoChain. IndoChain source code is not a dependency of this project; integration occurs through defined RPC/API contracts.
