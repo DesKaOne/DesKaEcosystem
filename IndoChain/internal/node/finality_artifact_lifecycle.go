@@ -37,9 +37,6 @@ func (n *Node) PruneFinalityArtifacts(
 	if evidenceStore == nil {
 		return FinalityArtifactPruneResult{}, consensus.ErrNilEvidenceStore
 	}
-	if candidateKey.Height == 0 || candidateKey.Hash == (candidateKey.Hash) {
-		// Hash-zero is rejected below without introducing a second key type.
-	}
 	if n.Head.Header.Height < candidateKey.Height {
 		return FinalityArtifactPruneResult{}, ErrFinalityArtifactsNotCommitted
 	}
