@@ -12,7 +12,7 @@ type fakeProvider struct{}
 
 func (fakeProvider) CreatePayment(context.Context, Payment) (ProviderPayment, error) {
 	return ProviderPayment{
-		ID:        "provider-1",
+		ExternalReference: "provider-1",
 		Status:    StatusPending,
 		Amount:    ledger.Money{BaseUnits: 100_000},
 		Reference: "ref-1",
@@ -24,11 +24,7 @@ func (fakeProvider) GetPayment(context.Context, string) (ProviderPayment, error)
 }
 
 func TestFakeProviderSatisfiesProvider(t *testing.T) {
-	var provider Provider = fakeProvider{}
-
-	if false {
-		t.Fatal("unexpected provider-specific API in DesKaCash")
-	}
+	var provider DesKaProviderClient = fakeProvider{}
 
 	got, err := provider.CreatePayment(context.Background(), Payment{
 		ID:     "pay-1",
@@ -38,8 +34,8 @@ func TestFakeProviderSatisfiesProvider(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if got.ID != "provider-1" {
-		t.Fatalf("expected provider payment id provider-1, got %q", got.ID)
+	if got.ExternalReference != "provider-1" {
+		t.Fatalf("expected provider payment id provider-1, got %q", got.ExternalReference)
 	}
 	if got.Status != StatusPending {
 		t.Fatalf("expected pending status, got %s", got.Status)
