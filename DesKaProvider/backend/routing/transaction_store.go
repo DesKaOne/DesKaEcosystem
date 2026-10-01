@@ -112,7 +112,7 @@ func wrapTransactionPersistenceAmbiguous(err error) error {
 	if err == nil {
 		return nil
 	}
-	return fmt.Errorf("%w: %v", ErrTransactionPersistenceAmbiguous, err)
+	return fmt.Errorf("%w: %w", ErrTransactionPersistenceAmbiguous, err)
 }
 
 func normalizeTransactionKind(kind TransactionKind) TransactionKind {
