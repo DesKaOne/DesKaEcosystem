@@ -21,12 +21,12 @@ func NewCreateService(store PaymentCreator) *CreateService {
 	return &CreateService{store: store}
 }
 
-func (s *CreateService) Create(ctx context.Context, id, accountID, provider, idempotencyKey string, amount ledger.Money) (Payment, error) {
+func (s *CreateService) Create(ctx context.Context, id, accountID, idempotencyKey string, amount ledger.Money) (Payment, error) {
 	if err := ctx.Err(); err != nil {
 		return Payment{}, err
 	}
 
-	payment, err := NewPayment(id, accountID, provider, idempotencyKey, amount)
+	payment, err := NewPayment(id, accountID, idempotencyKey, amount)
 	if err != nil {
 		return Payment{}, err
 	}
