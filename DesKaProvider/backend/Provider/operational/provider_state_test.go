@@ -1,6 +1,9 @@
 package operational
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 func TestProviderStateDefaultsDisabledAndNormalizesName(t *testing.T) {
 	state, err := NewProviderState("  Mock ")
@@ -54,5 +57,28 @@ func TestProviderStateStoreRejectsInvalidLifecycle(t *testing.T) {
 	store := NewProviderStateStore()
 	if err := store.Put(ProviderState{ProviderName: "mock", Lifecycle: Lifecycle("maintenance")}); err == nil {
 		t.Fatal("expected invalid lifecycle error")
+	}
+}
+
+
+func TestProviderStateStoreSetLifecycleRejectsInvalidLifecycle(t *testing.T) {
+	store := NewProviderStateStore()
+	if err := store.Put(ProviderState{
+		ProviderName: "mock",
+		Lifecycle: LifecycleDisabled,
+		Capabilities: []Capability{CapabilityPPOB},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := store.SetLifecycle("mock", Lifecycle("maintenance")); !errors.Is(err, ErrInvalidLifecycle) {
+		t.Fatalf("expected ErrInvalidLifecycle, got %v", err)
+	}
+	state, ok := store.Get("mock")
+	if !ok {
+		t.Fatal("provider state disappeared")
+	}
+	if state.Lifecycle != LifecycleDisabled {
+		t.Fatalf("invalid lifecycle mutation changed state: %#v", state)
 	}
 }
