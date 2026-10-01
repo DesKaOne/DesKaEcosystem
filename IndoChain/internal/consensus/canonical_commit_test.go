@@ -9,7 +9,7 @@ import (
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/crypto"
 )
 
-func mustRuntimeSigner(t *testing.T, seed byte) crypto.Signer {
+func canonicalCommitSigner(t *testing.T, seed byte) crypto.Signer {
 	t.Helper()
 	kp, err := crypto.NewEd25519KeyPair(bytes.Repeat([]byte{seed}, 32))
 	if err != nil {
@@ -47,9 +47,9 @@ func finalizeRuntimeForCanonicalCommitTest(t *testing.T) (*ValidatorRuntime, Rou
 		{"validator-a", 0x31},
 		{"validator-b", 0x32},
 	} {
-		msg := runtimeMessage(tState(runtime), item.sender, MessageTypePrecommit, "")
+		msg := runtimeMessage(runtime.State(), item.sender, MessageTypePrecommit, "")
 		msg.Payload = append([]byte(nil), payload...)
-		signed, err := msg.Sign(mustRuntimeSigner(t, item.seed))
+		signed, err := msg.Sign(canonicalCommitSigner(t, item.seed))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -62,8 +62,6 @@ func finalizeRuntimeForCanonicalCommitTest(t *testing.T) (*ValidatorRuntime, Rou
 	}
 	return runtime, state, payload
 }
-
-func tState(runtime *ValidatorRuntime) RoundState { return runtime.State() }
 
 func TestValidatorRuntimePublishesCanonicalCommitAndAdvancesHeight(t *testing.T) {
 	runtime, state, payload := finalizeRuntimeForCanonicalCommitTest(t)
