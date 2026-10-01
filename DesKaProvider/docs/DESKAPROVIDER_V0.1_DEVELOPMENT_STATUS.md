@@ -6766,3 +6766,14 @@ Overall DesKaProvider v0.1 remains approximately **82%**. This audit hardens cal
 After GREEN CI, continue auditing database-backed transaction-store parity against the JSON persistence boundary, especially whether PostgreSQL transaction persistence can surface ambiguous commit outcomes without allowing caller-side automatic retry/resubmission.
 
 No automatic retry, payment resubmission, provider failover, provider funding, customer ledger mutation, treasury movement, duplicate purchase creation, or public API exposure is included.
+
+
+### CI Correction — Ambiguous Payment Test Syntax
+
+Push/PR CI #3607 / run 36827328720 was **RED** because the newly added `TestSubmitPaymentAmbiguousPersistencePreservesClaimAndForbidsRetry` test was missing a closing brace after its same-process retry assertion. The failure was a test-source syntax error; no production behavior was implicated.
+
+Correction commit:
+
+- `ac2c9e7235ac53de994c2485f19963b44b34eb70` — close the regression-test block.
+
+Fresh CI for the corrected HEAD is mandatory before this audit batch is considered complete.
