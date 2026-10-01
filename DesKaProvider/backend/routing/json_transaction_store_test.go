@@ -267,3 +267,17 @@ func TestJSONFileTransactionStorePutFailureDoesNotChangeExistingMemoryState(t *t
 		t.Fatalf("in-memory state changed after failed persistence: before=%#v after=%#v", before, after)
 	}
 }
+
+
+func TestJSONFileTransactionStoreRejectsCorruptStateOnRestart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "transactions", "state.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("{corrupt"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewJSONFileTransactionStore(path); err == nil {
+		t.Fatal("expected corrupt durable state to fail closed on restart")
+	}
+}
