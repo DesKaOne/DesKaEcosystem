@@ -6196,8 +6196,8 @@ The existing adapter verified the notification signature and normalized transact
 
 ### Verification Boundary
 
-Production implementation commit: `2b1a73aee84180b0b41f098a2ee6e2443da9b5ed`.
-Deterministic regression commit: `727ef872f4500fecfd4b402c0bd6638aafcd10e1`.
+Production implementation commits: `b964556d715e867e22c5f9f3425991cb74903d77` (model correction) and prior webhook hardening.
+Deterministic regression commit: `5ab4013c3adc38a1ec526d5c99b12707225770b0`.
 
 Fresh GREEN Push and PR CI are required before this batch is considered complete. Midtrans sandbox validation remains separately credential-gated.
 
