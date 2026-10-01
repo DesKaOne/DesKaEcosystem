@@ -1,6 +1,7 @@
 package consensus
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 
@@ -71,5 +72,69 @@ func CommitCanonicalCandidate(committer CanonicalCommitter, candidate CanonicalC
 	if err := committer.CommitBlockState(candidate.Block, candidate.Hash, candidate.State); err != nil {
 		return fmt.Errorf("%w: %w", ErrCanonicalCommitFailed, err)
 	}
+	return nil
+}
+
+
+var ErrCanonicalCommitPublicationContextMismatch = errors.New("canonical commit publication context mismatch")
+
+// CanonicalCommitPublication carries the exact canonical outputs observed by
+// consensus after durable node commit. It does not grant consensus ownership
+// of canonical storage.
+type CanonicalCommitPublication struct {
+	Height    types.Height
+	BlockHash types.Hash
+	StateRoot types.Hash
+}
+
+func ValidateCanonicalCommitPublication(runtime *ValidatorRuntime, publication CanonicalCommitPublication) error {
+	if runtime == nil {
+		return ErrInvalidConsensusRuntime
+	}
+	if err := runtime.state.Validate(); err != nil {
+		return err
+	}
+	if publication.Height == 0 || publication.BlockHash == (types.Hash{}) || publication.StateRoot == (types.Hash{}) {
+		return ErrInvalidCanonicalCommit
+	}
+	if runtime.state.Phase != PhaseFinalized {
+		return ErrInvalidRuntimePhase
+	}
+	expectedHeight := runtime.state.Height + 1
+	if publication.Height != expectedHeight {
+		return fmt.Errorf("%w: expected height %d got %d", ErrCanonicalCommitPublicationContextMismatch, expectedHeight, publication.Height)
+	}
+	if len(runtime.proposal) == 0 || !bytes.Equal(runtime.proposal, publication.BlockHash[:]) {
+		return fmt.Errorf("%w: finalized proposal hash mismatch", ErrCanonicalCommitPublicationContextMismatch)
+	}
+	return nil
+}
+
+// PublishCanonicalCommit consumes a publication emitted only after canonical
+// storage commit and deterministically opens the next proposal height.
+func (r *ValidatorRuntime) PublishCanonicalCommit(publication CanonicalCommitPublication) error {
+	if err := ValidateCanonicalCommitPublication(r, publication); err != nil {
+		return err
+	}
+	nextState, err := r.state.AdvanceHeight(publication.Height)
+	if err != nil {
+		return err
+	}
+	prevotes, err := NewVoteAggregator(r.rules, nextState, r.validators, r.votingPower)
+	if err != nil {
+		return err
+	}
+	precommits, err := NewVoteAggregator(r.rules, nextState, r.validators, r.votingPower)
+	if err != nil {
+		return err
+	}
+	r.state = nextState
+	r.prevotes = &prevotes
+	r.precommits = &precommits
+	r.proposal = nil
+	r.lockedProposal = nil
+	r.lockedRound = 0
+	r.lockedProof = nil
+	r.certificate = nil
 	return nil
 }
