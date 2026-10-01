@@ -94,10 +94,10 @@ func TestArtifactGCDecisionRequiresAuthenticatedQuorum(t *testing.T) {
 
 func TestArtifactGCDecisionRejectsDuplicateAndInsufficientVotes(t *testing.T) {
 	plan := testArtifactGCPlan()
-	aID, _, a, _, authority := testArtifactGCVoters(t)
-	validators, err := NewValidatorSet([][]byte{aID})
+	aID, bID, a, _, authority := testArtifactGCVoters(t)
+	validators, err := NewValidatorSet([][]byte{aID, bID})
 	if err != nil { t.Fatal(err) }
-	power, err := NewVotingPowerSet([]ValidatorVotingPower{{ValidatorID: aID, Power: 1}})
+	power, err := NewVotingPowerSet([]ValidatorVotingPower{{ValidatorID: aID, Power: 1}, {ValidatorID: bID, Power: 1}})
 	if err != nil { t.Fatal(err) }
 	vote, err := BuildSignedArtifactGCVote(plan, aID, a)
 	if err != nil { t.Fatal(err) }
