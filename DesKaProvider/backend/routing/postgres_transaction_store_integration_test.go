@@ -2563,8 +2563,8 @@ func TestPostgresTransactionStoreAmbiguousPersistencePropagatesThroughReconcile(
 	mockProvider := Mock.New(Mock.Config{
 		Products:       []provider.Product{{Code: "pln20", Name: "PLN 20"}},
 		ProviderCode:   "00",
-		Message:        "pending",
-		PurchaseStatus: provider.StatusPending,
+		Message:        "success",
+		PurchaseStatus: provider.StatusSuccess,
 		Price:          20000,
 	})
 	registry := provider.NewRegistry()
@@ -2610,7 +2610,12 @@ func TestPostgresTransactionStoreAmbiguousPersistencePropagatesThroughReconcile(
 	if err := store.PutContext(ctx, pending); err != nil {
 		t.Fatalf("seed pending transaction: %v", err)
 	}
-
+	if _, err := mockProvider.Purchase(ctx, req); err != nil {
+		t.Fatalf("seed deterministic provider transaction: %v", err)
+	}
+	if got := mockProvider.PurchaseCount(ref); got != 1 {
+		t.Fatalf("expected exactly one seeded provider submission, got %d", got)
+	}
 
 	wantErr := errors.New("connection lost after reconcile transition")
 	failingStore, err := NewPostgresTransactionStore(postgresFailingExecDBTX{DBTX: db, err: wantErr})
