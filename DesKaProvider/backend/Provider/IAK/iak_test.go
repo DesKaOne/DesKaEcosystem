@@ -895,3 +895,35 @@ func TestIAKWebhookRejectsSerialNumberForFailedStatus(t *testing.T) {
  _, err := c.HandleWebhook(context.Background(), provider.WebhookRequest{Body:body, SignatureSecret:"secret"})
  if err == nil { t.Fatal("expected serial number on failed callback to be rejected") }
 }
+
+
+func TestIAKWebhookAlwaysVerifiesConfiguredAPISignature(t *testing.T) {
+ c, err := New(config.IAKConfig{Username:"user", APIKey:"secret"}, http.DefaultClient)
+ if err != nil { t.Fatal(err) }
+
+ body := []byte(`{"ref_id":"order-api-sign","status":"1","code":"xld25000","hp":"08123","price":"25000","balance":"997061249","tr_id":"3482","message":"SUCCESS","rc":"00","sign":"invalid"}`)
+ if _, err := c.HandleWebhook(context.Background(), provider.WebhookRequest{Body:body}); err == nil {
+  t.Fatal("expected invalid callback signature to be rejected without transport signature metadata")
+ }
+
+ validBody := []byte(`{"ref_id":"order-api-sign-valid","status":"1","code":"xld25000","hp":"08123","price":"25000","balance":"997061249","tr_id":"3482","message":"SUCCESS","rc":"00","sign":"` + ts("order-api-sign-valid") + `"}`)
+ event, err := c.HandleWebhook(context.Background(), provider.WebhookRequest{Body:validBody})
+ if err != nil {
+  t.Fatal(err)
+ }
+ if event.ReferenceID != "order-api-sign-valid" || event.Status != provider.StatusSuccess {
+  t.Fatalf("event=%#v", event)
+ }
+}
+
+func TestIAKWebhookRejectsTransportSignatureMismatch(t *testing.T) {
+ c, err := New(config.IAKConfig{Username:"user", APIKey:"secret"}, http.DefaultClient)
+ if err != nil { t.Fatal(err) }
+ body := []byte(`{"ref_id":"order-transport-sign","status":"1","code":"xld25000","hp":"08123","price":"25000","balance":"997061249","tr_id":"3482","message":"SUCCESS","rc":"00","sign":"` + ts("order-transport-sign") + `"}`)
+ if _, err := c.HandleWebhook(context.Background(), provider.WebhookRequest{
+  Body: body,
+  SignatureSecret: "other-secret",
+ }); err == nil {
+  t.Fatal("expected mismatched transport signature secret to be rejected")
+ }
+}
