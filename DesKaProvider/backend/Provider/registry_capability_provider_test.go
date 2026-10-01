@@ -77,26 +77,28 @@ func TestCapabilitiesConcurrentWithCapabilityRegistration(t *testing.T) {
         t.Fatal(err)
     }
 
-    const iterations = 200
+    started := make(chan struct{})
     done := make(chan struct{})
     go func() {
         defer close(done)
-        for i := 0; i < iterations; i++ {
-            // Each registration targets a distinct canonical capability so the
-            // registry lock protects descriptor/map access under concurrent reads.
-            capability := CapabilityPPOB
-            if i%2 == 0 {
-                capability = CapabilityCatalog
-            }
-            name := "provider-" + string(rune('a'+(i%26)))
-            _ = r.RegisterCapabilityProvider(name, capability, balanceOnlyProvider{}, status)
+        <-started
+        for _, capability := range []Capability{
+            CapabilityPayment,
+            CapabilityPPOB,
+            CapabilityPayout,
+            CapabilityWebhook,
+            CapabilityCatalog,
+        } {
+            _ = r.RegisterCapabilityProvider("xp-sindonesia", capability, balanceOnlyProvider{}, status)
         }
     }()
 
-    for i := 0; i < iterations; i++ {
+    close(started)
+    for i := 0; i < 1000; i++ {
         if _, err := r.Capabilities("xp-sindonesia"); err != nil {
             t.Fatal(err)
         }
     }
     <-done
 }
+
