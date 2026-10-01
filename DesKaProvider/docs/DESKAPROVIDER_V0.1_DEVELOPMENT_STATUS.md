@@ -6208,3 +6208,12 @@ No authorized live-provider transaction was executed by this batch. External Mid
 ### Current Completion Assessment
 
 Overall DesKaProvider v0.1 remains approximately **82%**. This closes a concrete Midtrans webhook contract-validation gap without widening the provider-neutral payment interface.
+
+
+### CI Correction Follow-up — Midtrans Webhook Hardening
+
+The first CI attempt for this audit failed at compile time because `fraud_status` was initially added to the transaction-status response model instead of the notification model, and the success fixture was not yet updated. The production model placement and deterministic fixture were corrected without weakening the new validation boundary.
+
+Correction commits: `b964556d715e867e22c5f9f3425991cb74903d77`, `cd72c3cb4138ee518cc3d34fd0a073f09c75e97a`.
+
+The current documentation HEAD requires fresh GREEN Push and PR CI before the batch is closed.
