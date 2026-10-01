@@ -7888,3 +7888,49 @@ No authorized live-provider transaction or external provider request was execute
 ### Next Concrete Engineering Task
 
 Continue the readiness audit from the next evidence-based caller/persistence boundary. For PostgreSQL transaction persistence, keep the existing ambiguity sentinel until a concrete driver/database contract supports a safe pre-commit versus commit-uncertain distinction.
+
+
+## Operational Snapshot Provider Identity Recovery Hardening
+
+**Date:** 2026-10-02
+
+### Source Finding
+
+The JSON operational snapshot file is keyed by provider name, but recovery previously validated only the embedded snapshot fields and then accepted the map entry without verifying that the map key matched `Snapshot.ProviderName`. A malformed or stale file could therefore associate a snapshot under one lookup key while identifying another provider inside the snapshot.
+
+### Implementation
+
+- recovery now rejects empty snapshot keys and any map-key / `ProviderName` mismatch before installing persisted state;
+- added deterministic regression coverage for a mismatched provider identity;
+- no normalization, aliasing, fallback lookup, routing change, or provider-specific behavior was introduced.
+
+### Safety Boundary / Invariants
+
+- persisted operational state is accepted only when its storage identity matches its provider identity;
+- malformed recovery state fails closed instead of becoming an operational routing input;
+- operational balance/health remains separate from lifecycle, capability readiness, transaction authorization, and financial source-of-truth;
+- `Router.Select()` remains the sole routing authority;
+- no retry, failover, resubmission, provider funding, ledger mutation, customer-balance mutation, treasury movement, duplicate transaction creation, or public API exposure is introduced.
+
+### Changed Files
+
+- `DesKaProvider/backend/Provider/operational/json_store.go`
+- `DesKaProvider/backend/Provider/operational/json_store_test.go`
+- `DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md`
+
+### Verification
+
+Implementation commits:
+
+- `cf30534311a81a32ea58a85b1a795791ca12a69e` — recovery identity validation
+- `f49baeac25c64c81e763c60f65ed160d93d7fb02` — regression test
+
+Full repository test, vet, race, and CI verification is required on the resulting branch HEAD before this change is considered complete.
+
+### External Validation
+
+No authorized live-provider transaction or external provider request was executed. Credential-gated provider validation remains SKIPPED unless explicitly authorized and credentials/provider access are available.
+
+### Next Concrete Engineering Task
+
+Continue the readiness audit from the next evidence-based persistence/recovery, identity, concurrency, caller-boundary, or authoritative provider-contract gap.
