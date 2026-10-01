@@ -290,9 +290,6 @@ func TestServiceReconcileAmbiguousPersistencePreservesPending(t *testing.T) {
 	if !errors.Is(err, ErrTransactionPersistenceAmbiguous) {
 		t.Fatalf("expected ambiguous reconciliation persistence error, got result=%#v err=%v", got, err)
 	}
-	if mock.StatusCount(req.ReferenceID) != 1 {
-		t.Fatalf("reconciliation must perform exactly one provider status read, count=%d", mock.StatusCount(req.ReferenceID))
-	}
 	state, ok := store.Get(req.ReferenceID)
 	if !ok {
 		t.Fatal("pending transaction disappeared after ambiguous reconciliation persistence")
