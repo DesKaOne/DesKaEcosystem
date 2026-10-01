@@ -2839,5 +2839,11 @@ Masih terbuka:
 
 Masuk ke **finality evidence → canonical commit admission boundary**: node harus menerima finality evidence yang sudah authenticated/validated, mencocokkan candidate block + execution/state root, lalu melakukan canonical commit secara atomic dan replay-safe. Evidence validation tetap terpisah dari storage mutation.
 
-**Milestone 4.57 status:** implementation/test completed; exact-head CI verification required after the status-document update.
+**Verification correction**
+
+- Initial 4.57 P2P regression run `36794347181` failed only in `TestConsensusRoundDriverPublishesAndAcceptsFinalityEvidence` because the test drove the local runtime from Proposal without first admitting its authenticated proposal.
+- The test was corrected to establish proposal state first and then deliver the queued prevote + precommit to the remote runtime in order.
+- Corrected regression HEAD: `abf502380dc2b1fa4df252fb17abdd451188a16e`.
+
+**Milestone 4.57 status:** implementation/test completed; corrected exact-head CI verification required after this status-document update.
 
