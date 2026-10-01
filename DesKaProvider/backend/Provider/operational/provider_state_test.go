@@ -82,3 +82,113 @@ func TestProviderStateStoreSetLifecycleRejectsInvalidLifecycle(t *testing.T) {
 		t.Fatalf("invalid lifecycle mutation changed state: %#v", state)
 	}
 }
+
+
+type ambiguousProviderStatePersistence struct {
+	states []ProviderState
+	err    error
+}
+
+func (p *ambiguousProviderStatePersistence) Load() ([]ProviderState, error) {
+	return append([]ProviderState(nil), p.states...), nil
+}
+
+func (p *ambiguousProviderStatePersistence) Save(states []ProviderState) error {
+	p.states = append([]ProviderState(nil), states...)
+	return p.err
+}
+
+func TestProviderStateStoreAmbiguousLifecycleDisableFailsClosedInMemory(t *testing.T) {
+	cause := errors.New("directory fsync failed")
+	persistence := &ambiguousProviderStatePersistence{err: errors.Join(ErrProviderStatePersistenceAmbiguous, cause)}
+	store, err := NewPersistentProviderStateStore(persistence)
+	if err != nil { t.Fatal(err) }
+	if err := store.Put(ProviderState{
+		ProviderName: "mock",
+		Lifecycle: LifecycleEnabled,
+		Capabilities: []Capability{CapabilityPPOB},
+	}); err != nil { t.Fatal(err) }
+
+	_, err = store.SetLifecycle("mock", LifecycleDisabled)
+	if !errors.Is(err, ErrProviderStatePersistenceAmbiguous) || !errors.Is(err, cause) {
+		t.Fatalf("expected ambiguous persistence and cause, got %v", err)
+	}
+	state, ok := store.Get("mock")
+	if !ok { t.Fatal("provider state missing") }
+	if state.Enabled() {
+		t.Fatalf("ambiguous disable must fail closed in memory: %#v", state)
+	}
+}
+
+func TestProviderStateStoreAmbiguousLifecycleEnableDoesNotPromote(t *testing.T) {
+	cause := errors.New("directory fsync failed")
+	persistence := &ambiguousProviderStatePersistence{err: errors.Join(ErrProviderStatePersistenceAmbiguous, cause)}
+	store, err := NewPersistentProviderStateStore(persistence)
+	if err != nil { t.Fatal(err) }
+	if err := store.Put(ProviderState{
+		ProviderName: "mock",
+		Lifecycle: LifecycleDisabled,
+		Capabilities: []Capability{CapabilityPPOB},
+	}); err != nil { t.Fatal(err) }
+
+	_, err = store.SetLifecycle("mock", LifecycleEnabled)
+	if !errors.Is(err, ErrProviderStatePersistenceAmbiguous) || !errors.Is(err, cause) {
+		t.Fatalf("expected ambiguous persistence and cause, got %v", err)
+	}
+	state, ok := store.Get("mock")
+	if !ok { t.Fatal("provider state missing") }
+	if state.Enabled() {
+		t.Fatalf("ambiguous enable must remain fail-closed: %#v", state)
+	}
+}
+
+func TestProviderStateStoreAmbiguousCapabilityDisableFailsClosed(t *testing.T) {
+	cause := errors.New("directory fsync failed")
+	persistence := &ambiguousProviderStatePersistence{err: errors.Join(ErrProviderStatePersistenceAmbiguous, cause)}
+	store, err := NewPersistentProviderStateStore(persistence)
+	if err != nil { t.Fatal(err) }
+	if err := store.Put(ProviderState{
+		ProviderName: "mock",
+		Lifecycle: LifecycleEnabled,
+		Capabilities: []Capability{CapabilityPPOB, CapabilityBalance},
+		EnabledCapabilities: []Capability{CapabilityPPOB, CapabilityBalance},
+	}); err != nil { t.Fatal(err) }
+
+	_, err = store.SetCapabilityEnabled("mock", CapabilityPPOB, false)
+	if !errors.Is(err, ErrProviderStatePersistenceAmbiguous) || !errors.Is(err, cause) {
+		t.Fatalf("expected ambiguous persistence and cause, got %v", err)
+	}
+	state, ok := store.Get("mock")
+	if !ok { t.Fatal("provider state missing") }
+	if state.Supports(CapabilityPPOB) {
+		t.Fatalf("ambiguous capability disable must fail closed: %#v", state)
+	}
+	if !state.Supports(CapabilityBalance) {
+		t.Fatalf("unrelated capability must remain enabled: %#v", state)
+	}
+}
+
+func TestProviderStateStoreAmbiguousLegacyCapabilityMutationRemainsFailClosed(t *testing.T) {
+	cause := errors.New("directory fsync failed")
+	persistence := &ambiguousProviderStatePersistence{err: errors.Join(ErrProviderStatePersistenceAmbiguous, cause)}
+	store, err := NewPersistentProviderStateStore(persistence)
+	if err != nil { t.Fatal(err) }
+	if err := store.Put(ProviderState{
+		ProviderName: "mock",
+		Lifecycle: LifecycleEnabled,
+		Capabilities: []Capability{CapabilityPPOB, CapabilityBalance},
+	}); err != nil { t.Fatal(err) }
+
+	_, err = store.SetCapabilityEnabled("mock", CapabilityPPOB, false)
+	if !errors.Is(err, ErrProviderStatePersistenceAmbiguous) {
+		t.Fatalf("expected ambiguous persistence, got %v", err)
+	}
+	state, ok := store.Get("mock")
+	if !ok { t.Fatal("provider state missing") }
+	if state.Supports(CapabilityPPOB) {
+		t.Fatalf("legacy ambiguous capability disable must fail closed: %#v", state)
+	}
+	if !state.Supports(CapabilityBalance) {
+		t.Fatalf("unrelated legacy capability must remain enabled: %#v", state)
+	}
+}
