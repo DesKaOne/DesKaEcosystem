@@ -118,11 +118,12 @@ func (c *Client) GetPaymentStatus(ctx context.Context, req payment.StatusRequest
 		return payment.StatusResult{}, err
 	}
 
-	identifier := req.ReferenceID
-	if req.ProviderReference != "" {
-		identifier = req.ProviderReference
+	if req.ReferenceID == "" {
+		return payment.StatusResult{}, errors.New("midtrans get status: reference ID is required")
 	}
-	url := strings.TrimRight(c.cfg.APIEndpoint, "/") + "/v2/" + identifier + "/status"
+	// CreatePayment returns a Snap token as ProviderReference. Get Status accepts
+	// an order ID or transaction ID, not the Snap token. ReferenceID is the order_id.
+	url := strings.TrimRight(c.cfg.APIEndpoint, "/") + "/v2/" + req.ReferenceID + "/status"
 
 	var response transactionResponse
 	statusCode, err := c.doJSON(ctx, http.MethodGet, url, nil, &response)
@@ -140,9 +141,6 @@ func (c *Client) GetPaymentStatus(ctx context.Context, req payment.StatusRequest
 	}
 	if req.ReferenceID != "" && response.OrderID != req.ReferenceID {
 		return payment.StatusResult{}, errors.New("midtrans get status: order_id mismatch")
-	}
-	if req.ProviderReference != "" && response.TransactionID != req.ProviderReference {
-		return payment.StatusResult{}, errors.New("midtrans get status: transaction_id mismatch")
 	}
 
 	amount, err := parseAmount(response.GrossAmount)
