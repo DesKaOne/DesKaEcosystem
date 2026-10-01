@@ -18,17 +18,17 @@ type PaymentLifecycleStore interface {
 
 type ProviderCreateService struct {
 	store    PaymentLifecycleStore
-	provider Provider
+	provider DesKaProviderClient
 }
 
-func NewProviderCreateService(store PaymentLifecycleStore, provider Provider) *ProviderCreateService {
+func NewProviderCreateService(store PaymentLifecycleStore, provider DesKaProviderClient) *ProviderCreateService {
 	return &ProviderCreateService{
 		store:    store,
 		provider: provider,
 	}
 }
 
-func (s *ProviderCreateService) Create(ctx context.Context, id, accountID, providerName, idempotencyKey string, amount ledger.Money) (Payment, error) {
+func (s *ProviderCreateService) Create(ctx context.Context, id, accountID, idempotencyKey string, amount ledger.Money) (Payment, error) {
 	if err := ctx.Err(); err != nil {
 		return Payment{}, err
 	}
@@ -39,7 +39,7 @@ func (s *ProviderCreateService) Create(ctx context.Context, id, accountID, provi
 		return Payment{}, err
 	}
 
-	payment, err := NewPayment(id, accountID, providerName, idempotencyKey, amount)
+	payment, err := NewPayment(id, accountID, idempotencyKey, amount)
 	if err != nil {
 		return Payment{}, err
 	}
@@ -52,14 +52,14 @@ func (s *ProviderCreateService) Create(ctx context.Context, id, accountID, provi
 	if err != nil {
 		return payment, err
 	}
-	if providerPayment.ID == "" {
+	if providerPayment.ExternalReference == "" {
 		return payment, ErrInvalidPayment
 	}
 	if providerPayment.Amount.BaseUnits != payment.Amount.BaseUnits {
 		return payment, ErrProviderAmountMismatch
 	}
 
-	payment.ProviderID = providerPayment.ID
+	payment.ExternalReference = providerPayment.ExternalReference
 	payment.Reference = providerPayment.Reference
 	payment.Status = providerPayment.Status
 
