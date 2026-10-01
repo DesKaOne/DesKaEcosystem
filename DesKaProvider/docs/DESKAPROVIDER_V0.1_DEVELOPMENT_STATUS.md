@@ -6453,3 +6453,46 @@ Overall DesKaProvider v0.1 remains approximately **82%**. This batch adds determ
 ### Next Concrete Engineering Task
 
 After GREEN CI, continue auditing remaining provider-to-service persistence and external side-effect boundaries, especially transaction-store CAS behavior across restart/concurrency and provider-reference ownership, without introducing automatic retry/resubmission or unsafe recovery execution.
+
+## Transaction-Store CAS / Provider-Reference Ownership Hardening
+
+**Date:** 2026-10-01
+
+### Finding
+
+The transaction persistence audit found a concrete payment-state gap in the JSON-backed transaction store: JSONFileTransactionStore used TransactionState.Request.ReferenceID as its storage identity, while payment transactions intentionally carry their durable identity in Payment.ReferenceID. This could reject or mishandle persisted payment submissions even though the generic TransactionStore contract already defines transactionReferenceID() for both PPOB and payment states.
+
+The audit also found that payment ProviderReference was not protected as durable provider-reference ownership across pending -> terminal transitions. Once a non-empty provider reference is durably established, a later conflicting provider reference must fail closed rather than silently replacing the correlation token.
+
+### Change
+
+- JSONFileTransactionStore.CreateIfAbsentContext() now uses the provider-neutral transactionReferenceID() and sameTransactionIdentity() boundaries.
+- JSON-store Put() and PutIfCurrent() now resolve transaction identity through the same provider-neutral reference function rather than assuming PPOB request layout.
+- JSON-store create/put paths validate the complete transaction state before persistence.
+- Payment transition validation now preserves an already-owned non-empty ProviderReference; a conflicting replacement returns ErrReferenceConflict.
+- Initial population of an empty ProviderReference from a documented provider result remains allowed.
+- No retry, resubmission, failover, ledger mutation, customer-balance mutation, treasury movement, or provider funding was introduced.
+
+### Deterministic Regression Coverage
+
+Added DesKaProvider/backend/routing/json_transaction_store_test.go covering:
+
+- payment create-if-absent and restart recovery using Payment.ReferenceID;
+- rejection of a conflicting provider-reference replacement;
+- acceptance of an initial provider reference during pending -> terminal transition.
+
+### Verification Boundary
+
+Production commits: 2ad064e0876799aaf03a83d51944820c2bd42a72 and b77c441112187043d3b1c144d88e505117ded65d.
+Regression test commit: ed1ca5a9c5e1fb964eb4c3ed2f766675502f0edd.
+
+Fresh Push and PR CI for the final status-doc HEAD are mandatory before this hardening batch is considered complete.
+
+### Current Completion Assessment
+
+Overall DesKaProvider v0.1 remains approximately **82%**. This is persistence/idempotency hardening of existing transaction infrastructure, not a new provider capability.
+
+### Next Concrete Engineering Task
+
+After GREEN CI, continue auditing durable transaction persistence failure semantics and multi-instance CAS behavior, including atomic rollback/recovery after filesystem persistence failure, without introducing automatic retry/resubmission or unsafe financial recovery execution.
+
