@@ -7045,3 +7045,37 @@ Overall DesKaProvider v0.1 remains approximately **82%**. This batch closes a co
 After GREEN CI, continue production-readiness audit only where a concrete persistence, concurrency, recovery, or caller-boundary invariant remains untested. Provider-specific implementation remains gated on authoritative documentation or credential-backed external validation.
 
 No artificial milestone is introduced.
+
+### CI Correction — PostgreSQL Reconcile Caller Regression Fixture
+
+The first integration-test implementation exposed only test-fixture issues; production behavior was unchanged:
+
+- Push/PR #3660/#3661 were RED because the deterministic mock transaction had not been seeded before Reconcile(); the fixture was corrected to create exactly one provider-side mock observation without using Service.Purchase().
+- Push/PR #3662/#3663 were RED because that fixture initially retained an incorrect zero-submission assertion and an existing concurrent-reconcile fixture was accidentally changed from pending to success; both were corrected in the test file only.
+- Push/PR #3664/#3665 were RED because the mock purchase request was initially built with fields not present in provider.PurchaseRequest; the fixture was aligned with the provider contract.
+- The concurrent-reconcile fixture was then explicitly restored to its original pending setup.
+
+Final corrected implementation/test HEAD:
+
+3d2054bdd3c7e39690d6c41b5081c560dab828e7
+
+- Push CI #3674 / run 36835428731: **GREEN**
+  - test: PASS
+  - race: PASS
+  - credential-gated provider validation jobs: skipped as expected
+- Pull Request CI #3675 / run 36835433148: **GREEN**
+  - test: PASS
+  - race: PASS
+  - credential-gated provider validation jobs: skipped as expected
+
+No production source behavior changed during these fixture corrections, and no authorized live-provider transaction was executed.
+
+### Final Safety Result
+
+The PostgreSQL caller-boundary evidence now covers the concrete reconciliation case end-to-end: a provider status can be observed successfully, while the terminal durable transition can become ambiguous. The service preserves the ambiguity sentinel, does not fabricate a terminal result, does not resubmit the provider operation, and leaves the durable pending state authoritative.
+
+### Next Concrete Engineering Task
+
+Continue production-readiness audit only where a concrete persistence, concurrency, recovery, or caller-boundary invariant remains untested. Provider-specific implementation remains gated on authoritative documentation or credential-backed external validation.
+
+No artificial milestone is introduced.
