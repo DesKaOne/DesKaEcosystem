@@ -94,6 +94,9 @@ func sameTransactionState(a, b TransactionState) bool {
 
 func (s *JSONFileTransactionStore) acquireFileLock() (func(), error) {
 	lockPath := s.path + ".lock"
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0o750); err != nil {
+		return nil, fmt.Errorf("create transaction store lock directory: %w", err)
+	}
 	file, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("open transaction store lock: %w", err)
