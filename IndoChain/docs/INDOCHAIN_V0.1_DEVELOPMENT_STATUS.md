@@ -3360,3 +3360,80 @@ Masih terbuka:
 
 **Milestone 4.64 status:** implementation/test completed; final completion gated on exact final documentation HEAD CI GREEN.
 
+### 4.65 Candidate Retention / Finality Artifact Lifecycle
+
+**Tanggal:** 2026-10-01
+
+**Objective**
+
+Menentukan lifecycle cleanup yang aman untuk durable candidate dan authenticated finality evidence setelah canonical commit, tanpa menghapus artifact yang masih dibutuhkan untuk crash recovery dan tanpa memberi ownership canonical storage kepada retention layer.
+
+**Implementation**
+
+- `IndoChain/internal/storage/candidate_store.go`
+  - `CandidateStore` sekarang memiliki `DeleteCandidate`;
+  - deletion bersifat idempotent sehingga retry setelah crash tidak menghasilkan false failure.
+- `IndoChain/internal/storage/file_candidate_store.go`
+  - candidate deletion memakai snapshot replacement atomic yang sama dengan save;
+  - candidate yang sudah tidak ada diperlakukan sebagai successful no-op;
+  - persistence tetap terpisah dari canonical `ChainStore`.
+- `IndoChain/internal/consensus/evidence_store.go`
+  - `EvidenceStore` sekarang memiliki `DeleteConsensusEvidence`;
+  - helper `DeleteConsensusEvidence` memvalidasi store/key dan mendelegasikan deletion tanpa memutasi consensus runtime.
+- `IndoChain/internal/storage/consensus_evidence_store.go`
+  - memory dan file evidence store mendukung idempotent exact-key deletion;
+  - file store tetap menggunakan atomic snapshot replacement.
+- `IndoChain/internal/node/finality_artifact_lifecycle.go`
+  - `Node.PruneFinalityArtifacts` menjadi post-commit cleanup boundary;
+  - cleanup ditolak sebelum candidate height sudah canonical;
+  - bila head tepat pada candidate height, hash candidate wajib sama dengan canonical head;
+  - evidence yang dihapus hanya identity key yang secara eksplisit diberikan caller, bukan seluruh evidence pada height;
+  - candidate dihapus lebih dulu, lalu evidence, sehingga failure di cleanup tidak pernah menggulung balik canonical commit;
+  - partial cleanup dapat di-retry karena seluruh delete operation idempotent.
+- Tests:
+  - memory candidate deletion + repeated cleanup;
+  - file candidate deletion survives reopen;
+  - memory evidence deletion + repeated cleanup;
+  - file evidence deletion survives reopen.
+
+**Locked invariants**
+
+1. Retention layer tidak memiliki ownership atas canonical block/state.
+2. Candidate/evidence hanya boleh dipruning setelah candidate sudah canonical.
+3. Candidate pada canonical height harus memiliki exact canonical hash sebelum deletion.
+4. Candidate deletion bersifat idempotent.
+5. Evidence deletion bersifat idempotent dan berbasis exact identity key.
+6. Cleanup tidak boleh menghapus seluruh evidence height secara broad/speculative.
+7. Cleanup failure tidak memundurkan atau mengubah canonical head/state.
+8. Partial cleanup aman untuk retry setelah crash.
+9. File candidate/evidence cleanup tetap memakai atomic replacement.
+10. Retention layer tidak mengubah consensus runtime atau memicu finality/commit.
+
+**Production boundary**
+
+Milestone ini menutup local artifact cleanup semantics, tetapi **belum full production BFT artifact lifecycle**.
+
+Masih terbuka:
+
+- retention window berbasis height/epoch dengan policy eksplisit;
+- coordinated candidate/evidence GC across validators;
+- durable validator-set/epoch lifecycle;
+- crash-safe garbage collection coordination across multiple stores/processes;
+- automatic multi-node restart/recovery coordination;
+- automatic multi-height consensus loop;
+- end-to-end cluster crash/restart validation;
+- final canonical serialization freeze.
+
+**Verification**
+
+- Implementation/test HEAD: `4751d6387c939236d8803c11b72903f699e97462`.
+- CI run `36839353693`: **IN PROGRESS** saat status document ini diperbarui; Tidy dan Test sudah PASS, Race Test masih berjalan.
+- Exact final status-document HEAD wajib kembali diverifikasi GREEN sebelum milestone dinyatakan complete.
+- PostgreSQL: tidak relevan.
+
+**Next integration target**
+
+**4.66 — Retention Window / Safe Historical Pruning:** menentukan policy berbasis height/epoch untuk membedakan artifact yang masih recovery-relevant dari artifact yang aman dipruning, tanpa menjadikan GC sebagai bagian dari canonical consensus commit.
+
+**Milestone 4.65 status:** implementation/test completed; final completion gated on exact final documentation HEAD CI GREEN.
+
