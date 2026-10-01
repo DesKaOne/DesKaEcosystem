@@ -7653,6 +7653,16 @@ Final implementation/test HEAD:
 
 No authorized live-provider transaction or external provider request was executed.
 
+### Documentation Verification Refresh
+
+**Date:** 2026-10-01
+
+The branch advanced with the provider-state persistence ambiguity hardening documentation commit. The current branch HEAD is now:
+
+c08166e86434d87fcbdb9ea27cd88ba2a52f9eef
+
+The preceding implementation/test commit remains 0416719e4112535bc070155d452de7eb937a66d6. CI for the current branch HEAD is verified separately after this documentation refresh.
+
 ### Next Step
 
 No artificial milestone is opened. Continue the v0.1 readiness audit from the next concrete persistence, recovery, identity, concurrency, caller-boundary, or authoritative provider-contract gap.
