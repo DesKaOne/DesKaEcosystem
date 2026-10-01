@@ -2926,29 +2926,24 @@ Menutup handoff setelah canonical block/state commit: consensus menerima exact c
 
 **Implementation**
 
-- IndoChain/internal/consensus/canonical_commit.go
-  - menambahkan CanonicalCommit sebagai publication record untuk height, canonical block hash, dan resulting state root;
-  - NewCanonicalCommit menolak height/hash/state-root kosong;
-  - ValidateCanonicalCommit memastikan runtime masih berada di PhaseFinalized, target tepat currentHeight + 1, dan canonical block hash identik dengan finalized proposal payload;
-  - PublishCanonicalCommit hanya memutasi runtime setelah seluruh next-height aggregator berhasil dibuat;
-  - publication mereset round ke zero, phase ke PhaseProposal, proposal/lock/finality evidence height lama, dan menyimpan exact canonical publication terakhir;
-  - duplicate/late publication ditolak karena runtime sudah berada pada next-height proposal state.
-- IndoChain/internal/consensus/runtime.go
-  - runtime menyimpan lastCanonicalCommit publication tanpa memberi ownership storage kepada consensus.
+- IndoChain/internal/consensus/canonical_commit_boundary.go
+  - menggunakan existing CanonicalCommitCandidate / CanonicalCommitter boundary sebagai canonical storage handoff;
+  - menambahkan CanonicalCommitPublication sebagai metadata hasil commit yang dibaca consensus: height, canonical block hash, dan resulting state root;
+  - ValidateCanonicalCommitPublication memastikan runtime masih PhaseFinalized, target tepat currentHeight + 1, dan block hash identik dengan finalized proposal payload;
+  - PublishCanonicalCommit membangun seluruh next-height VoteAggregator lebih dulu, lalu atomically mengganti RoundState ke height berikutnya pada round 0 / PhaseProposal dan membersihkan proposal, lock proof, serta finality certificate height lama;
+  - tidak menambahkan mutable publication cache ke ValidatorRuntime; publication diperlakukan sebagai event/handoff metadata sehingga runtime tidak menyimpan canonical storage state tambahan.
 - IndoChain/internal/node/canonical_commit_publication.go
   - menambahkan Node.CommitFinalityEvidenceAndPublishConsensus;
-  - melakukan preflight consensus validation sebelum storage mutation;
+  - melakukan consensus publication preflight sebelum storage mutation;
   - menjalankan existing CommitFinalityEvidence sebagai canonical atomic commit boundary;
   - setelah commit sukses, publication dibangun ulang dari actual node head/hash/state root, lalu diteruskan ke runtime;
-  - storage failure tidak pernah memajukan consensus runtime.
+  - jika storage commit gagal, consensus runtime tetap berada pada finalized height.
 - Tests:
-  - finalized runtime berhasil maju tepat satu height dan kembali ke Proposal/round zero;
-  - publication hash/state-root tersimpan persis dari canonical commit;
-  - pre-finalization dan hash mismatch ditolak tanpa mutation;
-  - duplicate publication tidak memajukan height kedua kali;
-  - node handoff berhasil menyamakan runtime publication dengan canonical node state;
-  - storage commit failure mempertahankan runtime pada finalized height;
-  - duplicate node handoff tidak memutasi canonical node state.
+  - canonical publication berhasil maju tepat satu height dan kembali ke Proposal/round zero;
+  - height/hash mismatch ditolak tanpa runtime mutation;
+  - publication sebelum finalization ditolak;
+  - node handoff menyamakan next-height runtime dengan canonical node head/state root;
+  - storage commit failure tidak memajukan node maupun consensus runtime.
 
 **Locked invariants**
 
@@ -2957,10 +2952,11 @@ Menutup handoff setelah canonical block/state commit: consensus menerima exact c
 3. Published block hash harus identik dengan finalized proposal payload dan actual canonical node head hash.
 4. Published state root harus berasal dari actual committed node state.
 5. Next height selalu dimulai pada round 0 / PhaseProposal.
-6. Proposal, lock proof, precommit/prevote aggregators, dan finality certificate height lama tidak dibawa ke next height.
+6. Proposal, lock proof, vote aggregators, dan finality certificate height lama tidak dibawa ke next height.
 7. Storage failure tidak mengubah consensus runtime.
-8. Repeated/late publication tidak boleh menghasilkan double-advance.
+8. Repeated/late publication ditolak melalui exact runtime phase/height context sehingga tidak terjadi double-advance.
 9. Consensus hanya menerima publication metadata; canonical storage tetap menjadi ownership node.
+10. Tidak ada mutable canonical storage cache baru di ValidatorRuntime.
 
 **Production boundary**
 
@@ -2979,12 +2975,17 @@ Masih terbuka:
 
 **Verification**
 
-- 4.59 implementation/test commits are now on branch dev/indochain-v0.1.
-- Exact-head CI gate must be verified after this status-document update.
+- Implementation/test exact HEAD: a09f4f6a69959380c2fefce7ae9c75c58331b5c4.
+- CI run 36796003252: **GREEN**.
+- Tidy: PASS.
+- Test: PASS.
+- Race Test: PASS.
+- Vet: PASS.
 - PostgreSQL: tidak relevan.
+- Earlier red runs were isolated to the duplicate canonical-commit abstraction and an intermediate node regression test; those were removed/corrected before accepting the final implementation.
 
 **Next integration target**
 
 Masuk ke **multi-height consensus reconstruction/recovery boundary**: setelah node restart atau runtime replacement, consensus harus dapat direkonstruksi dari canonical node height/hash/state-root tanpa mengandalkan state in-memory lama, lalu melanjutkan proposal pada height berikutnya secara deterministic.
 
-**Milestone 4.59 status:** implementation/test completed; exact-head CI verification required after this status-document update.
+**Milestone 4.59 status:** implementation/test completed; exact implementation HEAD CI GREEN. Status-document update requires its own exact-head CI gate.
