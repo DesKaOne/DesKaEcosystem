@@ -116,9 +116,6 @@ func (m CapabilityMatrix) Status(providerName string, capability Capability) (Ca
 // metadata. Commercial verification, configuration, implementation, tests,
 // enablement, live validation, and production readiness remain distinct.
 func (s CapabilityStatus) Validate() error {
-	if s.Tested && !s.AdapterImplemented {
-		return errors.New("tested capability must be implemented")
-	}
 	if s.Enabled && !s.AdapterImplemented {
 		return errors.New("enabled capability must be implemented")
 	}
