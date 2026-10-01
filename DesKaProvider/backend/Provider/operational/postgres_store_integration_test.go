@@ -68,6 +68,27 @@ func TestPostgresStoreIntegration(t *testing.T) {
 }
 
 
+
+func TestPostgresStoreWriteFailureIsAmbiguous(t *testing.T) {
+	db, err := sql.Open("pgx", "")
+	if err != nil { t.Fatal(err) }
+	if err := db.Close(); err != nil { t.Fatal(err) }
+	store, err := NewPostgresStore(db)
+	if err != nil { t.Fatal(err) }
+	now := time.Date(2026, 10, 2, 10, 0, 0, 0, time.UTC)
+	snapshot := Snapshot{
+		ProviderName: "postgres-write-failure",
+		Balance: 100000,
+		Currency: "IDR",
+		Health: HealthHealthy,
+		LastCheckedAt: now,
+		LastSuccessAt: now,
+	}
+	if err := store.Put(snapshot); !errors.Is(err, ErrOperationalPersistenceAmbiguous) {
+		t.Fatalf("expected ambiguous persistence error, got %v", err)
+	}
+}
+
 func TestPostgresStoreRejectsContradictorySnapshotAndRecoversValidState(t *testing.T) {
     dsn := os.Getenv("DESKAPROVIDER_POSTGRES_DSN")
     if dsn == "" {
