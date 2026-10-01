@@ -155,6 +155,69 @@ func TestSubmitPaymentProviderErrorLeavesClaimAndForbidsRetry(t *testing.T){
  if p.calls!=1{t.Fatalf("expected no automatic resubmission, calls=%d",p.calls)}
 }
 
+type disableAfterPaymentClaimStore struct {
+	*MemoryTransactionStore
+	stateStore *operational.ProviderStateStore
+	providerName string
+}
+
+func (s *disableAfterPaymentClaimStore) CreateIfAbsentContext(ctx context.Context, state TransactionState) (TransactionState, bool, error) {
+	existing, created, err := s.MemoryTransactionStore.CreateIfAbsentContext(ctx, state)
+	if err == nil && created {
+		providerState, found := s.stateStore.Get(s.providerName)
+		if found {
+			providerState.Lifecycle = operational.LifecycleDisabled
+			if err := s.stateStore.Put(providerState); err != nil {
+				return TransactionState{}, false, err
+			}
+		}
+	}
+	return existing, created, err
+}
+
+func TestSubmitPaymentRechecksLifecycleAfterDurableClaim(t *testing.T) {
+	p := &paymentSubmissionProvider{result: payment.PaymentResult{
+		ReferenceID: "pay-lifecycle-race",
+		ProviderReference: "mid-lifecycle-race",
+		Status: payment.StatusPending,
+		Amount: 41000,
+		Currency: "IDR",
+	}}
+	registry := provider.NewRegistry()
+	if err := registry.RegisterCapabilityProvider("midtrans", provider.CapabilityPayment, p, provider.CapabilityStatus{
+		AdapterImplemented: true, Tested: true, Enabled: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	stateStore := operational.NewProviderStateStore()
+	state, err := operational.NewProviderState("midtrans")
+	if err != nil { t.Fatal(err) }
+	state.Lifecycle = operational.LifecycleEnabled
+	state.Capabilities = []operational.Capability{operational.CapabilityPayment}
+	state.EnabledCapabilities = []operational.Capability{operational.CapabilityPayment}
+	if err := stateStore.Put(state); err != nil { t.Fatal(err) }
+
+	store := &disableAfterPaymentClaimStore{
+		MemoryTransactionStore: NewMemoryTransactionStore(),
+		stateStore: stateStore,
+		providerName: "midtrans",
+	}
+	router := &Router{Registry: registry, ProviderState: stateStore}
+	s := &Service{Router: router, Store: store, AuditStore: NewMemoryTransactionAuditStore()}
+	req := payment.PaymentRequest{ReferenceID: "pay-lifecycle-race", Amount: 41000, Currency: "IDR", CustomerID: "cust-lifecycle-race"}
+
+	if _, err := s.SubmitPayment(context.Background(), "midtrans", req); !errors.Is(err, ErrPaymentCapabilityDisabled) {
+		t.Fatalf("expected lifecycle disable after claim to block provider call, got %v", err)
+	}
+	if p.calls != 0 {
+		t.Fatalf("lifecycle disable after claim must prevent external payment creation, calls=%d", p.calls)
+	}
+	stateAfter, ok := store.Get(req.ReferenceID)
+	if !ok || stateAfter.Payment == nil || stateAfter.Payment.Status != payment.StatusPending {
+		t.Fatalf("durable claim must remain pending after lifecycle gate closes: %#v", stateAfter)
+	}
+}
+
 func TestSubmitPaymentRequiresEnabledCapability(t *testing.T){
  p:=&paymentSubmissionProvider{result:payment.PaymentResult{ReferenceID:"pay-submit-4",ProviderReference:"mid-4",Status:payment.StatusPending,Amount:40000,Currency:"IDR"}}
  s:=newPaymentSubmissionService(t,p,false)
