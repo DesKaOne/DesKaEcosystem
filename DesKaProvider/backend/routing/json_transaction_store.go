@@ -194,10 +194,12 @@ func (s *JSONFileTransactionStore) Put(state TransactionState) error {
 	}
 	s.transactions[referenceID] = state
 	if err := s.persistLocked(); err != nil {
-		if existed {
-			s.transactions[referenceID] = previous
-		} else {
-			delete(s.transactions, referenceID)
+		if !errors.Is(err, ErrTransactionPersistenceAmbiguous) {
+			if existed {
+				s.transactions[referenceID] = previous
+			} else {
+				delete(s.transactions, referenceID)
+			}
 		}
 		return err
 	}
@@ -230,7 +232,9 @@ func (s *JSONFileTransactionStore) PutIfCurrent(referenceID string, previous, ne
 	}
 	s.transactions[referenceID] = next
 	if err := s.persistLocked(); err != nil {
-		s.transactions[referenceID] = current
+		if !errors.Is(err, ErrTransactionPersistenceAmbiguous) {
+			s.transactions[referenceID] = current
+		}
 		return err
 	}
 	return nil
