@@ -7595,3 +7595,64 @@ No authorized live-provider transaction or external provider request was execute
 ### Next Step
 
 No artificial milestone is opened. Continue the v0.1 readiness audit from the next concrete persistence, recovery, identity, concurrency, or authoritative provider-contract gap.
+
+## Provider Operational State Persistence Ambiguity Hardening
+
+**Date:** 2026-10-01
+
+### Source Finding
+
+The provider operational control-plane state used an atomic persistence-before-memory-commit boundary, but the JSON persistence implementation could return an error after os.Rename() had already replaced the durable state file when the final directory fsync failed. The caller therefore could not know whether the requested mutation had committed durably.
+
+Treating that outcome as an ordinary pre-commit failure would allow the in-memory control plane to remain less restrictive than the uncertain durable state. For lifecycle/capability controls, that is unsafe because an explicit disable must fail closed rather than accidentally continue enabling provider execution.
+
+### Implementation
+
+- added the provider-neutral ErrProviderStatePersistenceAmbiguous sentinel for persistence outcomes that may have committed durably;
+- classified the post-rename JSON provider-state directory-sync failure as ambiguous while preserving the underlying filesystem error;
+- hardened atomic lifecycle/capability mutations so ambiguous persistence never promotes lifecycle enablement or capability enablement in memory;
+- when an ambiguous mutation is restrictive, the in-memory state adopts the restrictive result so the active runtime fails closed;
+- preserved explicit legacy nil EnabledCapabilities semantics while ensuring an ambiguous capability disable cannot silently restore the disabled capability;
+- added deterministic regressions for ambiguous lifecycle disable, lifecycle enable, explicit capability disable, and legacy capability disable;
+- no routing authority, transaction persistence, ledger, customer balance, treasury, retry/failover, provider funding, or public API behavior was changed.
+
+### Safety Boundary / Invariants
+
+- Router.Select() remains the sole routing authority;
+- persistence ambiguity is never treated as authorization to enable a provider or capability;
+- explicit lifecycle disable and capability disable fail closed in the active runtime when durable outcome is uncertain;
+- ambiguous enable operations do not promote a previously disabled provider/capability;
+- the underlying persistence error remains discoverable through errors.Is alongside the ambiguity sentinel;
+- restart/recovery remains authoritative from persisted state; no live validation or readiness state is inferred;
+- no automatic retry, provider failover, transaction resubmission, duplicate transaction creation, provider funding, ledger mutation, customer-balance mutation, treasury movement, or public API exposure is introduced;
+- RCB remains unregistered, non-routable, and fail-closed pending an authoritative PPOB contract;
+- no DesKaCash provider-specific coupling is introduced.
+
+### Changed Files
+
+- DesKaProvider/backend/Provider/operational/provider_state.go
+- DesKaProvider/backend/Provider/operational/provider_state_json.go
+- DesKaProvider/backend/Provider/operational/provider_state_test.go
+
+### Verification
+
+Final implementation/test HEAD:
+
+0416719e4112535bc070155d452de7eb937a66d6
+
+- Push CI #3753 / run 36855876562: GREEN
+  - test: PASS
+  - vet: PASS
+  - race: PASS
+  - credential-gated provider validation jobs: SKIPPED
+- Pull Request CI #3754 / run 36855881344: GREEN
+  - test: PASS
+  - vet: PASS
+  - race: PASS
+  - credential-gated provider validation jobs: SKIPPED
+
+No authorized live-provider transaction or external provider request was executed.
+
+### Next Step
+
+No artificial milestone is opened. Continue the v0.1 readiness audit from the next concrete persistence, recovery, identity, concurrency, caller-boundary, or authoritative provider-contract gap.
