@@ -63,6 +63,7 @@ type transactionResponse struct {
 	OrderID           string `json:"order_id"`
 	TransactionStatus string `json:"transaction_status"`
 	GrossAmount       string `json:"gross_amount"`
+	FraudStatus       string `json:"fraud_status"`
 }
 
 type notification struct {
@@ -189,6 +190,14 @@ func (c *Client) HandlePaymentWebhook(ctx context.Context, payload []byte) (paym
 	status, err := normalizeStatus(event.TransactionStatus)
 	if err != nil {
 		return payment.StatusResult{}, err
+	}
+	if status == payment.StatusSuccess {
+		if event.StatusCode != "200" {
+			return payment.StatusResult{}, fmt.Errorf("midtrans webhook: success transaction has unexpected status_code %q", event.StatusCode)
+		}
+		if !strings.EqualFold(event.FraudStatus, "accept") {
+			return payment.StatusResult{}, fmt.Errorf("midtrans webhook: success transaction has unacceptable fraud_status %q", event.FraudStatus)
+		}
 	}
 
 	return payment.StatusResult{
