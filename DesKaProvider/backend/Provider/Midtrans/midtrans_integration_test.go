@@ -52,10 +52,7 @@ func TestSandboxIntegrationPaymentLifecycle(t *testing.T) {
 		t.Fatalf("unexpected sandbox create result: %+v", created)
 	}
 
-	status, err := client.GetPaymentStatus(ctx, payment.StatusRequest{
-		ReferenceID: orderID,
-		ProviderReference: created.ProviderReference,
-	})
+	status, err := client.GetPaymentStatus(ctx, payment.StatusRequest{ReferenceID: orderID})
 	if err != nil {
 		t.Fatalf("sandbox payment status: %v", err)
 	}
