@@ -168,6 +168,71 @@ func (s *ProviderStateStore) Put(state ProviderState) error {
 }
 
 
+func (s *ProviderStateStore) SetCapabilityEnabled(name string, capability Capability, enabled bool) (ProviderState, error) {
+	name = strings.TrimSpace(strings.ToLower(name))
+	if name == "" {
+		return ProviderState{}, errors.New("provider name is required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	current, ok := s.states[name]
+	if !ok {
+		return ProviderState{}, errors.New("provider not found")
+	}
+	implemented := false
+	for _, value := range current.Capabilities {
+		if value == capability {
+			implemented = true
+			break
+		}
+	}
+	if !implemented {
+		return ProviderState{}, errors.New("provider capability is not available")
+	}
+
+	updated := current
+	updated.Capabilities = append([]Capability(nil), current.Capabilities...)
+	updated.EnabledCapabilities = append([]Capability(nil), current.EnabledCapabilities...)
+	if updated.EnabledCapabilities == nil {
+		updated.EnabledCapabilities = append([]Capability(nil), updated.Capabilities...)
+	}
+	result := updated.EnabledCapabilities[:0]
+	for _, value := range updated.EnabledCapabilities {
+		if value != capability {
+			result = append(result, value)
+		}
+	}
+	if enabled {
+		result = append(result, capability)
+	}
+	updated.EnabledCapabilities = result
+	sort.Slice(updated.EnabledCapabilities, func(i, j int) bool { return updated.EnabledCapabilities[i] < updated.EnabledCapabilities[j] })
+
+	next := make(map[string]ProviderState, len(s.states))
+	for providerName, state := range s.states {
+		next[providerName] = state
+	}
+	next[name] = updated
+	if s.persistence != nil {
+		states := make([]ProviderState, 0, len(next))
+		for _, state := range next {
+			state.Capabilities = append([]Capability(nil), state.Capabilities...)
+			state.EnabledCapabilities = append([]Capability(nil), state.EnabledCapabilities...)
+			states = append(states, state)
+		}
+		sort.Slice(states, func(i, j int) bool { return states[i].ProviderName < states[j].ProviderName })
+		if err := s.persistence.Save(states); err != nil {
+			return ProviderState{}, err
+		}
+	}
+	s.states = next
+	updated.EnabledCapabilities = append([]Capability(nil), updated.EnabledCapabilities...)
+	updated.Capabilities = append([]Capability(nil), updated.Capabilities...)
+	return updated, nil
+}
+
+
 func (s *ProviderStateStore) All() []ProviderState {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
