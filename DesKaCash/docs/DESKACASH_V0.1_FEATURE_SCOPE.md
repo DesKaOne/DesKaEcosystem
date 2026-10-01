@@ -172,13 +172,12 @@ type PPOBProvider interface {
 Adapter:
 
 ```
-PPOBService
+DesKaCash
     |
-    +-- PPOBProvider
+    +-- DesKaProvider PPOB capability
            |
-           +-- DigiflazzAdapter
-           +-- FutureProviderAdapter
-           +-- MockPPOBProvider
+           +-- normalized product/inquiry/purchase/status
+           +-- provider-specific adapters inside DesKaProvider
 ```
 
 Provider pertama dapat menggunakan provider PPOB yang menyediakan API produk digital dan tagihan. Digiflazz merupakan salah satu kandidat yang perlu diuji sebelum production.
@@ -267,12 +266,12 @@ Target:
 ```
 DesKaCash Ledger
        |
-       +-- Midtrans Adapter
-       |     +-- Bank Transfer / VA
-       |     +-- Dynamic QRIS
-       |     +-- supported e-wallet payment
-       |
-       +-- Future Wallet/Payout Provider
+       +-- DesKaProvider
+             +-- Payment capability
+             +-- Bank Transfer / VA
+             +-- Dynamic QRIS
+             +-- supported e-wallet payment
+             +-- Future Wallet/Payout capability
 ```
 
 Capability berikut tidak boleh diasumsikan tersedia hanya karena Midtrans mendukung payment method terkait:
@@ -593,10 +592,10 @@ Integrasi blockchain tidak boleh membuat provider payment, PPOB, atau database D
 
 #### v0.x — IndoChain Connectivity
 - Blockchain address mapping.
-- Native RPC client.
-- Read dIDR balance langsung dari IndoChain.
-- Transaction submission/tracking.
-- Confirmation/finality verification.
+- DesKaProvider blockchain capability contract.
+- Read dIDR balance melalui DesKaProvider.
+- Transaction submission/tracking melalui DesKaProvider.
+- Confirmation/finality verification melalui normalized DesKaProvider result.
 
 #### v1.x — dIDR & EVM Ecosystem
 - IDR ↔ dIDR conversion/settlement.
