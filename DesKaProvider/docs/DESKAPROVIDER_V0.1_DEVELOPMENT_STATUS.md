@@ -6958,3 +6958,12 @@ JSON and PostgreSQL transaction stores now expose the same caller-visible ambigu
 Continue production-readiness audit only where a concrete persistence, concurrency, recovery, or caller-boundary invariant is missing from deterministic coverage. Provider-specific implementation remains gated on authoritative documentation or credential-backed external validation.
 
 No artificial milestone is introduced.
+
+### CI Correction — Documentation HEAD Race Flake
+
+- Push CI #3650 / run 36832870071: **GREEN** for documentation HEAD 224f09a3d2d420a12bb4e666340f3e161c5aa38f;
+- Pull Request CI #3651 / run 36832876462: initial race job was **RED** only in TestServiceRunShutdownTimeoutKeepsDatabaseOwnershipUntilWorkerStops, while test and all credential-gated provider jobs were otherwise successful/skipped;
+- PR race job was rerun as attempt 2 and completed **GREEN** without source changes;
+- the failure is recorded as an existing timing-sensitive race-test flake, not as a failure of the JSON persistence parity change.
+
+No production behavior or provider capability state changed during this CI correction.
