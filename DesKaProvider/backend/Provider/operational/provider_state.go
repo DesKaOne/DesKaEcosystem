@@ -144,10 +144,10 @@ func (s *ProviderStateStore) Put(state ProviderState) error {
 	default:
 		return errors.New("invalid provider lifecycle")
 	}
-	capabilities := append([]Capability(nil), state.Capabilities...)
+	capabilities := cloneCapabilities(state.Capabilities)
 	sort.Slice(capabilities, func(i, j int) bool { return capabilities[i] < capabilities[j] })
 	state.Capabilities = capabilities
-	enabledCapabilities := append([]Capability(nil), state.EnabledCapabilities...)
+	enabledCapabilities := cloneCapabilities(state.EnabledCapabilities)
 	sort.Slice(enabledCapabilities, func(i, j int) bool { return enabledCapabilities[i] < enabledCapabilities[j] })
 	state.EnabledCapabilities = enabledCapabilities
 
@@ -199,10 +199,10 @@ func (s *ProviderStateStore) SetCapabilityEnabled(name string, capability Capabi
 	}
 
 	updated := current
-	updated.Capabilities = append([]Capability(nil), current.Capabilities...)
-	updated.EnabledCapabilities = append([]Capability(nil), current.EnabledCapabilities...)
+	updated.Capabilities = cloneCapabilities(current.Capabilities)
+	updated.EnabledCapabilities = cloneCapabilities(current.EnabledCapabilities)
 	if updated.EnabledCapabilities == nil {
-		updated.EnabledCapabilities = append([]Capability(nil), updated.Capabilities...)
+		updated.EnabledCapabilities = cloneCapabilities(updated.Capabilities)
 	}
 	result := updated.EnabledCapabilities[:0]
 	for _, value := range updated.EnabledCapabilities {
@@ -224,8 +224,8 @@ func (s *ProviderStateStore) SetCapabilityEnabled(name string, capability Capabi
 	if s.persistence != nil {
 		states := make([]ProviderState, 0, len(next))
 		for _, state := range next {
-			state.Capabilities = append([]Capability(nil), state.Capabilities...)
-			state.EnabledCapabilities = append([]Capability(nil), state.EnabledCapabilities...)
+			state.Capabilities = cloneCapabilities(state.Capabilities)
+			state.EnabledCapabilities = cloneCapabilities(state.EnabledCapabilities)
 			states = append(states, state)
 		}
 		sort.Slice(states, func(i, j int) bool { return states[i].ProviderName < states[j].ProviderName })
