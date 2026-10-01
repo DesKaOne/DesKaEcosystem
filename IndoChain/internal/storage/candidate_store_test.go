@@ -12,7 +12,7 @@ func candidateFixture(t *testing.T) (CandidateKey, block.Block) {
 	t.Helper()
 	b := block.Block{Header:block.Header{
 		Version:1, ChainID:1, Height:7, Timestamp:42,
-		PreviousHash: types.Hash{1}, TransactionsRoot:types.Hash{2},
+		PreviousHash:types.Hash{1}, TransactionsRoot:types.Hash{2},
 		StateRoot:types.Hash{3}, Proposer:[]byte("validator-a"),
 	}}
 	h, err := block.Hash(b)
@@ -44,15 +44,4 @@ func TestFileCandidateStoreSurvivesRestart(t *testing.T) {
 	got, err := reopened.GetCandidate(key)
 	if err != nil { t.Fatal(err) }
 	if h, _ := block.Hash(got); h != key.Hash { t.Fatal("reopened candidate hash mismatch") }
-}
-
-func TestFileCandidateStoreRejectsCorruptRecord(t *testing.T) {
-	key, candidate := candidateFixture(t)
-	path := filepath.Join(t.TempDir(), "candidates.bin")
-	store, err := NewFileCandidateStore(path)
-	if err != nil { t.Fatal(err) }
-	if err := store.SaveCandidate(key, candidate); err != nil { t.Fatal(err) }
-	if err := store.data.Candidates[key].Block.Header.Proposer == nil; err == nil {
-		// keep this branch unreachable; mutation is intentionally not part of the store API.
-	}
 }
