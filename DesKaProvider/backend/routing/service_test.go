@@ -1313,3 +1313,98 @@ func TestServicePurchaseDurableClaimPreventsCrossInstanceSubmission(t *testing.T
 		t.Fatalf("expected durable pending state after single claim, got %#v found=%v", state, ok)
 	}
 }
+
+type lifecycleGatePPOBProvider struct {
+	purchaseCalls int
+}
+
+func (p *lifecycleGatePPOBProvider) GetProducts(context.Context, provider.ProductRequest) ([]provider.Product, error) {
+	return []provider.Product{{Code: "pln20", Name: "PLN 20"}}, nil
+}
+
+func (p *lifecycleGatePPOBProvider) Inquiry(context.Context, provider.InquiryRequest) (provider.InquiryResult, error) {
+	return provider.InquiryResult{}, provider.ErrUnsupportedOperation
+}
+
+func (p *lifecycleGatePPOBProvider) Purchase(context.Context, provider.PurchaseRequest) (provider.PurchaseResult, error) {
+	p.purchaseCalls++
+	return provider.PurchaseResult{
+		ReferenceID: "ref-race",
+		CustomerNo: "08123456789",
+		ProductCode: "pln20",
+		Status: provider.StatusSuccess,
+		ProviderCode: "00",
+		Message: "success",
+		Price: 20000,
+	}, nil
+}
+
+func (p *lifecycleGatePPOBProvider) GetStatus(context.Context, provider.StatusRequest) (provider.PurchaseStatus, error) {
+	return provider.PurchaseStatus{}, provider.ErrUnsupportedOperation
+}
+
+func (p *lifecycleGatePPOBProvider) HandleWebhook(context.Context, provider.WebhookRequest) (provider.WebhookEvent, error) {
+	return provider.WebhookEvent{}, provider.ErrUnsupportedOperation
+}
+
+func TestExecutePurchaseRechecksOperationalLifecycleBeforeProviderCall(t *testing.T) {
+	registry := provider.NewRegistry()
+	mock := &lifecycleGatePPOBProvider{}
+	if err := registry.Register("mock", mock); err != nil {
+		t.Fatal(err)
+	}
+
+	operationalStore := operational.NewMemoryStore()
+	if err := operationalStore.Put(operational.Snapshot{
+		ProviderName: "mock",
+		Balance:      100000,
+		Health:       operational.HealthHealthy,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	stateStore := operational.NewProviderStateStore()
+	state, err := operational.NewProviderState("mock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.Lifecycle = operational.LifecycleEnabled
+	state.Capabilities = []operational.Capability{operational.CapabilityPPOB}
+	state.EnabledCapabilities = []operational.Capability{operational.CapabilityPPOB}
+	if err := stateStore.Put(state); err != nil {
+		t.Fatal(err)
+	}
+
+	router, err := NewWithState(registry, operationalStore, map[string]int{"mock": 1}, stateStore)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewService(router)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Simulate the TOCTOU window: selection already happened, then the
+	// provider is disabled before the external Purchase call.
+	state.Lifecycle = operational.LifecycleDisabled
+	if err := stateStore.Put(state); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = service.executePurchase(context.Background(), "mock", PurchaseRequest{
+		ProductCode: "pln20",
+		CustomerNo:  "08123456789",
+		ReferenceID: "ref-race",
+		Amount:      20000,
+	})
+	if err == nil {
+		t.Fatal("expected disabled provider to be rejected before Purchase")
+	}
+	if !errors.Is(err, ErrNoProviderAvailable) {
+		t.Fatalf("expected no-provider error, got %v", err)
+	}
+	if mock.purchaseCalls != 0 {
+		t.Fatalf("disabled provider must not receive Purchase call, got %d", mock.purchaseCalls)
+	}
+}
+
