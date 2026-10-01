@@ -49,12 +49,12 @@ func (n *Node) ResumeFinalityCommitFromCandidateStore(
 	if len(certificate.Payload) != 32 { return FinalityRecoveryResult{}, consensus.ErrInvalidFinalityEvidence }
 	var hash types.Hash
 	copy(hash[:], certificate.Payload)
-	key := storage.CandidateKey{Height:certificate.Height, Hash:hash}
+	key := storage.CandidateKey{Height:certificate.Height + 1, Hash:hash}
 	candidate, err := store.GetCandidate(key)
 	if err != nil { return FinalityRecoveryResult{}, fmt.Errorf("%w: %v", ErrFinalityRecoveryCandidateRequired, err) }
 	candidateHash, err := block.Hash(candidate)
 	if err != nil { return FinalityRecoveryResult{}, err }
-	if candidate.Header.Height != certificate.Height || candidateHash != hash {
+	if candidate.Header.Height != certificate.Height+1 || candidateHash != hash {
 		return FinalityRecoveryResult{}, consensus.ErrCanonicalCommitPublicationContextMismatch
 	}
 	return n.ResumeFinalityCommit(recovery, candidate, certificate, validators, votingPower, validatorResolver, senderResolver, authority)
