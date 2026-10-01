@@ -6496,3 +6496,48 @@ Overall DesKaProvider v0.1 remains approximately **82%**. This is persistence/id
 ### Next Concrete Engineering Task
 
 After GREEN CI, continue auditing durable transaction persistence failure semantics and multi-instance CAS behavior, including atomic rollback/recovery after filesystem persistence failure, without introducing automatic retry/resubmission or unsafe financial recovery execution.
+
+## Durable Transaction Persistence / Multi-Instance CAS Hardening
+
+**Date:** 2026-10-01
+
+### Finding
+
+The JSON-backed transaction store had two concrete durability/concurrency gaps:
+
+- Put() mutated its in-memory map before persistence but did not restore the previous state when filesystem persistence failed.
+- separate JSONFileTransactionStore instances loaded the same snapshot independently; PutIfCurrent() compared decoded state using Go struct/pointer identity, so it was not a valid cross-instance CAS boundary and could permit stale state to overwrite a newer durable transition.
+
+### Change
+
+- added an advisory filesystem lock scoped to the transaction-store path;
+- CreateIfAbsentContext(), Put(), and PutIfCurrent() now reload the durable file while holding that lock before making an authorization/transition decision;
+- PutIfCurrent() now uses provider-neutral semantic state comparison rather than pointer identity;
+- Put() restores the previous in-memory state if persistence fails before replacement;
+- create/transition persistence remains atomic through temp-file write, fsync, close, and rename;
+- no automatic retry, resubmission, provider failover, duplicate purchase creation, ledger mutation, customer-balance mutation, treasury movement, or provider funding was introduced.
+
+### Deterministic Regression Coverage
+
+Added coverage for:
+
+- stale cross-instance CAS rejection after another store instance commits a terminal transition;
+- preservation of the durable winner after a stale CAS conflict;
+- in-memory state preservation when Put() encounters a deterministic filesystem persistence failure.
+
+### Verification Boundary
+
+Implementation commits:
+
+- 446e9b3f7e841775224c1b3a84589921ffec1633 — filesystem locking, reload-under-lock, semantic CAS, and Put rollback;
+- cf52678014c04da5c80bf9a8a11f95a16ac382ad — deterministic regression coverage.
+
+Fresh Push and PR CI for the final status-doc HEAD are mandatory before this hardening batch is considered complete.
+
+### Current Completion Assessment
+
+Overall DesKaProvider v0.1 remains approximately **82%**. This batch hardens existing durable transaction infrastructure and does not add provider capabilities.
+
+### Next Concrete Engineering Task
+
+After GREEN CI, continue auditing transaction persistence/recovery boundaries for crash consistency and restart semantics, especially durability of the atomic replacement boundary and recovery behavior after process/filesystem interruption, without introducing automatic retry/resubmission or unsafe financial recovery execution.
