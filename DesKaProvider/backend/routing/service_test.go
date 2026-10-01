@@ -712,6 +712,64 @@ func TestServicePurchaseValidatesRequest(t *testing.T) {
 	}
 }
 
+type mismatchedPurchaseProvider struct {
+	provider.PPOBProvider
+	result provider.PurchaseResult
+}
+
+func (p *mismatchedPurchaseProvider) Purchase(context.Context, provider.PurchaseRequest) (provider.PurchaseResult, error) {
+	return p.result, nil
+}
+
+func TestServicePurchaseRejectsProviderResultIdentityMismatchAndPreservesPending(t *testing.T) {
+	registry := provider.NewRegistry()
+	base := Mock.New(Mock.Config{
+		Products:       []provider.Product{{Code: "pln20", Name: "PLN 20"}},
+		PurchaseStatus: provider.StatusSuccess,
+	})
+	bad := &mismatchedPurchaseProvider{
+		PPOBProvider: base,
+		result: provider.PurchaseResult{
+			ReferenceID:  "foreign-reference",
+			CustomerNo:   "081234567890",
+			ProductCode:  "pln20",
+			Status:       provider.StatusSuccess,
+			ProviderCode: "00",
+		},
+	}
+	if err := registry.Register("mock", bad); err != nil {
+		t.Fatal(err)
+	}
+	ops := operational.NewMemoryStore()
+	if err := ops.Put(operational.Snapshot{ProviderName: "mock", Balance: 100000, Health: operational.HealthHealthy}); err != nil {
+		t.Fatal(err)
+	}
+	router, err := New(registry, ops, map[string]int{"mock": 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := NewMemoryTransactionStore()
+	service, err := NewServiceWithStore(router, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := PurchaseRequest{ProductCode: "pln20", CustomerNo: "081234567890", ReferenceID: "ref-provider-result-mismatch", Amount: 20000}
+	got, err := service.Purchase(context.Background(), req)
+	if !errors.Is(err, ErrReferenceConflict) {
+		t.Fatalf("expected provider result identity conflict, got result=%#v err=%v", got, err)
+	}
+	if got.Result.Status != provider.StatusPending {
+		t.Fatalf("invalid provider result must leave caller at pending recovery state, got %#v", got)
+	}
+	state, ok := store.Get(req.ReferenceID)
+	if !ok {
+		t.Fatal("expected durable pending state after invalid provider result")
+	}
+	if state.Request != req || state.Execution.Result.Status != provider.StatusPending {
+		t.Fatalf("invalid provider result must not mutate durable request identity: %#v", state)
+	}
+}
+
 func TestServicePurchaseIsIdempotentByReferenceID(t *testing.T) {
 	registry := provider.NewRegistry()
 	mock := Mock.New(Mock.Config{Products: []provider.Product{{Code: "pln20", Name: "PLN 20"}}, ProviderCode: "00", PurchaseStatus: provider.StatusSuccess, Price: 20000})
