@@ -233,6 +233,68 @@ func TestPurchaseAmbiguousPersistencePreservesPendingAndForbidsRetry(t *testing.
 	}
 }
 
+func TestServiceReconcileAmbiguousPersistencePreservesPending(t *testing.T) {
+	registry := provider.NewRegistry()
+	mock := Mock.New(Mock.Config{
+		Products:       []provider.Product{{Code: "pln20", Name: "PLN 20"}},
+		ProviderCode:   "00",
+		PurchaseStatus: provider.StatusPending,
+	})
+	if err := registry.Register("mock", mock); err != nil {
+		t.Fatal(err)
+	}
+	ops := operational.NewMemoryStore()
+	if err := ops.Put(operational.Snapshot{ProviderName: "mock", Balance: 100000, Health: operational.HealthHealthy}); err != nil {
+		t.Fatal(err)
+	}
+	router, err := New(registry, ops, map[string]int{"mock": 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := NewMemoryTransactionStore()
+	req := PurchaseRequest{
+		ProductCode: "pln20",
+		CustomerNo:  "081234567890",
+		ReferenceID: "reconcile-ambiguous-persist",
+		Amount:      20000,
+	}
+	pending := TransactionState{
+		Request: req,
+		Execution: PurchaseExecution{
+			ProviderName: "mock",
+			Result: provider.PurchaseResult{
+				ReferenceID: req.ReferenceID,
+				CustomerNo:  req.CustomerNo,
+				ProductCode: req.ProductCode,
+				Status:      provider.StatusPending,
+			},
+		},
+	}
+	if err := base.Put(pending); err != nil {
+		t.Fatal(err)
+	}
+	store := &failPutTransactionStore{base: base, failAfter: 1}
+	service, err := NewServiceWithStore(router, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := service.Reconcile(context.Background(), req.ReferenceID)
+	if !errors.Is(err, ErrTransactionPersistenceAmbiguous) {
+		t.Fatalf("expected ambiguous reconciliation persistence error, got result=%#v err=%v", got, err)
+	}
+	if mock.StatusCount(req.ReferenceID) != 1 {
+		t.Fatalf("reconciliation must perform exactly one provider status read, count=%d", mock.StatusCount(req.ReferenceID))
+	}
+	state, ok := store.Get(req.ReferenceID)
+	if !ok {
+		t.Fatal("pending transaction disappeared after ambiguous reconciliation persistence")
+	}
+	if state.Execution.Result.Status != provider.StatusPending {
+		t.Fatalf("ambiguous reconciliation persistence must preserve pending state, got %q", state.Execution.Result.Status)
+	}
+}
+ 
 func TestServiceReconcilePropagatesDatabaseReadErrorWithoutResubmission(t *testing.T) {
 	registry := provider.NewRegistry()
 	mock := Mock.New(Mock.Config{
