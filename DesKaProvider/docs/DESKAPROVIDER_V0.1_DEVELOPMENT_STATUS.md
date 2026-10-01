@@ -6788,3 +6788,19 @@ Correction commit:
 - `fa6f11613fffad7172e1e7a354b037848045da96` — inject `ErrTransactionPersistenceAmbiguous` through the atomic CAS path used by `SubmitPayment()`.
 
 No production behavior was changed by this correction. Fresh CI is mandatory before completion.
+
+
+### Final CI Verification — Caller Ambiguous Persistence Audit
+
+Final corrected implementation/status-doc verification:
+
+- Pull Request CI #3618 / run 36827616477: **GREEN**
+- test: PASS
+- vet: PASS
+- race: PASS
+- midtrans-sandbox: skipped as expected
+- iak-read-only: skipped as expected
+- digiflazz-validation: skipped as expected
+- xp-sindonesia-read-only: skipped as expected
+
+The RED runs #3607 and #3611 were corrected as documented above. No production behavior was changed by the test-only corrections, and no authorized live-provider transaction was executed.
