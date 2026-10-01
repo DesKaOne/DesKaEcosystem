@@ -7925,7 +7925,18 @@ Implementation commits:
 - `cf30534311a81a32ea58a85b1a795791ca12a69e` — recovery identity validation
 - `f49baeac25c64c81e763c60f65ed160d93d7fb02` — regression test
 
-Full repository test, vet, race, and CI verification is required on the resulting branch HEAD before this change is considered complete.
+Full repository CI verification for the code-bearing commit is complete:
+
+- Push CI #3804 / run 36915355652: **GREEN**
+  - test: PASS
+  - race: PASS
+  - credential-gated provider validation: SKIPPED
+- Pull Request CI #3805 / run 36915357677: **GREEN**
+  - test: PASS
+  - race: PASS
+  - credential-gated provider validation: SKIPPED
+
+The final documentation-only follow-up does not introduce code changes and does not require a separate provider CI execution.
 
 ### External Validation
 
