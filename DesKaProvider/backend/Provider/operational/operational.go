@@ -36,6 +36,12 @@ type Store interface {
 	All() []Snapshot
 }
 
+// ErrOperationalPersistenceAmbiguous means a snapshot write reached the file
+// replacement boundary but durability could not be confirmed. Callers must
+// treat the active snapshot conservatively and must not promote routing
+// eligibility from the uncertain write.
+var ErrOperationalPersistenceAmbiguous = errors.New("operational snapshot persistence outcome is ambiguous")
+
 type errorAwareStore interface {
 	GetWithError(string) (Snapshot, bool, error)
 }
