@@ -6647,3 +6647,53 @@ Scope:
 - keep transaction authorization, provider side effects, and financial state mutation separate from filesystem recovery.
 
 No automatic retry, payment resubmission, provider failover, provider funding, customer ledger mutation, treasury movement, duplicate purchase creation, or public API exposure is included.
+
+
+## Crash-Consistency Failure Injection / Ambiguous Commit Boundary
+
+**Date:** 2026-10-01
+
+### Implementation
+
+- added deterministic persistence-stage injection hooks inside the JSON transaction store for test-only failure simulation immediately before atomic replacement and immediately after replacement;
+- added an explicit `ErrTransactionPersistenceAmbiguous` boundary for failures observed after the durable file replacement has already occurred, including parent-directory synchronization failures;
+- preserved rollback of the current in-memory transition when persistence reports an error, so the caller does not receive a successful transaction-state transition;
+- verified that a pre-replacement failure leaves both current in-memory state and the existing durable file unchanged;
+- verified that a post-replacement failure returns the explicit ambiguous-persistence error while the replaced durable file contains the new state, requiring restart/reconciliation rather than automatic retry or resubmission;
+- kept filesystem failure injection internal to the transaction-store package; no provider transaction, payment submission, purchase creation, or financial recovery action is executed by the tests.
+
+### Deterministic Regression Coverage
+
+Added coverage for:
+
+- pre-replacement failure preserving the previous durable transaction state across restart;
+- post-replacement failure being surfaced as `ErrTransactionPersistenceAmbiguous`;
+- current-process in-memory rollback after an ambiguous post-replacement failure;
+- restart observing the already-replaced durable state without automatically replaying the transaction.
+
+### Safety Boundary
+
+- pre-replacement failures remain ordinary persistence errors and do not authorize a state transition;
+- post-replacement failures are explicitly ambiguous because the file replacement has happened but directory-entry durability could not be confirmed;
+- ambiguous persistence is never converted into a successful API result and never triggers automatic retry, resubmission, failover, provider funding, ledger mutation, customer balance mutation, treasury movement, or duplicate transaction creation;
+- restart reads the durable artifact as-is and does not infer whether an external provider side effect occurred;
+- transaction-store recovery remains observational/reconciliation-driven rather than financial-execution-driven.
+
+### Verification Boundary
+
+Implementation commits:
+
+- `9f68f88800d185d1cdecebdadc9593eac0045b14` — deterministic persistence failure-stage hooks and explicit ambiguous post-replacement error boundary;
+- `315848bebdb55f1f8942d09489a0d751b589f1a8` — pre/post replacement failure regression coverage.
+
+Fresh Push and Pull Request CI for the resulting status-doc HEAD are mandatory before this milestone is considered complete.
+
+### Current Completion Assessment
+
+Overall DesKaProvider v0.1 remains approximately **82%**. This milestone hardens existing transaction persistence semantics and does not add provider capabilities.
+
+### Next Concrete Engineering Task
+
+After GREEN CI, audit the caller-side handling of `ErrTransactionPersistenceAmbiguous` so ambiguous transaction persistence cannot be mistaken for a safe retry condition or silently converted into an external provider side effect.
+
+No automatic retry, payment resubmission, provider failover, provider funding, customer ledger mutation, treasury movement, duplicate purchase creation, or public API exposure is included.
