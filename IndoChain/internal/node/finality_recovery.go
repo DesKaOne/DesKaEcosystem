@@ -1,6 +1,7 @@
 package node
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 
@@ -15,28 +16,13 @@ var (
 	ErrFinalityRecoveryStaleHeight        = errors.New("finality recovery candidate is stale")
 )
 
-// FinalityRecoveryResult describes the explicit crash-recovery outcome.
-// AlreadyCommitted means the canonical store already contains the exact
-// finalized block and no mutation was attempted. Committed means this call
-// completed the pending canonical commit and consensus publication.
 type FinalityRecoveryResult struct {
-	Committed       bool
+	Committed        bool
 	AlreadyCommitted bool
-	Height          types.Height
-	BlockHash       types.Hash
+	Height           types.Height
+	BlockHash        types.Hash
 }
 
-// ResumeFinalityCommit is the explicit crash boundary for durable finality
-// evidence that may have survived a process restart before canonical commit.
-//
-// The method does not infer a candidate block from the evidence store. The
-// candidate must be supplied by durable block storage or P2P recovery and is
-// validated against the recovered canonical context and finality certificate
-// before any canonical mutation occurs.
-//
-// The runtime is restored to Finalized only after certificate validation. The
-// canonical store is then committed through the existing node-owned path, and
-// consensus is advanced only after the durable commit succeeds.
 func (n *Node) ResumeFinalityCommit(
 	recovery ConsensusRecovery,
 	candidate block.Block,
@@ -66,16 +52,13 @@ func (n *Node) ResumeFinalityCommit(
 	if err != nil {
 		return FinalityRecoveryResult{}, fmt.Errorf("hash recovery candidate: %w", err)
 	}
-	result := FinalityRecoveryResult{
-		Height: candidate.Header.Height,
-		BlockHash: candidateHash,
+	if candidate.Header.Height == 0 {
+		return FinalityRecoveryResult{}, ErrFinalityRecoveryCandidateRequired
 	}
 
-	// If canonical storage already contains the exact certificate payload,
-	// recovery is idempotent: never execute the block twice.
 	if candidate.Header.Height <= n.Head.Header.Height {
 		if candidate.Header.Height == n.Head.Header.Height && candidateHash == n.HeadHash {
-			if candidateHash != finalityPayloadHash(certificate) {
+			if !bytes.Equal(candidateHash[:], certificate.Payload) {
 				return FinalityRecoveryResult{}, consensus.ErrCanonicalCommitPublicationContextMismatch
 			}
 			return FinalityRecoveryResult{AlreadyCommitted: true, Height: candidate.Header.Height, BlockHash: candidateHash}, nil
@@ -89,18 +72,16 @@ func (n *Node) ResumeFinalityCommit(
 	if err := validateRecoveryCertificate(recovery.State, certificate, validators, votingPower, authority); err != nil {
 		return FinalityRecoveryResult{}, err
 	}
-	if candidateHash != finalityPayloadHash(certificate) {
+	if !bytes.Equal(candidateHash[:], certificate.Payload) {
 		return FinalityRecoveryResult{}, consensus.ErrCanonicalCommitPublicationContextMismatch
 	}
 
-	if err := consensus.ValidateFinalizedBlockWithAuthority(
+	if _, err := consensus.ValidateFinalizedBlockWithAuthority(
 		ctx, candidate, certificate, validators, votingPower, validatorResolver,
 	); err != nil {
 		return FinalityRecoveryResult{}, err
 	}
 
-	// Restore only enough runtime state to make the existing publication
-	// boundary valid. This is not ordinary evidence replay.
 	if err := recovery.Runtime.RestoreFinalizedEvidence(certificate, authority); err != nil {
 		return FinalityRecoveryResult{}, err
 	}
@@ -119,7 +100,6 @@ func (n *Node) ResumeFinalityCommit(
 	); err != nil {
 		return FinalityRecoveryResult{}, err
 	}
-
 	if n.Head.Header.Height != candidate.Header.Height || n.HeadHash != candidateHash {
 		return FinalityRecoveryResult{}, consensus.ErrCanonicalCommitPublicationContextMismatch
 	}
@@ -127,8 +107,7 @@ func (n *Node) ResumeFinalityCommit(
 		return FinalityRecoveryResult{}, err
 	}
 
-	result.Committed = true
-	return result, nil
+	return FinalityRecoveryResult{Committed: true, Height: candidate.Header.Height, BlockHash: candidateHash}, nil
 }
 
 func validateRecoveryCertificate(
@@ -158,10 +137,4 @@ func verifyRecoveryVoteSignature(vote consensus.Message, authority consensus.Tim
 		return err
 	}
 	return consensus.VerifyMessageSignature(vote, key)
-}
-
-func finalityPayloadHash(certificate consensus.FinalityCertificate) types.Hash {
-	var hash types.Hash
-	copy(hash[:], certificate.Payload)
-	return hash
 }
