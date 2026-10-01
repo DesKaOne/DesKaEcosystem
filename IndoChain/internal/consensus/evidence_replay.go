@@ -46,7 +46,9 @@ func ReplayAuthenticatedEvidence(
 		if ordered[i].Round != ordered[j].Round {
 			return ordered[i].Round < ordered[j].Round
 		}
-		return replayMessageOrder(ordered[i].Type) < replayMessageOrder(ordered[j].Type)
+		left, right := replayMessageOrder(ordered[i].Type), replayMessageOrder(ordered[j].Type)
+		if left != right { return left < right }
+		return bytes.Compare(ordered[i].Sender, ordered[j].Sender) < 0
 	})
 
 	result := EvidenceReplayResult{}
