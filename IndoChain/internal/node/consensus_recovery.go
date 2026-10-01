@@ -21,6 +21,7 @@ type ConsensusRecovery struct {
 	CanonicalHash types.Hash
 	StateRoot     types.Hash
 	Height        types.Height
+	Evidence      []consensus.Message
 }
 
 // ReconstructConsensusRuntime rebuilds a fresh consensus runtime from the
@@ -32,6 +33,38 @@ func (n *Node) ReconstructConsensusRuntime(
 	votingPower consensus.VotingPowerSet,
 	threshold consensus.QuorumThreshold,
 	proposer consensus.ProposerSelector,
+) (ConsensusRecovery, error) {
+	return n.reconstructConsensusRuntime(epoch, validators, votingPower, threshold, proposer, nil)
+}
+
+// ReconstructConsensusRuntimeWithEvidence rebuilds the runtime from durable
+// canonical state and separately recovers authenticated evidence for the same
+// canonical height. Evidence is returned as validated data; this boundary does
+// not replay it into ValidatorRuntime automatically.
+func (n *Node) ReconstructConsensusRuntimeWithEvidence(
+	epoch uint64,
+	validators consensus.ValidatorSet,
+	votingPower consensus.VotingPowerSet,
+	threshold consensus.QuorumThreshold,
+	proposer consensus.ProposerSelector,
+	evidenceStore consensus.EvidenceStore,
+	authority consensus.TimeoutAuthorityResolver,
+) (ConsensusRecovery, error) {
+	if evidenceStore == nil {
+		return ConsensusRecovery{}, consensus.ErrNilEvidenceStore
+	}
+	return n.reconstructConsensusRuntime(epoch, validators, votingPower, threshold, proposer, func(state consensus.RoundState) ([]consensus.Message, error) {
+		return consensus.RecoverAuthenticatedEvidence(evidenceStore, state, validators, authority)
+	})
+}
+
+func (n *Node) reconstructConsensusRuntime(
+	epoch uint64,
+	validators consensus.ValidatorSet,
+	votingPower consensus.VotingPowerSet,
+	threshold consensus.QuorumThreshold,
+	proposer consensus.ProposerSelector,
+	recoverEvidence func(consensus.RoundState) ([]consensus.Message, error),
 ) (ConsensusRecovery, error) {
 	if n == nil || n.Store == nil {
 		return ConsensusRecovery{}, ErrNilStore
@@ -62,14 +95,22 @@ func (n *Node) ReconstructConsensusRuntime(
 			ChainID:         recovered.Config.ChainID,
 			RequireSender:   true,
 		},
-		State: state,
-		Validators: validators,
+		State:       state,
+		Validators:  validators,
 		VotingPower: votingPower,
-		Threshold: threshold,
-		Proposer: proposer,
+		Threshold:   threshold,
+		Proposer:    proposer,
 	})
 	if err != nil {
 		return ConsensusRecovery{}, err
+	}
+
+	var evidence []consensus.Message
+	if recoverEvidence != nil {
+		evidence, err = recoverEvidence(state)
+		if err != nil {
+			return ConsensusRecovery{}, err
+		}
 	}
 
 	return ConsensusRecovery{
@@ -79,6 +120,7 @@ func (n *Node) ReconstructConsensusRuntime(
 		CanonicalHash: recovered.HeadHash,
 		StateRoot:     recovered.State.Root(),
 		Height:        recovered.Head.Header.Height,
+		Evidence:      evidence,
 	}, nil
 }
 
@@ -100,12 +142,8 @@ func (r ConsensusRecovery) NextBlockContext() (consensus.BlockProductionContext,
 		return consensus.BlockProductionContext{}, err
 	}
 	return consensus.BlockProductionContext{
-		State: stateForNextProposal(r.State),
+		State:        r.State,
 		PreviousHash: r.PreviousHash,
-		Proposer: proposer,
+		Proposer:     proposer,
 	}, nil
-}
-
-func stateForNextProposal(s consensus.RoundState) consensus.RoundState {
-	return s
 }
