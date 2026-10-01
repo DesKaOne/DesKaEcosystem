@@ -6372,3 +6372,41 @@ Overall DesKaProvider v0.1 remains approximately **82%**. This is a provider-to-
 ### Next Concrete Engineering Task
 
 After GREEN CI, continue auditing the remaining provider-to-routing/service boundaries for direct provider execution paths, preserving the distinction between external side effects, reconciliation, webhook observation, operational state, and routing authority.
+
+
+## PPOB Provider Lifecycle TOCTOU Hardening
+
+**Date:** 2026-10-01
+
+### Finding
+
+The PPOB purchase flow correctly uses `Router.Select()` as routing authority and checks operational lifecycle during selection, but selection and the external provider `Purchase()` call are separate operations. A provider could be selected while enabled and then be explicitly disabled before the external side effect, creating a time-of-check/time-of-use window.
+
+### Change
+
+- Added a final operational lifecycle and PPOB capability re-check immediately before `Purchase()` in `executePurchase()`.
+- When capability metadata is present, capability drift and PPOB implementation/enabled state are also fail-closed before the external call.
+- Added deterministic regression coverage that simulates selection having completed, disables the provider, and verifies `Purchase()` is never invoked.
+
+### Safety Boundary / Invariants
+
+- `Router.Select()` remains the routing authority; the final check is a side-effect safety gate, not an alternative routing decision.
+- Operational lifecycle remains separate from registry capability metadata.
+- Reconciliation remains allowed to observe a persisted transaction even when a provider is operationally disabled; disablement does not become financial authority.
+- Webhook handling remains observational/correlation-only.
+- No automatic retry, resubmission, provider failover, duplicate purchase, customer-balance mutation, ledger mutation, treasury movement, or provider funding is introduced.
+
+### Verification Boundary
+
+Production fix commit: `a0393bce50ba8eb7ecbfc53d1e38dbb54c4edb4d`.
+Regression test commit: `1dbac15d73968a719d8d69d0cdd92897b9b7e4e4`.
+
+Fresh Push and PR CI for the final status-doc HEAD are required before this hardening batch is considered complete.
+
+### Current Completion Assessment
+
+Overall DesKaProvider v0.1 remains approximately **82%**. This closes a race-window safety gap in the existing PPOB execution path and does not add provider breadth.
+
+### Next Concrete Engineering Task
+
+After GREEN CI, continue auditing remaining service-side provider execution boundaries, especially webhook authentication/normalization and reconciliation paths, without turning observational recovery into automatic financial execution.
