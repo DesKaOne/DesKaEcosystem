@@ -6061,3 +6061,64 @@ No production-code change is required by this audit. No ledger mutation, custome
 ### Next Concrete Engineering Task
 
 DigiFlazz documented-contract audit has no additional safe adapter-neutral gap identified in the current scope. Proceed to the next provider adapter only after preserving the current GREEN CI baseline.
+
+
+## IAK Prepaid Callback Signature Authentication Hardening
+
+**Date:** 2026-10-01
+
+### Source Basis
+
+The authoritative IAK prepaid callback contract marks sign as mandatory and defines it as md5(username+api_key+ref_id). The callback is the documented mechanism for receiving terminal prepaid success/failed updates.
+
+### Audit Finding
+
+The IAK adapter already required the callback sign field, but cryptographic verification was conditional on WebhookRequest.SignatureSecret. A callback carrying an arbitrary body sign could therefore be accepted when transport-level signature metadata was absent, even though the provider contract itself defines the configured API-key signature as mandatory.
+
+### Implementation
+
+- HandleWebhook now always verifies the callback body sign against the configured IAK API key and callback ref_id.
+- When WebhookRequest.SignatureSecret is also supplied, the transport-level secret must independently produce the same documented signature; a mismatch fails closed.
+- Existing callback identity alias checks, terminal-status restriction, response-code consistency, required financial/transaction fields, and provider-neutral event mapping remain unchanged.
+- No retry, resubmission, failover, duplicate purchase creation, balance mutation, ledger mutation, treasury movement, or provider funding behavior was introduced.
+
+### Deterministic Coverage
+
+Added/updated coverage for:
+
+- callback signature verification without transport signature metadata;
+- valid configured-API-key callback signature acceptance;
+- transport signature mismatch rejection;
+- existing failed-state callback fixture aligned to the documented signature;
+- existing v2 identity-field callback fixture aligned to the documented signature.
+
+### Verification Boundary
+
+Production hardening commit: 2997e13d7dedc7bb41d50f4567ad58104ad1fb0a.
+
+Deterministic regression commits: e2c3b26e9856c2f453cf74b344985b3fc2ddda64 and 1a02e02599b3758088dfdda9c498f21719ce31bd.
+
+The first CI run after the production change exposed two stale deterministic fixtures that used an invalid placeholder sign; those fixtures were corrected rather than weakening the new authentication boundary.
+
+Push CI #3493 / run 36794337771: GREEN
+- test: PASS
+- race: PASS
+- digiflazz-validation: SKIPPED as expected
+- iak-read-only: SKIPPED as expected
+- midtrans-sandbox: SKIPPED as expected
+- xp-sindonesia-read-only: SKIPPED as expected
+
+Pull Request CI #3492 / run 36794335173: GREEN
+- test: PASS
+- race: PASS
+- credential-gated provider validation jobs: SKIPPED as expected
+
+No live-provider transaction was executed.
+
+### Current Completion Assessment
+
+Overall DesKaProvider v0.1 remains approximately 82%. This hardening closes a concrete IAK callback authentication gap but does not materially change overall provider breadth or external validation coverage.
+
+### Next Concrete Engineering Task
+
+Continue the IAK documented-contract audit for remaining behavior that can be represented safely by the existing provider-neutral interfaces. Do not expand the neutral contract solely to mirror provider-specific features; preserve the current transaction/retry/failover safety boundaries.
