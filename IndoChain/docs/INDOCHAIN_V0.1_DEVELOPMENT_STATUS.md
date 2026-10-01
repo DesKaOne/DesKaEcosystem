@@ -2845,5 +2845,11 @@ Masuk ke **finality evidence → canonical commit admission boundary**: node har
 - The test was corrected to establish proposal state first and then deliver the queued prevote + precommit to the remote runtime in order.
 - Corrected regression HEAD: `abf502380dc2b1fa4df252fb17abdd451188a16e`.
 
-**Milestone 4.57 status:** implementation/test completed; corrected exact-head CI verification required after this status-document update.
+**Verification correction (P2P ordering)**
+
+- Follow-up CI run `36794449680` reached the P2P regression but failed because the test delivered the generated precommit before delivering the prevote to the remote runtime.
+- The test was corrected to publish/deliver the prevote first, then deliver the generated precommit.
+- Corrected implementation/test HEAD: `c33772be397746b4e4aa2b51651fe38d1771352c`.
+
+**Milestone 4.57 status:** implementation/test completed; final exact-head CI verification required after this status-document update.
 
