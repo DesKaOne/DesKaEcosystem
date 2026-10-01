@@ -7734,3 +7734,71 @@ No new external provider validation was required for this persistence-only harde
 
 Continue the v0.1 readiness audit from the next evidence-based persistence, recovery, identity, concurrency, caller-boundary, or authoritative provider-contract gap. No artificial milestone is introduced.
 
+## Transaction Store Persistence Ambiguity / Durable-State Alignment
+
+**Date:** 2026-10-02
+
+### Source Finding
+
+The JSON transaction store already classified post-replacement persistence failures as `ErrTransactionPersistenceAmbiguous`, but `Put()` and `PutIfCurrent()` restored the in-memory transaction to the pre-write state for every persistence error. After `rename()` succeeds, the durable file can already contain the new transaction state even when directory durability cannot be confirmed.
+
+That created a split-brain recovery boundary:
+
+- durable file: new transaction state;
+- active process memory: old transaction state.
+
+For payment transactions this could leave an active process observing `pending` while restart/recovery observes a terminal provider result. The transaction store must not authorize a second external side effect from that ambiguity.
+
+### Implementation
+
+- preserved the renamed transaction state in memory when `ErrTransactionPersistenceAmbiguous` is returned;
+- retained rollback behavior for persistence failures known to occur before replacement;
+- applied the same rule to normal `Put()` and CAS-protected `PutIfCurrent()`;
+- preserved `CreateIfAbsentContext()` behavior so a post-replacement ambiguity does not erase a durable submission claim;
+- added deterministic tests proving:
+  - ambiguous terminal `Put()` keeps the renamed terminal state in memory;
+  - ambiguous terminal `PutIfCurrent()` keeps the renamed terminal state in memory;
+  - restart reads the same durable terminal state;
+  - existing post-replacement ambiguity coverage now explicitly expects active memory to remain aligned with the renamed file;
+- no retry, resubmission, failover, provider funding, ledger mutation, customer-balance mutation, treasury movement, or public API exposure was introduced.
+
+### Safety Boundary / Invariants
+
+- after successful `rename()`, ambiguity is treated as **durable state may already have advanced**;
+- the active transaction store never rolls back a potentially durable terminal transition solely because directory durability is uncertain;
+- callers must reconcile rather than retry an external provider side effect;
+- CAS ownership and transaction identity remain unchanged;
+- `Router.Select()` remains the routing authority;
+- webhook/reconciliation boundaries remain unchanged.
+
+### Changed Files
+
+- DesKaProvider/backend/routing/json_transaction_store.go
+- DesKaProvider/backend/routing/json_transaction_store_test.go
+- DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md
+
+### Verification
+
+Implementation/test HEAD:
+
+`b0092244e8648645b79e8ebf00db567b33630a98`
+
+DesKaProvider CI #3792 / run 36913268793:
+
+- test: **PASS**
+- vet: **PASS**
+- race: **PASS**
+- credential-gated provider validation: **SKIPPED**
+
+Earlier CI runs #3786 and #3790 correctly caught regression-test expectation/fixture issues before the final implementation was accepted. They were fixed from the actual failure output; no failure was ignored.
+
+No authorized live-provider transaction or external provider request was executed.
+
+### External Validation
+
+No new external provider validation was required. Existing DigiFlazz, IAK, XP SINDONESIA, and Midtrans live/sandbox validation remains credential-gated and was not fabricated.
+
+### Next Concrete Engineering Task
+
+Continue the readiness audit from the next evidence-based transaction persistence/recovery or caller-boundary gap. In particular, inspect whether PostgreSQL transaction-store ambiguous outcomes have the same post-commit versus pre-commit distinction before adding any new architecture.
+
