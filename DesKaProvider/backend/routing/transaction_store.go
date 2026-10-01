@@ -2,7 +2,7 @@ package routing
 
 import (
 	"context"
-	"errors"
+	"errors"\n\t"fmt"
 	"sync"
 	"time"
 
@@ -99,7 +99,21 @@ type ContextReadTransactionAuditStore interface {
 	AllContextE(ctx context.Context, referenceID string) ([]TransactionAuditEvent, error)
 }
 
-var ErrTransactionStateConflict = errors.New("transaction state changed concurrently")
+var (
+	ErrTransactionStateConflict = errors.New("transaction state changed concurrently")
+	// ErrTransactionPersistenceAmbiguous means a durable write was attempted but
+	// the persistence layer could not establish whether the mutation committed.
+	// Callers must reconcile/read durable state rather than retrying the external
+	// provider operation.
+	ErrTransactionPersistenceAmbiguous = errors.New("transaction persistence outcome is ambiguous")
+)
+
+func wrapTransactionPersistenceAmbiguous(err error) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("%w: %v", ErrTransactionPersistenceAmbiguous, err)
+}
 
 func normalizeTransactionKind(kind TransactionKind) TransactionKind {
 	if kind == "" { return TransactionKindPPOB }
