@@ -160,11 +160,11 @@ func TestProviderAdminServiceConcurrentCapabilityMutationPreservesBothUpdates(t 
 	start := make(chan struct{})
 	go func() {
 		<-start
-		_, errCh <- admin.DisableCapability("mock", CapabilityPPOB)
+		errCh <- func() error { _, err := admin.DisableCapability("mock", CapabilityPPOB); return err }()
 	}()
 	go func() {
 		<-start
-		_, errCh <- admin.DisableCapability("mock", CapabilityBalance)
+		errCh <- func() error { _, err := admin.DisableCapability("mock", CapabilityBalance); return err }()
 	}()
 	close(start)
 	for i := 0; i < 2; i++ {
