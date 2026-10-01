@@ -2862,3 +2862,55 @@ Masuk ke **finality evidence → canonical commit admission boundary**: node har
 
 **Milestone 4.57 status:** implementation/test completed; exact-head CI gate for the corrected implementation is GREEN.
 
+### 4.58 Finality Evidence → Canonical Commit Admission Boundary
+
+**Tanggal:** 2026-10-01
+
+**Objective**
+
+Menutup handoff eksplisit dari finality evidence yang sudah authenticated/validated menuju canonical block commit. Node menerima FinalityCertificate tanpa membutuhkan live ValidatorRuntime, memvalidasi canonical consensus context + evidence binding terlebih dahulu, lalu masuk ke execution/storage commit boundary yang atomic dan replay-safe.
+
+**Implementation**
+
+- `IndoChain/internal/node/finality_evidence_commit.go`
+  - menambahkan `Node.CommitFinalityEvidence` sebagai explicit consensus-evidence → canonical-commit admission boundary;
+  - canonical context diverifikasi sebelum storage mutation;
+  - finality evidence dan candidate block divalidasi bersama authority resolver sebelum commit;
+  - tidak ada dependency pada live consensus runtime, sehingga evidence yang diterima dari peer dapat di-admit secara independen;
+  - canonical execution dan durable `CommitBlockState` tetap menggunakan existing node-owned atomic path.
+- `IndoChain/internal/node/finality_evidence_commit_test.go`
+  - valid finality evidence meng-commit candidate dan state;
+  - tampered evidence ditolak tanpa mutasi node/storage;
+  - stale canonical context ditolak tanpa mutasi;
+  - replay finality evidence ditolak tanpa mutasi.
+
+**Locked invariants**
+
+1. Finality evidence harus divalidasi sebelum canonical storage mutation.
+2. Evidence harus tetap terikat ke exact consensus context dan candidate block.
+3. Validator authority tetap terpisah dari transaction sender authority.
+4. Candidate dieksekusi terhadap canonical state snapshot sebelum durable commit.
+5. Storage commit tetap atomic melalui `CommitBlockState`.
+6. Node tidak membutuhkan live `ValidatorRuntime` untuk menerima evidence yang sudah lengkap.
+7. Replay/different-block admission tidak boleh mengubah canonical head/state.
+
+**Production boundary**
+
+Milestone ini menutup executable finality-evidence → canonical-commit admission boundary, tetapi **belum full production BFT**.
+
+Masih terbuka:
+
+- multi-node multi-height commit loop;
+- automatic finality evidence broadcast/retransmission;
+- timeout/failure detector dan automatic round-change;
+- validator-set lifecycle;
+- durable consensus recovery;
+- canonical commit acknowledgment/publication back into consensus;
+- final canonical block serialization freeze.
+
+**Next integration target**
+
+Masuk ke **canonical commit → consensus state publication / next-height boundary**: setelah atomic commit sukses, consensus harus menerima canonical height/hash/state-root yang baru secara deterministic, mencegah double-commit, dan memulai height berikutnya tanpa mengandalkan mutable in-memory assumptions.
+
+**Milestone 4.58 status:** implementation/test completed; exact-head CI verification required after this status-document update.
+
