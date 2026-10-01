@@ -10,7 +10,6 @@ func TestNewPayment(t *testing.T) {
 	payment, err := NewPayment(
 		"pay-1",
 		"acc-1",
-		"demo",
 		"idempotency-1",
 		ledger.Money{BaseUnits: 100_000},
 	)
@@ -37,15 +36,14 @@ func TestNewPaymentRejectsInvalidInput(t *testing.T) {
 		name           string
 		id             string
 		accountID      string
-		provider       string
 		idempotencyKey string
 		amount         ledger.Money
 	}{
-		{"missing id", "", "acc-1", "demo", "key-1", ledger.Money{BaseUnits: 1}},
-		{"missing account", "pay-1", "", "demo", "key-1", ledger.Money{BaseUnits: 1}},
-		{"missing provider", "pay-1", "acc-1", "", "key-1", ledger.Money{BaseUnits: 1}},
-		{"missing idempotency key", "pay-1", "acc-1", "demo", "", ledger.Money{BaseUnits: 1}},
-		{"zero amount", "pay-1", "acc-1", "demo", "key-1", ledger.Money{}},
+		{"missing id", "", "acc-1", "key-1", ledger.Money{BaseUnits: 1}},
+		{"missing account", "pay-1", "", "key-1", ledger.Money{BaseUnits: 1}},
+		,
+		{"missing idempotency key", "pay-1", "acc-1", "", ledger.Money{BaseUnits: 1}},
+		{"zero amount", "pay-1", "acc-1", "key-1", ledger.Money{}},
 	}
 
 	for _, tt := range tests {
