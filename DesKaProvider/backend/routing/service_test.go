@@ -252,6 +252,13 @@ func TestServiceReconcileAmbiguousPersistencePreservesPending(t *testing.T) {
 		t.Fatal(err)
 	}
 	base := NewMemoryTransactionStore()
+	if _, err := mock.Purchase(context.Background(), provider.PurchaseRequest{
+		ProductCode: "pln20",
+		CustomerNo:  "081234567890",
+		ReferenceID: "reconcile-ambiguous-persist",
+	}); err != nil {
+		t.Fatal(err)
+	}
 	req := PurchaseRequest{
 		ProductCode: "pln20",
 		CustomerNo:  "081234567890",
