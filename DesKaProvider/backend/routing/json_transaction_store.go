@@ -282,7 +282,7 @@ func (s *JSONFileTransactionStore) persistLocked() error {
 
     if s.persistHook != nil {
         if err := s.persistHook(transactionStoreAfterReplace); err != nil {
-            return fmt.Errorf("%w: %v", ErrTransactionPersistenceAmbiguous, err)
+            return fmt.Errorf("%w: %w", ErrTransactionPersistenceAmbiguous, err)
         }
     }
 
