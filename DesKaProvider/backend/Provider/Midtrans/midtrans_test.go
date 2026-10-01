@@ -99,7 +99,7 @@ func TestWebhookVerifiesSignatureAndNormalizesStatus(t *testing.T) {
 	serverKey := "server-key"
 	gross := "10000.00"
 	sig := signature("ref-1", "200", gross, serverKey)
-	payload := "{\"status_code\":\"200\",\"status_message\":\"settled\",\"signature_key\":\"" + sig + "\",\"transaction_id\":\"trx-1\",\"order_id\":\"ref-1\",\"transaction_status\":\"settlement\",\"gross_amount\":\"" + gross + "\"}"
+	payload := "{\"status_code\":\"200\",\"status_message\":\"settled\",\"signature_key\":\"" + sig + "\",\"transaction_id\":\"trx-1\",\"order_id\":\"ref-1\",\"transaction_status\":\"settlement\",\"gross_amount\":\"" + gross + "\",\"fraud_status\":\"accept\"}"
 
 	client, err := New(config.MidtransConfig{
 		ServerKey: serverKey, SnapEndpoint: "https://example.test/snap", APIEndpoint: "https://example.test",
