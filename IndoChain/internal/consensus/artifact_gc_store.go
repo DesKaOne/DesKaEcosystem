@@ -147,4 +147,3 @@ func hexDigest(digest [32]byte) string {
 	return string(out)
 }
 
-var _ = sha256.Sum256
