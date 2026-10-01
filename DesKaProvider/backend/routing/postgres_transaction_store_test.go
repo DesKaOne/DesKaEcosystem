@@ -127,3 +127,56 @@ func TestPostgresTransactionStorePutIfCurrentPropagatesRowsAffectedError(t *test
 		t.Fatalf("rows-affected database error must not be collapsed into state conflict: %v", err)
 	}
 }
+
+
+func TestPostgresTransactionStorePutIfCurrentMarksWriteOutcomeAmbiguous(t *testing.T) {
+	wantErr := errors.New("connection lost after write")
+	stub := &postgresStoreDBStub{err: wantErr}
+	store, err := NewPostgresTransactionStore(stub)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	previous := postgresPendingState()
+	next := previous
+	next.Execution.Result.Status = provider.StatusSuccess
+	next.Execution.Result.ProviderCode = "00"
+
+	err = store.PutIfCurrent("ref-77", previous, next)
+	if err == nil {
+		t.Fatal("expected ambiguous persistence error")
+	}
+	if !errors.Is(err, ErrTransactionPersistenceAmbiguous) {
+		t.Fatalf("expected ambiguous persistence sentinel, got %v", err)
+	}
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("expected underlying database error to remain discoverable, got %v", err)
+	}
+	if errors.Is(err, ErrTransactionStateConflict) {
+		t.Fatalf("ambiguous write must not be collapsed into state conflict: %v", err)
+	}
+}
+
+func TestPostgresTransactionStoreRowsAffectedMarksWriteOutcomeAmbiguous(t *testing.T) {
+	wantErr := errors.New("rows affected unavailable")
+	stub := &postgresStoreDBStub{result: postgresStoreRowsAffectedErrorResult{err: wantErr}}
+	store, err := NewPostgresTransactionStore(stub)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	previous := postgresPendingState()
+	next := previous
+	next.Execution.Result.Status = provider.StatusFailed
+
+	err = store.PutIfCurrent("ref-77", previous, next)
+	if err == nil {
+		t.Fatal("expected ambiguous persistence error")
+	}
+	if !errors.Is(err, ErrTransactionPersistenceAmbiguous) {
+		t.Fatalf("expected ambiguous persistence sentinel, got %v", err)
+	}
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("expected underlying rows-affected error to remain discoverable, got %v", err)
+	}
+}
