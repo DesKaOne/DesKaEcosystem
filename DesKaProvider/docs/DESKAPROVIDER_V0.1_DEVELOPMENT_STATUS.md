@@ -6854,3 +6854,10 @@ The caller must use durable read/reconciliation semantics to determine the persi
 ### Next Concrete Engineering Task
 
 After fresh GREEN CI, verify the PostgreSQL ambiguous-write sentinel through the service/reconciliation caller boundary and ensure no caller path can convert it into an external retry or resubmission. Then continue production-readiness gaps without creating an artificial milestone.
+
+
+### CI Correction — Preserve Underlying Ambiguous Write Error
+
+- correction commit: be6d72d39d03a3823c47d90419b6338964ff7f54;
+- changed the ambiguous persistence wrapper from string-only error formatting to Go multi-error wrapping so both ErrTransactionPersistenceAmbiguous and the original database error remain discoverable through errors.Is;
+- fresh Push/PR CI is required for the corrected HEAD.
