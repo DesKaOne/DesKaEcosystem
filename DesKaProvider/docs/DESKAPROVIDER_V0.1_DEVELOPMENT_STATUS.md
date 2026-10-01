@@ -7310,3 +7310,41 @@ No authorized live XP SINDONESIA transaction was executed.
 Continue the production-readiness audit with the next concrete provider boundary or caller/persistence invariant supported by authoritative evidence. Do not invent XP SINDONESIA protocol details while the provider-issued H2H contract remains unavailable.
 
 No artificial milestone is introduced.
+
+
+## Midtrans Payment Status Identifier Boundary
+
+**Date:** 2026-10-01
+
+### Contract Cross-Check
+
+Midtrans Snap creation returns a transaction **token** used to open the Snap payment page, while the Core API Get Status endpoint accepts an **order ID or transaction ID** in `/v2/{order_id OR transaction_id}/status`. The official documentation does not define the Snap token as a Get Status identifier. citeturn1search0turn0search6
+
+The existing adapter returned the Snap token from `CreatePayment()` as provider reference, but `GetPaymentStatus()` previously preferred `ProviderReference` when supplied. That could send a Snap token to the status endpoint and break the documented identifier contract.
+
+### Implementation
+
+- changed Midtrans `GetPaymentStatus()` to require and use the durable `ReferenceID` as the status lookup identifier;
+- removed the provider-reference-as-transaction-ID lookup path from this adapter;
+- preserved the actual Midtrans `transaction_id` as `StatusResult.ProviderReference` when returned by Get Status;
+- updated the sandbox integration harness to reconcile status by `ReferenceID/order_id`, not by the Snap token;
+- added deterministic regression coverage proving that a Snap token supplied as `ProviderReference` does not alter the order-ID lookup path;
+- no retry, failover, duplicate payment creation, ledger mutation, customer-balance mutation, treasury movement, provider funding, or public API was introduced.
+
+### External Contract Evidence
+
+Midtrans documents Snap token creation as POST to the Snap endpoint with `order_id` and `gross_amount`, returning a token and redirect URL. Midtrans documents Get Status separately using `{order_id OR transaction_id}`; the response includes both `order_id` and `transaction_id`. citeturn1search0turn0search6
+
+Midtrans also documents webhook authenticity through SHA512(`order_id + status_code + gross_amount + ServerKey`) and notification fields including `order_id`, `transaction_id`, `gross_amount`, `transaction_status`, and `fraud_status`. The existing adapter continues to verify that signature and fail closed on unacceptable success/fraud combinations. citeturn0search0turn0search2
+
+### Verification Gate
+
+Implementation HEAD for this change is the final repository HEAD after the three Midtrans source/test commits. Final Push and Pull Request CI must both be GREEN before this task is considered complete. Credential-gated Midtrans sandbox validation remains separate from deterministic CI and must not be treated as ProductionReady evidence.
+
+No authorized live-provider transaction was executed during this contract correction.
+
+### Next Concrete Engineering Task
+
+Continue the provider production-readiness audit after CI verification, using the next concrete boundary supported by authoritative evidence. Do not infer undocumented provider semantics.
+
+No artificial milestone is introduced.
