@@ -181,6 +181,41 @@ func TestProviderAdminServiceConcurrentCapabilityMutationPreservesBothUpdates(t 
 	}
 }
 
+func TestProviderAdminServiceConcurrentLifecycleAndCapabilityMutationPreservesBothUpdates(t *testing.T) {
+	store := NewProviderStateStore()
+	if err := store.Put(ProviderState{
+		ProviderName: "mock",
+		Lifecycle: LifecycleEnabled,
+		Capabilities: []Capability{CapabilityPPOB, CapabilityBalance},
+		EnabledCapabilities: []Capability{CapabilityPPOB, CapabilityBalance},
+	}); err != nil { t.Fatal(err) }
+	admin, err := NewProviderAdminService(store)
+	if err != nil { t.Fatal(err) }
+
+	start := make(chan struct{})
+	errCh := make(chan error, 2)
+	go func() {
+		<-start
+		_, err := admin.Disable("mock")
+		errCh <- err
+	}()
+	go func() {
+		<-start
+		_, err := admin.DisableCapability("mock", CapabilityPPOB)
+		errCh <- err
+	}()
+	close(start)
+	for i := 0; i < 2; i++ {
+		if err := <-errCh; err != nil { t.Fatal(err) }
+	}
+
+	state, ok := store.Get("mock")
+	if !ok { t.Fatal("provider state missing") }
+	if state.Enabled() { t.Fatal("concurrent lifecycle disable must survive capability mutation") }
+	if state.Supports(CapabilityPPOB) { t.Fatal("concurrent capability disable must survive lifecycle mutation") }
+	if !state.Supports(CapabilityBalance) { t.Fatal("unrelated capability must remain enabled") }
+}
+
 func TestProviderAdminServiceRejectsUnavailableCapability(t *testing.T) {
 	store := NewProviderStateStore()
 	if err := store.Put(ProviderState{ProviderName: "mock", Lifecycle: LifecycleEnabled, Capabilities: []Capability{CapabilityPPOB}}); err != nil { t.Fatal(err) }
