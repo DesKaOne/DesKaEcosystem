@@ -41,7 +41,6 @@ func TestNewPaymentRejectsInvalidInput(t *testing.T) {
 	}{
 		{"missing id", "", "acc-1", "key-1", ledger.Money{BaseUnits: 1}},
 		{"missing account", "pay-1", "", "key-1", ledger.Money{BaseUnits: 1}},
-		,
 		{"missing idempotency key", "pay-1", "acc-1", "", ledger.Money{BaseUnits: 1}},
 		{"zero amount", "pay-1", "acc-1", "key-1", ledger.Money{}},
 	}
