@@ -423,8 +423,8 @@ func TestJSONFileTransactionStorePostReplacementFailureIsAmbiguous(t *testing.T)
 	if !errors.Is(err, injected) {
 		t.Fatalf("expected underlying post-replacement error to remain discoverable, got %v", err)
 	}
-	if current, ok := store.Get(pending.Request.ReferenceID); !ok || !sameTransactionState(current, pending) {
-		t.Fatalf("in-memory state was not rolled back after ambiguous persistence: %#v", current)
+	if current, ok := store.Get(pending.Request.ReferenceID); !ok || current.Execution.Result.Status != provider.StatusSuccess {
+		t.Fatalf("in-memory state must retain the renamed state after ambiguous persistence: %#v", current)
 	}
 
 	restarted, err := NewJSONFileTransactionStore(path)
