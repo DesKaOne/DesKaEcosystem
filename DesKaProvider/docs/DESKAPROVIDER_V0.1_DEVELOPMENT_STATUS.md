@@ -6804,3 +6804,53 @@ Final corrected implementation/status-doc verification:
 - xp-sindonesia-read-only: skipped as expected
 
 The RED runs #3607 and #3611 were corrected as documented above. No production behavior was changed by the test-only corrections, and no authorized live-provider transaction was executed.
+
+
+## PostgreSQL Transaction Persistence Ambiguous-Outcome Boundary
+
+**Date:** 2026-10-01
+
+### Implementation
+
+- added provider-neutral ErrTransactionPersistenceAmbiguous to the transaction persistence contract;
+- added a single fail-closed wrapper preserving the underlying database error while marking durable-write outcome as unknown;
+- PostgreSQL transaction-store mutation paths now classify ExecContext failures and RowsAffected failures as ambiguous write outcomes;
+- applied the boundary to atomic transaction transitions and durable transaction insert/update paths without changing sql.ErrNoRows conflict/claim handling;
+- preserved existing read errors as ordinary persistence errors because they do not represent an attempted durable mutation;
+- added deterministic unit coverage proving callers can discover both ErrTransactionPersistenceAmbiguous and the underlying database error;
+- did not introduce automatic retry, provider resubmission, failover, duplicate transaction creation, ledger mutation, customer-balance mutation, treasury movement, or provider funding.
+
+### Changed Files
+
+- DesKaProvider/backend/routing/transaction_store.go
+- DesKaProvider/backend/routing/postgres_transaction_store.go
+- DesKaProvider/backend/routing/postgres_transaction_store_test.go
+
+### Contract Boundary
+
+A PostgreSQL write executed through an autocommit database/sql boundary may return an error after the database has accepted the statement but before the client can establish the final outcome. The store therefore treats mutation errors conservatively as ambiguous rather than translating them into a retry-safe condition.
+
+The caller must use durable read/reconciliation semantics to determine the persisted state. No external provider operation is retried from this sentinel.
+
+### Verification
+
+- Local test execution was not available in this session because the execution environment could not resolve/access GitHub dependencies.
+- Fresh Push/PR CI is required for this batch.
+- No live provider transaction was executed.
+
+### Provider Validation Status
+
+- DigiFlazz: implementation remains contract-complete within the current provider-neutral boundary; external validation remains credential/IP-allowlist gated.
+- IAK: documented prepaid contract audit remains complete; external read-only validation remains credential/IP-allowlist gated.
+- XP SINDONESIA: no additional safe implementation change is justified without authoritative provider documentation; external validation remains credential/allowlist gated.
+- Midtrans: deterministic payment/webhook contract coverage remains complete for the current neutral payment boundary; sandbox validation remains credential-gated.
+- RCB: remains fail-closed and unimplemented for PPOB because authoritative contract details are insufficient.
+
+### Known Limitations
+
+- PostgreSQL ambiguity classification is intentionally conservative: an execution error on a mutation is treated as unknown outcome rather than inferred to be pre-execution.
+- External provider validation has not been promoted to LiveTested/ProductionReady without evidence.
+
+### Next Concrete Engineering Task
+
+After fresh GREEN CI, verify the PostgreSQL ambiguous-write sentinel through the service/reconciliation caller boundary and ensure no caller path can convert it into an external retry or resubmission. Then continue production-readiness gaps without creating an artificial milestone.
