@@ -12,10 +12,20 @@ import (
     "syscall"
 )
 
+type transactionStorePersistStage string
+
+const (
+    transactionStoreBeforeReplace transactionStorePersistStage = "before-replace"
+    transactionStoreAfterReplace  transactionStorePersistStage = "after-replace"
+)
+
+var ErrTransactionPersistenceAmbiguous = errors.New("transaction persistence outcome is ambiguous")
+
 type JSONFileTransactionStore struct {
     mu           sync.RWMutex
     path         string
     transactions map[string]TransactionState
+    persistHook  func(transactionStorePersistStage) error
 }
 
 type jsonTransactionState struct {
@@ -263,17 +273,28 @@ func (s *JSONFileTransactionStore) persistLocked() error {
     if err := tmp.Close(); err != nil {
         return fmt.Errorf("close transaction store: %w", err)
     }
+    if s.persistHook != nil {
+        if err := s.persistHook(transactionStoreBeforeReplace); err != nil {
+            return fmt.Errorf("transaction store replacement interrupted: %w", err)
+        }
+    }
     if err := os.Rename(tmpName, s.path); err != nil {
         return fmt.Errorf("replace transaction store: %w", err)
     }
 
+    if s.persistHook != nil {
+        if err := s.persistHook(transactionStoreAfterReplace); err != nil {
+            return fmt.Errorf("%w: %v", ErrTransactionPersistenceAmbiguous, err)
+        }
+    }
+
     dirFile, err := os.Open(dir)
     if err != nil {
-        return fmt.Errorf("open transaction store directory for sync: %w", err)
+        return fmt.Errorf("%w: open transaction store directory for sync: %v", ErrTransactionPersistenceAmbiguous, err)
     }
     defer dirFile.Close()
     if err := dirFile.Sync(); err != nil {
-        return fmt.Errorf("sync transaction store directory: %w", err)
+        return fmt.Errorf("%w: sync transaction store directory: %v", ErrTransactionPersistenceAmbiguous, err)
     }
     return nil
 }
