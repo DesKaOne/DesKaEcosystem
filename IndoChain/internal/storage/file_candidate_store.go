@@ -9,7 +9,6 @@ import (
 
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/block"
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/transaction"
-	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/types"
 )
 
 type candidateSnapshot struct {
