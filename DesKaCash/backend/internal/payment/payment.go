@@ -21,22 +21,22 @@ const (
 )
 
 // Payment is the application-layer record for an external payment attempt.
-// Provider IDs and idempotency keys remain integration-layer identifiers.
+// DesKaCash keeps only normalized/opaque gateway references; provider routing
+// and provider-specific identifiers stay behind the DesKaProvider boundary.
 type Payment struct {
-	ID             string
-	AccountID      string
-	Provider       string
-	ProviderID     string
-	IdempotencyKey string
-	Amount         ledger.Money
-	Status         Status
-	Reference      string
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	ID               string
+	AccountID        string
+	ExternalReference string
+	IdempotencyKey   string
+	Amount           ledger.Money
+	Status           Status
+	Reference        string
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
 }
 
-func NewPayment(id, accountID, provider, idempotencyKey string, amount ledger.Money) (Payment, error) {
-	if id == "" || accountID == "" || provider == "" || idempotencyKey == "" || amount.BaseUnits <= 0 {
+func NewPayment(id, accountID, idempotencyKey string, amount ledger.Money) (Payment, error) {
+	if id == "" || accountID == "" || idempotencyKey == "" || amount.BaseUnits <= 0 {
 		return Payment{}, ErrInvalidPayment
 	}
 
@@ -44,7 +44,6 @@ func NewPayment(id, accountID, provider, idempotencyKey string, amount ledger.Mo
 	return Payment{
 		ID:             id,
 		AccountID:      accountID,
-		Provider:       provider,
 		IdempotencyKey: idempotencyKey,
 		Amount:         amount,
 		Status:         StatusPending,
