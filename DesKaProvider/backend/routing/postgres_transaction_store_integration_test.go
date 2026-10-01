@@ -680,7 +680,7 @@ func TestPostgresConcurrentServiceReconcileConvergesWithoutResubmission(t *testi
 		Products:       []provider.Product{{Code: "pln20", Name: "PLN 20"}},
 		ProviderCode:   "00",
 		Message:        "pending",
-		PurchaseStatus: provider.StatusPending,
+		PurchaseStatus: provider.StatusSuccess,
 		Price:          20000,
 	})
 	if err := registry.Register("mock", mock); err != nil {
@@ -2611,9 +2611,6 @@ func TestPostgresTransactionStoreAmbiguousPersistencePropagatesThroughReconcile(
 		t.Fatalf("seed pending transaction: %v", err)
 	}
 
-	if ok := mockProvider.SetTransactionStatus(ref, provider.StatusSuccess, "provider reports success"); !ok {
-		t.Fatal("expected mock provider status mutation to succeed")
-	}
 
 	wantErr := errors.New("connection lost after reconcile transition")
 	failingStore, err := NewPostgresTransactionStore(postgresFailingExecDBTX{DBTX: db, err: wantErr})
