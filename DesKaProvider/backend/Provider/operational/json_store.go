@@ -101,6 +101,16 @@ func moreRestrictiveHealth(current, requested Health) Health {
 }
 
 func safeSnapshotAfterAmbiguousPersistence(current, requested Snapshot) Snapshot {
+	if current.ProviderName == "" {
+		return Snapshot{
+			ProviderName: requested.ProviderName,
+			Balance: 0,
+			Currency: requested.Currency,
+			Health: HealthUnknown,
+			LastCheckedAt: requested.LastCheckedAt,
+			ConsecutiveFailures: 0,
+		}
+	}
 	result := requested
 	if current.ProviderName != "" {
 		result.ProviderName = current.ProviderName
