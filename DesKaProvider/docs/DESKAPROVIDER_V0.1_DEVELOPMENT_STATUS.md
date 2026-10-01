@@ -6777,3 +6777,14 @@ Correction commit:
 - `ac2c9e7235ac53de994c2485f19963b44b34eb70` — close the regression-test block.
 
 Fresh CI for the corrected HEAD is mandatory before this audit batch is considered complete.
+
+
+### CI Correction — Payment CAS Failure Injection Coverage
+
+Push/PR CI #3611 / run 36827481553 was **RED** after the syntax correction because the payment failure-injection test only overrode `Put()`, while the embedded test store also satisfied `ContextTransactionStore`; `SubmitPayment()` therefore exercised the promoted `PutIfCurrentContext()` path and the injected ambiguity was not triggered.
+
+Correction commit:
+
+- `fa6f11613fffad7172e1e7a354b037848045da96` — inject `ErrTransactionPersistenceAmbiguous` through the atomic CAS path used by `SubmitPayment()`.
+
+No production behavior was changed by this correction. Fresh CI is mandatory before completion.
