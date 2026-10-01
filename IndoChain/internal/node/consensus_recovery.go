@@ -58,6 +58,31 @@ func (n *Node) ReconstructConsensusRuntimeWithEvidence(
 	})
 }
 
+// ReconstructConsensusRuntimeAndReplayEvidence rebuilds canonical consensus
+// state and then applies only the deterministic operational subset of
+// authenticated evidence. Failed replay returns no partially-mutated runtime.
+func (n *Node) ReconstructConsensusRuntimeAndReplayEvidence(
+	epoch uint64,
+	validators consensus.ValidatorSet,
+	votingPower consensus.VotingPowerSet,
+	threshold consensus.QuorumThreshold,
+	proposer consensus.ProposerSelector,
+	evidenceStore consensus.EvidenceStore,
+	authority consensus.TimeoutAuthorityResolver,
+) (ConsensusRecovery, consensus.EvidenceReplayResult, error) {
+	recovery, err := n.ReconstructConsensusRuntimeWithEvidence(
+		epoch, validators, votingPower, threshold, proposer, evidenceStore, authority,
+	)
+	if err != nil {
+		return ConsensusRecovery{}, consensus.EvidenceReplayResult{}, err
+	}
+	result, err := consensus.ReplayAuthenticatedEvidence(recovery.Runtime, recovery.Evidence, authority)
+	if err != nil {
+		return ConsensusRecovery{}, consensus.EvidenceReplayResult{}, err
+	}
+	return recovery, result, nil
+}
+
 func (n *Node) reconstructConsensusRuntime(
 	epoch uint64,
 	validators consensus.ValidatorSet,
