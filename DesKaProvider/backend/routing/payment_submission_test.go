@@ -45,6 +45,71 @@ func newPaymentSubmissionService(t *testing.T, p *paymentSubmissionProvider, ena
  return &Service{Router:&Router{Registry:reg},Store:NewMemoryTransactionStore(),AuditStore:NewMemoryTransactionAuditStore()}
 }
 
+type ambiguousPaymentPersistenceStore struct {
+	*MemoryTransactionStore
+	failTerminalPut bool
+}
+
+func (s *ambiguousPaymentPersistenceStore) Put(state TransactionState) error {
+	if s.failTerminalPut && state.Payment != nil && state.Payment.Status != payment.StatusPending {
+		return ErrTransactionPersistenceAmbiguous
+	}
+	return s.MemoryTransactionStore.Put(state)
+}
+
+func TestSubmitPaymentAmbiguousPersistencePreservesClaimAndForbidsRetry(t *testing.T) {
+	p := &paymentSubmissionProvider{
+		result: payment.PaymentResult{
+			ReferenceID: "pay-ambiguous-persist",
+			ProviderReference: "mid-ambiguous",
+			Status: payment.StatusSuccess,
+			Amount: 10000,
+			Currency: "IDR",
+		},
+	}
+	store := &ambiguousPaymentPersistenceStore{MemoryTransactionStore: NewMemoryTransactionStore()}
+	reg := provider.NewRegistry()
+	if err := reg.RegisterCapabilityProvider("midtrans", provider.CapabilityPayment, p, provider.CapabilityStatus{AdapterImplemented: true, Tested: true, Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	s := &Service{
+		Router: &Router{Registry: reg},
+		Store: store,
+		AuditStore: NewMemoryTransactionAuditStore(),
+	}
+	req := payment.PaymentRequest{ReferenceID: "pay-ambiguous-persist", Amount: 10000, Currency: "IDR", CustomerID: "cust-ambiguous"}
+	store.failTerminalPut = true
+
+	result, err := s.SubmitPayment(context.Background(), "midtrans", req)
+	if !errors.Is(err, ErrTransactionPersistenceAmbiguous) {
+		t.Fatalf("expected ambiguous persistence to survive service wrapping, got result=%#v err=%v", result, err)
+	}
+	if p.calls != 1 {
+		t.Fatalf("ambiguous persistence must not trigger an immediate resubmission, calls=%d", p.calls)
+	}
+	state, ok := store.Get(req.ReferenceID)
+	if !ok || state.Payment == nil || state.Payment.Status != payment.StatusPending {
+		t.Fatalf("durable claim must remain pending after ambiguous terminal persistence: %#v", state)
+	}
+
+	if _, err := s.SubmitPayment(context.Background(), "midtrans", req); !errors.Is(err, ErrPaymentSubmissionClaimed) {
+		t.Fatalf("same-process retry must remain blocked by durable claim, got %v", err)
+	}
+	if p.calls != 1 {
+		t.Fatalf("same-process retry must not resubmit payment, calls=%d", p.calls)
+
+	restarted, err := NewServiceWithStoreAndAudit(s.Router, store, NewMemoryTransactionAuditStore())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := restarted.SubmitPayment(context.Background(), "midtrans", req); !errors.Is(err, ErrPaymentSubmissionClaimed) {
+		t.Fatalf("restart must preserve pending claim and block resubmission, got %v", err)
+	}
+	if p.calls != 1 {
+		t.Fatalf("restart must not resubmit ambiguous payment, calls=%d", p.calls)
+	}
+}
+
 func TestSubmitPaymentClaimsReferenceBeforeExternalSubmission(t *testing.T){
  p:=&paymentSubmissionProvider{result:payment.PaymentResult{ReferenceID:"pay-submit-1",ProviderReference:"mid-1",Status:payment.StatusPending,Amount:10000,Currency:"IDR",Message:"token"}}
  s:=newPaymentSubmissionService(t,p,true)
