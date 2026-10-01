@@ -7348,3 +7348,59 @@ No authorized live-provider transaction was executed during this contract correc
 Continue the provider production-readiness audit after CI verification, using the next concrete boundary supported by authoritative evidence. Do not infer undocumented provider semantics.
 
 No artificial milestone is introduced.
+
+
+## Payment Submission Lifecycle TOCTOU Boundary
+
+**Date:** 2026-10-01
+
+### Implementation
+
+- audited the payment submission caller boundary after the existing PPOB lifecycle re-check was already present;
+- identified a concrete TOCTOU gap: SubmitPayment() checked registry/operational eligibility before creating the durable submission claim, but did not re-check operational lifecycle/capability drift immediately before the external CreatePayment() side effect;
+- added a second provider-neutral lifecycle/capability-drift gate after the durable claim and immediately before CreatePayment();
+- if an explicit lifecycle disable or capability drift occurs after claiming but before the external call, the payment remains durably pending and the provider is not called;
+- added deterministic regression coverage by closing the lifecycle gate from the atomic claim boundary before SubmitPayment() reaches the provider;
+- no automatic retry, provider failover, duplicate payment creation, ledger mutation, customer-balance mutation, treasury movement, provider funding, or public API was introduced.
+
+### Changed Files
+
+- DesKaProvider/backend/routing/service.go
+- DesKaProvider/backend/routing/payment_submission_test.go
+
+### Safety Boundary
+
+- the durable payment claim remains the single authorization boundary for exactly one external payment submission;
+- operational lifecycle disable and capability drift are re-checked immediately before the external side effect;
+- a lifecycle transition to disabled cannot be bypassed by a stale pre-claim eligibility decision;
+- the existing reconciliation/webhook paths remain responsible for recovery of already-claimed or externally observed payments;
+- no routing authority is duplicated;
+- readiness/operational state does not promote LiveTested or ProductionReady.
+
+### Verification
+
+Implementation/test HEAD:
+
+`78b98a5351a1cbc3e2201c0f5798e18edae231d4`
+
+- Push CI #3709 / run 36840572892: **GREEN**
+  - test: PASS
+  - race: PASS
+  - DigiFlazz validation: skipped as expected
+  - Midtrans sandbox: skipped as expected
+  - IAK read-only: skipped as expected
+  - XP SINDONESIA read-only: skipped as expected
+- Pull Request CI #3710 / run 36840579769: **GREEN**
+  - test: PASS
+  - race: PASS
+  - credential-gated provider validation jobs: skipped as expected
+
+CI correction note: the preceding Push/PR cycle (#3707/#3708) failed only because the new test initially imported the existing operational package under an incorrect path. The import was corrected without changing production behavior, and the corrected HEAD above passed both test and race.
+
+No authorized live-provider transaction was executed.
+
+### Next Concrete Engineering Task
+
+Continue the production-readiness audit only where a concrete concurrency, persistence, recovery, identity, or caller-boundary invariant remains untested. Provider-specific implementation remains gated on authoritative documentation or credential-backed external validation.
+
+No artificial milestone is introduced.
