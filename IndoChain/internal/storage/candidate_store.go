@@ -22,6 +22,7 @@ type CandidateKey struct {
 type CandidateStore interface {
 	SaveCandidate(CandidateKey, block.Block) error
 	GetCandidate(CandidateKey) (block.Block, error)
+	DeleteCandidate(CandidateKey) error
 }
 
 type MemoryCandidateStore struct {
@@ -50,6 +51,16 @@ func (s *MemoryCandidateStore) GetCandidate(key CandidateKey) (block.Block, erro
 	candidate, ok := s.items[key]
 	if !ok { return block.Block{}, ErrCandidateNotFound }
 	return cloneBlock(candidate), nil
+}
+
+// DeleteCandidate is idempotent: an already-retained/pruned candidate is a
+// successful no-op so crash cleanup can safely be retried.
+func (s *MemoryCandidateStore) DeleteCandidate(key CandidateKey) error {
+	if s == nil { return ErrNilCandidateStore }
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.items, key)
+	return nil
 }
 
 func validateCandidateKey(key CandidateKey, candidate block.Block) error {
