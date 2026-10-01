@@ -6122,3 +6122,48 @@ Overall DesKaProvider v0.1 remains approximately 82%. This hardening closes a co
 ### Next Concrete Engineering Task
 
 Continue the IAK documented-contract audit for remaining behavior that can be represented safely by the existing provider-neutral interfaces. Do not expand the neutral contract solely to mirror provider-specific features; preserve the current transaction/retry/failover safety boundaries.
+
+
+## IAK Prepaid Documented-Contract Audit — No Additional Safe Gap
+
+**Date:** 2026-10-01
+
+### Source Basis
+
+The current IAK adapter targets the documented prepaid v2 endpoints for Price List, PLN Inquiry, Top Up, Check Status, and the documented callback contract. The official documentation confirms the request fields, signature formulas, required response fields, terminal callback states, and prepaid response-code semantics.
+
+### Audit Result
+
+Reviewed the current adapter against the documented contract for:
+
+- Price List request/signature, status filter, required product fields, and response-code/message validation.
+- PLN Inquiry request/signature, required identity/customer fields, status/RC consistency, and required inquiry metadata.
+- Top Up request/signature, required transaction response fields, identity matching, and HTTP error handling.
+- Check Status request/signature, required transaction fields, optional serial number semantics, and identity matching.
+- Check Balance request/signature and required numeric balance validation.
+- Callback required fields, configured API-key signature authentication, terminal success/failed boundary, response-code consistency, and optional serial-number behavior.
+- Complete documented prepaid response-code mapping currently applicable to transaction operations.
+
+No additional production-code change is justified by this audit using the existing provider-neutral interface.
+
+### Explicit Non-Changes
+
+- Do not expose provider-specific pin, activation_code, receipt/download, operator-prefix, eSIM, game-specific inquiry, or other IAK-only fields through the neutral contract without a broader interface decision.
+- Do not treat operational provider balance as customer financial authority.
+- Do not add automatic retry/resubmission or provider failover.
+- Do not infer callback pending events; IAK documents callback delivery as success/failed while Check Status handles the non-callback flow.
+- Do not introduce live-provider behavior or credential-dependent assumptions.
+
+### Verification Boundary
+
+No production-code change is required by this audit. The previously verified HEAD before this documentation update is 507596bb89e0591045219e4283bb943cc4324c3f.
+
+External IAK read-only/live validation remains separately credential/IP-allowlist gated.
+
+### Current Completion Assessment
+
+Overall DesKaProvider v0.1 remains approximately **82%**. This audit closes the currently identified safe IAK contract-audit scope without widening the provider-neutral interface.
+
+### Next Concrete Engineering Task
+
+Proceed to the next provider adapter audit, preserving the same workflow: authoritative provider documentation -> provider contract comparison -> implementation only where the existing neutral interface can represent the behavior safely -> deterministic fixtures/tests -> GREEN CI -> external validation separately.
