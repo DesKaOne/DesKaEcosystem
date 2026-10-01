@@ -15,6 +15,9 @@ func validatePaymentTransactionTransition(previous,next TransactionState) error 
   if !samePaymentObservedResult(previous.Payment,next.Payment){return ErrReferenceConflict};return nil
  }
  if previous.Payment.Status!=payment.StatusPending{return ErrReferenceConflict}
+ if previous.Payment.ProviderReference != "" && next.Payment.ProviderReference != previous.Payment.ProviderReference {
+  return ErrReferenceConflict
+ }
  switch next.Payment.Status{case payment.StatusPending,payment.StatusSuccess,payment.StatusFailed:return nil;default:return ErrReferenceConflict}
 }
 func validateTransactionState(state TransactionState) error {
