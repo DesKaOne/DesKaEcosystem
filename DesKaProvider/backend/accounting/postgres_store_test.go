@@ -77,3 +77,39 @@ func TestPostgresLedgerAppendIsImmutableAndIdempotent(t *testing.T) {
 	if err != nil { t.Fatalf("list ledger transactions: %v", err) }
 	if len(all) != 1 || all[0].ID != tx.ID { t.Fatalf("unexpected ledger transactions: %#v", all) }
 }
+
+
+func TestPostgresSettlementAppendIsAtomicAndIdempotent(t *testing.T) {
+	db := accountingPostgresDB(t)
+	ctx := context.Background()
+	schema := "settlement_it_" + strings.ReplaceAll(time.Now().Format("20060102150405.000000000"), ".", "_")
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil { t.Fatal(err) }
+	t.Cleanup(func(){ _, _ = db.ExecContext(context.Background(),"DROP SCHEMA "+schema+" CASCADE") })
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil { t.Fatal(err) }
+	applyAccountingMigrations(t, db)
+
+	store, err := NewPostgresStore(db)
+	if err != nil { t.Fatal(err) }
+	tx := validLedgerTransaction()
+	tx.ID = "settlement-ledger-pg-1"
+	tx.CreatedAt = time.Now().UTC()
+	audit := SettlementAudit{
+		EventID: "settlement-audit-pg-1",
+		TransactionID: tx.ID,
+		ReferenceID: tx.ReferenceID,
+		SourceType: tx.SourceType,
+		SourceID: tx.SourceID,
+		Status: ProviderStatusSuccess,
+		CreatedAt: tx.CreatedAt,
+	}
+	if err := store.AppendSettlement(ctx, tx, audit); err != nil { t.Fatal(err) }
+	if err := store.AppendSettlement(ctx, tx, audit); err != nil { t.Fatalf("identical settlement append must be idempotent: %v", err) }
+	got, ok, err := store.GetSettlementAudit(ctx, tx.ID)
+	if err != nil || !ok { t.Fatalf("get settlement audit: %v %v", err, ok) }
+	if got.EventID != audit.EventID || got.ReferenceID != audit.ReferenceID || got.SourceID != audit.SourceID {
+		t.Fatalf("unexpected settlement audit: %#v", got)
+	}
+	conflict := audit
+	conflict.EventID = "tampered-event"
+	if err := store.AppendSettlement(ctx, tx, conflict); err != ErrLedgerConflict { t.Fatalf("expected audit identity conflict, got %v", err) }
+}
