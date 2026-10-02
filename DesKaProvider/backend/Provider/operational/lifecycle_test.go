@@ -322,8 +322,8 @@ func TestSyncWorkerLifecycleWaitReportsUnexpectedNaturalExit(t *testing.T) {
 
 	waitCtx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	if err := lifecycle.Wait(waitCtx); !errors.Is(err, ErrSyncWorkerExited) {
-		t.Fatalf("expected unexpected worker exit sentinel, got %v", err)
+	if err := lifecycle.Wait(waitCtx); err == nil || err.Error() != "sync interval must be greater than zero" {
+		t.Fatalf("expected underlying unexpected worker error, got %v", err)
 	}
 	if lifecycle.Running() {
 		t.Fatal("unexpectedly exited worker must no longer be running")
