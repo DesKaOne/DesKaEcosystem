@@ -363,6 +363,7 @@ func (s *ConsensusSession) validateProposalCandidate(msg consensus.Message, cand
     rules.Transaction.PublicKeyResolver = s.senderResolver
     ctx := s.ctx
     ctx.State = s.engine.Runtime().State()
+    ctx.Proposer = append([]byte(nil), candidate.Header.Proposer...)
     if err := consensus.ValidateBlockCandidateContext(msg, ctx, candidate); err != nil {
         return err
     }
