@@ -4062,7 +4062,9 @@ Complete deterministic provider response-code/state mapping for the documented D
 
 - d496f3588eebf43d7427e136dc952d71ca03c02f — expose raw worker terminal error for runtime observation;
 - e4148c5ba436df93a83dbfe7723f8c4273f3a90a — runtime distinguishes unexpected worker cancellation from normal runtime shutdown;
-- CI #3888 / run 36988519072 — completed / success.
+- 052e6a772100a327c31a0327c0689f389221a492 — preserve cancellation shutdown ordering when worker completion races with runtime cancellation;
+- CI #3888 / run 36988519072 — completed / success;
+- CI #3892 / run 36988912281 — completed / success.
 
 ### Next Concrete Engineering Task
 
@@ -8525,7 +8527,7 @@ The runtime regression forces the lifecycle's worker interval to the invalid val
 
 ### Verification
 
-The baseline HEAD before this audit was CI #3870 / run 36987605846, completed successfully. CI #3880 / run 36988098341 initially exposed regression-test issues: the lifecycle test expected the new sentinel instead of the underlying invalid-interval error, and the runtime test attempted to access an unexported lifecycle field. Those tests were corrected. CI #3884 / run 36988311560 then exposed that Wait() intentionally normalizes context cancellation, so runtime needed a read-only raw terminal-error boundary to distinguish an unexpected worker cancellation from runtime shutdown. The corrected implementation was verified by CI #3888 / run 36988519072, completed successfully with test and race passing; credential-gated provider validations remained skipped.
+The baseline HEAD before this audit was CI #3870 / run 36987605846, completed successfully. CI #3880 / run 36988098341 initially exposed regression-test issues: the lifecycle test expected the new sentinel instead of the underlying invalid-interval error, and the runtime test attempted to access an unexported lifecycle field. Those tests were corrected. CI #3884 / run 36988311560 then exposed that Wait() intentionally normalizes context cancellation, so runtime needed a read-only raw terminal-error boundary to distinguish an unexpected worker cancellation from runtime shutdown. The corrected implementation was verified by CI #3888 / run 36988519072, completed successfully with test and race passing; credential-gated provider validations remained skipped. CI #3890 / run 36988687688 then exposed a cancellation-versus-worker-exit ordering race in an existing shutdown-order regression: when both the runtime context and worker completion were ready, the worker-exit branch skipped the normal balance shutdown callback. The runtime was corrected to give runtime cancellation precedence and preserve the existing balance → catalog → database cleanup ordering. CI #3892 / run 36988912281 verified that correction with completed / success.
 
 ### Next Concrete Engineering Task
 
