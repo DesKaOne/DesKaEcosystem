@@ -3,7 +3,8 @@ package p2p
 import (
     "bytes"
     "testing"
-    "time"\n    "sync"
+    "time"
+    "sync"
 
     "github.com/DesKaOne/DesKaEcosystem/IndoChain/genesis/devnet"
     "github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/consensus"
