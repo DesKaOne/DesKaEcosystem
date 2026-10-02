@@ -6159,6 +6159,75 @@ func TestServiceRunCatalogStartFailureRollsBackPartiallyStartedCatalogLifecycle(
 }
 
 
+func TestServiceRunCatalogProviderFailureRemainsObservableWithoutStoppingRuntime(t *testing.T) {
+	providerImpl := &catalogFlakyBalanceProvider{
+		balanceMock: &balanceMock{
+			Provider: mock.New(mock.Config{Products: []provider.Product{{Code: "xld10", Name: "Test"}}}),
+			balance: 1800000,
+		},
+		failCatalog: true,
+	}
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", providerImpl); err != nil { t.Fatal(err) }
+	syncService, err := operational.NewSyncService(registry, operational.NewMemoryStore(), "IDR", 3)
+	if err != nil { t.Fatal(err) }
+	catalogSync, err := catalog.NewSyncService(registry, catalog.NewMemoryStore())
+	if err != nil { t.Fatal(err) }
+	service, err := New(syncService, time.Hour)
+	if err != nil { t.Fatal(err) }
+	service.catalogSync = catalogSync
+	service.catalogInterval = 10 * time.Millisecond
+	transactionDB := &closeErrorDB{}
+	service.databaseOwnership = newRuntimeDatabaseOwnership(transactionDB, nil)
+	service.databaseOwnership.transferToService()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- service.Run(ctx) }()
+
+	deadline := time.After(time.Second)
+	for {
+		status, ok := catalogSync.Status("mock")
+		if ok && status.ConsecutiveFailures > 0 {
+			if status.LastError != "catalog sync temporarily unavailable" {
+				t.Fatalf("unexpected catalog provider failure: %#v", status)
+			}
+			if !service.catalogLifecycle.Running() {
+				t.Fatal("transient catalog provider failure must not stop catalog lifecycle")
+			}
+			if transactionDB.closeCount != 0 {
+				t.Fatalf("catalog provider failure must not close runtime database ownership: %d", transactionDB.closeCount)
+			}
+			break
+		}
+		select {
+		case err := <-done:
+			t.Fatalf("Run exited after transient catalog provider failure: %v", err)
+		case <-deadline:
+			t.Fatal("catalog provider failure was not recorded")
+		default:
+			time.Sleep(time.Millisecond)
+		}
+	}
+
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("unexpected shutdown error: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Run did not converge after cancellation")
+	}
+	if service.balanceLifecycle.Running() || service.catalogLifecycle.Running() {
+		t.Fatal("expected all lifecycles to stop after cancellation")
+	}
+	if transactionDB.closeCount != 1 || !service.databaseOwnership.isClosed() {
+		t.Fatalf("expected database ownership to close exactly once, count=%d closed=%v", transactionDB.closeCount, service.databaseOwnership.isClosed())
+	}
+}
+
 func TestServiceRunCatalogPersistenceFailureKeepsLifecycleAliveForRetry(t *testing.T) {
 	mockProvider := &balanceMock{
 		Provider: mock.New(mock.Config{Products: []provider.Product{{Code: "xld10", Name: "Test"}}}),
