@@ -281,6 +281,8 @@ func (s *ConsensusSession) HandlePeerMessage(from PeerID, msg consensus.Message,
     if s.started {
         if _, err := s.engine.TryAdvanceRound(); err == nil {
             return s.handoffRoundProposalLocked()
+        } else if !errors.Is(err, consensus.ErrTimeoutEvidencePending) {
+            return err
         }
         return s.armTimeoutLocked()
     }
