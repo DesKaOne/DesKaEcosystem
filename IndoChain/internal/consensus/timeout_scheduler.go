@@ -88,6 +88,36 @@ func (s *ConsensusTimeoutScheduler) Schedule(token TimeoutToken, duration time.D
 	return nil
 }
 
+// ArmEngineTimeout asks the consensus engine for its current token/duration and
+// wires the external wall-clock event back to HandleTimeout. Timeout evidence
+// is returned to the caller; the scheduler does not disseminate it.
+func (s *ConsensusTimeoutScheduler) ArmEngineTimeout(engine *ConsensusEngine, onTimeout func(Message, error)) error {
+	if engine == nil {
+		return ErrNilConsensusEngine
+	}
+	if onTimeout == nil {
+		return ErrInvalidConsensusTimeoutDuration
+	}
+	token, duration, err := engine.ArmTimeout()
+	if err != nil {
+		return err
+	}
+	return s.Schedule(token, duration, func(token TimeoutToken) {
+		msg, err := engine.HandleTimeout(token)
+		onTimeout(msg, err)
+	})
+}
+
+// CancelEngineTimeout fences the scheduler and invalidates the engine token.
+func (s *ConsensusTimeoutScheduler) CancelEngineTimeout(engine *ConsensusEngine) error {
+	if engine == nil {
+		return ErrNilConsensusEngine
+	}
+	s.Cancel()
+	engine.CancelTimeout()
+	return nil
+}
+
 // Cancel fences the current timer and never invokes its handler.
 func (s *ConsensusTimeoutScheduler) Cancel() {
 	if s == nil {
