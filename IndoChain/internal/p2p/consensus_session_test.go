@@ -3,7 +3,7 @@ package p2p
 import (
     "bytes"
     "testing"
-    "time"
+    "time"\n    "sync"
 
     "github.com/DesKaOne/DesKaEcosystem/IndoChain/genesis/devnet"
     "github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/consensus"
@@ -163,4 +163,113 @@ func TestConsensusSessionRejectsMissingProposalCandidate(t *testing.T) {
     if err := session.HandlePeerMessage("node-b", consensus.Message{Type: consensus.MessageTypeProposal}, nil); err != ErrConsensusSessionCandidateRequired {
         t.Fatalf("error = %v, want candidate-required", err)
     }
+}
+
+
+type sessionTestTimer struct {
+    mu sync.Mutex
+    stopped bool
+    fireFn func()
+}
+func (t *sessionTestTimer) Stop() bool {
+    t.mu.Lock(); defer t.mu.Unlock()
+    active := !t.stopped
+    t.stopped = true
+    return active
+}
+func (t *sessionTestTimer) Fire() {
+    t.mu.Lock()
+    if t.stopped { t.mu.Unlock(); return }
+    fn := t.fireFn
+    t.stopped = true
+    t.mu.Unlock()
+    fn()
+}
+type sessionTestClock struct {
+    mu sync.Mutex
+    timers []*sessionTestTimer
+}
+func (c *sessionTestClock) AfterFunc(_ time.Duration, fn func()) consensus.ConsensusTimeoutTimer {
+    timer := &sessionTestTimer{fireFn: fn}
+    c.mu.Lock(); c.timers = append(c.timers, timer); c.mu.Unlock()
+    return timer
+}
+func (c *sessionTestClock) Timer(i int) *sessionTestTimer {
+    c.mu.Lock(); defer c.mu.Unlock()
+    return c.timers[i]
+}
+
+func TestConsensusSessionTimeoutSchedulerLifecycle(t *testing.T) {
+    n, err := node.NewDevnet(storage.NewMemoryStore())
+    if err != nil { t.Fatal(err) }
+    validator := []byte("validator-a")
+    key, err := crypto.NewEd25519KeyPair(bytes.Repeat([]byte{0x71}, 32))
+    if err != nil { t.Fatal(err) }
+    signer, err := crypto.NewEd25519Signer(key.PrivateKey)
+    if err != nil { t.Fatal(err) }
+    validators, err := consensus.NewValidatorSet([][]byte{validator})
+    if err != nil { t.Fatal(err) }
+    power, err := consensus.NewVotingPowerSet([]consensus.ValidatorVotingPower{{ValidatorID: validator, Power: 1}})
+    if err != nil { t.Fatal(err) }
+    authority, err := consensus.NewStaticValidatorAuthority(map[string][]byte{string(validator): key.PublicKey})
+    if err != nil { t.Fatal(err) }
+    state, err := consensus.NewRoundState(devnet.ProtocolVersion, devnet.ChainID, 0, n.Head.Header.Height)
+    if err != nil { t.Fatal(err) }
+    engine := newSessionEngine(t, state, validator, signer, validators, power, authority)
+    transport := NewInMemoryTransport(PeerID("node-a"), 65536)
+    ctx := consensus.BlockProductionContext{State: state, PreviousHash: n.HeadHash, Proposer: validator}
+    clock := &sessionTestClock{}
+    session, err := NewConsensusSessionWithScheduler(
+        n, engine, transport,
+        consensus.ValidationRules{ProtocolVersion: devnet.ProtocolVersion, ChainID: devnet.ChainID, MaxPayloadSize: 65536, RequireSender: true, RequireSignature: true},
+        []PeerID{"node-b"}, ctx, validators, power, authority,
+        sessionSenderResolver{key: key.PublicKey}, clock.AfterFunc,
+    )
+    if err != nil { t.Fatal(err) }
+    if err := session.Start(); err != nil { t.Fatal(err) }
+    if len(clock.timers) != 1 { t.Fatalf("timer count = %d, want 1", len(clock.timers)) }
+    session.Stop()
+    clock.Timer(0).Fire()
+    if engine.Driver().TimeoutEvidence() != nil {
+        t.Fatal("stopped scheduler delivered timeout evidence")
+    }
+}
+
+func TestConsensusSessionTimeoutProducesAuthenticatedEvidence(t *testing.T) {
+    n, err := node.NewDevnet(storage.NewMemoryStore())
+    if err != nil { t.Fatal(err) }
+    validator := []byte("validator-a")
+    key, err := crypto.NewEd25519KeyPair(bytes.Repeat([]byte{0x72}, 32))
+    if err != nil { t.Fatal(err) }
+    signer, err := crypto.NewEd25519Signer(key.PrivateKey)
+    if err != nil { t.Fatal(err) }
+    validators, err := consensus.NewValidatorSet([][]byte{validator})
+    if err != nil { t.Fatal(err) }
+    power, err := consensus.NewVotingPowerSet([]consensus.ValidatorVotingPower{{ValidatorID: validator, Power: 1}})
+    if err != nil { t.Fatal(err) }
+    authority, err := consensus.NewStaticValidatorAuthority(map[string][]byte{string(validator): key.PublicKey})
+    if err != nil { t.Fatal(err) }
+    state, err := consensus.NewRoundState(devnet.ProtocolVersion, devnet.ChainID, 0, n.Head.Header.Height)
+    if err != nil { t.Fatal(err) }
+    engine := newSessionEngine(t, state, validator, signer, validators, power, authority)
+    transport := NewInMemoryTransport(PeerID("node-a"), 65536)
+    ctx := consensus.BlockProductionContext{State: state, PreviousHash: n.HeadHash, Proposer: validator}
+    clock := &sessionTestClock{}
+    session, err := NewConsensusSessionWithScheduler(
+        n, engine, transport,
+        consensus.ValidationRules{ProtocolVersion: devnet.ProtocolVersion, ChainID: devnet.ChainID, MaxPayloadSize: 65536, RequireSender: true, RequireSignature: true},
+        []PeerID{"node-b"}, ctx, validators, power, authority,
+        sessionSenderResolver{key: key.PublicKey}, clock.AfterFunc,
+    )
+    if err != nil { t.Fatal(err) }
+    if err := session.Start(); err != nil { t.Fatal(err) }
+    clock.Timer(0).Fire()
+    evidence := engine.Driver().TimeoutEvidence()
+    if len(evidence) != 1 || evidence[0].Type != consensus.MessageTypeTimeout {
+        t.Fatalf("timeout evidence = %+v", evidence)
+    }
+    if err := consensus.VerifyMessageSignature(evidence[0], key.PublicKey); err != nil {
+        t.Fatalf("timeout evidence signature invalid: %v", err)
+    }
+    session.Stop()
 }
