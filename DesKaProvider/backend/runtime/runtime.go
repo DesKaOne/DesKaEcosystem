@@ -322,21 +322,20 @@ for _, name := range registry.Names() {
 		descriptor, e := registry.Capabilities(name)
 		if e != nil { return nil, e }
 		drift := operational.DetectCapabilityDrift(state, descriptor)
-		if drift.Drifted() {
-			// Drift invalidates the persisted lifecycle gate. The current
-			// registry metadata is synchronized, but explicit re-enablement is
-			// required before routing can use the provider again.
-			state.Lifecycle = operational.LifecycleDisabled
+		if !ok {
+			// Seed a missing provider with the explicit disabled lifecycle. The
+			// subsequent reconciliation remains the single mutation boundary for
+			// capability metadata and preserves that lifecycle gate.
+			if e = stateStore.Put(state); e != nil { return nil, e }
 		}
-		previousEnabled := append([]operational.Capability(nil), state.EnabledCapabilities...)
-		state.Capabilities = capabilitiesFromDescriptor(descriptor)
-		if previousEnabled == nil {
-			state.EnabledCapabilities = enabledCapabilitiesFromDescriptor(descriptor)
-		} else {
-			state.EnabledCapabilities = retainEnabledCapabilities(previousEnabled, descriptor)
+		if _, e = stateStore.ReconcileCapabilityState(
+			name,
+			capabilitiesFromDescriptor(descriptor),
+			operational.CapabilityMetadataFingerprint(descriptor),
+			drift.Drifted(),
+		); e != nil {
+			return nil, e
 		}
-		state.CapabilityFingerprint = operational.CapabilityMetadataFingerprint(descriptor)
-		if e = stateStore.Put(state); e != nil { return nil, e }
 	} // persist synchronized provider lifecycle/capability state before router construction
 router,e:=routing.NewWithCatalogAndStateAndOperationalMaxAge(registry,store,nil,catalogStore,stateStore,cfg.OperationalSnapshotMaxAge);if e!=nil{return nil,e}
 if e:=runRuntimeInitializationFailureHook("after-router", ownership); e!=nil { return nil,e }
