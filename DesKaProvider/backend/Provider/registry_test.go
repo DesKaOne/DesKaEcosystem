@@ -93,3 +93,62 @@ func TestRegistryPaymentCapabilityRejectsWrongImplementation(t *testing.T) {
 		t.Fatal("expected invalid payment contract error")
 	}
 }
+
+func TestRegistryConfiguredCapabilityDoesNotAutoPromoteReadiness(t *testing.T) {
+	r := NewRegistry()
+	if err := r.RegisterCapabilityProvider("configured-only", CapabilityPPOB, registryTestProvider{}, CapabilityStatus{
+		Verified: true,
+		Configured: true,
+		AdapterImplemented: true,
+		Tested: true,
+		Enabled: false,
+		LiveTested: false,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	statuses, err := r.Capabilities("configured-only")
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, ok := statuses.Status(CapabilityPPOB)
+	if !ok {
+		t.Fatal("expected PPOB capability metadata")
+	}
+	if status.Enabled || status.LiveTested || status.ProductionReady {
+		t.Fatalf("configuration must not auto-promote readiness: %#v", status)
+	}
+	if status.State() != CapabilityTested {
+		t.Fatalf("expected TESTED state, got %s", status.State())
+	}
+}
+
+func TestCapabilityStatusValidateRejectsInvalidReadinessPromotion(t *testing.T) {
+	cases := []struct {
+		name   string
+		status CapabilityStatus
+	}{
+		{
+			name: "enabled without implementation",
+			status: CapabilityStatus{Enabled: true},
+		},
+		{
+			name: "live-tested without tested and enabled",
+			status: CapabilityStatus{AdapterImplemented: true, LiveTested: true},
+		},
+		{
+			name: "production-ready without live validation",
+			status: CapabilityStatus{
+				Verified: true, Configured: true, AdapterImplemented: true,
+				Tested: true, Enabled: true,
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := tc.status.Validate(); err == nil {
+				t.Fatal("expected readiness validation error")
+			}
+		})
+	}
+}
