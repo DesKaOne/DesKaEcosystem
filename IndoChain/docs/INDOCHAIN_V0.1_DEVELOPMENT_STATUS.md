@@ -4016,13 +4016,17 @@ producer
 
 **Verification**
 
-- Event-pump implementation/fix HEAD: `7ce31e418eec2e5d097224e207574b10c402c009`.
-- CI check untuk exact implementation/test HEAD: **running at verification time**; final documentation HEAD requires its own CI gate.
-- Required gate remains Tidy + Test + Race Test + Vet.
+- Event-pump implementation/fix HEAD: `4eb423a8466955b8ca439754ed6f2345def2c66d`.
+- CI run `36989219770`: **GREEN**.
+- Tidy: PASS.
+- Test: PASS.
+- Race Test: PASS.
+- Vet: PASS.
+- The preceding implementation CI failure was caused by test helper name collisions and was fixed before this GREEN verification.
 
 **Next meaningful integration target**
 
 **5.4 Consensus Timeout Scheduler Boundary / Recovery:** memasang wall-clock scheduler eksternal yang menghasilkan timeout events ke `ConsensusEngine`, membatalkan stale timer generation dengan aman, dan menguji restart recovery agar pre-restart timeout token tidak dapat memutasi consensus baru.
 
-**Milestone 5.3 status:** implementation/test completed pending final exact documentation HEAD CI GREEN.
+**Milestone 5.3 status:** implementation/test completed; implementation HEAD CI GREEN; final status-document HEAD requires its own CI gate.
 
