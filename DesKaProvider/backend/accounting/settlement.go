@@ -46,13 +46,9 @@ func (r SettlementPostingRequest) Validate() error {
 	return nil
 }
 
-type ContextLedgerStore interface {
-	AppendContext(context.Context, LedgerTransaction) error
-	GetContext(context.Context, string) (LedgerTransaction, bool, error)
-}
 
 type SettlementPoster struct {
-	ledger ContextLedgerStore
+	ledger SettlementStore
 }
 
 func NewSettlementPoster(ledger ContextLedgerStore) (*SettlementPoster, error) {
@@ -72,7 +68,16 @@ func (p *SettlementPoster) Post(ctx context.Context, req SettlementPostingReques
 		Currency: req.Currency, Description: req.Description, CreatedAt: req.CreatedAt,
 		Entries: append([]Entry(nil), req.Entries...),
 	}
-	// Append owns idempotency and immutable identity. This method deliberately
+	audit := SettlementAudit{
+		EventID: "settlement-audit:" + req.TransactionID,
+		TransactionID: tx.ID,
+		ReferenceID: tx.ReferenceID,
+		SourceType: tx.SourceType,
+		SourceID: tx.SourceID,
+		Status: ProviderStatusSuccess,
+		CreatedAt: tx.CreatedAt,
+	}
+	// Ledger and audit are persisted through one settlement boundary. This method deliberately
 	// performs no provider retry, failover, resubmission, funding, or balance mutation.
-	return p.ledger.AppendContext(ctx, tx)
+	return p.ledger.AppendSettlement(ctx, tx, audit)
 }
