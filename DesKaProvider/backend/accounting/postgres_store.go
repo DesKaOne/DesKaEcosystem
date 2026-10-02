@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"time"
 )
 
 type PostgresStore struct {
@@ -178,13 +177,6 @@ func (s *PostgresStore) CreateAccount(ctx context.Context, account Account) (Acc
 	return current, false, nil
 }
 
-
-func sameSettlementAudit(a, b SettlementAudit) bool {
-	return a.EventID == b.EventID && a.TransactionID == b.TransactionID &&
-		a.ReferenceID == b.ReferenceID && a.SourceType == b.SourceType &&
-		a.SourceID == b.SourceID && a.Status == b.Status &&
-		a.CreatedAt.Truncate(time.Microsecond).Equal(b.CreatedAt.Truncate(time.Microsecond))
-}
 
 func (s *PostgresStore) AppendSettlement(ctx context.Context, ledger LedgerTransaction, audit SettlementAudit) error {
 	if err := ledger.Validate(); err != nil {
