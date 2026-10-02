@@ -140,7 +140,7 @@ func TestCapabilityStatusValidateRejectsInvalidReadinessPromotion(t *testing.T) 
 			name: "production-ready without live validation",
 			status: CapabilityStatus{
 				Verified: true, Configured: true, AdapterImplemented: true,
-				Tested: true, Enabled: true, LiveTested: false,
+				Tested: true, Enabled: true, LiveTested: false, ProductionReady: true,
 			},
 		},
 	}
