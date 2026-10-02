@@ -8464,9 +8464,10 @@ Added TestServiceBalanceStartFailureRollsBackPartiallyStartedWorkerBeforeClosing
 Implementation commits:
 
 - c93e9295a3a61ee90a097c784e6566d7cb0e2b69 — harden partial balance worker startup rollback;
-- 74562540ef31fd64bf5597a6012a67d299c56436 — deterministic regression coverage.
+- 74562540ef31fd64bf5597a6012a67d299c56436 — deterministic regression coverage;
+- d8960bc47260150572ad9110eae5e3c9e9b3d6a8 — restrict rollback to actually active worker lifecycle after CI feedback.
 
-Repository CI verification is required on the resulting HEAD. Test, vet, and race must complete successfully; credential-gated provider validations remain skipped unless authorized credentials and provider access are available.
+Initial repository CI run #3865 exposed an over-broad rollback call: the rollback helper invoked the injected shutdown seam even when no worker had started. The production rollback boundary was corrected to invoke shutdown only when the balance lifecycle is actually running. A fresh repository CI run on the corrected HEAD is required before this milestone is considered complete; test, vet, and race must complete successfully, while credential-gated provider validations remain skipped unless authorized credentials and provider access are available.
 
 ### External Validation
 
