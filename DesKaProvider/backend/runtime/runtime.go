@@ -644,13 +644,6 @@ func (s *Service) shutdownCatalogLifecycle() error {
 	} else {
 		s.catalogLifecycle.Shutdown()
 	}
-	// The lifecycle state is the runtime ownership boundary. A custom shutdown
-	// hook may report an error without clearing its lifecycle state; do not let
-	// Run return while that state is still logically active. The lifecycle's
-	// own cancellation is the safe final rollback boundary.
-	if s.catalogLifecycle.Running() {
-		s.catalogLifecycle.Shutdown()
-	}
 	if !s.catalogLifecycle.Running() {
 		s.catalogShutdownCompleted = true
 	}
