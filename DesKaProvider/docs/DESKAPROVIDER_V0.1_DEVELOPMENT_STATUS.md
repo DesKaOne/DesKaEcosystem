@@ -8420,3 +8420,58 @@ The latest prior CI on 1de0c23b7cc71acb578bbb94b830be04f6a9e43d was green (#3854
 
 Continue the evidence-based startup/recovery audit into post-handoff worker startup ordering, specifically verifying that a failure while starting the first runtime worker cannot leave the Service holding database ownership while a worker remains partially active.
 \n
+
+## Post-Handoff Worker Startup Failure / Ownership Cleanup Ordering Hardening
+
+**Date:** 2026-10-02
+
+### Audit Finding
+
+The first runtime worker startup path was audited for the case where the startup boundary activates the balance worker and then reports an error. The previous Run() error path immediately delegated cleanup to Service.Close(). Close() correctly refuses database closure while a worker remains running, so a partially started worker could leave runtime database ownership open after startup failure.
+
+### Implementation
+
+- the balance-start error path now creates the normal worker shutdown context before startup;
+- when the startup result is not ErrSyncWorkerRunning, Run() rolls back any worker lifecycle that it actually started before attempting database ownership cleanup;
+- rollback uses the existing SyncWorkerLifecycle shutdown boundary and waits for the worker to stop;
+- a genuine ErrSyncWorkerRunning remains a concurrency rejection and does not shut down an already-owned worker;
+- database ownership is closed only after the worker rollback boundary has completed, preserving the existing Close() safety guard if shutdown itself cannot complete.
+
+### Deterministic Coverage
+
+Added TestServiceBalanceStartFailureRollsBackPartiallyStartedWorkerBeforeClosingOwnership, which deliberately starts the balance lifecycle before returning an injected startup error and verifies:
+
+- the startup error remains discoverable;
+- the database cleanup error remains discoverable;
+- the partially started worker is stopped before ownership cleanup;
+- database ownership closes exactly once.
+
+### Safety Boundary / Invariants
+
+- no runtime database is closed while a runtime worker remains active;
+- an unrelated already-running worker is never shut down for an ErrSyncWorkerRunning rejection;
+- worker rollback does not mutate provider routing/readiness state;
+- no automatic retry, provider failover, transaction resubmission, provider funding, ledger mutation, customer-balance mutation, treasury movement, duplicate transaction creation, or public API exposure is introduced.
+
+### Changed Files
+
+- DesKaProvider/backend/runtime/runtime.go
+- DesKaProvider/backend/runtime/runtime_test.go
+- DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md
+
+### Verification
+
+Implementation commits:
+
+- c93e9295a3a61ee90a097c784e6566d7cb0e2b69 — harden partial balance worker startup rollback;
+- 74562540ef31fd64bf5597a6012a67d299c56436 — deterministic regression coverage.
+
+Repository CI verification is required on the resulting HEAD. Test, vet, and race must complete successfully; credential-gated provider validations remain skipped unless authorized credentials and provider access are available.
+
+### External Validation
+
+No authorized live-provider transaction or external provider request was executed.
+
+### Next Concrete Engineering Task
+
+Continue the evidence-based runtime lifecycle audit into asynchronous worker-exit/error propagation, specifically verifying that a worker that exits unexpectedly with a non-cancellation error cannot leave Service.Run() treating the runtime as healthy indefinitely.
