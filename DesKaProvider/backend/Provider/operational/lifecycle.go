@@ -8,6 +8,7 @@ import (
 )
 
 var ErrSyncWorkerRunning = errors.New("sync worker is already running")
+var ErrSyncWorkerExited = errors.New("sync worker exited unexpectedly")
 
 // SyncWorkerLifecycle owns the startup and shutdown of a SyncService worker.
 // It keeps cancellation and goroutine ownership outside the synchronization
@@ -67,6 +68,15 @@ func (l *SyncWorkerLifecycle) Start(parent context.Context) error {
 
 // Wait blocks until the current worker exits or ctx is canceled. It is safe
 // to call after Start and does not alter worker ownership.
+// Done returns the completion signal for the current worker. Before Start it returns nil.
+// The channel is closed exactly once for that worker generation.
+func (l *SyncWorkerLifecycle) Done() <-chan struct{} {
+	if l == nil { return nil }
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.done
+}
+
 func (l *SyncWorkerLifecycle) Wait(ctx context.Context) error {
 	if ctx == nil {
 		return errors.New("wait context is required")
@@ -137,6 +147,9 @@ func (l *SyncWorkerLifecycle) Running() bool {
 func normalizeWorkerExitError(err error) error {
 	if errors.Is(err, context.Canceled) {
 		return nil
+	}
+	if err == nil {
+		return ErrSyncWorkerExited
 	}
 	return err
 }
