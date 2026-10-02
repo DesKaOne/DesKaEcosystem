@@ -8005,3 +8005,58 @@ No authorized live-provider transaction or external provider request was execute
 ### Next Concrete Engineering Task
 
 Continue the caller-boundary audit into transaction submission/reconciliation paths, specifically checking that persistence read failures cannot be converted into authorization, duplicate-submission, or terminal-state assumptions.
+
+
+## PostgreSQL Transaction Persistence Ambiguity Parity Audit
+
+**Date:** 2026-10-02
+
+### Audit Finding
+
+The PostgreSQL transaction store was audited against the JSON transaction-store ambiguity boundary. The current implementation already fails closed for uncertain write outcomes: `PutContext()` and `PutIfCurrentContext()` wrap `ExecContext()` failures and `RowsAffected()` failures with `ErrTransactionPersistenceAmbiguous`, preserving the underlying database error. `CreateIfAbsentContext()` likewise treats non-`sql.ErrNoRows` insert failures as ambiguous rather than authorizing a retry.
+
+The PostgreSQL transition itself is a conditional single-statement update using the durable reference, transaction identity, provider identity, pending status, and current version. A zero-row result is therefore a deterministic state conflict, while an execution/result-inspection error remains ambiguous.
+
+### Decision
+
+No production-code change is justified by this audit. The store already preserves the required no-retry boundary and does not collapse uncertain database write outcomes into `ErrTransactionStateConflict` or a successful transition.
+
+A stronger distinction between pre-commit failure and commit-uncertain failure is intentionally **not** introduced. The repository currently does not establish a concrete PostgreSQL driver/version contract that would make such classification authoritative. Adding driver-specific SQLSTATE or transaction-wrapper behavior without that contract would be speculative.
+
+### Deterministic Coverage
+
+Existing PostgreSQL store regression tests verify that:
+
+- `ExecContext()` failure is surfaced with `ErrTransactionPersistenceAmbiguous`;
+- `RowsAffected()` failure is also ambiguous;
+- the underlying database error remains discoverable;
+- ambiguous writes are never collapsed into `ErrTransactionStateConflict`;
+- successful CAS requires exactly one affected row;
+- zero affected rows remain a deterministic state conflict.
+
+No provider transaction or external financial side effect is executed by these tests.
+
+### Safety Boundary / Invariants
+
+- ambiguous PostgreSQL persistence never authorizes automatic retry or external resubmission;
+- conditional versioned transition remains the database CAS boundary;
+- durable transaction/reference identity remains authoritative;
+- reconciliation remains the recovery path for already-created external transactions;
+- no automatic provider failover, duplicate purchase/payment creation, provider funding, ledger mutation, customer-balance mutation, treasury movement, or public API exposure is introduced.
+
+### External Validation
+
+No authorized live-provider transaction or external provider request was executed. PostgreSQL failure semantics remain repository-testable without provider credentials.
+
+### Verification
+
+The current branch HEAD remains `a8b1a3be82dde1f37d966c08914003ff6995af8d`. Latest repository CI is GREEN:
+
+- Push CI #3816 / run `36979539213`: **completed / success**
+- Pull Request CI #3817 / run `36979542793`: **completed / success**
+
+The latest CI gate therefore remains satisfied; no code change was introduced by this audit.
+
+### Next Concrete Engineering Task
+
+Continue with the next evidence-based provider readiness or persistence/recovery boundary. Do not refine PostgreSQL commit-outcome classification until the concrete database/driver contract is established and deterministic failure-injection coverage can model that contract safely.
