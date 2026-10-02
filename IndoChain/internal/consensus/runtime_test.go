@@ -14,24 +14,17 @@ import (
 func runtimeFixture(t *testing.T) (*ValidatorRuntime, RoundState, ValidatorSet, VotingPowerSet) {
 	t.Helper()
 	state, err := NewRoundState(1, 1001, 1, 8)
-	if err != nil {
-		t.Fatal(err)
-	}
+	if err != nil { t.Fatal(err) }
 	validators, err := NewValidatorSet([][]byte{[]byte("validator-a"), []byte("validator-b"), []byte("validator-c")})
-	if err != nil {
-		t.Fatal(err)
-	}
+	if err != nil { t.Fatal(err) }
 	power, err := NewVotingPowerSet([]ValidatorVotingPower{
 		{ValidatorID: []byte("validator-a"), Power: 4},
 		{ValidatorID: []byte("validator-b"), Power: 3},
 		{ValidatorID: []byte("validator-c"), Power: 3},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	authority := runtimeTestAuthoritySet(t, state, validators)
+	if err != nil { t.Fatal(err) }
+
 	runtime, err := NewValidatorRuntime(RuntimeConfig{
-		Authority: &authority,
 		Rules: ValidationRules{
 			ProtocolVersion: state.ProtocolVersion,
 			ChainID: state.ChainID,
@@ -41,9 +34,7 @@ func runtimeFixture(t *testing.T) (*ValidatorRuntime, RoundState, ValidatorSet, 
 		Threshold: QuorumThreshold{Numerator: 2, Denominator: 3},
 		Proposer: RoundRobinProposer{},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	if err != nil { t.Fatal(err) }
 	return runtime, state, validators, power
 }
 
