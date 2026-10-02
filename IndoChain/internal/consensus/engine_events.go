@@ -1,5 +1,7 @@
 package consensus
 
+import "bytes"
+
 // ProcessMessage routes one authenticated message and automatically creates
 // and consumes this validator's own vote for each phase transition. Generated
 // messages are returned for P2P dissemination; they are also applied locally
@@ -21,7 +23,6 @@ func (e *ConsensusEngine) ProcessMessage(msg Message) ([]Message, error) {
 			}
 			_, _, _ = e.ArmTimeout()
 			return out, nil
-
 		case PhasePrecommit:
 			if _, err := e.runtime.FinalizedCertificate(); err == nil { e.CancelTimeout(); return out, nil }
 			if !hasLocalVote(e.runtime.precommits, e.validator) {
@@ -32,7 +33,6 @@ func (e *ConsensusEngine) ProcessMessage(msg Message) ([]Message, error) {
 			if _, err := e.runtime.FinalizeProposal(e.driver.authority); err == nil { e.CancelTimeout(); return out, nil }
 			_, _, _ = e.ArmTimeout()
 			return out, nil
-
 		case PhaseFinalized:
 			e.CancelTimeout(); return out, nil
 		default:
