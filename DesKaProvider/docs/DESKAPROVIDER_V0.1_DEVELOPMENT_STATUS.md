@@ -8925,3 +8925,86 @@ External provider validation remains credential-gated and was not fabricated or 
 ### Next Concrete Engineering Task
 
 Continue the evidence-based hardening audit into **provider operational-state recovery versus registry/capability drift ordering**, specifically verifying that a recovered enabled provider can never become route-eligible before current registry metadata, capability drift, and operational readiness have all been reconciled in the existing startup sequence.
+
+
+## Provider Operational-State Recovery / Registry Drift Ordering Audit
+
+**Date:** 2026-10-02
+
+### Audit Finding
+
+The startup sequence was audited specifically for the invariant that a recovered provider with persisted lifecycle `enabled` cannot become route-eligible before current registry metadata and capability drift have been reconciled.
+
+No production correction was required.
+
+The existing sequence in `runtime.NewFromEnvironmentContext()` is ordered as:
+
+1. construct the current provider registry;
+2. load the persisted ProviderStateStore;
+3. for every registered provider, load the recovered state (or create an explicit disabled seed state);
+4. read the current registry capability descriptor;
+5. detect capability drift against the recovered fingerprint/capability metadata;
+6. persist synchronized capability metadata and fingerprint through `ReconcileCapabilityState()`;
+7. when drift exists, force the lifecycle to `disabled`;
+8. only after every provider has completed this reconciliation loop, construct the Router with the reconciled ProviderStateStore;
+9. only then construct the purchase/routing service.
+
+Therefore the Router never receives a partially reconciled startup state.
+
+### Route-Eligibility Boundary
+
+`Router.Select()` independently re-checks the recovered operational lifecycle and enabled operational capability, then validates the current registry capability descriptor and rejects detected capability drift before evaluating operational snapshot freshness/health, balance, and catalog/product gates.
+
+This creates defense in depth without introducing a second routing authority:
+
+- startup reconciliation prevents stale persisted lifecycle state from being published into the newly constructed router;
+- Router.Select() remains the sole route-selection authority and independently fails closed if state/registry metadata drift exists at selection time;
+- operational readiness is evaluated only after lifecycle and capability gates pass;
+- catalog freshness/product availability remains a later routing gate;
+- no startup step promotes Tested, LiveTested, or ProductionReady from persistence.
+
+### Deterministic Coverage
+
+Existing runtime regression `TestNewFromEnvironmentContextDisablesLifecycleWhenCapabilityMetadataDrifts` simulates an enabled persisted provider whose capability metadata is stale, restarts the runtime, and verifies that:
+
+- the recovered lifecycle is disabled;
+- current registry capabilities are restored into ProviderState;
+- the current capability fingerprint is persisted;
+- the provider is therefore not carried into the new runtime as an enabled drifted state.
+
+Existing routing coverage additionally verifies explicit registry capability eligibility, capability-drift rejection, operational health/balance gates, and stale catalog/operational snapshot rejection.
+
+### Production Change
+
+**None required.**
+
+The audit found the required ordering already present. Adding a duplicate readiness gate or moving routing policy into startup would weaken the existing separation of responsibilities and is not justified by the evidence.
+
+### Safety Invariants
+
+- recovered lifecycle state never bypasses current registry capability reconciliation;
+- capability drift forces lifecycle disabled during startup reconciliation;
+- Router.Select() remains the only routing authority;
+- operational health/balance freshness is evaluated after lifecycle/capability gates;
+- catalog freshness/product availability remains an independent routing gate;
+- persistence/recovery never promotes Tested, LiveTested, or ProductionReady;
+- no automatic provider retry, failover, or transaction resubmission is introduced;
+- no financial state, ledger, treasury, balance ownership, or transaction state is mutated by recovery.
+
+### Verification
+
+CI baseline before this documentation-only audit:
+
+- DesKaProvider CI #3920 / run 36998423135: **GREEN**
+  - test: PASS
+  - vet: PASS
+  - race: PASS
+  - credential-gated provider validation jobs: skipped as expected
+
+The documentation commit below requires its own repository CI to complete successfully before this audit milestone is considered complete.
+
+External provider validation remains credential-gated and was not fabricated or promoted to LiveTested/ProductionReady.
+
+### Next Concrete Engineering Task
+
+Continue the evidence-based hardening audit into **provider operational-state and runtime readiness publication**, specifically verifying that startup failure or partial initialization cannot expose a Router/Service instance whose ProviderState, operational store, catalog store, or database ownership has not fully converged.
