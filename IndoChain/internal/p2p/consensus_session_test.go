@@ -334,6 +334,9 @@ func TestConsensusSessionAutomaticRoundChangeProposalHandoff(t *testing.T) {
     )
     if err != nil { t.Fatal(err) }
     defer session.Stop()
+    if err := session.Start(); err != nil {
+        t.Fatal(err)
+    }
 
     token, _, err := engine.ArmTimeout()
     if err != nil { t.Fatal(err) }
