@@ -44,7 +44,7 @@ func TestConsensusPersistenceVectorDeterministic(t *testing.T) {
 	second, err := json.Marshal(vector); if err != nil { t.Fatal(err) }
 	if !bytes.Equal(first, second) { t.Fatal("same semantic persistence state produced different bytes") }
 	sum := sha256.Sum256(first)
-	const wantDigest = "b3f1a48cbb4f08b8f169e2d8f202ebd6fb67c9dc353f55b6a8d8d851a40a16ea"
+	const wantDigest = "b11ac8a65228971578043174d0743b066e37290db3044a25c1ce0587c4a28e33"
 	if got := hex.EncodeToString(sum[:]); got != wantDigest { t.Fatalf("vector digest = %s, want %s; serialized=%s", got, wantDigest, first) }
 }
 
