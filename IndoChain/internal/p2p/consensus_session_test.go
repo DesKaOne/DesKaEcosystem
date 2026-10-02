@@ -322,6 +322,13 @@ func TestConsensusSessionAutomaticRoundChangeProposalHandoff(t *testing.T) {
     engine := newSessionEngine(t, state, validatorB, signerB, validators, power, authority)
 
     transport := NewInMemoryTransport(PeerID("node-b"), 65536)
+    transportPeer := NewInMemoryTransport(PeerID("node-a"), 65536)
+    if err := transport.Connect(PeerID("node-a"), transportPeer); err != nil {
+        t.Fatal(err)
+    }
+    if err := transportPeer.Connect(PeerID("node-b"), transport); err != nil {
+        t.Fatal(err)
+    }
     ctx := consensus.BlockProductionContext{State: state, PreviousHash: n.HeadHash, Proposer: validatorA}
     session, err := NewConsensusSessionWithSchedulerAndProducer(
         n, engine, transport,
