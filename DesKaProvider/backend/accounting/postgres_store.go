@@ -34,6 +34,9 @@ func (s *PostgresStore) Append(ctx context.Context, tx LedgerTransaction) error 
 		tx.ID, tx.ReferenceID, tx.SourceType, tx.SourceID, tx.Currency, tx.Description, tx.CreatedAt,
 	).Scan(&inserted)
 	if errors.Is(err, sql.ErrNoRows) {
+		if err := dbtx.Rollback(); err != nil {
+			return fmt.Errorf("rollback duplicate ledger append: %w", err)
+		}
 		return s.checkExisting(ctx, tx)
 	}
 	if err != nil {
@@ -107,13 +110,25 @@ func (s *PostgresStore) All(ctx context.Context) ([]LedgerTransaction, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list ledger transactions: %w", err)
 	}
-	defer rows.Close()
-	var out []LedgerTransaction
+	var ids []string
 	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
+			rows.Close()
 			return nil, fmt.Errorf("scan ledger transaction id: %w", err)
 		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, fmt.Errorf("iterate ledger transaction ids: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, fmt.Errorf("close ledger transaction ids: %w", err)
+	}
+
+	out := make([]LedgerTransaction, 0, len(ids))
+	for _, id := range ids {
 		tx, ok, err := s.Get(ctx, id)
 		if err != nil {
 			return nil, err
@@ -121,9 +136,6 @@ func (s *PostgresStore) All(ctx context.Context) ([]LedgerTransaction, error) {
 		if ok {
 			out = append(out, tx)
 		}
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate ledger transactions: %w", err)
 	}
 	return out, nil
 }
