@@ -231,7 +231,7 @@ func TestConsensusSessionTimeoutSchedulerLifecycle(t *testing.T) {
     if len(clock.timers) != 1 { t.Fatalf("timer count = %d, want 1", len(clock.timers)) }
     session.Stop()
     clock.Timer(0).Fire()
-    if engine.Driver().TimeoutEvidence() != nil {
+    if len(engine.Driver().TimeoutEvidence()) != 0 {
         t.Fatal("stopped scheduler delivered timeout evidence")
     }
 }
