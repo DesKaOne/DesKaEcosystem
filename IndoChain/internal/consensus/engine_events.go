@@ -12,22 +12,41 @@ func (e *ConsensusEngine) ProcessMessage(msg Message) ([]Message, error) {
 	for {
 		switch e.runtime.State().Phase {
 		case PhasePrevote:
-			vote, err := e.localVote(MessageTypePrevote); if err != nil { return nil, err }
-			if err := e.driver.HandleMessage(vote); err != nil { return nil, err }
-			out = append(out, vote); continue
+			if !hasLocalVote(e.runtime.prevotes, e.validator) {
+				vote, err := e.localVote(MessageTypePrevote); if err != nil { return nil, err }
+				if err := e.driver.HandleMessage(vote); err != nil { return nil, err }
+				out = append(out, vote)
+				if e.runtime.State().Phase == PhasePrevote { _, _, _ = e.ArmTimeout(); return out, nil }
+				continue
+			}
+			_, _, _ = e.ArmTimeout()
+			return out, nil
+
 		case PhasePrecommit:
 			if _, err := e.runtime.FinalizedCertificate(); err == nil { e.CancelTimeout(); return out, nil }
-			vote, err := e.localVote(MessageTypePrecommit); if err != nil { return nil, err }
-			if err := e.driver.HandleMessage(vote); err != nil { return nil, err }
-			out = append(out, vote)
+			if !hasLocalVote(e.runtime.precommits, e.validator) {
+				vote, err := e.localVote(MessageTypePrecommit); if err != nil { return nil, err }
+				if err := e.driver.HandleMessage(vote); err != nil { return nil, err }
+				out = append(out, vote)
+			}
 			if _, err := e.runtime.FinalizeProposal(e.driver.authority); err == nil { e.CancelTimeout(); return out, nil }
+			_, _, _ = e.ArmTimeout()
 			return out, nil
+
 		case PhaseFinalized:
 			e.CancelTimeout(); return out, nil
 		default:
 			_, _, _ = e.ArmTimeout(); return out, nil
 		}
 	}
+}
+
+func hasLocalVote(aggregator *VoteAggregator, validator []byte) bool {
+	if aggregator == nil { return false }
+	for _, vote := range aggregator.Votes {
+		if bytes.Equal(vote.Sender, validator) { return true }
+	}
+	return false
 }
 
 func (e *ConsensusEngine) localVote(kind MessageType) (Message, error) {
