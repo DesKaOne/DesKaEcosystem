@@ -1136,3 +1136,10 @@ This boundary still performs no provider retry, failover, resubmission, funding,
 The durable settlement audit implementation is verified with PostgreSQL-backed tests for atomic ledger+audit persistence, idempotent repeat, durable audit reload, and immutable audit correlation conflict. The PostgreSQL fixture explicitly provisions every referenced ledger account.
 
 No provider retry, failover, resubmission, funding, treasury movement, or implicit customer-balance mutation is part of this milestone.
+
+
+## 41. Ambiguous Settlement Persistence Is Fail-Closed
+
+A PostgreSQL settlement commit error is classified as `ErrSettlementPersistenceAmbiguous`. The settlement caller must treat this as an unresolved accounting state and must not retry, fail over, or resubmit the provider transaction from this layer. Durable ledger/audit lookup is the reconciliation path for determining whether the intended posting exists.
+
+This classification is deliberately distinct from validation rejection and immutable ledger conflict. The accounting boundary therefore exposes three operational classes: rejected input, immutable conflict, and ambiguous persistence outcome.
