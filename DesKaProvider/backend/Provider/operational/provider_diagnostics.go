@@ -72,16 +72,13 @@ func (s *ProviderAdminService) ReconcileCapabilityState(name string, registry *p
 		return ProviderDiagnostic{}, err
 	}
 	state := diagnostic.State
-	if diagnostic.Drifted {
-		state.Lifecycle = LifecycleDisabled
-	}
 	descriptor, err := registry.Capabilities(state.ProviderName)
 	if err != nil {
 		return ProviderDiagnostic{}, err
 	}
-	state.Capabilities = capabilitiesFromDescriptor(descriptor)
-	state.CapabilityFingerprint = CapabilityMetadataFingerprint(descriptor)
-	if err := s.states.Put(state); err != nil {
+	capabilities := capabilitiesFromDescriptor(descriptor)
+	fingerprint := CapabilityMetadataFingerprint(descriptor)
+	if _, err := s.states.ReconcileCapabilityState(state.ProviderName, capabilities, fingerprint, diagnostic.Drifted); err != nil {
 		return ProviderDiagnostic{}, err
 	}
 	return s.Diagnose(state.ProviderName, registry)
