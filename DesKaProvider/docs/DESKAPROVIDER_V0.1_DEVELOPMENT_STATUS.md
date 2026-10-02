@@ -8172,3 +8172,69 @@ After correcting the deterministic assertions, Push CI #3829 / run `36982272282`
 ### Next Concrete Engineering Task
 
 Continue the evidence-based readiness audit into capability reconciliation/lifecycle mutation boundaries, specifically verifying that readiness state changes are atomic, preserve unrelated provider state under concurrency, and cannot mutate routing eligibility through partial state updates.
+
+
+## Capability Reconciliation / Lifecycle Mutation Atomicity Hardening
+
+**Date:** 2026-10-02
+
+### Audit Finding
+
+The capability reconciliation path was audited for atomic lifecycle/capability mutation and concurrent-state preservation. The previous ProviderAdminService.ReconcileCapabilityState() sequence read persisted provider state, built a new state from registry metadata, and then called the generic ProviderStateStore.Put(). Because the read and write were separate mutation boundaries, a concurrent lifecycle/capability update could be overwritten by a stale reconciliation snapshot.
+
+A second concrete issue was that reconciliation refreshed Capabilities and the metadata fingerprint but did not reconcile EnabledCapabilities. After a drift was cleared and lifecycle was explicitly re-enabled, a previously enabled capability that had disappeared from the current registry metadata could remain in the operational routing gate.
+
+### Implementation
+
+- added ProviderStateStore.ReconcileCapabilityState() as one locked read/modify/persist/update boundary;
+- reconciliation now derives the new capability membership and fingerprint while holding the provider-state lock;
+- existing EnabledCapabilities are intersected with the current implemented capability set, so removed capabilities cannot remain enabled through stale operational state;
+- drift reconciliation still disables lifecycle and never enables a provider or capability;
+- unrelated provider fields are copied from the current state at mutation time rather than from a stale diagnostic snapshot;
+- ambiguous persistence remains fail-closed: a drift reconciliation that cannot establish persistence disables the in-memory lifecycle rather than preserving route eligibility;
+- updated ProviderAdminService.ReconcileCapabilityState() to use the atomic store operation.
+
+### Deterministic Coverage
+
+Added regression tests covering:
+
+- removed capability pruning from EnabledCapabilities during reconciliation;
+- lifecycle disablement during drift reconciliation;
+- capability fingerprint synchronization;
+- concurrent capability mutation preservation while reconciliation runs;
+- no promotion of a capability that is absent from current registry metadata.
+
+### Safety Boundary / Invariants
+
+- capability reconciliation cannot silently overwrite unrelated provider state from a stale snapshot;
+- lifecycle and capability mutations remain atomic at the provider-state store boundary;
+- reconciliation never enables lifecycle, LiveTested, or ProductionReady;
+- removed capabilities are not retained in the operational enablement gate;
+- Router.Select() remains the sole routing authority;
+- capability readiness metadata remains separate from operational lifecycle;
+- no automatic retry, provider failover, transaction resubmission, provider funding, ledger mutation, customer-balance mutation, treasury movement, duplicate transaction creation, or public API exposure is introduced.
+
+### Changed Files
+
+- DesKaProvider/backend/Provider/operational/provider_state.go
+- DesKaProvider/backend/Provider/operational/provider_diagnostics.go
+- DesKaProvider/backend/Provider/operational/provider_state_test.go
+- DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md
+
+### Verification
+
+Implementation commits:
+
+- 2d45f59b4983bc86dc03575742dc17c781a57d58 — atomic provider-state reconciliation boundary;
+- 4564406f286152a4fd81658cd1e6dd709159bebc — route administrative reconciliation through the atomic store operation;
+- b004ca0252cf71e70c80221c89358d9ebe79fce3 — deterministic regression coverage.
+
+Full repository test, vet, race, and CI verification is required on the resulting HEAD before this milestone is considered complete.
+
+### External Validation
+
+No authorized live-provider transaction or external provider request was executed. Credential-gated provider validation remains skipped unless explicitly authorized and credentials/provider access are available.
+
+### Next Concrete Engineering Task
+
+Continue the evidence-based readiness audit at the remaining capability/lifecycle mutation callers, specifically checking that runtime startup synchronization and explicit administrative enablement use the same atomic state-preservation boundary and cannot reintroduce stale capability enablement after reconciliation.
