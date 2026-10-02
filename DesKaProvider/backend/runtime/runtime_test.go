@@ -772,6 +772,47 @@ func TestRuntimeInitializationContextCheckpoint(t *testing.T) {
 	}
 }
 
+
+
+func TestNewFromEnvironmentContextFailureBeforeOwnershipTransferDoesNotExposeService(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("DIGIFLAZZ_USERNAME", "test-user")
+	t.Setenv("DIGIFLAZZ_API_KEY", "test-key")
+	t.Setenv("DESKAPROVIDER_OPERATIONAL_STORE_PATH", filepath.Join(root, "operational", "snapshots.json"))
+	t.Setenv("DESKAPROVIDER_PROVIDER_STATE_STORE_PATH", filepath.Join(root, "provider-state", "state.json"))
+	t.Setenv("DESKAPROVIDER_TRANSACTION_STORE_PATH", filepath.Join(root, "transactions", "state.json"))
+	t.Setenv("DESKAPROVIDER_TRANSACTION_STORE_DRIVER", "json")
+	t.Setenv("DESKAPROVIDER_AUDIT_STORE_DRIVER", "memory")
+	t.Setenv("DESKAPROVIDER_POSTGRES_DSN", "")
+
+	previousHook := runtimeInitializationFailureHook
+	t.Cleanup(func() { runtimeInitializationFailureHook = previousHook })
+	boom := errors.New("ownership handoff blocked")
+	runtimeInitializationFailureHook = func(stage string, ownership *runtimeDatabaseOwnership) error {
+		if stage != "before-ownership-transfer" {
+			return nil
+		}
+		if ownership == nil {
+			t.Fatal("expected initialization ownership guard")
+		}
+		if ownership.transferred() {
+			t.Fatal("ownership must not transfer before the final handoff checkpoint")
+		}
+		if ownership.isClosed() {
+			t.Fatal("ownership must remain open until deferred initialization cleanup")
+		}
+		return boom
+	}
+
+	service, err := NewFromEnvironmentContext(context.Background(), nil)
+	if !errors.Is(err, boom) {
+		t.Fatalf("expected handoff failure to remain discoverable, got %v", err)
+	}
+	if service != nil {
+		t.Fatal("failed initialization must not expose a partially initialized service")
+	}
+}
+
 func TestNewFromEnvironmentContextRejectsProviderStateInitializationFailureAfterOwnershipSetup(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("DIGIFLAZZ_USERNAME", "test-user")
