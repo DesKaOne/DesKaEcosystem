@@ -382,12 +382,12 @@ func (s *ConsensusSession) commitIfFinalized() error {
     if s.committed {
         return nil
     }
-    if s.candidate == nil {
-        return errors.New("finalized consensus candidate missing")
-    }
     certificate, err := s.engine.Runtime().FinalizedCertificate()
     if err != nil {
         return nil
+    }
+    if s.candidate == nil {
+        return errors.New("finalized consensus candidate missing")
     }
     if err := s.node.CommitFinalityEvidenceAndPublishConsensus(
         s.ctx, *s.candidate, certificate, s.validators, s.power,
