@@ -44,8 +44,8 @@ func (r SettlementPostingRequest) Validate() error {
 }
 
 type ContextLedgerStore interface {
-	Append(context.Context, LedgerTransaction) error
-	Get(context.Context, string) (LedgerTransaction, bool, error)
+	AppendContext(context.Context, LedgerTransaction) error
+	GetContext(context.Context, string) (LedgerTransaction, bool, error)
 }
 
 type SettlementPoster struct {
@@ -71,5 +71,5 @@ func (p *SettlementPoster) Post(ctx context.Context, req SettlementPostingReques
 	}
 	// Append owns idempotency and immutable identity. This method deliberately
 	// performs no provider retry, failover, resubmission, funding, or balance mutation.
-	return p.ledger.Append(ctx, tx)
+	return p.ledger.AppendContext(ctx, tx)
 }
