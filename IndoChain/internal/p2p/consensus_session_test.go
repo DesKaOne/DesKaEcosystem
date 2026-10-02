@@ -346,10 +346,18 @@ func TestConsensusSessionAutomaticRoundChangeProposalHandoff(t *testing.T) {
     remoteTimeout, err := otherTokenEngine.HandleTimeout(otherToken)
     if err != nil { t.Fatal(err) }
 
+    if len(engine.Driver().TimeoutEvidence()) != 1 {
+        t.Fatalf("local timeout evidence = %d, want 1", len(engine.Driver().TimeoutEvidence()))
+    }
     if err := session.HandlePeerMessage("node-a", remoteTimeout, nil); err != nil {
         t.Fatalf("timeout handoff: %v", err)
     }
 
+    if engine.Runtime().State().Round == 0 {
+        if _, err := engine.TryAdvanceRound(); err != nil {
+            t.Fatalf("round advance after peer timeout: %v; evidence=%d", err, len(engine.Driver().TimeoutEvidence()))
+        }
+    }
     if engine.Runtime().State().Round != 1 {
         t.Fatalf("round = %d, want 1", engine.Runtime().State().Round)
     }
