@@ -204,6 +204,9 @@ func (s *ProviderStateStore) Put(state ProviderState) error {
 		}
 		sort.Slice(states, func(i, j int) bool { return states[i].ProviderName < states[j].ProviderName })
 		if err := s.persistence.Save(states); err != nil {
+			if errors.Is(err, ErrProviderStatePersistenceAmbiguous) {
+				s.states[state.ProviderName] = safeStateAfterAmbiguousPersistence(current, state)
+			}
 			return err
 		}
 	}
@@ -386,7 +389,7 @@ func (s *ProviderStateStore) ReconcileCapabilityState(name string, capabilities 
 		}
 		sort.Slice(states, func(i, j int) bool { return states[i].ProviderName < states[j].ProviderName })
 		if err := s.persistence.Save(states); err != nil {
-			if errors.Is(err, ErrProviderStatePersistenceAmbiguous) && disableLifecycle {
+			if errors.Is(err, ErrProviderStatePersistenceAmbiguous) {
 				s.states[name] = safeStateAfterAmbiguousPersistence(current, updated)
 			}
 			return ProviderState{}, err
