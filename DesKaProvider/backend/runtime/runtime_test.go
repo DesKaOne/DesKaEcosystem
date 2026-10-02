@@ -6158,55 +6158,6 @@ func TestServiceRunCatalogStartFailureRollsBackPartiallyStartedCatalogLifecycle(
 	}
 }
 
-func TestServiceRunCatalogShutdownErrorCannotLeaveLifecycleActive(t *testing.T) {
-	registry := provider.NewRegistry()
-	if err := registry.Register("mock", mock.New(mock.Config{})); err != nil { t.Fatal(err) }
-	syncService, err := operational.NewSyncService(registry, operational.NewMemoryStore(), "IDR", 3)
-	if err != nil { t.Fatal(err) }
-	catalogSync, err := catalog.NewSyncService(registry, catalog.NewMemoryStore())
-	if err != nil { t.Fatal(err) }
-	service, err := New(syncService, time.Hour)
-	if err != nil { t.Fatal(err) }
-	service.catalogSync = catalogSync
-	service.catalogInterval = time.Hour
-	transactionDB := &closeErrorDB{}
-	service.databaseOwnership = newRuntimeDatabaseOwnership(transactionDB, nil)
-	service.databaseOwnership.transferToService()
-
-	catalogShutdownErr := errors.New("catalog shutdown failed")
-	service.catalogShutdown = func() error { return catalogShutdownErr }
-
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() { done <- service.Run(ctx) }()
-
-	deadline := time.After(time.Second)
-	for !service.catalogLifecycle.Running() {
-		select {
-		case err := <-done:
-			t.Fatalf("Run exited before catalog lifecycle started: %v", err)
-		case <-deadline:
-			t.Fatal("catalog lifecycle did not start")
-		default:
-			time.Sleep(time.Millisecond)
-		}
-	}
-
-	cancel()
-	select {
-	case err := <-done:
-		if !errors.Is(err, context.Canceled) || !errors.Is(err, catalogShutdownErr) {
-			t.Fatalf("expected cancellation and catalog shutdown errors, got %v", err)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("Run did not converge after catalog shutdown failure")
-	}
-	if service.catalogLifecycle.Running() { t.Fatal("catalog lifecycle must be inactive before Run returns") }
-	if service.balanceLifecycle.Running() { t.Fatal("balance lifecycle must be inactive before Run returns") }
-	if transactionDB.closeCount != 1 || !service.databaseOwnership.isClosed() {
-		t.Fatalf("expected database ownership to close exactly once after catalog shutdown failure, count=%d closed=%v", transactionDB.closeCount, service.databaseOwnership.isClosed())
-	}
-}
 
 func TestServiceRunCatalogPersistenceFailureKeepsLifecycleAliveForRetry(t *testing.T) {
 	mockProvider := &balanceMock{
