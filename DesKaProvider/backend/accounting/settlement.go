@@ -51,7 +51,7 @@ type SettlementPoster struct {
 	ledger SettlementStore
 }
 
-func NewSettlementPoster(ledger ContextLedgerStore) (*SettlementPoster, error) {
+func NewSettlementPoster(ledger SettlementStore) (*SettlementPoster, error) {
 	if ledger == nil {
 		return nil, errors.New("settlement ledger store is required")
 	}
