@@ -160,17 +160,24 @@ func TestServiceRunPropagatesUnexpectedWorkerExitAndClosesOwnership(t *testing.T
 		t.Fatal(err)
 	}
 	service.catalogSync = nil
-	service.balanceLifecycle.interval = 0
+	service.balanceStart = func(ctx context.Context) error {
+		if err := service.balanceLifecycle.Start(ctx); err != nil {
+			return err
+		}
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		return service.balanceLifecycle.Shutdown(shutdownCtx)
+	}
 	transactionDB := &closeErrorDB{}
 	service.databaseOwnership = newRuntimeDatabaseOwnership(transactionDB, nil)
 	service.databaseOwnership.transferToService()
 
 	runErr := service.Run(context.Background())
 	if !errors.Is(runErr, operational.ErrSyncWorkerExited) {
-		t.Fatalf("expected unexpected worker exit to propagate, got %v", runErr)
+		t.Fatalf("expected worker exit sentinel to propagate, got %v", runErr)
 	}
 	if service.balanceLifecycle.Running() {
-		t.Fatal("unexpectedly exited worker must not remain active")
+		t.Fatal("exited worker must not remain active")
 	}
 	if transactionDB.closeCount != 1 {
 		t.Fatalf("expected database ownership cleanup after worker exit, got %d", transactionDB.closeCount)
