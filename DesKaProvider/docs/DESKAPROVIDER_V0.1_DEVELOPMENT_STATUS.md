@@ -8374,3 +8374,49 @@ No authorized live-provider transaction or external provider request was execute
 
 Continue the evidence-based persistent-state audit into startup failure handling and recovery ordering, specifically verifying that a failure after provider-state synchronization but before router/service ownership transfer cannot expose a partially initialized runtime or leave stale external resources owned ambiguously.
 
+## Runtime Startup Failure Handling / Ownership Transfer Ordering Audit
+
+**Date:** 2026-10-02
+
+### Audit Finding
+
+The startup path already establishes a deferred runtimeDatabaseOwnership guard immediately after database acquisition. Ownership is transferred to the returned Service only at the final handoff checkpoint, after provider-state synchronization, router construction, purchase-service construction, worker lifecycle construction, and the explicit before-ownership-transfer failure hook.
+
+Therefore, initialization failures before the transfer cannot return a partially initialized Service; the deferred guard retains cleanup responsibility while transferredToService is false.
+
+### Regression Hardening
+
+Added deterministic coverage for a failure injected at the exact before-ownership-transfer checkpoint:
+
+- verifies the ownership guard exists and has not transferred;
+- verifies the guard is still open before deferred cleanup;
+- verifies the initialization error remains discoverable;
+- verifies NewFromEnvironmentContext() returns no Service on failed handoff.
+
+This complements the existing ownership lifecycle tests covering successful transfer, shared database handles, cleanup-error propagation, and idempotent post-transfer shutdown.
+
+### Safety Invariants
+
+- no Service escapes initialization before database ownership transfer;
+- initialization cleanup remains the owner of acquired resources until the final handoff;
+- successful transfer disables initialization cleanup and moves shutdown ownership to Service;
+- no provider payment retry, provider failover, transaction resubmission, funding, ledger mutation, customer-balance mutation, treasury mutation, or routing-authority change is introduced;
+- Router.Select() remains the sole routing authority.
+
+### Changed Files
+
+- DesKaProvider/backend/runtime/runtime_test.go
+- DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md
+
+### Verification
+
+Implementation commit:
+
+- 55e49631f75a0ebb4b6cc1c19bdd390b924d60cb — pre-transfer initialization failure regression coverage.
+
+The latest prior CI on 1de0c23b7cc71acb578bbb94b830be04f6a9e43d was green (#3854 push / #3855 PR). The new test commit requires fresh repository CI verification before this milestone is considered complete.
+
+### Next Concrete Engineering Task
+
+Continue the evidence-based startup/recovery audit into post-handoff worker startup ordering, specifically verifying that a failure while starting the first runtime worker cannot leave the Service holding database ownership while a worker remains partially active.
+\n
