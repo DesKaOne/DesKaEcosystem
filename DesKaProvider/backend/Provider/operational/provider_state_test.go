@@ -196,3 +196,93 @@ func TestProviderStateStoreAmbiguousLegacyCapabilityMutationRemainsFailClosed(t 
 		t.Fatalf("unrelated legacy capability must remain enabled: %#v", state)
 	}
 }
+
+
+func TestProviderStateStoreReconcileCapabilityStatePrunesRemovedEnabledCapabilities(t *testing.T) {
+	store := NewProviderStateStore()
+	if err := store.Put(ProviderState{
+		ProviderName: "mock",
+		Lifecycle: LifecycleEnabled,
+		Capabilities: []Capability{CapabilityPPOB, CapabilityBalance},
+		EnabledCapabilities: []Capability{CapabilityPPOB, CapabilityBalance},
+		CapabilityFingerprint: "old",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	state, err := store.ReconcileCapabilityState(
+		"mock",
+		[]Capability{CapabilityPPOB},
+		"new",
+		true,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Enabled() {
+		t.Fatal("drift reconciliation must disable lifecycle")
+	}
+	if state.CapabilityFingerprint != "new" {
+		t.Fatalf("unexpected fingerprint: %q", state.CapabilityFingerprint)
+	}
+	if state.Supports(CapabilityBalance) {
+		t.Fatalf("removed capability remained route-eligible: %#v", state)
+	}
+	if !state.Supports(CapabilityPPOB) {
+		t.Fatalf("implemented capability should remain enabled: %#v", state)
+	}
+}
+
+func TestProviderStateStoreReconcileCapabilityStatePreservesConcurrentUnrelatedMutation(t *testing.T) {
+	store := NewProviderStateStore()
+	if err := store.Put(ProviderState{
+		ProviderName: "mock",
+		Lifecycle: LifecycleDisabled,
+		Capabilities: []Capability{CapabilityPPOB, CapabilityBalance},
+		EnabledCapabilities: []Capability{CapabilityPPOB},
+		CapabilityFingerprint: "old",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	start := make(chan struct{})
+	done := make(chan error, 2)
+	go func() {
+		<-start
+		_, err := store.ReconcileCapabilityState(
+			"mock",
+			[]Capability{CapabilityPPOB, CapabilityBalance},
+			"new",
+			false,
+		)
+		done <- err
+	}()
+	go func() {
+		<-start
+		var err error
+		for i := 0; i < 32; i++ {
+			_, err = store.SetCapabilityEnabled("mock", CapabilityBalance, true)
+			if err != nil {
+				break
+			}
+		}
+		done <- err
+	}()
+	close(start)
+	for i := 0; i < 2; i++ {
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	state, ok := store.Get("mock")
+	if !ok {
+		t.Fatal("provider state missing")
+	}
+	if !state.Supports(CapabilityBalance) {
+		t.Fatalf("concurrent capability mutation was lost: %#v", state)
+	}
+	if state.CapabilityFingerprint != "new" {
+		t.Fatalf("reconciliation fingerprint was lost: %#v", state)
+	}
+}
