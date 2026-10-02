@@ -3,6 +3,7 @@ package p2p
 import (
     "errors"
     "fmt"
+    "sync"
 
     "github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/consensus"
     "github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/block"
@@ -16,9 +17,8 @@ var (
 )
 
 // ConsensusSession is the node-owned operational bridge between the
-// authenticated ConsensusEngine, P2P consensus transport, and canonical
-// finality commit boundary. It does not own consensus clocks or canonical
-// storage semantics.
+// authenticated ConsensusEngine, P2P consensus transport, timeout scheduler,
+// and canonical finality commit boundary.
 type ConsensusSession struct {
     node       *node.Node
     engine     *consensus.ConsensusEngine
@@ -27,12 +27,15 @@ type ConsensusSession struct {
     peers      []PeerID
     ctx        consensus.BlockProductionContext
     candidate  *block.Block
-    pending map[string]block.Block
+    pending    map[string]block.Block
     validators consensus.ValidatorSet
     power      consensus.VotingPowerSet
     validatorResolver node.ValidatorAuthorityResolver
     senderResolver node.TransactionAuthorityResolver
     committed bool
+    mu sync.Mutex
+    scheduler *consensus.ConsensusTimeoutScheduler
+    started bool
 }
 
 func NewConsensusSession(
@@ -84,13 +87,51 @@ func NewConsensusSessionWithScheduler(
     if ctx.State.Height != n.Head.Header.Height || ctx.PreviousHash != n.HeadHash {
         return nil, node.ErrConsensusContextMismatch
     }
+    scheduler, err := consensus.NewConsensusTimeoutScheduler(timerFactory)
+    if err != nil {
+        return nil, err
+    }
     return &ConsensusSession{
         node: n, engine: engine, transport: transport, rules: rules,
         peers: append([]PeerID(nil), peers...), ctx: ctx,
         validators: validators, power: power,
         validatorResolver: validatorResolver, senderResolver: senderResolver,
         pending: make(map[string]block.Block),
+        scheduler: scheduler,
     }, nil
+}
+
+// Start activates the external timeout lifecycle for the session.
+func (s *ConsensusSession) Start() error {
+    if s == nil || s.engine == nil || s.scheduler == nil {
+        return ErrNilConsensusSession
+    }
+    s.mu.Lock()
+    defer s.mu.Unlock()
+    if s.committed {
+        return errors.New("consensus session already committed")
+    }
+    if s.started {
+        return nil
+    }
+    s.started = true
+    return s.armTimeoutLocked()
+}
+
+// Stop fences the scheduler and invalidates the engine timeout before a
+// session shutdown/restart. It does not mutate canonical state.
+func (s *ConsensusSession) Stop() {
+    if s == nil {
+        return
+    }
+    s.mu.Lock()
+    s.started = false
+    scheduler := s.scheduler
+    engine := s.engine
+    s.mu.Unlock()
+    if scheduler != nil {
+        _ = scheduler.CancelEngineTimeout(engine)
+    }
 }
 
 func (s *ConsensusSession) StartProposal(candidate block.Block) error {
@@ -120,71 +161,34 @@ func (s *ConsensusSession) StartProposal(candidate block.Block) error {
     if err := s.broadcast(proposal); err != nil {
         return err
     }
-    return s.broadcastGenerated(generated)
-}
-
-func (s *ConsensusSession) Start() error {
-    if s == nil || s.engine == nil || s.scheduler == nil { return ErrNilConsensusSession }
-    s.mu.Lock()
-    defer s.mu.Unlock()
-    if s.committed { return errors.New("consensus session already committed") }
-    if s.started { return nil }
+    if err := s.broadcastGenerated(generated); err != nil {
+        return err
+    }
     s.started = true
     return s.armTimeoutLocked()
 }
 
-func (s *ConsensusSession) Stop() {
-    if s == nil { return }
-    s.mu.Lock()
-    s.started = false
-    scheduler := s.scheduler
-    engine := s.engine
-    s.mu.Unlock()
-    if scheduler != nil { _ = scheduler.CancelEngineTimeout(engine) }
-}
-
 func (s *ConsensusSession) handleScheduledTimeout(msg consensus.Message, err error) {
     s.mu.Lock()
     defer s.mu.Unlock()
-    if err != nil || !s.started || s.committed { return }
-    if err := s.broadcast(msg); err != nil { return }
-    if _, err := s.engine.TryAdvanceRound(); err == nil {
-        _ = s.armTimeoutLocked()
-    } else {
-        // A single local timeout is evidence, not a round change. The scheduler
-        // stays disarmed until another timeout message supplies quorum.
+    if err != nil || !s.started || s.committed {
+        return
     }
-}
-
-func (s *ConsensusSession) armTimeoutLocked() error {
-    if s.scheduler == nil || s.engine == nil { return ErrNilConsensusSession }
-    if !s.started { return nil }
-    return s.scheduler.ArmEngineTimeout(s.engine, s.handleScheduledTimeout)
-}
-
-func (s *ConsensusSession) Stop() {
-    if s == nil { return }
-    s.mu.Lock()
-    s.started = false
-    scheduler := s.scheduler
-    engine := s.engine
-    s.mu.Unlock()
-    if scheduler != nil { _ = scheduler.CancelEngineTimeout(engine) }
-}
-
-func (s *ConsensusSession) handleScheduledTimeout(msg consensus.Message, err error) {
-    s.mu.Lock()
-    defer s.mu.Unlock()
-    if err != nil || !s.started || s.committed { return }
-    if err := s.broadcast(msg); err != nil { return }
+    if err := s.broadcast(msg); err != nil {
+        return
+    }
     if _, err := s.engine.TryAdvanceRound(); err == nil {
         _ = s.armTimeoutLocked()
     }
 }
 
 func (s *ConsensusSession) armTimeoutLocked() error {
-    if s.scheduler == nil || s.engine == nil { return ErrNilConsensusSession }
-    if !s.started { return nil }
+    if s.scheduler == nil || s.engine == nil {
+        return ErrNilConsensusSession
+    }
+    if !s.started {
+        return nil
+    }
     return s.scheduler.ArmEngineTimeout(s.engine, s.handleScheduledTimeout)
 }
 
@@ -213,28 +217,53 @@ func (s *ConsensusSession) HandlePeerMessage(from PeerID, msg consensus.Message,
     if err := s.broadcastGenerated(generated); err != nil {
         return err
     }
-    return s.commitIfFinalized()
+    if err := s.commitIfFinalized(); err != nil {
+        return err
+    }
+    if s.started {
+        if _, err := s.engine.TryAdvanceRound(); err == nil {
+            return s.armTimeoutLocked()
+        }
+        return s.armTimeoutLocked()
+    }
+    return nil
 }
 
 func (s *ConsensusSession) PumpOnce() (PeerID, error) {
-    if s == nil || s.transport == nil { return "", ErrNilConsensusSession }
+    if s == nil || s.transport == nil {
+        return "", ErrNilConsensusSession
+    }
     from, msg, err := s.transport.Receive()
-    if err != nil { return from, err }
+    if err != nil {
+        return from, err
+    }
     switch msg.Type {
     case MessageTypeBlock:
         candidate, err := DecodeBlockDevelopment(msg.Payload, s.rules.MaxPayloadSize)
-        if err != nil { return from, err }
+        if err != nil {
+            return from, err
+        }
         hash, err := block.Hash(candidate)
-        if err != nil { return from, err }
+        if err != nil {
+            return from, err
+        }
+        s.mu.Lock()
         s.pending[string(hash[:])] = candidate
+        s.mu.Unlock()
         return from, nil
     case MessageTypeConsensus:
         decoded, err := consensus.DecodeMessage(msg.Payload, s.rules)
-        if err != nil { return from, err }
+        if err != nil {
+            return from, err
+        }
         var candidate *block.Block
         if decoded.Type == consensus.MessageTypeProposal {
+            s.mu.Lock()
             pending, ok := s.pending[string(decoded.Payload)]
-            if !ok { return from, ErrConsensusSessionCandidateRequired }
+            s.mu.Unlock()
+            if !ok {
+                return from, ErrConsensusSessionCandidateRequired
+            }
             candidate = &pending
         }
         return from, s.HandlePeerMessage(from, decoded, candidate)
@@ -244,17 +273,28 @@ func (s *ConsensusSession) PumpOnce() (PeerID, error) {
 }
 
 func (s *ConsensusSession) ReceiveAndProcess(candidate *block.Block) (PeerID, error) {
-    if s == nil || s.transport == nil { return "", ErrNilConsensusSession }
+    if s == nil || s.transport == nil {
+        return "", ErrNilConsensusSession
+    }
     for {
         from, msg, err := s.transport.Receive()
-        if err != nil { return from, err }
-        if msg.Type == MessageTypeBlock { continue }
-        if msg.Type != MessageTypeConsensus { return from, ErrUnknownMessage }
+        if err != nil {
+            return from, err
+        }
+        if msg.Type == MessageTypeBlock {
+            continue
+        }
+        if msg.Type != MessageTypeConsensus {
+            return from, ErrUnknownMessage
+        }
         decoded, err := consensus.DecodeMessage(msg.Payload, s.rules)
-        if err != nil { return from, err }
+        if err != nil {
+            return from, err
+        }
         return from, s.HandlePeerMessage(from, decoded, candidate)
     }
 }
+
 func (s *ConsensusSession) validateProposalCandidate(msg consensus.Message, candidate block.Block) error {
     rules, err := s.node.Config.BlockRules(nil)
     if err != nil {
@@ -302,9 +342,13 @@ func (s *ConsensusSession) commitIfFinalized() error {
 
 func (s *ConsensusSession) broadcastCandidate(candidate block.Block) error {
     payload, err := EncodeBlockDevelopment(candidate, s.rules.MaxPayloadSize)
-    if err != nil { return err }
+    if err != nil {
+        return err
+    }
     for _, peer := range s.peers {
-        if err := s.transport.Send(peer, Message{Type: MessageTypeBlock, Payload: payload}); err != nil { return err }
+        if err := s.transport.Send(peer, Message{Type: MessageTypeBlock, Payload: payload}); err != nil {
+            return err
+        }
     }
     return nil
 }
