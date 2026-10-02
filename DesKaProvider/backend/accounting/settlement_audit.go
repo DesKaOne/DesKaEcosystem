@@ -24,6 +24,8 @@ func (a SettlementAudit) Validate() error {
 	return nil
 }
 
+var ErrSettlementPersistenceAmbiguous = errors.New("settlement persistence outcome is ambiguous")
+
 type SettlementStore interface {
 	AppendSettlement(context.Context, LedgerTransaction, SettlementAudit) error
 	GetSettlementAudit(context.Context, string) (SettlementAudit, bool, error)
