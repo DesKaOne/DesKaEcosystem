@@ -9432,10 +9432,21 @@ The first CI verification of the ledger foundation exposed two deterministic Pos
 
 CI run #3966 on the previous HEAD c52d7efec815086f8e8829b6d1b2c131002ce38d failed in the accounting PostgreSQL idempotency test; the failure is not treated as milestone completion.
 
-The corrected HEAD is 671c4784d06e2b645beeecb5b3456e24aa794ad1. CI verification for this corrected HEAD is still pending and the milestone remains open until both test and race are GREEN.
+The corrected HEAD is 671c4784d06e2b645beeecb5b3456e24aa794ad1. CI verification for this corrected HEAD is complete: DesKaProvider CI run #3972 / 37070828412 is GREEN with test=SUCCESS and race=SUCCESS. Credential-gated provider validation jobs were SKIPPED as expected. The ledger foundation milestone is therefore verified on this HEAD.
 
 Credential-gated provider jobs remain expected to be SKIPPED when their external credentials are unavailable.
 
 ### Safety
 
 These corrections do not add provider retry, failover, resubmission, provider funding, treasury movement, customer-balance mutation, or implicit settlement posting.
+
+
+### Verified CI
+
+- Final verified HEAD: b6c564199c5b23368705bebd709ecf3fdfbed361
+- DesKaProvider CI: #3972 / 37070828412
+- test: SUCCESS
+- race: SUCCESS
+- credential-gated provider validation jobs: SKIPPED
+
+The ledger PostgreSQL idempotency/recovery foundation is verified without introducing provider retry, failover, resubmission, provider funding, treasury movement, or implicit customer-balance mutation.
