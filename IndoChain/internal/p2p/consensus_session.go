@@ -154,10 +154,11 @@ func (s *ConsensusSession) PumpOnce() (PeerID, error) {
 }
 
 func (s *ConsensusSession) ReceiveAndProcess(candidate *block.Block) (PeerID, error) {
-    if candidate != nil { return s.HandlePeerMessage("external", consensus.Message{}, candidate) }
-    return s.PumpOnce()
+    if s == nil || s.transport == nil { return "", ErrNilConsensusSession }
+    from, msg, err := ReceiveConsensus(s.transport, s.rules)
+    if err != nil { return from, err }
+    return from, s.HandlePeerMessage(from, msg, candidate)
 }
-
 func (s *ConsensusSession) validateProposalCandidate(msg consensus.Message, candidate block.Block) error {
     rules, err := s.node.Config.BlockRules(nil)
     if err != nil {
