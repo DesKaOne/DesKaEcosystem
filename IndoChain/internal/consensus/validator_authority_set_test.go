@@ -33,13 +33,17 @@ func TestValidatorAuthoritySetRejectsMissingOrExtraAuthority(t *testing.T) {
 	}
 }
 
-func TestValidatorAuthoritySetBindsEpochMembershipAndKeys(t *testing.T) {
-	// The authority snapshot is explicitly scoped to one epoch.
-	validators, _ := NewValidatorSet([][]byte{[]byte("validator-a")})
+func TestValidatorAuthoritySetEpochContextCheck(t *testing.T) {
+	validators, err := NewValidatorSet([][]byte{[]byte("validator-a")})
+	if err != nil { t.Fatal(err) }
 	set, err := NewValidatorAuthoritySet(7, validators, map[string][]byte{"validator-a": []byte("key-a")})
 	if err != nil { t.Fatal(err) }
-	state, _ := NewRoundState(1, 1001, 8, 0)
-	if set.Epoch == state.Epoch { t.Fatal("fixture epochs must differ") }
+	state7, err := NewRoundState(1, 1001, 7, 0)
+	if err != nil { t.Fatal(err) }
+	state8, err := NewRoundState(1, 1001, 8, 0)
+	if err != nil { t.Fatal(err) }
+	if !set.SameContext(state7) { t.Fatal("same epoch must match authority context") }
+	if set.SameContext(state8) { t.Fatal("different epoch must not match authority context") }
 }
 
 func TestValidatorAuthoritySetDigestIsDeterministicAndEpochBound(t *testing.T) {
