@@ -8476,3 +8476,51 @@ No authorized live-provider transaction or external provider request was execute
 ### Next Concrete Engineering Task
 
 Continue the evidence-based runtime lifecycle audit into asynchronous worker-exit/error propagation, specifically verifying that a worker that exits unexpectedly with a non-cancellation error cannot leave Service.Run() treating the runtime as healthy indefinitely.
+
+## Asynchronous Worker Exit / Runtime Error Propagation Hardening
+
+**Date:** 2026-10-02
+
+### Audit Finding
+
+The runtime worker lifecycle already retained the worker's terminal error, but Service.Run() did not observe the worker completion signal after startup. It only waited on the runtime context or catalog ticker. Therefore an unexpectedly terminated balance worker could leave Service.Run() alive while its primary balance worker was no longer running, and database ownership would remain held.
+
+### Implementation
+
+- added SyncWorkerLifecycle.Done() as the explicit completion boundary for the current worker generation;
+- added ErrSyncWorkerExited so a non-cancellation worker return without an error is not silently treated as healthy completion;
+- SyncWorkerLifecycle.Wait() now normalizes nil natural exits to ErrSyncWorkerExited while preserving normal context cancellation as a clean exit;
+- Service.Run() now selects on the balance worker completion signal in both runtime modes (with and without catalog synchronization);
+- an asynchronous worker exit now flows through the existing shutdown boundary, propagating the worker error and closing database ownership only after the worker is no longer active.
+
+### Deterministic Coverage
+
+Added:
+- TestSyncWorkerLifecycleWaitReportsUnexpectedNaturalExit
+- TestServiceRunPropagatesUnexpectedWorkerExitAndClosesOwnership
+
+The runtime regression forces the lifecycle's worker interval to the invalid value after construction so the worker exits immediately with a non-cancellation error, then verifies the error reaches Service.Run() and database ownership closes exactly once.
+
+### Safety Invariants
+
+- unexpected worker termination cannot leave Service.Run() indefinitely healthy;
+- database ownership is not closed while the worker is still active;
+- normal context cancellation remains a clean shutdown;
+- duplicate worker start remains rejected;
+- no provider routing/readiness mutation or external payment side effect is introduced.
+
+### Changed Files
+
+- DesKaProvider/backend/Provider/operational/lifecycle.go
+- DesKaProvider/backend/Provider/operational/lifecycle_test.go
+- DesKaProvider/backend/runtime/runtime.go
+- DesKaProvider/backend/runtime/runtime_test.go
+- DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md
+
+### Verification
+
+The baseline HEAD before this audit was CI #3870 / run 36987605846, completed successfully. A fresh CI run for the resulting implementation and status-document HEAD must complete successfully, including test, vet, and race; credential-gated provider validations remain skipped unless authorized credentials and provider access are available.
+
+### Next Concrete Engineering Task
+
+Continue the evidence-based runtime lifecycle audit into catalog-worker shutdown/error boundaries, specifically verifying that catalog synchronization cannot race with runtime ownership cleanup or leave the catalog lifecycle logically active after Service.Run() returns.
