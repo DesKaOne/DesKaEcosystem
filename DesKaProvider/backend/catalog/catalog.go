@@ -12,6 +12,7 @@ import (
 )
 
 var ErrSnapshotOlder = errors.New("catalog snapshot is older than stored snapshot")
+var ErrCatalogPersistenceAmbiguous = errors.New("catalog persistence outcome is ambiguous")
 var ErrStatusPersistence = errors.New("catalog sync status persistence failed")
 
 type Snapshot struct {
