@@ -231,7 +231,7 @@ func (s *PostgresStore) AppendSettlement(ctx context.Context, ledger LedgerTrans
 		return fmt.Errorf("insert settlement audit: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit settlement append: %w", err)
+		return fmt.Errorf("%w: %v", ErrSettlementPersistenceAmbiguous, err)
 	}
 	return nil
 }
