@@ -1,6 +1,7 @@
 package p2p
 
 import (
+    "bytes"
     "errors"
     "fmt"
     "sync"
