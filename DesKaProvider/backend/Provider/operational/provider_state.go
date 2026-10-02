@@ -327,6 +327,78 @@ func (s *ProviderStateStore) SetCapabilityEnabled(name string, capability Capabi
 }
 
 
+
+// ReconcileCapabilityState atomically applies a capability metadata snapshot
+// while preserving unrelated provider state under the store lock. When drift
+// is being reconciled, lifecycle is disabled and previously enabled
+// capabilities are intersected with the currently implemented capability set;
+// reconciliation never enables a capability that was not already enabled.
+func (s *ProviderStateStore) ReconcileCapabilityState(name string, capabilities []Capability, fingerprint string, disableLifecycle bool) (ProviderState, error) {
+	name = strings.TrimSpace(strings.ToLower(name))
+	if name == "" {
+		return ProviderState{}, ErrProviderNotFound
+	}
+
+	normalized := cloneCapabilities(capabilities)
+	sort.Slice(normalized, func(i, j int) bool { return normalized[i] < normalized[j] })
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	current, ok := s.states[name]
+	if !ok {
+		return ProviderState{}, ErrProviderNotFound
+	}
+
+	updated := current
+	updated.Capabilities = cloneCapabilities(normalized)
+	updated.CapabilityFingerprint = fingerprint
+	if current.EnabledCapabilities != nil {
+		allowed := make(map[Capability]struct{}, len(normalized))
+		for _, capability := range normalized {
+			allowed[capability] = struct{}{}
+		}
+		enabled := make([]Capability, 0, len(current.EnabledCapabilities))
+		for _, capability := range current.EnabledCapabilities {
+			if _, ok := allowed[capability]; ok {
+				enabled = append(enabled, capability)
+			}
+		}
+		sort.Slice(enabled, func(i, j int) bool { return enabled[i] < enabled[j] })
+		updated.EnabledCapabilities = enabled
+	}
+	if disableLifecycle {
+		updated.Lifecycle = LifecycleDisabled
+	}
+
+	next := make(map[string]ProviderState, len(s.states))
+	for providerName, state := range s.states {
+		next[providerName] = state
+	}
+	next[name] = updated
+
+	if s.persistence != nil {
+		states := make([]ProviderState, 0, len(next))
+		for _, state := range next {
+			state.Capabilities = cloneCapabilities(state.Capabilities)
+			state.EnabledCapabilities = cloneCapabilities(state.EnabledCapabilities)
+			states = append(states, state)
+		}
+		sort.Slice(states, func(i, j int) bool { return states[i].ProviderName < states[j].ProviderName })
+		if err := s.persistence.Save(states); err != nil {
+			if errors.Is(err, ErrProviderStatePersistenceAmbiguous) && disableLifecycle {
+				s.states[name] = safeStateAfterAmbiguousPersistence(current, updated)
+			}
+			return ProviderState{}, err
+		}
+	}
+
+	s.states = next
+	updated.Capabilities = cloneCapabilities(updated.Capabilities)
+	updated.EnabledCapabilities = cloneCapabilities(updated.EnabledCapabilities)
+	return updated, nil
+}
+
 func (s *ProviderStateStore) All() []ProviderState {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
