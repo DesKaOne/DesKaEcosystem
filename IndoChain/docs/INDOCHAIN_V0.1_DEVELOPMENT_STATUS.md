@@ -4399,3 +4399,44 @@ The branch HEAD after the fix is `f37cffce4f519b0ab9e83a28490cabd3d2500b69`. A n
 **5.8b Persistence Context Authority Binding:** masukkan authority digest secara eksplisit ke persistence context/recovery contract dan tolak recovery record ketika epoch/authority digest tidak cocok.
 
 **Milestone 5.8 status:** implementation committed; CI gate pending.
+
+
+### 5.8b Persistence Context Authority Binding — 2026-10-03
+
+**Objective**
+
+Mengikat persistence context secara eksplisit ke authority snapshot validator agar record/WAL/snapshot consensus tidak dapat dipulihkan hanya karena protocol/chain/epoch cocok ketika public-key authority context sudah berbeda.
+
+**Implementation**
+
+- `IndoChain/internal/consensus/persistence_record_contract.go`
+  - mengganti field konteks generic `ValidatorDigest` menjadi `ValidatorAuthorityDigest`;
+  - canonical persistence bytes sekarang memasukkan authority digest secara eksplisit;
+  - perubahan public-key authority atau epoch-bound authority menghasilkan persistence context digest yang berbeda.
+- `IndoChain/internal/consensus/persistence_record_contract_test.go`
+  - coverage bahwa authority rotation mengubah context digest;
+  - coverage bahwa authority epoch change mengubah context digest;
+  - coverage bahwa record ditolak ketika expected persistence context memakai authority digest berbeda.
+- `IndoChain/internal/consensus/persistence_vectors_test.go`
+  - deterministic persistence vector diperbarui untuk field authority digest eksplisit.
+
+**Locked invariants**
+
+1. Persistence context membawa authority digest sebagai field eksplisit, bukan implied dari validator membership saja.
+2. Authority digest tetap deterministic dan epoch-bound.
+3. Record validation tetap fail-closed pada context mismatch sebelum payload recovery/publish.
+4. Tidak ada validator registration/lifecycle mutation atau economic policy di persistence contract.
+5. Canonical block/state storage tetap berada pada node/storage boundary.
+6. Financial-service boundary tidak berubah.
+
+**Verification**
+
+- Implementation/test commits: `e38e8689fd9490cc6671885a421d712e4011e8f0`, `bf16d19d4f241a5e32bc403fe2bb4fa4fc1f4439`, `dbb6b7b932f407a51fd11e500b591177dd9f9ee3`, `69c13b1c5e52d37faff9d02195a2e80c093df0da`.
+- CI gate harus diverifikasi terhadap HEAD final setelah seluruh perubahan milestone ini.
+- Local test/race/vet tetap tidak tersedia di workspace.
+
+**Next meaningful integration target**
+
+**5.8c Runtime ↔ Persistence Context Construction:** sediakan constructor/helper yang membentuk `PersistenceContext` langsung dari `ValidatorRuntime` + authority snapshot sehingga caller tidak dapat membangun recovery context dengan authority digest yang tidak konsisten dengan runtime.
+
+**Milestone 5.8b status:** implementation/test committed; exact-head CI gate pending.
