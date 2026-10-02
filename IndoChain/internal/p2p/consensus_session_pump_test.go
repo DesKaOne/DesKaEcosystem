@@ -31,11 +31,11 @@ func TestConsensusSessionPumpCandidateBeforeProposal(t *testing.T) {
     ta,tb := NewInMemoryTransport(PeerID("a"),65536),NewInMemoryTransport(PeerID("b"),65536)
     if err:=ta.Connect("b",tb);err!=nil{t.Fatal(err)}; if err:=tb.Connect("a",ta);err!=nil{t.Fatal(err)}
     engineA:=newPumpSessionEngine(t,stateA,va,signerA,validators,power,authority)
-    engineB:=newSessionEngine(t,stateB,vb,signerB,validators,power,authority)
+    engineB:=newPumpSessionEngine(t,stateB,vb,signerB,validators,power,authority)
     vr:=consensus.ValidationRules{ProtocolVersion:devnet.ProtocolVersion,ChainID:devnet.ChainID,MaxPayloadSize:65536,RequireSender:true,RequireSignature:true}
     ctxB:=consensus.BlockProductionContext{State:stateB,PreviousHash:nodeB.HeadHash,Proposer:va}
     sa,err:=NewConsensusSession(nodeA,engineA,ta,vr,[]PeerID{"b"},ctxA,validators,power,authority,pumpSenderResolver{key:keyA.PublicKey});if err!=nil{t.Fatal(err)}
-    sb,err:=NewConsensusSession(nodeB,engineB,tb,vr,[]PeerID{"a"},ctxB,validators,power,authority,sessionSenderResolver{key:keyB.PublicKey});if err!=nil{t.Fatal(err)}
+    sb,err:=NewConsensusSession(nodeB,engineB,tb,vr,[]PeerID{"a"},ctxB,validators,power,authority,pumpSenderResolver{key:keyB.PublicKey});if err!=nil{t.Fatal(err)}
     if err:=sa.StartProposal(candidate);err!=nil{t.Fatal(err)}
     if _,err:=sb.PumpOnce();err!=nil{t.Fatal(err)} // candidate
     if _,err:=sb.PumpOnce();err!=nil{t.Fatal(err)} // proposal + local prevote
@@ -47,9 +47,9 @@ func TestConsensusSessionPumpCandidateBeforeProposal(t *testing.T) {
     _=time.Second
 }
 
-type sessionSenderResolver struct{ key []byte }
-func (r sessionSenderResolver) PublicKeyForSender([]byte)([]byte,error){return append([]byte(nil),r.key...),nil}
-func newSessionEngine(t *testing.T,state consensus.RoundState,v []byte,signer crypto.Signer,validators consensus.ValidatorSet,power consensus.VotingPowerSet,authority consensus.StaticValidatorAuthority)*consensus.ConsensusEngine{
+type pumpSenderResolver struct{ key []byte }
+func (r pumpSenderResolver) PublicKeyForSender([]byte)([]byte,error){return append([]byte(nil),r.key...),nil}
+func newPumpSessionEngine(t *testing.T,state consensus.RoundState,v []byte,signer crypto.Signer,validators consensus.ValidatorSet,power consensus.VotingPowerSet,authority consensus.StaticValidatorAuthority)*consensus.ConsensusEngine{
  t.Helper(); rt,err:=consensus.NewValidatorRuntime(consensus.RuntimeConfig{Rules:consensus.ValidationRules{ProtocolVersion:state.ProtocolVersion,ChainID:state.ChainID,RequireSender:true,RequireSignature:true},State:state,Validators:validators,VotingPower:power,Threshold:consensus.QuorumThreshold{Numerator:2,Denominator:3},Proposer:consensus.RoundRobinProposer{}});if err!=nil{t.Fatal(err)}
  e,err:=consensus.NewConsensusEngine(rt,authority,v,signer,consensus.TimeoutPolicy{Proposal:time.Second,Prevote:time.Second,Precommit:time.Second});if err!=nil{t.Fatal(err)};return e
 }
