@@ -4114,3 +4114,85 @@ Milestone ini menyediakan scheduler lifecycle boundary, bukan full production no
 **5.5 Consensus Scheduler ↔ Node/P2P Event Loop Integration:** mengikat scheduler ke lifecycle ConsensusSession/node sehingga timeout evidence otomatis masuk ke transport, evidence quorum dapat memicu round-change tanpa caller manual, dan shutdown/restart melakukan fencing scheduler serta recovery boundary secara eksplisit.
 
 **Milestone 5.4 status:** implementation/test completed; implementation HEAD CI GREEN; final status-document HEAD requires its own CI gate.
+
+
+### 5.5 Consensus Scheduler ↔ Node/P2P Event Loop Integration
+
+**Tanggal:** 2026-10-02
+
+**Objective**
+
+Mengikat timeout scheduler ke lifecycle ConsensusSession sehingga wall-clock timeout tidak lagi bergantung pada caller manual. Timeout event otomatis menjadi authenticated consensus evidence, didiseminasi melalui transport, lalu hanya quorum evidence yang dapat memicu round change.
+
+**Implementation**
+
+- ConsensusSession sekarang memiliki ownership lifecycle untuk ConsensusTimeoutScheduler.
+- NewConsensusSessionWithScheduler menyediakan timer factory injection untuk deterministic lifecycle tests; constructor lama tetap kompatibel.
+- Start mengaktifkan scheduler untuk consensus context aktif.
+- StartProposal mengaktifkan scheduler setelah proposal/evidence generation berhasil.
+- Stop melakukan scheduler cancellation dan engine timeout invalidation sebagai shutdown/restart fence.
+- Scheduled timeout callback:
+  - menerima TimeoutToken dari scheduler;
+  - memproses token melalui ConsensusEngine.HandleTimeout;
+  - menghasilkan authenticated timeout message;
+  - membroadcast timeout evidence ke peer;
+  - mencoba TryAdvanceRound();
+  - hanya meng-arm timer berikutnya jika round benar-benar maju.
+- Incoming consensus message tetap diproses serial terhadap session lifecycle lock.
+- PumpOnce mengunci pending candidate cache sehingga candidate exchange dan scheduler callback tidak berlomba pada session state.
+- Scheduler tetap tidak memiliki canonical state, quorum policy, validator-set lifecycle, atau P2P transport ownership.
+
+**Operational semantics**
+
+Session Start
+  -> ConsensusEngine.ArmTimeout
+  -> ConsensusTimeoutScheduler
+  -> wall-clock timeout
+  -> ConsensusEngine.HandleTimeout
+  -> authenticated timeout evidence
+  -> P2P broadcast
+  -> peer timeout evidence
+  -> RoundDriver quorum
+  -> TryAdvanceRound
+  -> re-arm scheduler
+
+**Locked invariants**
+
+1. Local timeout adalah evidence, bukan round-change authority.
+2. Round-change tetap quorum-gated oleh existing RoundDriver/ConsensusEngine semantics.
+3. Timeout token tetap diverifikasi berdasarkan height/round/phase/generation.
+4. Scheduler cancellation dan engine token invalidation berjalan bersama pada Stop.
+5. Stale/pre-stop timers tidak boleh masuk ke session callback.
+6. Timeout callback tidak melakukan canonical commit.
+7. Canonical finality tetap melewati existing Node commit boundary.
+8. Timer implementation dapat diinjeksi untuk deterministic tests.
+9. Candidate exchange tetap bukan consensus evidence.
+10. No speculative recovery mutation.
+
+**Verification**
+
+- Final implementation HEAD: `a6632a3ee2eb763468ef9e87e75201e159847fa2`.
+- CI run #1860 / `36998630105`: **GREEN**.
+- Tidy: PASS.
+- Test: PASS.
+- Race Test: PASS.
+- Vet: PASS.
+- Earlier red runs #1854/#1856/#1858 exposed and fixed only implementation/test defects; no milestone was declared complete before the green gate.
+
+**Known limitations**
+
+Milestone ini mengintegrasikan scheduler lifecycle dan automatic timeout evidence flow, tetapi belum menjadi full production validator/network service. Masih terbuka:
+
+- automatic proposal production after quorum-driven round change;
+- durable validator-set/epoch lifecycle;
+- peer failure/backpressure/retransmission policy;
+- crash/restart recovery across independent processes;
+- canonical consensus serialization freeze;
+- gas/fee production semantics;
+- EVM execution.
+
+**Next meaningful integration target**
+
+**5.6 Automatic Round-Change Proposal Handoff:** setelah quorum timeout evidence memajukan round, node/proposer lifecycle harus menghasilkan dan mendiseminasi proposal untuk round baru tanpa caller manual, dengan proposer authority tetap berasal dari validator runtime.
+
+**Milestone 5.5 status:** implementation/test completed; implementation CI GREEN; final status-document CI gate pending.
