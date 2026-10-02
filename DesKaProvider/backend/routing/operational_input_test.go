@@ -2,6 +2,7 @@ package routing
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -108,5 +109,56 @@ func TestStoreOperationalInputReaderDoesNotExposeMutation(t *testing.T) {
 	got, ok := store.Get("mock")
 	if !ok || got != want {
 		t.Fatalf("read-only handoff changed operational state: got=%#v ok=%v", got, ok)
+	}
+}
+
+
+type errorAwareOperationalStoreStub struct {
+	snapshot operational.Snapshot
+	found bool
+	err error
+}
+
+func (s *errorAwareOperationalStoreStub) Get(name string) (operational.Snapshot, bool) {
+	return s.snapshot, s.found
+}
+
+func (s *errorAwareOperationalStoreStub) Put(snapshot operational.Snapshot) error {
+	return nil
+}
+
+func (s *errorAwareOperationalStoreStub) All() []operational.Snapshot {
+	if !s.found {
+		return nil
+	}
+	return []operational.Snapshot{s.snapshot}
+}
+
+func (s *errorAwareOperationalStoreStub) GetWithError(name string) (operational.Snapshot, bool, error) {
+	return s.snapshot, s.found, s.err
+}
+
+func TestStoreOperationalInputReaderPropagatesReadError(t *testing.T) {
+	readErr := errors.New("database unavailable")
+	store := &errorAwareOperationalStoreStub{err: readErr}
+	reader, err := NewStoreOperationalInputReader(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = reader.ReadOperationalInput(context.Background(), "mock", time.Minute, time.Now())
+	if !errors.Is(err, readErr) {
+		t.Fatalf("expected read error to propagate, got %v", err)
+	}
+}
+
+func TestStoreOperationalInputReaderStillReportsMissingSnapshot(t *testing.T) {
+	store := &errorAwareOperationalStoreStub{}
+	reader, err := NewStoreOperationalInputReader(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = reader.ReadOperationalInput(context.Background(), "mock", time.Minute, time.Now())
+	if !errors.Is(err, operational.ErrOperationalSnapshotNotFound) {
+		t.Fatalf("expected missing snapshot error, got %v", err)
 	}
 }
