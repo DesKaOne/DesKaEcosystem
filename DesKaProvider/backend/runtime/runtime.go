@@ -596,7 +596,7 @@ func (s *Service) shutdownBalanceWorker(ctx context.Context) error {
 func (s *Service) rollbackStartedLifecycles(ctx context.Context) error {
 	if s == nil { return nil }
 	var err error
-	if s.balanceLifecycle != nil {
+	if s.balanceLifecycle != nil && s.balanceLifecycle.Running() {
 		err = s.shutdownBalanceWorker(ctx)
 	}
 	return err
