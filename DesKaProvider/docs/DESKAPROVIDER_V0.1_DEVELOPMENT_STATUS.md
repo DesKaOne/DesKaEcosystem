@@ -7945,3 +7945,52 @@ No authorized live-provider transaction or external provider request was execute
 ### Next Concrete Engineering Task
 
 Continue the readiness audit from the next evidence-based persistence/recovery, identity, concurrency, caller-boundary, or authoritative provider-contract gap.
+
+
+## Operational Read Boundary Error Preservation
+
+**Date:** 2026-10-02
+
+### Source Finding
+
+The routing adapter `StoreOperationalInputReader` previously called the base `operational.Store.Get()` method even when a concrete store also exposed the error-aware `GetWithError()` extension. PostgreSQL read failures were therefore collapsed into a false `not found` result at the routing boundary.
+
+### Implementation
+
+- the routing adapter now detects the optional error-aware operational store extension;
+- persistence read errors are propagated unchanged to the routing layer;
+- stores that implement only the original `Store` interface retain the existing compatibility path;
+- deterministic regression coverage verifies both read-error propagation and genuine missing-snapshot behavior.
+
+This does not change provider selection policy or introduce any fallback/retry behavior.
+
+### Safety Boundary / Invariants
+
+- persistence failure is not silently reclassified as provider absence;
+- routing remains fail-closed when operational input cannot be read;
+- `Router.Select()` remains the sole routing authority;
+- the operational read boundary remains read-only;
+- no retry, failover, resubmission, provider funding, ledger mutation, customer-balance mutation, treasury movement, duplicate transaction creation, or public API exposure is introduced.
+
+### Changed Files
+
+- `DesKaProvider/backend/routing/operational_input.go`
+- `DesKaProvider/backend/routing/operational_input_test.go`
+- `DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md`
+
+### Verification
+
+Code commits:
+
+- `11faf82176fd65bb9eb25be4008ac850bc4cdcd6` — preserve error-aware operational reads
+- `ca11dd767182d2f999af8ced2da7b61ca0c34367` — regression coverage
+
+Local execution from the container was unavailable because outbound GitHub DNS/network access is disabled in this environment. CI verification on the resulting branch HEAD is therefore authoritative for repository-wide test, vet, and race checks.
+
+### External Validation
+
+No authorized live-provider transaction or external provider request was executed. Credential-gated provider validation remains SKIPPED unless explicitly authorized and credentials/provider access are available.
+
+### Next Concrete Engineering Task
+
+Continue the caller-boundary audit into transaction submission/reconciliation paths, specifically checking that persistence read failures cannot be converted into authorization, duplicate-submission, or terminal-state assumptions.
