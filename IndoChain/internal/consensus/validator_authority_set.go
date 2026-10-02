@@ -23,6 +23,10 @@ type ValidatorAuthoritySet struct {
 	Keys map[string][]byte
 }
 
+func (a ValidatorAuthoritySet) SameContext(state RoundState) bool {
+	return a.Epoch == state.Epoch
+}
+
 // NewValidatorAuthoritySet constructs an immutable validator authority
 // snapshot. It requires exactly one non-empty public key for every validator.
 func NewValidatorAuthoritySet(epoch uint64, validators ValidatorSet, keys map[string][]byte) (ValidatorAuthoritySet, error) {
