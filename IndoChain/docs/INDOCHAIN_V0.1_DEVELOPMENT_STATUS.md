@@ -3945,3 +3945,84 @@ Milestone ini menutup synchronous in-memory multi-node commit path, tetapi belum
 **5.3 Asynchronous Consensus Node Loop / Candidate Exchange:** mengintegrasikan candidate exchange, transport receive/serve, timeout scheduling boundary, dan multi-node event pumping sehingga session tidak lagi membutuhkan caller untuk memasok candidate secara manual pada proposal receive path.
 
 **Milestone 5.2 status:** implementation/test completed; implementation HEAD CI GREEN; final status-document HEAD requires its own CI verification.
+
+### 5.3 Asynchronous Consensus Node Loop / Candidate Exchange
+
+**Tanggal:** 2026-10-02
+
+**Objective**
+
+Menghilangkan ketergantungan caller pada pengiriman candidate manual di proposal receive path dengan event pump operasional yang mengonsumsi candidate exchange dan consensus transport dari satu queue transport.
+
+**Implementation**
+
+- `IndoChain/internal/p2p/consensus_session.go`
+  - `StartProposal` sekarang mengirim complete development candidate lebih dulu, lalu authenticated consensus proposal dan generated vote events;
+  - `PumpOnce` menerima satu transport envelope dan merutekan `MessageTypeBlock` ke pending candidate cache atau `MessageTypeConsensus` ke `ConsensusEngine`;
+  - proposal hanya diproses apabila candidate untuk height yang sama tersedia;
+  - candidate tetap divalidasi terhadap proposal hash/context sebelum consensus phase mutation;
+  - canonical commit tetap dilakukan melalui existing Node boundary;
+  - tidak menambahkan clock ownership, scheduler, atau canonical serialization ownership ke P2P session.
+- `IndoChain/internal/p2p/consensus_session_pump_test.go`
+  - memverifikasi candidate-before-proposal event ordering;
+  - memverifikasi remote prevote/precommit event pumping sampai finality;
+  - memverifikasi dua node mencapai canonical head yang sama.
+
+**Operational semantics**
+
+```
+producer
+  │
+  ├── Block(candidate)
+  │
+  └── Consensus(proposal)
+          ↓
+       PumpOnce
+          ↓
+    pending candidate
+          ↓
+    authenticated proposal
+          ↓
+   ConsensusEngine.ProcessMessage
+          ↓
+ local vote → P2P → remote vote
+          ↓
+       finality
+          ↓
+ canonical Node commit
+```
+
+**Locked invariants**
+
+1. Candidate exchange tidak dianggap consensus evidence.
+2. Candidate harus tersedia dan hash-match sebelum proposal dapat memutasi consensus phase.
+3. Candidate payload menggunakan existing development block codec; canonical protocol serialization belum dibekukan.
+4. Consensus message tetap melalui existing authenticated decode/validation boundary.
+5. Local votes tetap generated dan consumed exactly once oleh ConsensusEngine.
+6. P2P event pump tidak mengubah canonical Node state secara langsung.
+7. Finality tetap melewati existing validator/quorum certificate dan Node canonical commit boundary.
+8. Missing candidate fail-closed; tidak ada speculative candidate reconstruction.
+9. Event ordering adalah operational input, bukan consensus rule: receiver boleh menunda proposal sampai candidate envelope tiba.
+10. Timeout scheduling tetap di luar session; future scheduler integration harus memberi event ke ConsensusEngine tanpa memindahkan wall-clock ownership ke consensus state.
+
+**Known limitations**
+
+- pending candidate cache masih in-memory dan belum durable;
+- retransmission/backpressure/peer failure policy belum production-grade;
+- candidate request/response retry belum otomatis di event pump;
+- validator-set/epoch lifecycle masih belum terintegrasi;
+- automatic crash/restart multi-process consensus recovery masih terbuka;
+- canonical serialization freeze, gas/fee semantics, dan EVM masih belum dikerjakan.
+
+**Verification**
+
+- Event-pump implementation/fix HEAD: `7ce31e418eec2e5d097224e207574b10c402c009`.
+- CI check untuk exact implementation/test HEAD: **running at verification time**; final documentation HEAD requires its own CI gate.
+- Required gate remains Tidy + Test + Race Test + Vet.
+
+**Next meaningful integration target**
+
+**5.4 Consensus Timeout Scheduler Boundary / Recovery:** memasang wall-clock scheduler eksternal yang menghasilkan timeout events ke `ConsensusEngine`, membatalkan stale timer generation dengan aman, dan menguji restart recovery agar pre-restart timeout token tidak dapat memutasi consensus baru.
+
+**Milestone 5.3 status:** implementation/test completed pending final exact documentation HEAD CI GREEN.
+
