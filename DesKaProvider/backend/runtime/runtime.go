@@ -292,8 +292,11 @@ func NewFromEnvironmentContext(ctx context.Context,httpClient *http.Client)(serv
  var store operational.Store
  var operationalDB *sql.DB
  catalogStore,e:=catalog.NewJSONFileStore(cfg.CatalogStorePath);if e!=nil{return nil,e}
+ catalogFence:=newRecoveryFenceState()
+ catalogSyncStore:=newCatalogSyncStore(catalogStore,catalogFence)
+ catalogRoutingStore:=newCatalogRoutingStore(catalogStore,catalogFence)
  statusPersistence,e:=catalog.NewJSONFileStatusPersistence(cfg.CatalogSyncStatusStorePath);if e!=nil{return nil,e}
- catalogSync,e:=catalog.NewSyncServiceWithStatusPersistence(registry,catalogStore,statusPersistence);if e!=nil{return nil,e}
+ catalogSync,e:=catalog.NewSyncServiceWithStatusPersistence(registry,catalogSyncStore,statusPersistence);if e!=nil{return nil,e}
  transactionStore,transactionDB,e:=openTransactionStore(ctx,cfg);if e!=nil{return nil,e}
 auditStore,auditDB,e:=openAuditStore(ctx,cfg,transactionDB);if e!=nil{return nil,withRuntimeInitializationCleanupError(e,transactionDB,auditDB)}
 ownership:=newRuntimeDatabaseOwnership(transactionDB,auditDB)
@@ -308,7 +311,10 @@ if e:=runRuntimeInitializationFailureHook("after-database-acquisition", ownershi
 store, operationalDB, e = openOperationalStore(ctx, cfg, transactionDB)
 if e != nil { return nil, e }
 ownership.operationalDB = operationalDB
-syncService, e := operational.NewSyncService(registry, store, cfg.Currency, cfg.FailureThreshold)
+operationalFence:=newRecoveryFenceState()
+operationalSyncStore:=newOperationalSyncStore(store,operationalFence)
+operationalRoutingStore:=newOperationalRoutingStore(store,operationalFence)
+syncService, e := operational.NewSyncService(registry, operationalSyncStore, cfg.Currency, cfg.FailureThreshold)
 if e != nil { return nil, e }
 statePersistence,e:=operational.NewJSONFileProviderStateStore(cfg.ProviderStateStorePath);if e!=nil{return nil,e}
 stateStore,e:=operational.NewPersistentProviderStateStore(statePersistence);if e!=nil{return nil,e}
@@ -337,7 +343,7 @@ for _, name := range registry.Names() {
 			return nil, e
 		}
 	} // persist synchronized provider lifecycle/capability state before router construction
-router,e:=routing.NewWithCatalogAndStateAndOperationalMaxAge(registry,store,nil,catalogStore,stateStore,cfg.OperationalSnapshotMaxAge);if e!=nil{return nil,e}
+router,e:=routing.NewWithCatalogAndStateAndOperationalMaxAge(registry,operationalRoutingStore,nil,catalogRoutingStore,stateStore,cfg.OperationalSnapshotMaxAge);if e!=nil{return nil,e}
 if e:=runRuntimeInitializationFailureHook("after-router", ownership); e!=nil { return nil,e }
 purchaseService,e:=routing.NewServiceWithStoreContextAndAudit(ctx,router,transactionStore,auditStore);if e!=nil{return nil,e}
 if e:=runRuntimeInitializationFailureHook("after-purchase-service", ownership); e!=nil { return nil,e }
