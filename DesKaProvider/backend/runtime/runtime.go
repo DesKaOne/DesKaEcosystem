@@ -512,10 +512,12 @@ catalogStarted := false
 		case <-workerDone:
 			s.shutdownMu.Lock()
 			defer s.shutdownMu.Unlock()
+			if ctx.Err() != nil {
+				workerErr := s.shutdownBalanceWorker(workerShutdownCtx)
+				return shutdownLocked(ctx.Err(), workerErr)
+			}
 			workerErr := s.balanceLifecycle.ExitError()
-			if workerErr == nil {
-				workerErr = operational.ErrSyncWorkerExited
-			} else if errors.Is(workerErr, context.Canceled) && ctx.Err() == nil {
+			if workerErr == nil || errors.Is(workerErr, context.Canceled) {
 				workerErr = operational.ErrSyncWorkerExited
 			}
 			return shutdownLocked(workerErr, nil)
@@ -549,10 +551,12 @@ catalogStarted := false
 		case <-workerDone:
 			s.shutdownMu.Lock()
 			defer s.shutdownMu.Unlock()
+			if ctx.Err() != nil {
+				workerErr := s.shutdownBalanceWorker(workerShutdownCtx)
+				return shutdownLocked(ctx.Err(), workerErr)
+			}
 			workerErr := s.balanceLifecycle.ExitError()
-			if workerErr == nil {
-				workerErr = operational.ErrSyncWorkerExited
-			} else if errors.Is(workerErr, context.Canceled) && ctx.Err() == nil {
+			if workerErr == nil || errors.Is(workerErr, context.Canceled) {
 				workerErr = operational.ErrSyncWorkerExited
 			}
 			return shutdownLocked(workerErr, nil)
