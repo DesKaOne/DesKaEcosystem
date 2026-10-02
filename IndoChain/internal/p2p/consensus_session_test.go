@@ -8,6 +8,7 @@ import (
 
     "github.com/DesKaOne/DesKaEcosystem/IndoChain/genesis/devnet"
     "github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/consensus"
+    "github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/block"
     "github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/crypto"
     "github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/node"
     "github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/storage"
@@ -273,4 +274,121 @@ func TestConsensusSessionTimeoutProducesAuthenticatedEvidence(t *testing.T) {
         t.Fatalf("timeout evidence signature invalid: %v", err)
     }
     session.Stop()
+}
+
+
+type sessionBlockProducer struct {
+    n *node.Node
+}
+
+func (p sessionBlockProducer) ProduceBlock(ctx consensus.BlockProductionContext) (block.Block, error) {
+    rules, err := p.n.Config.BlockRules(nil)
+    if err != nil {
+        return block.Block{}, err
+    }
+    return consensus.BuildBlockCandidate(consensus.BlockCandidateInput{
+        Context: ctx,
+        Timestamp: p.n.Head.Header.Timestamp + 1,
+        Transactions: []any{},
+        Rules: rules,
+    }, p.n.State)
+}
+
+func TestConsensusSessionAutomaticRoundChangeProposalHandoff(t *testing.T) {
+    n, err := node.NewDevnet(storage.NewMemoryStore())
+    if err != nil { t.Fatal(err) }
+
+    keyA, err := crypto.NewEd25519KeyPair(bytes.Repeat([]byte{0x81}, 32))
+    if err != nil { t.Fatal(err) }
+    keyB, err := crypto.NewEd25519KeyPair(bytes.Repeat([]byte{0x82}, 32))
+    if err != nil { t.Fatal(err) }
+    signerB, err := crypto.NewEd25519Signer(keyB.PrivateKey)
+    if err != nil { t.Fatal(err) }
+
+    validatorA, validatorB := []byte("validator-a"), []byte("validator-b")
+    validators, err := consensus.NewValidatorSet([][]byte{validatorA, validatorB})
+    if err != nil { t.Fatal(err) }
+    power, err := consensus.NewVotingPowerSet([]consensus.ValidatorVotingPower{
+        {ValidatorID: validatorA, Power: 1}, {ValidatorID: validatorB, Power: 1},
+    })
+    if err != nil { t.Fatal(err) }
+    authority, err := consensus.NewStaticValidatorAuthority(map[string][]byte{
+        string(validatorA): keyA.PublicKey, string(validatorB): keyB.PublicKey,
+    })
+    if err != nil { t.Fatal(err) }
+
+    state, err := consensus.NewRoundState(devnet.ProtocolVersion, devnet.ChainID, 0, n.Head.Header.Height)
+    if err != nil { t.Fatal(err) }
+    engine := newSessionEngine(t, state, validatorB, signerB, validators, power, authority)
+
+    transport := NewInMemoryTransport(PeerID("node-b"), 65536)
+    ctx := consensus.BlockProductionContext{State: state, PreviousHash: n.HeadHash, Proposer: validatorA}
+    session, err := NewConsensusSessionWithSchedulerAndProducer(
+        n, engine, transport,
+        consensus.ValidationRules{
+            ProtocolVersion: devnet.ProtocolVersion, ChainID: devnet.ChainID,
+            MaxPayloadSize: 65536, RequireSender: true, RequireSignature: true,
+        },
+        []PeerID{"node-a"}, ctx, validators, power, authority,
+        sessionSenderResolver{key: keyB.PublicKey}, nil, sessionBlockProducer{n: n},
+    )
+    if err != nil { t.Fatal(err) }
+    defer session.Stop()
+
+    token, _, err := engine.ArmTimeout()
+    if err != nil { t.Fatal(err) }
+    localTimeout, err := engine.HandleTimeout(token)
+    if err != nil { t.Fatal(err) }
+
+    otherTokenEngine, err := newSessionTimeoutEngineForHandoff(state, validatorA, keyA.PrivateKey, validators, power, authority)
+    if err != nil { t.Fatal(err) }
+    otherToken, _, err := otherTokenEngine.ArmTimeout()
+    if err != nil { t.Fatal(err) }
+    remoteTimeout, err := otherTokenEngine.HandleTimeout(otherToken)
+    if err != nil { t.Fatal(err) }
+
+    if err := session.HandlePeerMessage("node-a", remoteTimeout, nil); err != nil {
+        t.Fatalf("timeout handoff: %v", err)
+    }
+
+    if engine.Runtime().State().Round != 1 {
+        t.Fatalf("round = %d, want 1", engine.Runtime().State().Round)
+    }
+    if engine.Runtime().State().Phase != consensus.PhasePrevote {
+        t.Fatalf("phase = %v, want prevote after automatic proposal", engine.Runtime().State().Phase)
+    }
+    if !bytes.Equal(engine.Runtime().Proposal(), engine.Runtime().Proposal()) {
+        t.Fatal("proposal unexpectedly changed")
+    }
+    if session.candidate == nil || !bytes.Equal(session.candidate.Header.Proposer, validatorB) {
+        t.Fatalf("automatic candidate proposer = %q, want %q", session.candidate.Header.Proposer, validatorB)
+    }
+}
+
+func newSessionTimeoutEngineForHandoff(
+    state consensus.RoundState,
+    validator []byte,
+    privateKey []byte,
+    validators consensus.ValidatorSet,
+    power consensus.VotingPowerSet,
+    authority consensus.StaticValidatorAuthority,
+) (*consensus.ConsensusEngine, error) {
+    signer, err := crypto.NewEd25519Signer(privateKey)
+    if err != nil { return nil, err }
+    runtime, err := consensus.NewValidatorRuntime(consensus.RuntimeConfig{
+        Rules: consensus.ValidationRules{
+            ProtocolVersion: state.ProtocolVersion,
+            ChainID: state.ChainID,
+            RequireSender: true,
+            RequireSignature: true,
+        },
+        State: state, Validators: validators, VotingPower: power,
+        Threshold: consensus.QuorumThreshold{Numerator: 2, Denominator: 3},
+        Proposer: consensus.RoundRobinProposer{},
+    })
+    if err != nil { return nil, err }
+    return consensus.NewConsensusEngine(
+        runtime, authority, validator, signer,
+        consensus.TimeoutPolicy{Proposal: time.Second, Prevote: time.Second, Precommit: time.Second},
+    )
 }
