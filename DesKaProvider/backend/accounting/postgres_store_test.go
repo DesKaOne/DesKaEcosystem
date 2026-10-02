@@ -58,7 +58,7 @@ func TestPostgresLedgerAppendIsImmutableAndIdempotent(t *testing.T) {
 	if err != nil { t.Fatal(err) }
 	account := Account{ID:"customer-main",Type:AccountTypeMain,Currency:"IDR",Name:"Customer Main",Active:true}
 	if _, created, err := store.CreateAccount(ctx, account); err != nil || !created { t.Fatalf("create account: %v %v",err,created) }
-	settlement := Account{ID:"settlement-in",Type:AccountTypeSettlementIn,Currency:"IDR",Name:"Settlement In",Active:true}
+	settlement := Account{ID:"provider-clearing",Type:AccountTypeClearing,Currency:"IDR",Name:"Provider Clearing",Active:true}
 	if _, created, err := store.CreateAccount(ctx, settlement); err != nil || !created { t.Fatalf("create settlement account: %v %v",err,created) }
 
 	tx := validLedgerTransaction()
