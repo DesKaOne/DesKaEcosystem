@@ -8303,3 +8303,64 @@ No authorized live-provider transaction or external provider request was execute
 ### Next Concrete Engineering Task
 
 Continue the evidence-based mutation-boundary audit into persistent provider-state failure semantics, specifically verifying that ambiguous persistence during runtime startup cannot leave the in-memory lifecycle/capability state more permissive than the durable state.
+
+## Persistent Provider-State Ambiguous Failure / Runtime Startup Hardening
+
+**Date:** 2026-10-02
+
+### Audit Finding
+
+The runtime startup synchronization path uses the atomic ProviderStateStore.ReconcileCapabilityState() boundary, but the ambiguous persistence semantics required one further fail-closed correction.
+
+When a reconciliation Save() returns ErrProviderStatePersistenceAmbiguous after the durable replacement may already have occurred, retaining the pre-reconciliation in-memory EnabledCapabilities could leave memory more permissive than the durable provider-state file. This is unsafe even when disableLifecycle=false, because startup reconciliation can legitimately prune removed capabilities while keeping the lifecycle enabled.
+
+### Implementation
+
+- ambiguous ReconcileCapabilityState() persistence now always applies the conservative safeStateAfterAmbiguousPersistence() memory merge, not only drift-triggered lifecycle disablement;
+- the conservative merge retains the last known lifecycle unless the requested state explicitly disables it, and intersects the previous enabled-capability gate with the requested implemented capability set;
+- ambiguous generic ProviderStateStore.Put() writes now use the same conservative boundary for existing providers;
+- an ambiguous first-time Put() does not create an in-memory provider state, preventing an uncertain new durable state from becoming route-eligible in memory;
+- no retry or second persistence attempt is introduced.
+
+### Deterministic Coverage
+
+Added regression coverage for:
+
+- ambiguous non-drift reconciliation that durably replaces state while preventing stale removed capabilities from remaining enabled in memory;
+- ambiguous first-time provider-state creation remaining absent from in-memory routing state.
+
+The existing ambiguous lifecycle and capability mutation tests continue to verify that uncertain enablement never promotes lifecycle/capability routing eligibility.
+
+### Safety Boundary / Invariants
+
+- ambiguous persistence never makes in-memory lifecycle/capability state more permissive than the conservative last-known/requested boundary;
+- uncertain provider enablement is never promoted;
+- removed capabilities cannot remain enabled after an ambiguous reconciliation outcome;
+- runtime startup continues to use the same atomic reconciliation boundary as administrative reconciliation;
+- Router.Select() remains the sole routing authority;
+- no automatic retry, provider failover, transaction resubmission, provider funding, ledger mutation, customer-balance mutation, treasury movement, duplicate transaction creation, or public API exposure is introduced.
+
+### Changed Files
+
+- DesKaProvider/backend/Provider/operational/provider_state.go
+- DesKaProvider/backend/Provider/operational/provider_state_test.go
+- DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md
+
+### Verification
+
+Code commits:
+
+- b8a5deb36150afe5d6a0fd95a9a87d227cdc69f3 — ambiguous reconciliation hardening;
+- 8b95ced7002e9681b6ac3a2d10fe42849c203302 — conservative ambiguous generic Put() handling;
+- 93c1a8daf5b3e7c88ab79dd49a014cfeae86ccd6 — deterministic regression coverage.
+
+Full repository test, vet, race, and CI verification is required on the resulting HEAD before this milestone is considered complete.
+
+### External Validation
+
+No authorized live-provider transaction or external provider request was executed. Credential-gated provider validation remains skipped unless explicitly authorized and credentials/provider access are available.
+
+### Next Concrete Engineering Task
+
+Continue the evidence-based persistent-state audit into startup failure handling and recovery ordering, specifically verifying that a failure after provider-state synchronization but before router/service ownership transfer cannot expose a partially initialized runtime or leave stale external resources owned ambiguously.
+
