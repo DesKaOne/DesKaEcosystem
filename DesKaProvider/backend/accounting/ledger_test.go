@@ -37,6 +37,15 @@ func TestLedgerTransactionRejectsMixedCurrency(t *testing.T) {
 	}
 }
 
+func TestLedgerTimestampIdentityUsesStoragePrecision(t *testing.T) {
+	a := validLedgerTransaction()
+	b := a
+	b.CreatedAt = b.CreatedAt.Add(900 * time.Nanosecond)
+	if !sameLedgerTransaction(a, b) {
+		t.Fatal("sub-microsecond timestamp differences must not break ledger identity")
+	}
+}
+
 func TestMemoryLedgerIsImmutableAndIdempotent(t *testing.T) {
 	store := NewMemoryStore()
 	tx := validLedgerTransaction()
