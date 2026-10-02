@@ -9325,3 +9325,87 @@ Begin the next material v0.1 boundary: double-entry financial ledger foundation 
 
 No automatic retry, provider failover, transaction resubmission, provider funding, treasury movement, or public API exposure is included in that next milestone.
 
+## Double-Entry Ledger Foundation and Settlement Accounting Boundary
+
+**Date:** 2026-10-03
+
+### Finding
+
+The previous recovery milestone left a material v0.1 gap: provider transaction persistence existed, but there was no independent accounting source of truth for financial postings. The existing Wallet and Payout packages were empty, and no ledger schema or double-entry invariant existed.
+
+### Implementation
+
+Added a provider-neutral accounting foundation:
+
+- extensible account types: MAIN, SETTLEMENT_IN, SETTLEMENT_OUT, RESERVE, FEE, ESCROW, CLEARING;
+- explicit account currency and owner identity;
+- immutable ledger transaction identity;
+- source-type/source-ID correlation to upstream payment/provider/settlement events;
+- positive integer debit/credit entries with one transaction currency;
+- strict debit == credit validation;
+- contiguous immutable line IDs;
+- idempotent identical ledger append;
+- conflict rejection when an existing ledger transaction ID is reused with different financial content;
+- PostgreSQL atomic transaction-header + entry persistence;
+- PostgreSQL account creation with idempotent identity semantics;
+- migration 004 for ledger accounts, ledger transactions, and ledger entries.
+
+### Changed Files
+
+- DesKaProvider/backend/accounting/account.go
+- DesKaProvider/backend/accounting/account_store.go
+- DesKaProvider/backend/accounting/ledger.go
+- DesKaProvider/backend/accounting/ledger_test.go
+- DesKaProvider/backend/accounting/postgres_store.go
+- DesKaProvider/backend/accounting/postgres_store_test.go
+- DesKaProvider/backend/migrations/004_double_entry_ledger.sql
+- DesKaProvider/backend/migrations/migrations.go
+- DesKaProvider/docs/DESKAPROVIDER_V0.1_ARCHITECTURE.md
+
+### Safety Boundary / Invariants
+
+- ledger is the accounting source of truth; no balance projection is introduced;
+- every persisted ledger transaction must balance exactly;
+- mixed-currency entries are rejected;
+- ledger identity is immutable after append;
+- identical re-append is idempotent and different content is rejected;
+- provider transaction success does not implicitly post financial entries;
+- ledger persistence failure does not trigger provider retry, failover, or resubmission;
+- no customer balance mutation, treasury movement, or provider funding is introduced;
+- provider infrastructure state remains separate from accounting state;
+- settlement posting policy remains explicit future work rather than speculative automatic behavior.
+
+### Tests
+
+Deterministic unit tests cover:
+
+- double-entry balance enforcement;
+- mixed-currency rejection;
+- immutable/idempotent in-memory ledger append;
+- account identity idempotency/conflict;
+- extensible wallet/account types.
+
+PostgreSQL integration coverage was added for:
+
+- migration and isolated schema creation;
+- account persistence;
+- atomic ledger append;
+- restart/reload from durable PostgreSQL state;
+- identical append idempotency;
+- immutable transaction conflict behavior.
+
+The PostgreSQL integration test is credential-gated by `DESKAPROVIDER_POSTGRES_DSN` and therefore may be skipped in CI when no database credential is available.
+
+### Progress
+
+Previous documented baseline: ~82%.
+
+Updated engineering estimate: **~84%**.
+
+Reason: this milestone closes the first material financial-accounting foundation gap with executable domain invariants, durable schema, and atomic persistence. It does not yet implement customer balance projections, settlement posting policy, treasury movements, or end-to-end financial service flows, so the increase is intentionally limited.
+
+### Next Concrete Engineering Task
+
+Implement the **explicit provider settlement posting boundary**: define the lifecycle contract that maps a terminal provider transaction to a pre-declared set of ledger accounts/entries, with idempotent posting and fail-closed behavior when the provider transaction or ledger persistence outcome is ambiguous.
+
+That milestone must not introduce automatic provider retry, failover, resubmission, provider funding, or implicit customer-balance mutation.
