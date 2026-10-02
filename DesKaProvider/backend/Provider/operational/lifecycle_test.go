@@ -301,6 +301,35 @@ func TestSyncWorkerLifecycleWaitObservesNaturalParentCancellationAndAllowsRestar
 	}
 }
 
+func TestSyncWorkerLifecycleWaitReportsUnexpectedNaturalExit(t *testing.T) {
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", balanceStub{balance: 4400000}); err != nil {
+		t.Fatal(err)
+	}
+	svc, err := NewSyncService(registry, NewMemoryStore(), "IDR", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lifecycle, err := NewSyncWorkerLifecycle(svc, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	lifecycle.interval = 0
+	if err := lifecycle.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	waitCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := lifecycle.Wait(waitCtx); !errors.Is(err, ErrSyncWorkerExited) {
+		t.Fatalf("expected unexpected worker exit sentinel, got %v", err)
+	}
+	if lifecycle.Running() {
+		t.Fatal("unexpectedly exited worker must no longer be running")
+	}
+}
+
 func TestSyncWorkerLifecycleWaitRejectsInvalidContext(t *testing.T) {
 	lifecycle := &SyncWorkerLifecycle{}
 	if err := lifecycle.Wait(nil); err == nil || err.Error() != "wait context is required" {
