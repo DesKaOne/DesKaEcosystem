@@ -3,9 +3,9 @@ package consensus
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/binary"
 	"errors"
 	"sort"
-	"encoding/binary"
 )
 
 var (
