@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 )
 
 const ProviderStatusSuccess = "success"
@@ -21,12 +22,13 @@ type SettlementPostingRequest struct {
 	ProviderStatus string
 	Currency      string
 	Description   string
+	CreatedAt     time.Time
 	Entries       []Entry
 }
 
 func (r SettlementPostingRequest) Validate() error {
 	if r.TransactionID == "" || r.ReferenceID == "" || r.SourceType == "" || r.SourceID == "" ||
-		r.Currency == "" || len(r.Entries) == 0 {
+		r.Currency == "" || r.CreatedAt.IsZero() || len(r.Entries) == 0 {
 		return ErrInvalidSettlement
 	}
 	if r.ProviderStatus != ProviderStatusSuccess {
@@ -35,6 +37,7 @@ func (r SettlementPostingRequest) Validate() error {
 	tx := LedgerTransaction{
 		ID: r.TransactionID, ReferenceID: r.ReferenceID, SourceType: r.SourceType,
 		SourceID: r.SourceID, Currency: r.Currency, Description: r.Description,
+		CreatedAt: r.CreatedAt,
 		Entries: r.Entries,
 	}
 	if err := tx.Validate(); err != nil {
