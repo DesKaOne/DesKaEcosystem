@@ -9450,3 +9450,44 @@ These corrections do not add provider retry, failover, resubmission, provider fu
 - credential-gated provider validation jobs: SKIPPED
 
 The ledger PostgreSQL idempotency/recovery foundation is verified without introducing provider retry, failover, resubmission, provider funding, treasury movement, or implicit customer-balance mutation.
+
+
+## Explicit Provider Settlement Posting Boundary
+
+**Date:** 2026-10-03
+
+### Scope
+
+Implemented the next financial boundary as a provider-neutral accounting primitive. A caller must supply the terminal provider status and the exact ledger transaction/accounts to post.
+
+### Implementation
+
+- added SettlementPostingRequest with immutable transaction/source correlation, currency, terminal provider status, and pre-declared ledger entries;
+- only terminal success is postable; pending and failed outcomes are rejected before ledger mutation;
+- reused the existing double-entry validation and immutable/idempotent ledger persistence rather than creating a second financial store;
+- exposed context-aware memory ledger methods so the settlement poster and PostgreSQL ledger share the same boundary contract;
+- no provider call, retry, failover, resubmission, funding, treasury movement, or customer-balance projection is performed.
+
+### Changed Files
+
+- DesKaProvider/backend/accounting/settlement.go
+- DesKaProvider/backend/accounting/settlement_test.go
+- DesKaProvider/backend/accounting/ledger.go
+- DesKaProvider/docs/DESKAPROVIDER_V0.1_ARCHITECTURE.md
+- DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md
+
+### Tests
+
+Deterministic tests cover terminal-status gating, balanced-entry validation, identical-post idempotency, immutable transaction conflict, and the absence of provider-side behavior in the posting primitive.
+
+### Safety Boundary
+
+The caller is responsible for declaring the exact debit/credit accounts. The posting primitive never derives financial mutation from provider names, product metadata, or infrastructure readiness. A ledger persistence error is returned as-is to the caller; no provider-side compensation is attempted.
+
+### Progress
+
+The prior verified ledger foundation was approximately 84%. This milestone adds the first explicit settlement posting command without introducing customer balance projection or treasury movement, so the engineering estimate moves conservatively to approximately 86% pending final CI verification.
+
+### Next Concrete Engineering Task
+
+Add durable settlement-posting audit/correlation semantics around the existing ledger transaction identity, then integrate the explicit posting boundary with the provider transaction lifecycle without making provider success implicitly mutate financial state.
