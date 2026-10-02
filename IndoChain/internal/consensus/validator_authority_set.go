@@ -20,7 +20,7 @@ var (
 type ValidatorAuthoritySet struct {
 	Epoch uint64
 	Validators ValidatorSet
-	Keys map[string][]byte
+	keys map[string][]byte
 }
 
 func (a ValidatorAuthoritySet) SameContext(state RoundState) bool {
@@ -53,7 +53,7 @@ func NewValidatorAuthoritySet(epoch uint64, validators ValidatorSet, keys map[st
 	return ValidatorAuthoritySet{
 		Epoch: epoch,
 		Validators: cloneValidatorSet(validators),
-		Keys: cloned,
+		keys: cloned,
 	}, nil
 }
 
@@ -61,11 +61,11 @@ func (a ValidatorAuthoritySet) Validate() error {
 	if err := a.Validators.Validate(); err != nil {
 		return err
 	}
-	if len(a.Keys) != len(a.Validators.Validators) {
+	if len(a.keys) != len(a.Validators.Validators) {
 		return ErrValidatorAuthorityMismatch
 	}
 	for _, id := range a.Validators.Validators {
-		key, ok := a.Keys[string(id)]
+		key, ok := a.keys[string(id)]
 		if !ok || len(key) == 0 {
 			return ErrValidatorAuthorityMismatch
 		}
@@ -81,7 +81,7 @@ func (a ValidatorAuthoritySet) PublicKeyForValidator(id []byte) ([]byte, error) 
 	if err := a.Validate(); err != nil {
 		return nil, err
 	}
-	key, ok := a.Keys[string(id)]
+	key, ok := a.keys[string(id)]
 	if !ok {
 		return nil, ErrConsensusAuthorityMissing
 	}
@@ -96,10 +96,10 @@ func (a ValidatorAuthoritySet) Clone() ValidatorAuthoritySet {
 	cloned := ValidatorAuthoritySet{
 		Epoch: a.Epoch,
 		Validators: cloneValidatorSet(a.Validators),
-		Keys: make(map[string][]byte, len(a.Keys)),
+		Keys: make(map[string][]byte, len(a.keys)),
 	}
-	for id, key := range a.Keys {
-		cloned.Keys[id] = append([]byte(nil), key...)
+	for id, key := range a.keys {
+		cloned.keys[id] = append([]byte(nil), key...)
 	}
 	return cloned
 }
@@ -116,7 +116,7 @@ func authorityDigest(a ValidatorAuthoritySet) [32]byte {
 	for _, id := range ids {
 		binary.BigEndian.PutUint64(length[:], uint64(len(id)))
 		h.Write(length[:]); h.Write(id)
-		key := a.Keys[string(id)]
+		key := a.keys[string(id)]
 		binary.BigEndian.PutUint64(length[:], uint64(len(key)))
 		h.Write(length[:]); h.Write(key)
 	}
