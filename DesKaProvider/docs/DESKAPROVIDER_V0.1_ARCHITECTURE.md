@@ -1129,3 +1129,10 @@ For PostgreSQL, settlement ledger entries and the audit correlation record are c
 The in-memory implementation follows the same atomic semantic for deterministic tests.
 
 This boundary still performs no provider retry, failover, resubmission, funding, treasury movement, customer balance mutation, or automatic provider-to-ledger inference.
+
+
+### CI-Verified Settlement Audit Invariants
+
+The durable settlement audit implementation is verified with PostgreSQL-backed tests for atomic ledger+audit persistence, idempotent repeat, durable audit reload, and immutable audit correlation conflict. The PostgreSQL fixture explicitly provisions every referenced ledger account.
+
+No provider retry, failover, resubmission, funding, treasury movement, or implicit customer-balance mutation is part of this milestone.
