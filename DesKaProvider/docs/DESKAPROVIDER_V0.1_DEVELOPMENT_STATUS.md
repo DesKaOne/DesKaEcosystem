@@ -8160,8 +8160,14 @@ No provider credential or external request is used by these tests.
 Code commit:
 
 - `a0645fc8c45fa151d6b9403e27a731056ec9177b` — readiness registration regression tests
+- `780f537d2033cab4f17969f851dad3e4a0190a61` — correct readiness-state assertion after CI feedback
+- `e8da8352ee931f3db433b71afdb2b9ce20c3b988` — exercise production-ready validation invariant
 
 Credential-gated provider validation remains SKIPPED without authorized live credentials/provider access.
+
+### Verification Update
+
+After correcting the deterministic assertions, Push CI #3829 / run `36982272282` for head `e8da8352ee931f3db433b71afdb2b9ce20c3b988` completed with **success**. Test and race jobs passed; credential-gated provider validation remained skipped.
 
 ### Next Concrete Engineering Task
 
