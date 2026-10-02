@@ -14,6 +14,7 @@ const persistenceVectorVersion uint16 = 1
 
 type persistenceVector struct {
 	Version uint16 `json:"version"`
+	AuthorityDigest []byte `json:"authority_digest"`
 	ProtocolVersion types.ProtocolVersion `json:"protocol_version"`
 	ChainID types.ChainID `json:"chain_id"`
 	Epoch uint64 `json:"epoch"`
@@ -34,7 +35,7 @@ type persistenceValidator struct {
 }
 
 func persistenceVectorFixture() persistenceVector {
-	return persistenceVector{Version:persistenceVectorVersion, ProtocolVersion:1, ChainID:1001, Epoch:7, Height:42, Round:3, Phase:PhasePrecommit, Validators:[]persistenceValidator{{ID:[]byte("validator-a"), PublicKey:[]byte("pubkey-a"), VotingPower:3},{ID:[]byte("validator-b"), PublicKey:[]byte("pubkey-b"), VotingPower:2}}, Threshold:persistenceThreshold{Numerator:2, Denominator:3}, ProposerPolicy:"round-robin-v0-dev"}
+	return persistenceVector{Version:persistenceVectorVersion, AuthorityDigest:[]byte("authority-digest-v1"), ProtocolVersion:1, ChainID:1001, Epoch:7, Height:42, Round:3, Phase:PhasePrecommit, Validators:[]persistenceValidator{{ID:[]byte("validator-a"), PublicKey:[]byte("pubkey-a"), VotingPower:3},{ID:[]byte("validator-b"), PublicKey:[]byte("pubkey-b"), VotingPower:2}}, Threshold:persistenceThreshold{Numerator:2, Denominator:3}, ProposerPolicy:"round-robin-v0-dev"}
 }
 
 func TestConsensusPersistenceVectorDeterministic(t *testing.T) {
@@ -43,7 +44,7 @@ func TestConsensusPersistenceVectorDeterministic(t *testing.T) {
 	second, err := json.Marshal(vector); if err != nil { t.Fatal(err) }
 	if !bytes.Equal(first, second) { t.Fatal("same semantic persistence state produced different bytes") }
 	sum := sha256.Sum256(first)
-	const wantDigest = "95cf07f9307b945d21fea992f7305a364a650a9ae959f34e99a3abb520995d87"
+	const wantDigest = "b3f1a48cbb4f08b8f169e2d8f202ebd6fb67c9dc353f55b6a8d8d851a40a16ea"
 	if got := hex.EncodeToString(sum[:]); got != wantDigest { t.Fatalf("vector digest = %s, want %s; serialized=%s", got, wantDigest, first) }
 }
 
