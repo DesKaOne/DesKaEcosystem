@@ -71,4 +71,7 @@ func TestPostgresLedgerAppendIsImmutableAndIdempotent(t *testing.T) {
 	got, ok, err := store.Get(ctx, tx.ID)
 	if err != nil || !ok { t.Fatalf("get ledger transaction: %v %v",err,ok) }
 	if len(got.Entries) != 2 || got.Entries[0].Amount != 10000 || got.Entries[1].Amount != 10000 { t.Fatalf("unexpected ledger entries: %#v",got.Entries) }
+	all, err := store.All(ctx)
+	if err != nil { t.Fatalf("list ledger transactions: %v", err) }
+	if len(all) != 1 || all[0].ID != tx.ID { t.Fatalf("unexpected ledger transactions: %#v", all) }
 }
