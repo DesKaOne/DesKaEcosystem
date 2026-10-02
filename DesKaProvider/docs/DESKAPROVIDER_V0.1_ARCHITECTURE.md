@@ -1017,3 +1017,65 @@ The fence is intentionally in-memory and scoped to one runtime generation. It is
 
 This boundary is observational and routing-related only. It does not retry provider transactions, resubmit purchases, mutate financial ledger state, move treasury funds, or perform provider funding.
 
+## 38. Double-Entry Ledger Foundation and Settlement Accounting Boundary
+
+The financial accounting boundary begins with an immutable double-entry ledger. The ledger is the accounting source of truth; no balance projection or cached balance is introduced as a competing source of truth.
+
+### Account model
+
+Account types are extensible and currently include:
+
+- MAIN
+- SETTLEMENT_IN
+- SETTLEMENT_OUT
+- RESERVE
+- FEE
+- ESCROW
+- CLEARING
+
+An account carries an explicit currency and ownership identifier. Account creation is idempotent by account ID and rejects identity mutation.
+
+### Ledger transaction contract
+
+Each ledger transaction has:
+
+- immutable transaction ID;
+- financial reference ID;
+- explicit source type and source ID for correlation to an upstream financial/provider event;
+- one currency;
+- one or more debit/credit entries;
+- positive integer amounts;
+- contiguous line IDs;
+- exact debit == credit equality.
+
+Mixed-currency entries and unbalanced transactions are rejected before persistence.
+
+### Persistence boundary
+
+PostgreSQL persists:
+
+```text
+ledger_transactions
+        |
+        +--> ledger_entries
+        |
+        +--> ledger_accounts
+```
+
+Ledger append is atomic across the transaction header and all entries. Duplicate identical transaction IDs are idempotent. Reuse of an existing transaction ID with different financial content is rejected.
+
+The ledger store does not update provider transaction state, customer balances, treasury balances, or provider funding as a side effect.
+
+### Settlement boundary
+
+Provider transaction records remain provider-infrastructure state. A ledger transaction may correlate explicitly to a provider/payment/settlement reference through `source_type` + `source_id`, but this milestone deliberately does not invent automatic settlement posting rules.
+
+Consequently:
+
+- provider success does not implicitly mutate the ledger;
+- provider persistence/recovery failures do not mutate the ledger;
+- ledger append failure does not trigger provider retry/failover/resubmission;
+- no customer balance projection is introduced;
+- no treasury movement is introduced.
+
+Settlement posting policy will be a later milestone and must define the exact debit/credit accounts and lifecycle correlation before any financial mutation is allowed.
