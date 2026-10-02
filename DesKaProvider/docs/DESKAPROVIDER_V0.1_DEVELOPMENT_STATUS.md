@@ -9257,3 +9257,71 @@ The same HEAD also passed Pull Request CI #3926. No authorized live-provider tra
 ### Next Concrete Engineering Task
 
 Continue the evidence-based hardening audit into **persistent operational-state/catalog recovery convergence after adverse shutdown**, specifically verifying that a runtime generation restarted after partial worker shutdown cannot expose stale operational snapshots or catalog state as fresh/route-eligible state before persistence and readiness gates converge.
+
+## Persistent Operational-State / Catalog Recovery Convergence After Adverse Shutdown
+
+**Date:** 2026-10-03
+
+### Finding
+
+The previous shutdown/ownership audit established that runtime database ownership does not close while an owned worker remains active. A remaining recovery gap was that durable operational and catalog snapshots could still be considered fresh solely from their persisted timestamps after a new runtime generation started.
+
+That allowed a pre-restart observation to be route-visible before the new generation had successfully re-established its provider observation boundary.
+
+### Implementation
+
+- added a per-runtime-generation recovery fence for operational and catalog observations;
+- kept synchronization reads against the durable store unchanged, so recovery can still inspect the previous observation and preserve existing failure/reconciliation behavior;
+- routed only through generation-gated read views;
+- opened an individual provider gate only after the corresponding synchronization persistence operation completed successfully;
+- kept the gate closed when persistence failed or returned an ambiguous durability error;
+- kept operational and catalog gates independent, so one successful boundary cannot compensate for the other;
+- applied the same boundary to JSON and PostgreSQL-backed operational stores because the fence sits above the persistence implementation;
+- kept the fence in-memory so a new runtime generation always starts closed.
+
+### Changed Files
+
+- DesKaProvider/backend/runtime/recovery_fence.go
+- DesKaProvider/backend/runtime/recovery_fence_test.go
+- DesKaProvider/backend/runtime/runtime.go
+- DesKaProvider/docs/DESKAPROVIDER_V0.1_ARCHITECTURE.md
+
+### Safety Boundary / Invariants
+
+- persisted observations remain observational data and never become transaction authorization;
+- restart/reconstruction is still a persistence boundary, not a provider resubmission boundary;
+- stale or merely timestamp-fresh pre-restart observations cannot become route-eligible in a new generation before a successful current-generation refresh;
+- ambiguous persistence never opens routing readiness;
+- operational and catalog readiness remain separate;
+- no automatic retry, provider failover, transaction resubmission, duplicate purchase creation, ledger mutation, customer balance mutation, treasury movement, or provider funding is introduced;
+- provider capability/lifecycle readiness remains independently enforced by the existing registry and ProviderState gates.
+
+### Deterministic Verification
+
+Added runtime tests cover:
+
+- durable fresh snapshots hidden from routing at generation start;
+- failed operational refresh leaving routing closed even after catalog refresh succeeds;
+- successful operational and catalog refresh reopening routing;
+- a second runtime generation not inheriting the first generation's in-memory readiness marks.
+
+The implementation/test HEAD was verified by DesKaProvider CI run 3934 / 37068415658: GREEN.
+
+- test: PASS
+- race: PASS
+- credential-gated provider validation jobs: SKIPPED as expected
+
+No authorized live-provider transaction or external provider request was executed.
+
+### Progress
+
+Documented baseline remains approximately 82%.
+
+This milestone closes a concrete recovery/routing safety gap, but it does not add a new financial core, provider capability, ledger source of truth, or customer-facing API. The coarse v0.1 completion estimate therefore remains ~82% rather than being increased merely for hardening work.
+
+### Next Concrete Engineering Task
+
+Begin the next material v0.1 boundary: double-entry financial ledger foundation and provider settlement accounting boundary, starting with explicit account/wallet types, immutable ledger entries, transaction-to-ledger correlation, and failure semantics that keep provider infrastructure state separate from customer financial state.
+
+No automatic retry, provider failover, transaction resubmission, provider funding, treasury movement, or public API exposure is included in that next milestone.
+
