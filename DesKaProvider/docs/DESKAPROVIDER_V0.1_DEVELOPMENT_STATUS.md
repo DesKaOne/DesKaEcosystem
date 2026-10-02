@@ -8803,3 +8803,125 @@ That limitation is not evidence that a production bug remains in the current arc
 ### Next Concrete Engineering Task
 
 Continue the evidence-based persistence audit into provider operational-state recovery under crash/restart, specifically verifying that the existing ProviderStateStore has the same atomicity, ambiguity, monotonicity, corruption, and recovery guarantees without coupling operational state to catalog routing authorization.
+
+
+## Provider Operational-State Crash / Restart Recovery Audit
+
+**Date:** 2026-10-02
+
+### Audit Finding
+
+The existing ProviderStateStore and JSON persistence boundary were audited against the catalog persistence hardening criteria.
+
+No production correction was required.
+
+The implementation already provides:
+
+- complete-state serialization before replacement;
+- temporary-file creation in the target directory;
+- temp-file permission hardening to 0600;
+- temp-file write followed by file fsync;
+- close before replacement;
+- atomic rename;
+- containing-directory fsync;
+- explicit ErrProviderStatePersistenceAmbiguous when the post-replacement durability result is uncertain;
+- no in-memory publication after an ordinary persistence failure;
+- conservative in-memory state after an ambiguous persistence result;
+- restart loading through NewPersistentProviderStateStore(), including provider-name normalization and lifecycle validation;
+- capability metadata/fingerprint persistence without silently converting registry metadata into routing authorization;
+- capability drift detection after recovery remains separate from persistence/recovery itself.
+
+The audit specifically verified the distinction between:
+
+1. ordinary persistence failure before replacement;
+2. ambiguous persistence after replacement;
+3. recovery from the durable file after restart.
+
+For ordinary failure, the previous in-memory state remains unchanged.
+
+For ambiguous failure, lifecycle and capability enablement do not get promoted optimistically. Existing state is reduced conservatively where necessary, and a new provider is not created in memory from an uncertain write.
+
+For restart, the newly loaded durable state is validated structurally before installation; later registry capability drift remains an explicit operational reconciliation boundary.
+
+### Crash / Corruption Assessment
+
+The JSON provider-state writer already uses:
+
+temp file -> file Sync -> close -> atomic Rename -> directory Sync.
+
+Therefore an interrupted write does not intentionally expose a partially written JSON document.
+
+Corrupt JSON is rejected during recovery rather than silently converted into an empty/default operational state.
+
+Provider identity and lifecycle are validated during ProviderStateStore recovery. Capability fingerprint evidence is retained across restart and is subsequently available to the existing drift detector.
+
+### Ambiguous Persistence Assessment
+
+The ambiguity boundary was verified through deterministic tests already present in the repository:
+
+- ambiguous lifecycle disable remains fail-closed in memory;
+- ambiguous lifecycle enable does not promote enablement;
+- ambiguous capability disable does not restore/enable the uncertain capability;
+- unrelated enabled capabilities are preserved;
+- legacy capability state follows the same conservative behavior;
+- ambiguous capability reconciliation does not leave stale removed capability enabled;
+- ambiguous creation of a new provider does not create an in-memory provider state.
+
+The JSON operational snapshot store independently verifies the same class of post-replacement ambiguity for operational health/balance snapshots and prevents an uncertain permissive update from promoting freshness or health.
+
+### Monotonicity / Recovery Result
+
+Provider operational state does not use a timestamp-based monotonic write protocol because lifecycle/capability state is controlled through serialized ProviderStateStore mutations under a single mutex and persisted as complete state.
+
+The existing atomic mutation boundary therefore avoids the unsafe Get -> modify -> Put pattern for mutable provider operational state.
+
+Recovery does not infer ProductionReady, LiveTested, Tested, or routing authorization from persistence alone. Capability drift remains independently reconciled against current registry metadata.
+
+No evidence was found that restart can turn a stale/ambiguous provider operational-state record directly into routing authorization.
+
+### Deterministic Coverage
+
+Existing tests cover:
+
+- persistence across restart;
+- corrupt JSON rejection;
+- provider identity mismatch rejection for operational snapshots;
+- failed replacement preserving previous durable and in-memory state;
+- ambiguous lifecycle enable/disable;
+- ambiguous capability mutation;
+- ambiguous capability reconciliation;
+- ambiguous new-provider write;
+- capability fingerprint preservation across restart;
+- drift evidence preservation across restart;
+- concurrent capability/reconciliation mutation without lost unrelated state.
+
+### Production Change
+
+**None required.**
+
+Changing the implementation merely to create activity would add risk without evidence of a correctness gap.
+
+### Safety Invariants
+
+- ProviderStateStore remains the operational-state authority;
+- persistence does not become routing authority;
+- capability metadata does not imply operational capability readiness;
+- ambiguous persistence never optimistically promotes lifecycle/capability enablement;
+- corrupt recovery data fails closed;
+- provider identity is validated;
+- concurrent state mutations remain serialized;
+- Router.Select() remains the sole routing authority;
+- no automatic provider retry/failover is introduced;
+- no financial state, ledger, treasury, balance ownership, or transaction state is mutated by recovery.
+
+### Verification
+
+The source audit found no production-code change required.
+
+The next repository CI must independently verify test, vet, and race status for the documentation update before this audit is considered complete.
+
+External provider validation remains credential-gated and was not fabricated or promoted to LiveTested/ProductionReady.
+
+### Next Concrete Engineering Task
+
+Continue the evidence-based hardening audit into **provider operational-state recovery versus registry/capability drift ordering**, specifically verifying that a recovered enabled provider can never become route-eligible before current registry metadata, capability drift, and operational readiness have all been reconciled in the existing startup sequence.
