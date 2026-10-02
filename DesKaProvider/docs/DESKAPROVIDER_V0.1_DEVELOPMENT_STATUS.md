@@ -8532,3 +8532,58 @@ The baseline HEAD before this audit was CI #3870 / run 36987605846, completed su
 ### Next Concrete Engineering Task
 
 Continue the evidence-based runtime lifecycle audit into catalog-worker shutdown/error boundaries, specifically verifying that catalog synchronization cannot race with runtime ownership cleanup or leave the catalog lifecycle logically active after Service.Run() returns.
+
+
+## Catalog-Worker Shutdown / Error Boundary Hardening
+
+**Date:** 2026-10-02
+
+### Audit Finding
+
+The catalog path is synchronous inside Service.Run(), so catalog synchronization itself cannot execute concurrently with the runtime's final database-ownership cleanup in the same Run goroutine. However, two lifecycle-boundary gaps remained around injectable startup/shutdown seams:
+
+- a catalog-start seam could activate the catalog lifecycle and then return an error; the previous rollback helper only rolled back the balance lifecycle;
+- a custom catalog-shutdown seam could return an error while leaving the catalog lifecycle marked running, allowing Run() to return without clearing the logical lifecycle state and preventing database ownership cleanup.
+
+### Implementation
+
+- rollbackStartedLifecycles() now rolls back both an active balance lifecycle and an active catalog lifecycle, preserving all rollback errors with errors.Join;
+- shutdownCatalogLifecycle() now treats the catalog lifecycle state as the ownership boundary: after a custom shutdown hook returns, any still-running catalog lifecycle is forcibly cancelled through its own lifecycle shutdown boundary before Run() can proceed to database cleanup;
+- existing ordering remains balance shutdown -> catalog shutdown -> database ownership cleanup;
+- no catalog synchronization retry/failover, provider routing mutation, payment retry, transaction resubmission, funding, ledger mutation, customer-balance mutation, treasury movement, or public API exposure is introduced.
+
+### Deterministic Coverage
+
+Added:
+
+- TestServiceRunCatalogStartFailureRollsBackPartiallyStartedCatalogLifecycle
+- TestServiceRunCatalogShutdownErrorCannotLeaveLifecycleActive
+
+The tests verify partial catalog-start rollback, preservation of the original catalog shutdown error, inactive balance/catalog lifecycles before Run() returns, and exactly-once database ownership cleanup.
+
+### Safety Invariants
+
+- Run() cannot return with the catalog lifecycle logically active after a catalog shutdown boundary;
+- a partially activated catalog lifecycle is rolled back when catalog startup reports an error;
+- database ownership is closed only after active runtime lifecycles have been cleared;
+- synchronous catalog synchronization remains cancellation-aware and cannot race with the same-goroutine ownership cleanup path;
+- Router.Select() remains the sole routing authority.
+
+### Changed Files
+
+- DesKaProvider/backend/runtime/runtime.go
+- DesKaProvider/backend/runtime/runtime_test.go
+- DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md
+
+### Verification
+
+Implementation commits:
+
+- 1d5376e8628c06283fc2bb05dfb453cfc5d709c9 — catalog lifecycle rollback and shutdown boundary hardening;
+- 765cbca4c6eec74187afc38ec4fc9bd7e5648e27 — deterministic regression coverage.
+
+Repository CI for the resulting HEAD is required to complete successfully before this milestone is considered complete. Credential-gated provider validations remain skipped unless authorized credentials and provider access are available.
+
+### Next Concrete Engineering Task
+
+Continue the evidence-based runtime lifecycle audit into catalog synchronization error propagation and cancellation semantics, specifically verifying that provider catalog failures remain operationally observable without converting transient catalog failure into hidden runtime health or ownership-state changes.
