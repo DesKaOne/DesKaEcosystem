@@ -22,6 +22,14 @@ type OperationalInputReader interface {
 	ReadOperationalInput(ctx context.Context, providerName string, maxAge time.Duration, now time.Time) (OperationalInput, error)
 }
 
+// errorAwareOperationalStore is an optional read-error-aware extension of the
+// operational Store contract. It preserves the base Store API while allowing
+// routing to distinguish a persistence failure from a genuine snapshot miss.
+type errorAwareOperationalStore interface {
+	operational.Store
+	GetWithError(string) (operational.Snapshot, bool, error)
+}
+
 // StoreOperationalInputReader adapts the existing operational Store into the
 // explicit read-only routing boundary without exposing Store mutation methods.
 type StoreOperationalInputReader struct {
@@ -39,7 +47,17 @@ func (r *StoreOperationalInputReader) ReadOperationalInput(ctx context.Context, 
 	if err := ctx.Err(); err != nil {
 		return OperationalInput{}, err
 	}
-	snapshot, ok := r.Store.Get(providerName)
+	var snapshot operational.Snapshot
+	var ok bool
+	var readErr error
+	if aware, supported := r.Store.(errorAwareOperationalStore); supported {
+		snapshot, ok, readErr = aware.GetWithError(providerName)
+	} else {
+		snapshot, ok = r.Store.Get(providerName)
+	}
+	if readErr != nil {
+		return OperationalInput{}, readErr
+	}
 	if !ok {
 		return OperationalInput{}, operational.ErrOperationalSnapshotNotFound
 	}
