@@ -29,7 +29,9 @@ func runtimeFixture(t *testing.T) (*ValidatorRuntime, RoundState, ValidatorSet, 
 	if err != nil {
 		t.Fatal(err)
 	}
+	authority := runtimeTestAuthoritySet(t, state, validators)
 	runtime, err := NewValidatorRuntime(RuntimeConfig{
+		Authority: &authority,
 		Rules: ValidationRules{
 			ProtocolVersion: state.ProtocolVersion,
 			ChainID: state.ChainID,
@@ -43,6 +45,20 @@ func runtimeFixture(t *testing.T) (*ValidatorRuntime, RoundState, ValidatorSet, 
 		t.Fatal(err)
 	}
 	return runtime, state, validators, power
+}
+
+func runtimeTestAuthoritySet(t *testing.T, state RoundState, validators ValidatorSet) ValidatorAuthoritySet {
+	t.Helper()
+	base := runtimeTestAuthority(t)
+	keys := map[string][]byte{}
+	for _, id := range validators.Validators {
+		key, err := base.PublicKeyForValidator(id)
+		if err != nil { t.Fatal(err) }
+		keys[string(id)] = key
+	}
+	set, err := NewValidatorAuthoritySet(state.Epoch, validators, keys)
+	if err != nil { t.Fatal(err) }
+	return set
 }
 
 func runtimeTestAuthority(t *testing.T) StaticValidatorAuthority {
@@ -326,4 +342,37 @@ func TestValidatorRuntimeExposesClonedFinalityCertificate(t *testing.T) {
 	certificate.Votes[0].Payload[0] = 'Y'
 	fresh, err := runtime.FinalizedCertificate(); if err != nil { t.Fatal(err) }
 	if string(fresh.Payload) != "block-8" || string(fresh.Votes[0].Payload) != "block-8" { t.Fatal("runtime certificate was not cloned") }
+}
+
+func TestValidatorRuntimeRejectsAuthorityEpochMismatch(t *testing.T) {
+	runtime, state, validators, power := runtimeFixture(t)
+	bad, err := NewValidatorAuthoritySet(state.Epoch+1, validators, map[string][]byte{
+		"validator-a": []byte("key-a"),
+		"validator-b": []byte("key-b"),
+		"validator-c": []byte("key-c"),
+	})
+	if err != nil { t.Fatal(err) }
+	_, err = NewValidatorRuntime(RuntimeConfig{
+		Authority: &bad,
+		Rules: ValidationRules{ProtocolVersion: state.ProtocolVersion, ChainID: state.ChainID},
+		State: state, Validators: validators, VotingPower: power,
+		Threshold: QuorumThreshold{Numerator: 2, Denominator: 3}, Proposer: RoundRobinProposer{},
+	})
+	if !errors.Is(err, ErrValidatorAuthorityMismatch) {
+		t.Fatalf("expected authority epoch mismatch, got %v", err)
+	}
+}
+
+func TestValidatorRuntimeAuthoritySnapshotIsDefensive(t *testing.T) {
+	runtime, _, _, _ := runtimeFixture(t)
+	authority, err := runtime.Authority()
+	if err != nil { t.Fatal(err) }
+	key, err := authority.PublicKeyForValidator([]byte("validator-a"))
+	if err != nil { t.Fatal(err) }
+	key[0] = 'X'
+	fresh, err := runtime.Authority()
+	if err != nil { t.Fatal(err) }
+	freshKey, err := fresh.PublicKeyForValidator([]byte("validator-a"))
+	if err != nil { t.Fatal(err) }
+	if bytes.Equal(freshKey, key) { t.Fatal("runtime authority leaked mutable key alias") }
 }
