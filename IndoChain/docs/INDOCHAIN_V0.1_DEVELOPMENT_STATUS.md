@@ -3767,3 +3767,86 @@ The existing P2P consensus driver remains the transport integration boundary, wh
 Do not return to 4.69 GC dissemination as the default next milestone unless a concrete GC operational dependency blocks consensus integration.
 
 **Milestone 5.0 status:** implementation/test completed; CI GREEN on exact implementation/test HEAD; status-document update requires final CI verification on its own HEAD.
+
+
+### 5.1 Production Consensus Vote Event Loop
+
+**Tanggal:** 2026-10-02
+
+**Objective**
+
+Menutup gap antara `ConsensusEngine` dan lifecycle BFT operasional: validator lokal sekarang menghasilkan dan mengonsumsi evidence prevote/precommit secara authenticated, sementara P2P hanya menerima event yang perlu didiseminasikan.
+
+**Implementation**
+
+- `IndoChain/internal/consensus/engine_events.go`
+  - `ProcessMessage` menjadi event bridge produksi;
+  - proposal yang diterima memicu prevote lokal;
+  - prevote quorum memicu precommit lokal;
+  - precommit quorum memicu finalization setelah authenticated evidence validation;
+  - vote lokal dikonsumsi tepat satu kali oleh runtime dan dikembalikan sebagai event untuk P2P;
+  - duplicate local phase vote ditolak dari jalur event generation;
+  - canonical commit tetap bukan tanggung jawab engine.
+- `IndoChain/internal/consensus/engine_events_test.go`
+  - proposal → prevote;
+  - prevote quorum → precommit;
+  - precommit quorum → finality;
+  - authenticated local vote contribution.
+
+**Protocol semantics**
+
+```
+proposal
+   ↓
+local prevote + P2P event
+   ↓
+prevote quorum
+   ↓
+local precommit + P2P event
+   ↓
+precommit quorum
+   ↓
+FinalityCertificate
+   ↓
+Node canonical commit boundary
+```
+
+Local votes are applied exactly once to the local runtime; the returned messages are dissemination artifacts and must not be looped back into the same runtime as a second local vote.
+
+**Safety invariants**
+
+1. Every generated vote carries the current protocol/chain/epoch/height/round context.
+2. Every generated vote is signed by the configured validator signer.
+3. Local voting power is counted exactly once per phase.
+4. Remote messages still pass the existing message, membership, signature, and quorum validation pipeline.
+5. Finalization occurs only after authenticated precommit evidence satisfies the configured quorum.
+6. The engine does not mutate canonical Node state.
+7. P2P dissemination remains outside the consensus state machine.
+
+**Verification**
+
+- Starting HEAD: `dde303968a2872182718e745c268fffe3540e1ec`.
+- Implementation/test commits: `ba53be639fd24f9823ef7e37bd3dcdbcec4733da`, `d3c40e105df941c97e1e8bff75d85942300e7a4c`, `4e4b8790c57e728190ad00dc1492a68c4b2aaca1`, `27e7f10688f8a3fd95a89798cd23b0fb6fb51c78`, `bc91a5357ac78369ab7060ccbfb91ba63e8d5c8e`.
+- CI run #1800 / `36987521439`: **GREEN**.
+- Tidy: PASS.
+- Test: PASS.
+- Race Test: PASS.
+- Vet: PASS.
+
+**Known limitations**
+
+This milestone still does not provide the complete Node/P2P multi-process production loop. The following remain:
+
+- concrete node-owned candidate production lifecycle;
+- proposal/vote broadcast and peer fan-out integration;
+- finality-to-canonical-commit orchestration across multiple nodes;
+- durable consensus event/recovery integration;
+- validator-set/epoch lifecycle;
+- protocol serialization freeze;
+- native gas/fee production semantics.
+
+**Next meaningful integration target**
+
+**5.2 Node Consensus Session / Multi-Node Commit Path:** bind `ConsensusEngine.ProcessMessage` to real P2P receive/send, deterministic candidate production, finality publication, and the existing `Node.CommitFinalityEvidenceAndPublishConsensus` canonical handoff. Acceptance requires a multi-node test demonstrating convergence and exactly-once canonical commit.
+
+**Milestone 5.1 status:** implementation/test completed; CI GREEN on implementation HEAD. Final documentation HEAD requires its own CI verification.
