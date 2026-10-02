@@ -9559,3 +9559,22 @@ DesKaProvider CI #4026 / 37072443777 is GREEN:
 The implementation required deterministic CI fixture corrections for the PostgreSQL settlement test: the settlement test now creates every ledger account referenced by the valid double-entry fixture. These corrections do not change production financial semantics.
 
 The durable settlement audit milestone is verified on this implementation HEAD. A documentation-only synchronization commit follows; that new HEAD must itself pass CI before it is considered final.
+
+
+## Ambiguous Settlement Persistence Boundary
+
+**Date:** 2026-10-03
+
+Added explicit fail-closed classification for PostgreSQL commit errors using `ErrSettlementPersistenceAmbiguous`.
+
+### Invariant
+An ambiguous commit outcome is never interpreted as a failed provider transaction. The settlement layer does not retry, fail over, resubmit, fund, or mutate customer balances. Reconciliation/durable lookup is the path for resolving whether the ledger+audit posting committed.
+
+### Tests
+Added machine-detectable classification coverage and retained settlement success, idempotency, immutability, audit correlation, PostgreSQL atomicity, and race coverage.
+
+### Progress
+Engineering estimate remains approximately 88% pending final CI verification.
+
+### Next milestone
+Use the persisted provider transaction terminal-state record as an explicit input to settlement posting, once the actual provider transaction lifecycle integration point is identified and verified from repository code.
