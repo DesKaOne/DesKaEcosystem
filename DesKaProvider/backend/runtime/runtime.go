@@ -512,7 +512,12 @@ catalogStarted := false
 		case <-workerDone:
 			s.shutdownMu.Lock()
 			defer s.shutdownMu.Unlock()
-			workerErr := s.balanceLifecycle.Wait(context.Background())
+			workerErr := s.balanceLifecycle.ExitError()
+			if workerErr == nil {
+				workerErr = operational.ErrSyncWorkerExited
+			} else if errors.Is(workerErr, context.Canceled) && ctx.Err() == nil {
+				workerErr = operational.ErrSyncWorkerExited
+			}
 			return shutdownLocked(workerErr, nil)
 		}
 	}
@@ -544,7 +549,12 @@ catalogStarted := false
 		case <-workerDone:
 			s.shutdownMu.Lock()
 			defer s.shutdownMu.Unlock()
-			workerErr := s.balanceLifecycle.Wait(context.Background())
+			workerErr := s.balanceLifecycle.ExitError()
+			if workerErr == nil {
+				workerErr = operational.ErrSyncWorkerExited
+			} else if errors.Is(workerErr, context.Canceled) && ctx.Err() == nil {
+				workerErr = operational.ErrSyncWorkerExited
+			}
 			return shutdownLocked(workerErr, nil)
 		case <-ticker.C:
 			_ = s.catalogSync.SyncAll(catalogCtx)
