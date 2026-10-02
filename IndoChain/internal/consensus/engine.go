@@ -117,6 +117,25 @@ func (e *ConsensusEngine) Driver() *RoundDriver {
 	return e.driver
 }
 
+// ValidatorID returns the local validator identity used for authenticated
+// consensus events. Callers receive a defensive copy.
+func (e *ConsensusEngine) ValidatorID() []byte {
+	if e == nil {
+		return nil
+	}
+	return append([]byte(nil), e.validator...)
+}
+
+// ExpectedProposer returns the proposer selected by the validator runtime for
+// the current height/round. Proposal handoff callers must use this authority
+// instead of deriving proposer identity from local policy.
+func (e *ConsensusEngine) ExpectedProposer() ([]byte, error) {
+	if e == nil || e.runtime == nil {
+		return nil, ErrNilConsensusEngine
+	}
+	return e.runtime.ExpectedProposer()
+}
+
 // ArmTimeout invalidates every previous timeout token and returns a new token
 // for the runtime's exact height/round/phase.
 func (e *ConsensusEngine) ArmTimeout() (TimeoutToken, time.Duration, error) {
