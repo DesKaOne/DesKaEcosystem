@@ -4347,3 +4347,13 @@ Workspace runtime tidak menyediakan checkout lokal repository, sehingga `go test
 **5.8 Epoch-Bound Consensus Runtime Wiring:** jadikan `ValidatorAuthoritySet` dependency eksplisit pada consensus engine/session dan persistence context, menolak message/evidence ketika epoch authority tidak cocok, tanpa mengaktifkan validator-set mutation atau production PoS policy.
 
 **Milestone 5.7 status:** implementation/test sources committed; CI gate pending.
+
+### 5.7 Verification Gate Update — 2026-10-03
+
+The first 5.7 CI gate exposed one concrete regression in `NewValidatorAuthoritySet`: an authority map containing an extra validator key was accepted. The failure was isolated to `TestValidatorAuthoritySetRejectsMissingOrExtraAuthority`; the workflow Tidy step and all other packages reported in the run passed.
+
+Fix: `NewValidatorAuthoritySet` now requires `len(keys) == len(validators.Validators)` before constructing the immutable snapshot.
+
+Fix commit: `f37cffce4f519b0ab9e83a28490cabd3d2500b69`.
+
+The branch HEAD after the fix is `f37cffce4f519b0ab9e83a28490cabd3d2500b69`. A new GitHub Actions run has not yet been observed for this direct branch commit, so milestone 5.7 remains gated until that commit itself has a GREEN IndoChain CI result.
