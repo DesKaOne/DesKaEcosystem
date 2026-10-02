@@ -14,8 +14,14 @@ func (r *ValidatorRuntime) AcceptAuthenticatedProposal(
 	if r == nil {
 		return ErrInvalidConsensusRuntime
 	}
-	if resolver == nil {
+	if resolver == nil && r.authority == nil {
 		return ErrAuthenticatedConsensusAuthorityMissing
+	}
+	if r.authority != nil {
+		if !r.authority.SameContext(r.state) {
+			return ErrValidatorAuthorityMismatch
+		}
+		resolver = r.authority
 	}
 	if msg.Type != MessageTypeProposal {
 		return ErrInvalidConsensusMessage
@@ -49,8 +55,14 @@ func (r *ValidatorRuntime) AddAuthenticatedVote(
 	if r == nil {
 		return ErrInvalidConsensusRuntime
 	}
-	if resolver == nil {
+	if resolver == nil && r.authority == nil {
 		return ErrAuthenticatedConsensusAuthorityMissing
+	}
+	if r.authority != nil {
+		if !r.authority.SameContext(r.state) {
+			return ErrValidatorAuthorityMismatch
+		}
+		resolver = r.authority
 	}
 	if msg.Type != MessageTypeVote &&
 		msg.Type != MessageTypePrevote &&
