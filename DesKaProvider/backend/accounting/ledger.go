@@ -98,10 +98,11 @@ type Store interface {
 type MemoryStore struct {
 	mu           sync.RWMutex
 	transactions map[string]LedgerTransaction
+	audits       map[string]SettlementAudit
 }
 
 func NewMemoryStore() *MemoryStore {
-	return &MemoryStore{transactions: make(map[string]LedgerTransaction)}
+	return &MemoryStore{transactions: make(map[string]LedgerTransaction), audits: make(map[string]SettlementAudit)}
 }
 
 func cloneTransaction(t LedgerTransaction) LedgerTransaction {
@@ -116,6 +117,48 @@ func (s *MemoryStore) AppendContext(_ context.Context, t LedgerTransaction) erro
 func (s *MemoryStore) GetContext(_ context.Context, id string) (LedgerTransaction, bool, error) {
 	t, ok := s.Get(id)
 	return t, ok, nil
+}
+
+func sameSettlementAudit(a, b SettlementAudit) bool {
+	return a.EventID == b.EventID && a.TransactionID == b.TransactionID &&
+		a.ReferenceID == b.ReferenceID && a.SourceType == b.SourceType &&
+		a.SourceID == b.SourceID && a.Status == b.Status &&
+		a.CreatedAt.Truncate(time.Microsecond).Equal(b.CreatedAt.Truncate(time.Microsecond))
+}
+
+func (s *MemoryStore) AppendSettlement(_ context.Context, t LedgerTransaction, audit SettlementAudit) error {
+	if err := t.Validate(); err != nil {
+		return err
+	}
+	if err := audit.Validate(); err != nil {
+		return err
+	}
+	if audit.TransactionID != t.ID || audit.ReferenceID != t.ReferenceID ||
+		audit.SourceType != t.SourceType || audit.SourceID != t.SourceID {
+		return ErrLedgerConflict
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if current, ok := s.transactions[t.ID]; ok {
+		currentAudit, auditOK := s.audits[t.ID]
+		if sameLedgerTransaction(current, t) && auditOK && sameSettlementAudit(currentAudit, audit) {
+			return nil
+		}
+		return ErrLedgerConflict
+	}
+	if existing, ok := s.audits[audit.TransactionID]; ok && !sameSettlementAudit(existing, audit) {
+		return ErrLedgerConflict
+	}
+	s.transactions[t.ID] = cloneTransaction(t)
+	s.audits[t.ID] = audit
+	return nil
+}
+
+func (s *MemoryStore) GetSettlementAudit(_ context.Context, transactionID string) (SettlementAudit, bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	a, ok := s.audits[transactionID]
+	return a, ok, nil
 }
 
 func (s *MemoryStore) Append(t LedgerTransaction) error {
