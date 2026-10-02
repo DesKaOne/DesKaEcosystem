@@ -4196,3 +4196,103 @@ Milestone ini mengintegrasikan scheduler lifecycle dan automatic timeout evidenc
 **5.6 Automatic Round-Change Proposal Handoff:** setelah quorum timeout evidence memajukan round, node/proposer lifecycle harus menghasilkan dan mendiseminasi proposal untuk round baru tanpa caller manual, dengan proposer authority tetap berasal dari validator runtime.
 
 **Milestone 5.5 status:** implementation/test completed; implementation CI GREEN; final status-document CI gate pending.
+
+
+### 5.6 Automatic Round-Change Proposal Handoff
+
+**Tanggal:** 2026-10-03
+
+**Objective**
+
+Setelah quorum timeout evidence memajukan consensus runtime ke round baru, proposer yang dipilih validator runtime harus dapat menghasilkan dan mendiseminasikan proposal secara otomatis tanpa caller manual. Handoff tidak boleh memilih proposer sendiri, tidak boleh menganggap local timeout sebagai quorum, dan tidak boleh melewati candidate validation atau canonical commit boundary.
+
+**Implementation**
+
+- IndoChain/internal/consensus/engine.go
+  - ValidatorID() mengekspos local validator identity secara defensive-copy untuk kebutuhan orchestration;
+  - ExpectedProposer() meneruskan authority proposer dari ValidatorRuntime, sehingga session tidak menduplikasi atau mengarang proposer policy.
+- IndoChain/internal/p2p/consensus_session.go
+  - ConsensusSession menerima optional consensus.BlockProducer melalui NewConsensusSessionWithSchedulerAndProducer;
+  - constructor lama tetap kompatibel dan tidak otomatis mengaktifkan producer jika tidak disediakan;
+  - setelah TryAdvanceRound() berhasil, session memanggil handoffRoundProposalLocked();
+  - handoff hanya aktif bila ExpectedProposer() sama dengan ConsensusEngine.ValidatorID();
+  - candidate round baru dapat memakai candidate yang masih valid bila proposer-nya sama; bila tidak tersedia atau proposer berbeda, session menggunakan BlockProducer untuk membangun candidate baru dengan state/round terbaru dan proposer authority dari runtime;
+  - proposal baru melewati BuildProposalMessage, candidate validation, authenticated signature, local runtime processing, candidate broadcast, proposal broadcast, generated vote broadcast, dan timeout re-arm;
+  - proposal validation sekarang membangun validation context dari runtime state terbaru dan candidate proposer, sehingga round-change tidak memakai proposer context round lama;
+  - non-ErrTimeoutEvidencePending errors dari round-change tidak lagi ditelan oleh session.
+- IndoChain/internal/p2p/consensus_session_test.go
+  - deterministic two-validator handoff test memaksa timeout evidence dari kedua validator;
+  - session lifecycle diaktifkan, quorum memajukan round 0 -> 1;
+  - RoundRobinProposer memilih validator berikutnya melalui runtime authority;
+  - producer membuat candidate round baru secara otomatis;
+  - test memverifikasi phase masuk ke prevote dan candidate proposer sama dengan validator yang memang dipilih runtime;
+  - transport peer terhubung sehingga handoff benar-benar melewati broadcast path.
+
+**Operational semantics**
+
+    timeout evidence quorum
+            ↓
+    TryAdvanceRound()
+            ↓
+    ValidatorRuntime.ExpectedProposer()
+            ↓
+    local validator == expected proposer?
+            ├── no → wait for proposal from selected proposer
+            │
+            └── yes
+                 ↓
+          existing valid candidate?
+            ├── yes → reuse
+            └── no  → BlockProducer.ProduceBlock()
+                 ↓
+           BuildProposalMessage()
+                 ↓
+     candidate/context/signature validation
+                 ↓
+           local ProcessMessage()
+                 ↓
+     Block(candidate) + Consensus(proposal) + generated votes
+                 ↓
+          re-arm timeout lifecycle
+
+**Locked invariants**
+
+1. Proposer selection tetap berasal dari ValidatorRuntime.ExpectedProposer().
+2. Local validator hanya dapat melakukan automatic proposal handoff ketika identity-nya sama dengan proposer yang dipilih runtime.
+3. Timeout quorum tetap menjadi prasyarat round change; scheduler tidak dapat memajukan round sendirian.
+4. Candidate production tetap melalui BlockProducer boundary; session tidak mengimplementasikan transaction selection, fee policy, execution, atau persistence.
+5. Candidate baru harus cocok dengan consensus height, current round context, previous hash, proposer, dan existing candidate validation rules.
+6. Proposal tetap authenticated dan diproses melalui ConsensusEngine.
+7. Generated local votes tetap exactly-once melalui engine.
+8. Automatic handoff tidak melakukan canonical commit; finality tetap melalui existing Node commit boundary.
+9. Non-pending consensus errors tidak boleh disamarkan sebagai timeout evidence yang belum cukup.
+10. Constructor lama tetap kompatibel dan producer bersifat explicit dependency.
+11. Candidate exchange tetap bukan consensus evidence.
+12. Tidak ada speculative recovery mutation.
+
+**Verification**
+
+- Implementation/test HEAD: bdb990e7c39af3742e2add4fc8ca717d55844a6b.
+- CI run #1889 / 37066961429: **GREEN**.
+- Tidy: PASS.
+- Test: PASS.
+- Race Test: PASS.
+- Vet: PASS.
+- Earlier CI failures #1873, #1875, #1877, #1879, #1881, #1883, #1885, #1887 exposed implementation/test integration issues during development and were not treated as milestone completion gates. The final implementation HEAD above is the corrected handoff test state with all required CI checks GREEN.
+
+**Known limitations**
+
+Milestone ini menutup automatic proposal handoff setelah timeout quorum, tetapi belum menjadi full production validator/network service. Masih terbuka:
+
+- durable validator-set/epoch lifecycle;
+- peer failure, retransmission, backpressure, dan proposal timeout policy;
+- crash/restart recovery lintas independent processes;
+- canonical consensus serialization freeze;
+- production transaction selection and gas/fee semantics;
+- EVM execution.
+
+**Next meaningful integration target**
+
+**5.7 Validator Authority / Epoch Boundary Integration:** mengikat validator-set/epoch lifecycle ke consensus context dan recovery boundary secara durable, sehingga proposer selection, vote authority, timeout authority, dan restart context tidak lagi bergantung pada validator set yang hanya hidup di memory.
+
+**Milestone 5.6 status:** implementation/test completed; implementation CI GREEN; final status-document CI gate pending.
