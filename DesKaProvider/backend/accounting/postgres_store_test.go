@@ -90,6 +90,12 @@ func TestPostgresSettlementAppendIsAtomicAndIdempotent(t *testing.T) {
 
 	store, err := NewPostgresStore(db)
 	if err != nil { t.Fatal(err) }
+	for _, account := range []Account{
+		{ID:"provider-clearing",Type:AccountTypeClearing,Currency:"IDR",Name:"Provider Clearing",Active:true},
+		{ID:"settlement-in",Type:AccountTypeSettlementIn,Currency:"IDR",Name:"Settlement In",Active:true},
+	} {
+		if _, created, err := store.CreateAccount(ctx, account); err != nil || !created { t.Fatalf("create settlement account: %v %v", err, created) }
+	}
 	tx := validLedgerTransaction()
 	tx.ID = "settlement-ledger-pg-1"
 	tx.CreatedAt = time.Now().UTC()
