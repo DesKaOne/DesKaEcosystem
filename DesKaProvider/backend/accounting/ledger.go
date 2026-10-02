@@ -76,7 +76,7 @@ func (t LedgerTransaction) Validate() error {
 func sameLedgerTransaction(a, b LedgerTransaction) bool {
 	if a.ID != b.ID || a.ReferenceID != b.ReferenceID || a.SourceType != b.SourceType ||
 		a.SourceID != b.SourceID || a.Currency != b.Currency ||
-		a.Description != b.Description || !a.CreatedAt.Equal(b.CreatedAt) ||
+		a.Description != b.Description || !a.CreatedAt.Truncate(time.Microsecond).Equal(b.CreatedAt.Truncate(time.Microsecond)) ||
 		len(a.Entries) != len(b.Entries) {
 		return false
 	}
