@@ -1079,3 +1079,31 @@ Consequently:
 - no treasury movement is introduced.
 
 Settlement posting policy will be a later milestone and must define the exact debit/credit accounts and lifecycle correlation before any financial mutation is allowed.
+
+
+## 39. Explicit Provider Settlement Posting Boundary
+
+Settlement posting is an explicit accounting command, not an implicit consequence of provider infrastructure state.
+
+The posting boundary accepts a terminal provider outcome plus a pre-declared ledger transaction:
+
+- immutable ledger transaction ID;
+- provider/payment reference and source correlation;
+- one currency;
+- an explicit set of debit/credit ledger entries;
+- a terminal provider status.
+
+Only terminal provider status success is eligible for this v0.1 posting primitive. Pending or failed outcomes are rejected without ledger mutation.
+
+The accounting layer validates the complete double-entry transaction before persistence. The ledger store remains responsible for idempotency and immutable identity conflict handling. Reposting the exact same ledger transaction is therefore idempotent; reusing its ID with different financial content is rejected.
+
+This boundary intentionally does not:
+
+- query or mutate an external provider;
+- retry, fail over, or resubmit a provider transaction;
+- fund a provider;
+- move treasury funds implicitly;
+- create or update a customer balance projection;
+- infer debit/credit accounts from provider names or product metadata.
+
+The caller must provide the exact accounts and entries before financial mutation is permitted. An ambiguous or failed ledger persistence result is returned to the caller; this layer performs no compensating provider action.
