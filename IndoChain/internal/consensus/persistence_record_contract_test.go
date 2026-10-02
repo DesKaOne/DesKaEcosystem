@@ -13,7 +13,7 @@ func persistenceTestContext() PersistenceContext {
 		Height: 42,
 		Round: 3,
 		Phase: uint8(PhasePrecommit),
-		ValidatorDigest: [32]byte{1, 2, 3},
+		ValidatorAuthorityDigest: [32]byte{1, 2, 3},
 		VotingPowerDigest: [32]byte{4, 5, 6},
 		ThresholdNumerator: 2,
 		ThresholdDenominator: 3,
@@ -116,5 +116,56 @@ func TestPersistenceContextDigestBindsRecoveryContext(t *testing.T) {
 	changed := PersistenceContextDigest(context)
 	if original == changed {
 		t.Fatal("changing recovery context must change context digest")
+	}
+}
+
+func TestPersistenceContextAuthorityDigestBindsEpochAndAuthority(t *testing.T) {
+	validators, err := NewValidatorSet([][]byte{[]byte("validator-a"), []byte("validator-b")})
+	if err != nil { t.Fatal(err) }
+	firstAuthority, err := NewValidatorAuthoritySet(7, validators, map[string][]byte{
+		"validator-a": []byte("key-a"), "validator-b": []byte("key-b"),
+	})
+	if err != nil { t.Fatal(err) }
+	secondAuthority, err := NewValidatorAuthoritySet(7, validators, map[string][]byte{
+		"validator-a": []byte("key-a-rotated"), "validator-b": []byte("key-b"),
+	})
+	if err != nil { t.Fatal(err) }
+	thirdAuthority, err := NewValidatorAuthoritySet(8, validators, map[string][]byte{
+		"validator-a": []byte("key-a"), "validator-b": []byte("key-b"),
+	})
+	if err != nil { t.Fatal(err) }
+
+	base := persistenceTestContext()
+	base.ValidatorAuthorityDigest = authorityDigest(firstAuthority)
+	first := PersistenceContextDigest(base)
+
+	rotated := base
+	rotated.ValidatorAuthorityDigest = authorityDigest(secondAuthority)
+	if first == PersistenceContextDigest(rotated) {
+		t.Fatal("authority rotation must change persistence context digest")
+	}
+
+	epochChanged := base
+	epochChanged.Epoch = thirdAuthority.Epoch
+	epochChanged.ValidatorAuthorityDigest = authorityDigest(thirdAuthority)
+	if first == PersistenceContextDigest(epochChanged) {
+		t.Fatal("authority epoch change must change persistence context digest")
+	}
+}
+
+func TestPersistenceRecordRejectsAuthorityContextMismatch(t *testing.T) {
+	context := persistenceTestContext()
+	authorityDigest := context.ValidatorAuthorityDigest
+	digest := PersistenceContextDigest(context)
+	record, err := NewPersistenceRecord(PersistenceRecordTypeWAL, 1, digest, []byte("round-state"))
+	if err != nil { t.Fatal(err) }
+
+	mismatched := context
+	mismatched.ValidatorAuthorityDigest[0] ^= 0xff
+	if err := record.Validate(PersistenceContextDigest(mismatched), 0); err != ErrPersistenceContextMismatch {
+		t.Fatalf("Validate() error = %v, want %v", err, ErrPersistenceContextMismatch)
+	}
+	if context.ValidatorAuthorityDigest != authorityDigest {
+		t.Fatal("test mutated source authority digest")
 	}
 }
