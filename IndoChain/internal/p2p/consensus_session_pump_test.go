@@ -30,11 +30,11 @@ func TestConsensusSessionPumpCandidateBeforeProposal(t *testing.T) {
     candidate, err := consensus.BuildBlockCandidate(consensus.BlockCandidateInput{Context:ctxA,Timestamp:nodeA.Head.Header.Timestamp+1,Transactions:[]any{},Rules:rules},nodeA.State); if err != nil { t.Fatal(err) }
     ta,tb := NewInMemoryTransport(PeerID("a"),65536),NewInMemoryTransport(PeerID("b"),65536)
     if err:=ta.Connect("b",tb);err!=nil{t.Fatal(err)}; if err:=tb.Connect("a",ta);err!=nil{t.Fatal(err)}
-    engineA:=newSessionEngine(t,stateA,va,signerA,validators,power,authority)
+    engineA:=newPumpSessionEngine(t,stateA,va,signerA,validators,power,authority)
     engineB:=newSessionEngine(t,stateB,vb,signerB,validators,power,authority)
     vr:=consensus.ValidationRules{ProtocolVersion:devnet.ProtocolVersion,ChainID:devnet.ChainID,MaxPayloadSize:65536,RequireSender:true,RequireSignature:true}
     ctxB:=consensus.BlockProductionContext{State:stateB,PreviousHash:nodeB.HeadHash,Proposer:va}
-    sa,err:=NewConsensusSession(nodeA,engineA,ta,vr,[]PeerID{"b"},ctxA,validators,power,authority,sessionSenderResolver{key:keyA.PublicKey});if err!=nil{t.Fatal(err)}
+    sa,err:=NewConsensusSession(nodeA,engineA,ta,vr,[]PeerID{"b"},ctxA,validators,power,authority,pumpSenderResolver{key:keyA.PublicKey});if err!=nil{t.Fatal(err)}
     sb,err:=NewConsensusSession(nodeB,engineB,tb,vr,[]PeerID{"a"},ctxB,validators,power,authority,sessionSenderResolver{key:keyB.PublicKey});if err!=nil{t.Fatal(err)}
     if err:=sa.StartProposal(candidate);err!=nil{t.Fatal(err)}
     if _,err:=sb.PumpOnce();err!=nil{t.Fatal(err)} // candidate
