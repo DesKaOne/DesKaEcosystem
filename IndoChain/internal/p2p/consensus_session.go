@@ -141,6 +141,32 @@ func (s *ConsensusSession) armTimeoutLocked() error {
     return s.scheduler.ArmEngineTimeout(s.engine, s.handleScheduledTimeout)
 }
 
+func (s *ConsensusSession) Stop() {
+    if s == nil { return }
+    s.mu.Lock()
+    s.started = false
+    scheduler := s.scheduler
+    engine := s.engine
+    s.mu.Unlock()
+    if scheduler != nil { _ = scheduler.CancelEngineTimeout(engine) }
+}
+
+func (s *ConsensusSession) handleScheduledTimeout(msg consensus.Message, err error) {
+    s.mu.Lock()
+    defer s.mu.Unlock()
+    if err != nil || !s.started || s.committed { return }
+    if err := s.broadcast(msg); err != nil { return }
+    if _, err := s.engine.TryAdvanceRound(); err == nil {
+        _ = s.armTimeoutLocked()
+    }
+}
+
+func (s *ConsensusSession) armTimeoutLocked() error {
+    if s.scheduler == nil || s.engine == nil { return ErrNilConsensusSession }
+    if !s.started { return nil }
+    return s.scheduler.ArmEngineTimeout(s.engine, s.handleScheduledTimeout)
+}
+
 func (s *ConsensusSession) HandlePeerMessage(from PeerID, msg consensus.Message, candidate *block.Block) error {
     if s == nil || s.engine == nil || s.node == nil {
         return ErrNilConsensusSession
