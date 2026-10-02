@@ -9087,3 +9087,108 @@ External provider validation remains credential-gated and is not promoted by thi
 ### Next Concrete Engineering Task
 
 Continue the evidence-based hardening audit into **runtime worker startup/shutdown publication**, specifically verifying that balance/catalog background workers cannot publish stale operational or catalog state, leak goroutines, or retain database ownership across cancellation, unexpected worker exit, or repeated Run/Close cycles.
+
+## Runtime Worker Startup / Shutdown Publication Audit
+
+**Date:** 2026-10-03
+
+### Audit Finding
+
+The runtime worker startup/shutdown boundary was audited for the invariant that balance and catalog background synchronization cannot publish partial lifecycle state, leak goroutines, or retain database ownership across cancellation, unexpected worker exit, or repeated Run / Close cycles.
+
+**No production correction was required.**
+
+The existing implementation already separates worker lifecycle ownership from synchronization logic and keeps database ownership behind the runtime shutdown boundary.
+
+### Balance Worker Lifecycle
+
+operational.SyncWorkerLifecycle provides an explicit per-generation lifecycle boundary:
+
+- Start rejects concurrent starts and creates a fresh cancellable context and completion channel for each worker generation;
+- worker completion records the terminal error, marks the lifecycle stopped, and closes the generation completion channel exactly once;
+- Done and ExitError are observational and do not mutate ownership;
+- Shutdown requests cancellation and waits for worker completion, bounded by the caller shutdown context;
+- normal context.Canceled completion is normalized as clean shutdown;
+- unexpected nil/error worker exit remains distinguishable through ErrSyncWorkerExited / the recorded terminal error;
+- a completed generation can be started again with fresh cancellation/completion state.
+
+This prevents a previous worker generation completion state from being reused as the next generation publication state.
+
+### Catalog Worker Lifecycle
+
+The runtime catalog lifecycle is intentionally lighter-weight than the balance worker:
+
+- catalogWorkerLifecycle.Start creates the owned cancellation context and marks the lifecycle active;
+- catalog synchronization executes in the owning Service.Run goroutine rather than spawning an independent catalog goroutine;
+- periodic synchronization is driven by the runtime ticker;
+- Shutdown cancels the catalog context and clears the lifecycle running publication state;
+- because the catalog loop is owned by Run, shutdown completion is serialized by the same Run control path rather than requiring a second worker-join protocol.
+
+Provider fetch cancellation and catalog persistence failures are already covered by deterministic runtime tests; failures remain observable through catalog sync status while the runtime continues retrying on its configured schedule where applicable.
+
+### Database Ownership / Shutdown Ordering
+
+The audited Service.Run path preserves the ownership boundary:
+
+1. reject closed or already-running lifecycle state;
+2. start the balance worker;
+3. start the catalog lifecycle only after the balance worker has started successfully;
+4. on cancellation or unexpected balance-worker exit, shut down the active worker lifecycles;
+5. defer database closure until all owned lifecycles report stopped;
+6. preserve primary, worker, lifecycle, and database-close error identity/order;
+7. allow Close only after active worker lifecycles have stopped.
+
+If catalog startup fails after balance startup, the runtime rolls back the already-started lifecycle before closing owned databases. If shutdown times out while a worker remains active, ownership remains open until that worker actually stops.
+
+### Repeated Run / Close and Partial Shutdown
+
+Existing deterministic coverage exercises:
+
+- unexpected balance-worker exit and ownership cleanup;
+- concurrent Run rejection without closing active database ownership;
+- restart after completed shutdown;
+- cancellation of balance-only and balance-plus-catalog runtimes;
+- repeated Close and stable shutdown-error identity;
+- concurrent Close / Run interleavings;
+- shutdown deadline while a worker remains active;
+- database cleanup only after both lifecycles stop;
+- partial catalog shutdown and later convergence;
+- fresh generation reuse after partial shutdown;
+- catalog start failure rollback;
+- catalog initial sync/provider/persistence failure remaining observable without terminating the runtime;
+- in-flight catalog fetch cancellation delaying ownership cleanup until the fetch returns.
+
+These tests directly cover the publication and ownership invariants rather than relying only on timing-based sleep assertions.
+
+### Production Change
+
+**None required.**
+
+The existing lifecycle implementation already has explicit start, completion, cancellation, rollback, and ownership-transfer boundaries. Adding another worker abstraction or automatic recovery path would duplicate lifecycle authority or introduce behavior outside the current architecture.
+
+### Concurrency / Race Result
+
+The lifecycle state is mutex-protected, worker completion is signaled through a per-generation channel, and runtime shutdown is serialized through Service.shutdownMu.
+
+The existing runtime race coverage includes the shutdown/re-entry interleavings above. No evidence was found that a stopped worker can remain published as running, that a fresh worker can inherit a prior generation completion signal, or that database ownership can close while an owned worker is still active.
+
+### Verification
+
+CI baseline before this documentation-only audit:
+
+- DesKaProvider CI #3924 / run 37000113483: **GREEN**
+  - test: PASS
+  - vet: PASS
+  - race: PASS
+  - credential-gated provider validation jobs: skipped as expected
+- Pull Request CI #3925 / run 37000118606: **GREEN**
+  - test: PASS
+  - vet: PASS
+  - race: PASS
+  - credential-gated provider validation jobs: skipped as expected
+
+No authorized live-provider transaction or external provider request was executed.
+
+### Next Concrete Engineering Task
+
+Continue the evidence-based hardening audit into **runtime shutdown error/ownership convergence under adverse worker timing**, specifically verifying that timeout, cancellation, worker-exit error, lifecycle partial-stop, and database-close failure combinations cannot leave ambiguous ownership or permit an unsafe fresh runtime generation.
