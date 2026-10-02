@@ -7985,7 +7985,18 @@ Code commits:
 - `11faf82176fd65bb9eb25be4008ac850bc4cdcd6` — preserve error-aware operational reads
 - `ca11dd767182d2f999af8ced2da7b61ca0c34367` — regression coverage
 
-Local execution from the container was unavailable because outbound GitHub DNS/network access is disabled in this environment. CI verification on the resulting branch HEAD is therefore authoritative for repository-wide test, vet, and race checks.
+Local execution from the container was unavailable because outbound GitHub DNS/network access is disabled in this environment. CI verification for the code-bearing commits is authoritative for repository-wide test, vet, and race checks.
+
+Verified CI:
+
+- Push #3811 / run `36979385494`, head `ca11dd767182d2f999af8ced2da7b61ca0c34367`: **GREEN**
+  - test: PASS
+  - race: PASS
+  - credential-gated provider validation: SKIPPED
+- Pull Request #3813 / run `36979388237`, head `ca11dd767182d2f999af8ced2da7b61ca0c34367`: **GREEN**
+  - test: PASS
+  - race: PASS
+  - credential-gated provider validation: SKIPPED
 
 ### External Validation
 
