@@ -363,11 +363,6 @@ func TestConsensusSessionAutomaticRoundChangeProposalHandoff(t *testing.T) {
         t.Fatalf("timeout handoff: %v", err)
     }
 
-    if engine.Runtime().State().Round == 0 {
-        if _, err := engine.TryAdvanceRound(); err != nil {
-            t.Fatalf("round advance after peer timeout: %v; evidence=%d", err, len(engine.Driver().TimeoutEvidence()))
-        }
-    }
     if engine.Runtime().State().Round != 1 {
         t.Fatalf("round = %d, want 1", engine.Runtime().State().Round)
     }
