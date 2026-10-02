@@ -36,6 +36,9 @@ func NewValidatorAuthoritySet(epoch uint64, validators ValidatorSet, keys map[st
 	if keys == nil {
 		return ValidatorAuthoritySet{}, ErrInvalidValidatorAuthoritySet
 	}
+	if len(keys) != len(validators.Validators) {
+		return ValidatorAuthoritySet{}, ErrValidatorAuthorityMismatch
+	}
 	cloned := make(map[string][]byte, len(keys))
 	for _, id := range validators.Validators {
 		key, ok := keys[string(id)]
