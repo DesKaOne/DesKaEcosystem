@@ -22,6 +22,8 @@ func accountingPostgresDB(t *testing.T) *sql.DB {
 	db, err := sql.Open("pgx", dsn)
 	if err != nil { t.Fatal(err) }
 	t.Cleanup(func(){ _ = db.Close() })
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := db.PingContext(ctx); err != nil { t.Fatal(err) }
