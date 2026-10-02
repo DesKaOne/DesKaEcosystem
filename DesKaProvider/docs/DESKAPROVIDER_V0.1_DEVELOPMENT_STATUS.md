@@ -9507,3 +9507,37 @@ DesKaProvider CI run #3994 / 37071399541 is GREEN:
 - xp-sindonesia-read-only: SKIPPED
 
 The skipped provider jobs are credential-gated external validations and were not treated as failures. The settlement posting boundary is verified without provider retry, failover, resubmission, provider funding, treasury movement, or implicit customer-balance mutation.
+
+
+## Durable Settlement Audit and Correlation Boundary
+
+**Date:** 2026-10-03
+
+### Scope
+
+Added durable audit/correlation metadata around the existing settlement ledger transaction identity. This closes the observability/correlation gap without introducing a second accounting source of truth.
+
+### Implementation
+
+- added `SettlementAudit` contract with event ID, ledger transaction ID, financial reference, source correlation, terminal status, and timestamp;
+- added migration `005_settlement_audit.sql`;
+- PostgreSQL persists ledger header, ledger entries, and settlement audit atomically;
+- repeated identical settlement posting remains idempotent;
+- changed audit identity for an existing settlement transaction is rejected;
+- in-memory implementation mirrors the atomic audit semantics for deterministic tests.
+
+### Safety Boundary
+
+Audit data contains correlation metadata only. It does not represent a balance, create a second ledger, or trigger provider actions. No retry, failover, resubmission, funding, treasury movement, or implicit customer-balance mutation was introduced.
+
+### Tests
+
+Coverage includes in-memory audit correlation, PostgreSQL migration, atomic settlement append, durable audit reload, idempotent repeat, and immutable audit conflict behavior.
+
+### Progress
+
+The previous verified estimate was approximately 86%. This milestone adds durable settlement observability/correlation and atomic persistence semantics, moving the engineering estimate conservatively to approximately 88%, pending final CI verification.
+
+### Next Concrete Engineering Task
+
+Integrate the explicit settlement posting boundary with the persisted provider transaction lifecycle using a fail-closed terminal-state mapping. Provider success must still not implicitly mutate accounting state; the integration must issue an explicit posting command and preserve ambiguity without retrying or resubmitting the provider transaction.
