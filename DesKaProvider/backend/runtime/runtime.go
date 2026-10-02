@@ -622,11 +622,18 @@ func (s *Service) shutdownBalanceWorker(ctx context.Context) error {
 
 func (s *Service) rollbackStartedLifecycles(ctx context.Context) error {
 	if s == nil { return nil }
-	var err error
+	var errs []error
 	if s.balanceLifecycle != nil && s.balanceLifecycle.Running() {
-		err = s.shutdownBalanceWorker(ctx)
+		if err := s.shutdownBalanceWorker(ctx); err != nil {
+			errs = append(errs, err)
+		}
 	}
-	return err
+	if s.catalogLifecycle != nil && s.catalogLifecycle.Running() {
+		if err := s.shutdownCatalogLifecycle(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
 }
 
 func (s *Service) shutdownCatalogLifecycle() error {
@@ -635,6 +642,13 @@ func (s *Service) shutdownCatalogLifecycle() error {
 	if s.catalogShutdown != nil {
 		err = s.catalogShutdown()
 	} else {
+		s.catalogLifecycle.Shutdown()
+	}
+	// The lifecycle state is the runtime ownership boundary. A custom shutdown
+	// hook may report an error without clearing its lifecycle state; do not let
+	// Run return while that state is still logically active. The lifecycle's
+	// own cancellation is the safe final rollback boundary.
+	if s.catalogLifecycle.Running() {
 		s.catalogLifecycle.Shutdown()
 	}
 	if !s.catalogLifecycle.Running() {
