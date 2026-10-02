@@ -4357,3 +4357,45 @@ Fix: `NewValidatorAuthoritySet` now requires `len(keys) == len(validators.Valida
 Fix commit: `f37cffce4f519b0ab9e83a28490cabd3d2500b69`.
 
 The branch HEAD after the fix is `f37cffce4f519b0ab9e83a28490cabd3d2500b69`. A new GitHub Actions run has not yet been observed for this direct branch commit, so milestone 5.7 remains gated until that commit itself has a GREEN IndoChain CI result.
+
+### 5.8 Epoch-Bound Consensus Runtime Wiring — 2026-10-03
+
+**Implementation**
+
+- `IndoChain/internal/consensus/runtime.go`
+  - `RuntimeConfig.Authority` menerima optional `*ValidatorAuthoritySet`;
+  - runtime memvalidasi authority snapshot terhadap epoch `RoundState` dan canonical validator membership saat construction;
+  - runtime menyimpan defensive clone authority secara privat;
+  - `Authority()` dan `ConsensusAuthority()` hanya mengembalikan clone/resolver yang tetap epoch-bound.
+- `IndoChain/internal/consensus/authenticated_runtime.go`
+  - ketika runtime memiliki authority snapshot, snapshot runtime menjadi source-of-truth untuk authenticated proposal/vote verification;
+  - authority dengan epoch berbeda ditolak sebelum evidence diproses;
+  - resolver legacy tetap didukung ketika runtime tidak menggunakan snapshot.
+- `IndoChain/internal/consensus/validator_authority_set.go`
+  - authority key map dibuat private sehingga tidak ada mutable map alias melalui exported state.
+- `IndoChain/internal/consensus/runtime_test.go`
+  - fixture runtime memakai explicit epoch-bound authority snapshot;
+  - regression coverage untuk epoch mismatch saat runtime construction;
+  - defensive snapshot coverage.
+
+**Locked invariants**
+
+1. Runtime authority dan validator membership harus merepresentasikan snapshot yang sama.
+2. Authenticated evidence tidak boleh diverifikasi menggunakan authority dari epoch lain ketika runtime memiliki authority snapshot.
+3. Runtime tidak melakukan validator mutation, staking, delegation, slashing, reward, atau economic policy.
+4. Legacy constructors/paths tetap kompatibel.
+5. Authority snapshot tidak mengekspos mutable key-map alias.
+6. DesKa financial-service boundary tetap tidak berubah.
+
+**Verification**
+
+- Implementation HEAD: `f20f26f9c57cc6c7c6745b46ee75c7b732ba5f5a` plus prior runtime/test commits on the same branch.
+- Local `go test`/race/vet tidak tersedia dari workspace ini; verification harus memakai GitHub Actions.
+- 5.7 prerequisite CI GREEN: run #1911 / `37069011029`.
+- New 5.8 CI gate is required before milestone completion.
+
+**Next meaningful integration target**
+
+**5.8b Persistence Context Authority Binding:** masukkan authority digest secara eksplisit ke persistence context/recovery contract dan tolak recovery record ketika epoch/authority digest tidak cocok.
+
+**Milestone 5.8 status:** implementation committed; CI gate pending.
