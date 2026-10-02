@@ -7,7 +7,7 @@ import (
  "fmt"
 )
 
-//go:embed 001_provider_transactions.sql 002_provider_operational_snapshots.sql 003_payment_transactions.sql
+//go:embed 001_provider_transactions.sql 002_provider_operational_snapshots.sql 003_payment_transactions.sql 004_double_entry_ledger.sql
 var files embed.FS
 
 type Definition struct { Version int; Name string; SQL string }
@@ -17,6 +17,7 @@ func Definitions() ([]Definition, error) {
   {1,"001_provider_transactions.sql"},
   {2,"002_provider_operational_snapshots.sql"},
   {3,"003_payment_transactions.sql"},
+  {4,"004_double_entry_ledger.sql"},
  }
  out := make([]Definition,0,len(names))
  for _, item := range names {
