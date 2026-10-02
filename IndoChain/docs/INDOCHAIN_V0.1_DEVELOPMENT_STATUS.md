@@ -4296,3 +4296,54 @@ Milestone ini menutup automatic proposal handoff setelah timeout quorum, tetapi 
 **5.7 Validator Authority / Epoch Boundary Integration:** mengikat validator-set/epoch lifecycle ke consensus context dan recovery boundary secara durable, sehingga proposer selection, vote authority, timeout authority, dan restart context tidak lagi bergantung pada validator set yang hanya hidup di memory.
 
 **Milestone 5.6 status:** implementation/test completed; implementation CI GREEN; final status-document CI gate pending.
+
+
+### 5.7 Validator Authority / Epoch Boundary Integration
+
+**Tanggal:** 2026-10-03
+
+**Objective**
+
+Mengikat validator membership dan public-key authority ke satu immutable context yang juga memiliki epoch, sehingga proposer selection, vote/timeout authority, dan recovery dapat mengonsumsi snapshot authority yang eksplisit tanpa membuat validator lifecycle atau monetary policy baru.
+
+**Implementation**
+
+- `IndoChain/internal/consensus/validator_authority_set.go`
+  - menambahkan `ValidatorAuthoritySet` sebagai immutable snapshot authority;
+  - snapshot mengikat `Epoch`, canonical `ValidatorSet`, dan public-key authority;
+  - constructor mensyaratkan satu public key tepat untuk setiap active validator dan menolak authority yang hilang/berlebih;
+  - resolver mengembalikan defensive copy;
+  - `SameContext` mengecek binding epoch terhadap `RoundState`;
+  - `authorityDigest` menggunakan encoding eksplisit, panjang field, byte-sorted validator IDs, dan SHA-256 sehingga digest tidak bergantung pada map iteration order.
+- `IndoChain/internal/consensus/validator_authority_set_test.go`
+  - coverage untuk immutable/defensive-copy authority;
+  - missing/extra authority rejection;
+  - explicit epoch binding;
+  - deterministic authority digest dan perubahan digest ketika epoch berubah.
+
+**Locked invariants**
+
+1. Validator membership, validator public-key authority, dan epoch diperlakukan sebagai satu immutable snapshot.
+2. Authority snapshot tidak melakukan registration, staking, delegation, slashing, reward, atau validator-selection policy baru.
+3. Proposer selection tetap memakai `ProposerSelector` yang sudah ada.
+4. Voting power tetap berasal dari `VotingPowerSet`; authority snapshot tidak mengubah economic policy.
+5. Signature verification hanya boleh menggunakan authority untuk epoch/context yang sesuai.
+6. Snapshot dan resolver tidak mengekspos mutable alias.
+7. Digest tidak bergantung pada urutan map.
+8. Consensus persistence dapat mengikat snapshot authority melalui digest; canonical block/state storage tetap berada di node/storage.
+9. Financial-service boundary tidak berubah: IndoChain tetap tidak mengetahui business logic DesKaCash/DesKaProvider.
+
+**Verification**
+
+- Implementation commits: `59b432b029eaf019fad98a8178f88fdce582f829`, `f888d6a43521a82fa48ac7f64c796666040b1e76`, `ffe667363cb5f26367e4750cedf597fd1a9acdcc`, `927e9c83ad30ba1eb0b7d9d4f187ff3a03920f6`, `9902b18f3820c94cb99147fd4705bb42a51bb1c6`.
+- Tests added for authority completeness, defensive copying, epoch binding, and deterministic digest.
+
+**Known limitation**
+
+Workspace runtime tidak menyediakan checkout lokal repository, sehingga `go test`, `go test -race`, `go vet`, dan workflow rerun tidak dapat dieksekusi langsung dari container pada sesi ini. Karena itu milestone 5.7 **belum dinyatakan DONE / CI GREEN** sampai GitHub Actions menjalankan dan mengkonfirmasi branch HEAD.
+
+**Next meaningful integration target**
+
+**5.8 Epoch-Bound Consensus Runtime Wiring:** jadikan `ValidatorAuthoritySet` dependency eksplisit pada consensus engine/session dan persistence context, menolak message/evidence ketika epoch authority tidak cocok, tanpa mengaktifkan validator-set mutation atau production PoS policy.
+
+**Milestone 5.7 status:** implementation/test sources committed; CI gate pending.
