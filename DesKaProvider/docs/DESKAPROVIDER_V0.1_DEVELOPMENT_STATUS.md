@@ -9409,3 +9409,33 @@ Reason: this milestone closes the first material financial-accounting foundation
 Implement the **explicit provider settlement posting boundary**: define the lifecycle contract that maps a terminal provider transaction to a pre-declared set of ledger accounts/entries, with idempotent posting and fail-closed behavior when the provider transaction or ledger persistence outcome is ambiguous.
 
 That milestone must not introduce automatic provider retry, failover, resubmission, provider funding, or implicit customer-balance mutation.
+
+
+## CI Follow-up — Ledger PostgreSQL Idempotency Harness
+
+**Date:** 2026-10-03
+
+The first CI verification of the ledger foundation exposed two deterministic PostgreSQL test/harness defects; neither changes the financial boundary:
+
+1. the duplicate-ledger path attempted a read through the database pool while the integration test deliberately pinned the pool to one connection and the original transaction was still open, causing a connection deadlock;
+2. PostgreSQL TIMESTAMPTZ round-trips at microsecond precision, while Go time.Time fixtures can carry sub-microsecond nanoseconds, so an identical append could be misclassified as an immutable conflict.
+
+### Corrections
+
+- rollback the duplicate Append transaction before performing the durable idempotency lookup;
+- collect transaction IDs and close the listing rows before All() performs per-transaction reads;
+- compare ledger transaction timestamps at PostgreSQL storage precision (microseconds);
+- add PostgreSQL coverage for All();
+- add deterministic unit coverage for timestamp storage precision.
+
+### CI State
+
+CI run #3966 on the previous HEAD c52d7efec815086f8e8829b6d1b2c131002ce38d failed in the accounting PostgreSQL idempotency test; the failure is not treated as milestone completion.
+
+The corrected HEAD is 671c4784d06e2b645beeecb5b3456e24aa794ad1. CI verification for this corrected HEAD is still pending and the milestone remains open until both test and race are GREEN.
+
+Credential-gated provider jobs remain expected to be SKIPPED when their external credentials are unavailable.
+
+### Safety
+
+These corrections do not add provider retry, failover, resubmission, provider funding, treasury movement, customer-balance mutation, or implicit settlement posting.
