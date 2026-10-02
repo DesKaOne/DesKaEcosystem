@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 )
 
 func TestSettlementPosterRequiresTerminalSuccess(t *testing.T) {
@@ -75,6 +76,7 @@ func validSettlementPosting() SettlementPostingRequest {
 		ProviderStatus: ProviderStatusSuccess,
 		Currency: "IDR",
 		Description: "provider settlement",
+		CreatedAt: time.Date(2026, 10, 3, 4, 0, 0, 0, time.UTC),
 		Entries: []Entry{
 			{LineID: 1, AccountID: "provider-clearing", Direction: Debit, Amount: 10000, Currency: "IDR"},
 			{LineID: 2, AccountID: "settlement-in", Direction: Credit, Amount: 10000, Currency: "IDR"},
