@@ -996,3 +996,24 @@ Milestone #100 adds deterministic Service.Close() tests and real PostgreSQL inte
 2. preservation of close errors across repeated calls;
 3. shared transaction/audit PostgreSQL ownership closing once;
 4. dedicated PostgreSQL audit ownership closing once.
+
+## 11. Runtime Recovery Fence for Persisted Operational/Catalog State
+
+Persisted operational balance snapshots and provider catalog snapshots are durable observations, not proof that the current runtime generation has successfully re-established provider readiness.
+
+The recovery boundary is:
+
+- durable operational/catalog snapshot is loaded;
+- a new runtime generation starts with its routing fence closed;
+- the synchronizer may still read the previous durable observation;
+- a successful durable persistence operation for the current generation opens that provider's routing gate;
+- persistence errors, including ambiguous filesystem durability outcomes, keep the gate closed.
+
+Routing therefore sees only current-generation observations, subject to the existing freshness, health, balance, catalog, lifecycle, and capability gates.
+
+Operational and catalog readiness are independent. A fresh catalog cannot compensate for an unrefreshed operational snapshot, and vice versa.
+
+The fence is intentionally in-memory and scoped to one runtime generation. It is not a replacement for durable persistence, freshness timestamps, provider health, capability readiness, or transaction state. A new runtime generation starts closed even when a persisted snapshot is younger than the configured freshness window.
+
+This boundary is observational and routing-related only. It does not retry provider transactions, resubmit purchases, mutate financial ledger state, move treasury funds, or perform provider funding.
+
