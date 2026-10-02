@@ -337,8 +337,7 @@ func TestConsensusSessionAutomaticRoundChangeProposalHandoff(t *testing.T) {
 
     token, _, err := engine.ArmTimeout()
     if err != nil { t.Fatal(err) }
-    localTimeout, err := engine.HandleTimeout(token)
-    if err != nil { t.Fatal(err) }
+    if _, err := engine.HandleTimeout(token); err != nil { t.Fatal(err) }
 
     otherTokenEngine, err := newSessionTimeoutEngineForHandoff(state, validatorA, keyA.PrivateKey, validators, power, authority)
     if err != nil { t.Fatal(err) }
