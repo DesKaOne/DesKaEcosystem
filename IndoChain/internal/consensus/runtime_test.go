@@ -381,3 +381,53 @@ func TestValidatorRuntimeAuthoritySnapshotIsDefensive(t *testing.T) {
 	if err != nil { t.Fatal(err) }
 	if bytes.Equal(freshKey, key) { t.Fatal("runtime authority leaked mutable key alias") }
 }
+
+
+func TestValidatorRuntimeBuildsAuthorityBoundPersistenceContext(t *testing.T) {
+	runtime, _, _, _ := runtimeFixture(t)
+	if _, err := runtime.ConsensusAuthority(); err == nil {
+		t.Fatal("legacy runtime unexpectedly exposes authority")
+	}
+
+	_, state, validators, power := runtimeFixture(t)
+	keys := map[string][]byte{
+		"validator-a": []byte("key-a"),
+		"validator-b": []byte("key-b"),
+		"validator-c": []byte("key-c"),
+	}
+	authority, err := NewValidatorAuthoritySet(state.Epoch, validators, keys)
+	if err != nil { t.Fatal(err) }
+	runtime, err = NewValidatorRuntime(RuntimeConfig{
+		Authority: &authority,
+		Rules: ValidationRules{ProtocolVersion: state.ProtocolVersion, ChainID: state.ChainID},
+		State: state, Validators: validators, VotingPower: power,
+		Threshold: QuorumThreshold{Numerator: 2, Denominator: 3}, Proposer: RoundRobinProposer{},
+	})
+	if err != nil { t.Fatal(err) }
+
+	context, err := runtime.PersistenceContext([32]byte{7}, [32]byte{8}, "round-robin-v0-dev", "1")
+	if err != nil { t.Fatal(err) }
+	if context.Epoch != state.Epoch || context.Height != state.Height || context.Round != state.Round || context.Phase != uint8(state.Phase) {
+		t.Fatalf("persistence context state mismatch: %+v", context)
+	}
+	wantAuthorityDigest := authorityDigest(authority)
+	if context.ValidatorAuthorityDigest != wantAuthorityDigest {
+		t.Fatal("persistence context did not use runtime authority digest")
+	}
+	if context.ThresholdNumerator != 2 || context.ThresholdDenominator != 3 {
+		t.Fatal("persistence context threshold mismatch")
+	}
+
+	contextAgain, err := runtime.PersistenceContext([32]byte{7}, [32]byte{8}, "round-robin-v0-dev", "1")
+	if err != nil { t.Fatal(err) }
+	if PersistenceContextDigest(context) != PersistenceContextDigest(contextAgain) {
+		t.Fatal("runtime-derived persistence context is not deterministic")
+	}
+}
+
+func TestValidatorRuntimePersistenceContextRejectsMissingAuthority(t *testing.T) {
+	runtime, _, _, _ := runtimeFixture(t)
+	if _, err := runtime.PersistenceContext([32]byte{1}, [32]byte{2}, "round-robin-v0-dev", "1"); err != ErrAuthenticatedConsensusAuthorityMissing {
+		t.Fatalf("error = %v, want %v", err, ErrAuthenticatedConsensusAuthorityMissing)
+	}
+}
