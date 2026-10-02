@@ -77,6 +77,17 @@ func (l *SyncWorkerLifecycle) Done() <-chan struct{} {
 	return l.done
 }
 
+// ExitError returns the raw terminal error for the current worker generation.
+// It is observational only and does not alter lifecycle ownership.
+func (l *SyncWorkerLifecycle) ExitError() error {
+	if l == nil {
+		return nil
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.err
+}
+
 func (l *SyncWorkerLifecycle) Wait(ctx context.Context) error {
 	if ctx == nil {
 		return errors.New("wait context is required")
