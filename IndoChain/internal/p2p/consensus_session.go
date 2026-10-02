@@ -47,6 +47,25 @@ func NewConsensusSession(
     validatorResolver node.ValidatorAuthorityResolver,
     senderResolver node.TransactionAuthorityResolver,
 ) (*ConsensusSession, error) {
+    return NewConsensusSessionWithScheduler(
+        n, engine, transport, rules, peers, ctx, validators, power,
+        validatorResolver, senderResolver, nil,
+    )
+}
+
+func NewConsensusSessionWithScheduler(
+    n *node.Node,
+    engine *consensus.ConsensusEngine,
+    transport Transport,
+    rules consensus.ValidationRules,
+    peers []PeerID,
+    ctx consensus.BlockProductionContext,
+    validators consensus.ValidatorSet,
+    power consensus.VotingPowerSet,
+    validatorResolver node.ValidatorAuthorityResolver,
+    senderResolver node.TransactionAuthorityResolver,
+    timerFactory consensus.ConsensusTimeoutTimerFactory,
+) (*ConsensusSession, error) {
     if n == nil || engine == nil {
         return nil, ErrNilConsensusSession
     }
