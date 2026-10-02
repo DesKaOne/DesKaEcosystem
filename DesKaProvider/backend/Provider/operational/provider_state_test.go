@@ -286,3 +286,70 @@ func TestProviderStateStoreReconcileCapabilityStatePreservesConcurrentUnrelatedM
 		t.Fatalf("reconciliation fingerprint was lost: %#v", state)
 	}
 }
+
+
+func TestProviderStateStoreAmbiguousReconcileDoesNotLeaveStaleCapabilityEnabled(t *testing.T) {
+	cause := errors.New("directory fsync failed")
+	persistence := &ambiguousProviderStatePersistence{}
+	store, err := NewPersistentProviderStateStore(persistence)
+	if err != nil { t.Fatal(err) }
+	if err := store.Put(ProviderState{
+		ProviderName: "mock",
+		Lifecycle: LifecycleEnabled,
+		Capabilities: []Capability{CapabilityPPOB, CapabilityBalance},
+		EnabledCapabilities: []Capability{CapabilityPPOB, CapabilityBalance},
+		CapabilityFingerprint: "old",
+	}); err != nil { t.Fatal(err) }
+
+	persistence.err = errors.Join(ErrProviderStatePersistenceAmbiguous, cause)
+	_, err = store.ReconcileCapabilityState(
+		"mock",
+		[]Capability{CapabilityPPOB},
+		"new",
+		false,
+	)
+	if !errors.Is(err, ErrProviderStatePersistenceAmbiguous) || !errors.Is(err, cause) {
+		t.Fatalf("expected ambiguous persistence and cause, got %v", err)
+	}
+
+	state, ok := store.Get("mock")
+	if !ok { t.Fatal("provider state missing") }
+	if !state.Enabled() {
+		t.Fatalf("non-drift reconciliation must not disable lifecycle: %#v", state)
+	}
+	if state.Supports(CapabilityBalance) {
+		t.Fatalf("ambiguous reconciliation left stale capability enabled in memory: %#v", state)
+	}
+	if state.Supports(CapabilityPPOB) {
+		// PPOB remains enabled in both the durable requested state and the safe
+		// in-memory state.
+	} else {
+		t.Fatalf("implemented capability was lost from safe state: %#v", state)
+	}
+	if state.CapabilityFingerprint != "old" {
+		t.Fatalf("safe ambiguous state must retain last known fingerprint: %#v", state)
+	}
+}
+
+func TestProviderStateStoreAmbiguousNewPutDoesNotCreateInMemoryProvider(t *testing.T) {
+	cause := errors.New("directory fsync failed")
+	persistence := &ambiguousProviderStatePersistence{}
+	store, err := NewPersistentProviderStateStore(persistence)
+	if err != nil { t.Fatal(err) }
+
+	persistence.err = errors.Join(ErrProviderStatePersistenceAmbiguous, cause)
+	_, err = store.SetLifecycle("mock", LifecycleEnabled)
+	if !errors.Is(err, ErrProviderNotFound) {
+		t.Fatalf("expected missing provider before ambiguous seed, got %v", err)
+	}
+	if err := store.Put(ProviderState{
+		ProviderName: "mock",
+		Lifecycle: LifecycleEnabled,
+		Capabilities: []Capability{CapabilityPPOB},
+	}); !errors.Is(err, ErrProviderStatePersistenceAmbiguous) {
+		t.Fatalf("expected ambiguous persistence, got %v", err)
+	}
+	if _, ok := store.Get("mock"); ok {
+		t.Fatal("ambiguous new provider write must not create an in-memory state")
+	}
+}
