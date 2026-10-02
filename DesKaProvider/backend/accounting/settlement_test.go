@@ -3,6 +3,7 @@ package accounting
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 )
@@ -56,6 +57,12 @@ func TestSettlementPosterIsIdempotentAndImmutable(t *testing.T) {
 	conflict.Description = "tampered"
 	if err := poster.Post(context.Background(), conflict); !errors.Is(err, ErrLedgerConflict) {
 		t.Fatalf("expected immutable ledger conflict, got %v", err)
+	}
+}
+
+func TestSettlementPersistenceAmbiguityIsClassified(t *testing.T) {
+	if !errors.Is(fmt.Errorf("%w: commit uncertain", ErrSettlementPersistenceAmbiguous), ErrSettlementPersistenceAmbiguous) {
+		t.Fatal("ambiguous settlement persistence must remain machine-detectable")
 	}
 }
 
