@@ -357,10 +357,10 @@ func TestConsensusSessionAutomaticRoundChangeProposalHandoff(t *testing.T) {
     if engine.Runtime().State().Phase != consensus.PhasePrevote {
         t.Fatalf("phase = %v, want prevote after automatic proposal", engine.Runtime().State().Phase)
     }
-    if !bytes.Equal(engine.Runtime().Proposal(), engine.Runtime().Proposal()) {
-        t.Fatal("proposal unexpectedly changed")
+    if session.candidate == nil {
+        t.Fatal("automatic proposal candidate missing")
     }
-    if session.candidate == nil || !bytes.Equal(session.candidate.Header.Proposer, validatorB) {
+    if !bytes.Equal(session.candidate.Header.Proposer, validatorB) {
         t.Fatalf("automatic candidate proposer = %q, want %q", session.candidate.Header.Proposer, validatorB)
     }
 }
