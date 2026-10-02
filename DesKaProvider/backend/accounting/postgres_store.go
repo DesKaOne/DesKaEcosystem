@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 )
 
 type PostgresStore struct {
@@ -175,4 +176,81 @@ func (s *PostgresStore) CreateAccount(ctx context.Context, account Account) (Acc
 		return Account{}, false, ErrAccountConflict
 	}
 	return current, false, nil
+}
+
+
+func sameSettlementAudit(a, b SettlementAudit) bool {
+	return a.EventID == b.EventID && a.TransactionID == b.TransactionID &&
+		a.ReferenceID == b.ReferenceID && a.SourceType == b.SourceType &&
+		a.SourceID == b.SourceID && a.Status == b.Status &&
+		a.CreatedAt.Truncate(time.Microsecond).Equal(b.CreatedAt.Truncate(time.Microsecond))
+}
+
+func (s *PostgresStore) AppendSettlement(ctx context.Context, ledger LedgerTransaction, audit SettlementAudit) error {
+	if err := ledger.Validate(); err != nil {
+		return err
+	}
+	if err := audit.Validate(); err != nil {
+		return err
+	}
+	if audit.TransactionID != ledger.ID || audit.ReferenceID != ledger.ReferenceID ||
+		audit.SourceType != ledger.SourceType || audit.SourceID != ledger.SourceID {
+		return ErrLedgerConflict
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin settlement append: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var inserted string
+	err = tx.QueryRowContext(ctx,
+		"INSERT INTO ledger_transactions (transaction_id, reference_id, source_type, source_id, currency, description, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (transaction_id) DO NOTHING RETURNING transaction_id",
+		ledger.ID, ledger.ReferenceID, ledger.SourceType, ledger.SourceID, ledger.Currency, ledger.Description, ledger.CreatedAt,
+	).Scan(&inserted)
+	if errors.Is(err, sql.ErrNoRows) {
+		if err := tx.Rollback(); err != nil {
+			return fmt.Errorf("rollback duplicate settlement append: %w", err)
+		}
+		current, ok, err := s.Get(ctx, ledger.ID)
+		if err != nil { return err }
+		currentAudit, auditOK, err := s.GetSettlementAudit(ctx, ledger.ID)
+		if err != nil { return err }
+		if ok && auditOK && sameLedgerTransaction(current, ledger) && sameSettlementAudit(currentAudit, audit) {
+			return nil
+		}
+		return ErrLedgerConflict
+	}
+	if err != nil {
+		return fmt.Errorf("insert settlement ledger transaction: %w", err)
+	}
+	for _, entry := range ledger.Entries {
+		if _, err := tx.ExecContext(ctx,
+			"INSERT INTO ledger_entries (transaction_id,line_id,account_id,direction,amount,currency,memo) VALUES ($1,$2,$3,$4,$5,$6,$7)",
+			ledger.ID, entry.LineID, entry.AccountID, entry.Direction, entry.Amount, entry.Currency, entry.Memo,
+		); err != nil {
+			return fmt.Errorf("insert settlement ledger entry %d: %w", entry.LineID, err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx,
+		"INSERT INTO settlement_audit (event_id, transaction_id, reference_id, source_type, source_id, status, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)",
+		audit.EventID, audit.TransactionID, audit.ReferenceID, audit.SourceType, audit.SourceID, audit.Status, audit.CreatedAt,
+	); err != nil {
+		return fmt.Errorf("insert settlement audit: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit settlement append: %w", err)
+	}
+	return nil
+}
+
+func (s *PostgresStore) GetSettlementAudit(ctx context.Context, transactionID string) (SettlementAudit, bool, error) {
+	var audit SettlementAudit
+	err := s.db.QueryRowContext(ctx,
+		"SELECT event_id,transaction_id,reference_id,source_type,source_id,status,created_at FROM settlement_audit WHERE transaction_id=$1",
+		transactionID,
+	).Scan(&audit.EventID,&audit.TransactionID,&audit.ReferenceID,&audit.SourceType,&audit.SourceID,&audit.Status,&audit.CreatedAt)
+	if errors.Is(err, sql.ErrNoRows) { return SettlementAudit{}, false, nil }
+	if err != nil { return SettlementAudit{}, false, fmt.Errorf("get settlement audit: %w", err) }
+	return audit, true, nil
 }
