@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -107,5 +108,59 @@ func TestSyncDirectory(t *testing.T) {
 	dir := t.TempDir()
 	if err := syncDirectory(dir); err != nil {
 		t.Fatal(err)
+	}
+}
+
+
+func TestJSONFileStoreFailsClosedAfterPostRenamePersistenceAmbiguity(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	store, err := NewJSONFileStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := Snapshot{
+		ProviderName: "mock",
+		Products:     []provider.Product{{Code: "xld10", Name: "XL 10K"}},
+		SyncedAt:     time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC),
+	}
+	replacement := Snapshot{
+		ProviderName: "mock",
+		Products:     []provider.Product{{Code: "pln20", Name: "Plan 20K"}},
+		SyncedAt:     original.SyncedAt.Add(time.Minute),
+	}
+	if err := store.Put(original); err != nil {
+		t.Fatal(err)
+	}
+
+	store.syncDirectory = func(string) error {
+		return errors.New("injected directory sync failure")
+	}
+	if err := store.Put(replacement); !errors.Is(err, ErrCatalogPersistenceAmbiguous) {
+		t.Fatalf("expected ambiguous persistence error, got %v", err)
+	}
+
+	if _, ok := store.Get("mock"); ok {
+		t.Fatal("ambiguous persistence result must fail closed for in-memory reads")
+	}
+	if got := store.All(); got != nil {
+		t.Fatalf("ambiguous persistence result must fail closed for aggregate reads: %#v", got)
+	}
+
+	reloaded, err := NewJSONFileStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := reloaded.Get("mock")
+	if !ok || !got.SyncedAt.Equal(replacement.SyncedAt) || len(got.Products) != 1 || got.Products[0].Code != "pln20" {
+		t.Fatalf("expected renamed durable state to be recoverable, got %#v", got)
+	}
+
+	store.syncDirectory = syncDirectory
+	if err := store.Put(replacement); err != nil {
+		t.Fatal(err)
+	}
+	got, ok = store.Get("mock")
+	if !ok || !got.SyncedAt.Equal(replacement.SyncedAt) {
+		t.Fatalf("successful persistence retry did not clear ambiguity: %#v", got)
 	}
 }
