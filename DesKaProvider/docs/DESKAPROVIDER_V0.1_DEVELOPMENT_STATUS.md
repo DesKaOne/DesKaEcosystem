@@ -9192,3 +9192,68 @@ No authorized live-provider transaction or external provider request was execute
 ### Next Concrete Engineering Task
 
 Continue the evidence-based hardening audit into **runtime shutdown error/ownership convergence under adverse worker timing**, specifically verifying that timeout, cancellation, worker-exit error, lifecycle partial-stop, and database-close failure combinations cannot leave ambiguous ownership or permit an unsafe fresh runtime generation.
+
+
+## Runtime Shutdown Error / Ownership Convergence Under Adverse Worker Timing Audit
+
+**Date:** 2026-10-03
+
+### Audit Finding
+
+The runtime shutdown boundary was audited for timeout, cancellation, worker-exit error, partial lifecycle stop, database-close failure, repeated Run/Close, and ownership replacement combinations. **No production correction was required.**
+
+The existing implementation keeps database ownership open whenever an owned lifecycle remains active, preserves the primary shutdown error plus lifecycle/database cleanup errors, and allows convergence through a later explicit shutdown/Close call without replaying historical lifecycle errors into a fresh generation.
+
+### Adverse Timing / Ownership Invariants
+
+- A shutdown deadline may return while the balance lifecycle remains active; database cleanup is deferred until that lifecycle actually converges.
+- Catalog lifecycle shutdown can converge independently while balance shutdown remains blocked; ownership is still retained until all active lifecycles stop.
+- Re-entry while a lifecycle remains active is rejected without installing or closing a fresh database generation.
+- Once all lifecycles converge, database cleanup occurs exactly once and preserves transaction-before-audit ordering.
+- Cleanup errors remain observable and are not silently replaced by the primary cancellation/deadline error.
+- Repeated Close remains idempotent and does not replay historical lifecycle/primary errors after terminal convergence.
+- Ownership replacement is blocked until the current Run has completed its shutdown convergence, preventing a fresh generation from being installed over active old ownership.
+- A fresh ownership generation does not inherit historical shutdown or cleanup errors.
+
+### Deterministic Coverage
+
+Existing runtime regression coverage directly exercises:
+
+- shutdown deadline with an active balance lifecycle and deferred database cleanup;
+- partial catalog shutdown followed by Run re-entry and later convergence;
+- mixed balance/catalog/database shutdown-error matrices with fresh-generation reuse;
+- concurrent Run/Close interleavings and single-shot database cleanup;
+- ownership replacement during concurrent Run shutdown;
+- repeated partial shutdown attempts and convergence before cleanup;
+- long reuse sequences preserving generation isolation;
+- cleanup-error persistence without replaying stale lifecycle errors.
+
+These tests use deterministic lifecycle hooks, completion channels, and explicit ordering assertions rather than relying on timing sleeps for correctness.
+
+### Concurrency / Race Result
+
+The runtime shutdown mutex serializes shutdown, Close, Run re-entry, and ownership replacement entry points. SyncWorkerLifecycle uses a per-generation completion channel and mutex-protected state. Database ownership has its own mutex and closes resources at most once. No evidence was found that timeout or partial worker completion permits database closure while an owned worker remains active or allows a fresh generation to reuse stale completion/error state.
+
+### Production Change
+
+**None required.**
+
+The audited failure matrix is already covered by deterministic tests and the existing lifecycle/ownership implementation preserves the required fail-closed boundary. Adding another recovery path would duplicate lifecycle authority and increase complexity without an identified correctness gap.
+
+### Verification
+
+Current branch HEAD: **8861990a50cc76e692b7e103108f071186069b00**.
+
+Latest DesKaProvider CI:
+
+- DesKaProvider CI #3927 / run 37066299630: **GREEN**
+  - test: PASS
+  - vet: PASS
+  - race: PASS
+  - credential-gated provider validation jobs: skipped as expected
+
+The same HEAD also passed Pull Request CI #3926. No authorized live-provider transaction or external provider request was executed.
+
+### Next Concrete Engineering Task
+
+Continue the evidence-based hardening audit into **persistent operational-state/catalog recovery convergence after adverse shutdown**, specifically verifying that a runtime generation restarted after partial worker shutdown cannot expose stale operational snapshots or catalog state as fresh/route-eligible state before persistence and readiness gates converge.
