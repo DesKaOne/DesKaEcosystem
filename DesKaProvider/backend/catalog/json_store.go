@@ -16,13 +16,15 @@ type JSONFileStore struct {
 	mu sync.RWMutex
 	path string
 	data map[string]Snapshot
+	ambiguous bool
+	syncDirectory func(string) error
 }
 
 type fileData struct { Snapshots map[string]Snapshot `json:"snapshots"` }
 
 func NewJSONFileStore(path string) (*JSONFileStore, error) {
 	if path == "" { return nil, errors.New("catalog store path is required") }
-	s := &JSONFileStore{path:path, data:make(map[string]Snapshot)}
+	s := &JSONFileStore{path:path, data:make(map[string]Snapshot), syncDirectory:syncDirectory}
 	raw, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) { return s, nil }
 	if err != nil { return nil, fmt.Errorf("read catalog store: %w", err) }
@@ -43,6 +45,7 @@ func NewJSONFileStore(path string) (*JSONFileStore, error) {
 
 func (s *JSONFileStore) Get(name string) (Snapshot, bool) {
 	s.mu.RLock(); defer s.mu.RUnlock()
+	if s.ambiguous { return Snapshot{}, false }
 	v, ok := s.data[name]
 	v.Products = append([]provider.Product(nil), v.Products...)
 	return v, ok
@@ -62,14 +65,17 @@ func (s *JSONFileStore) Put(snapshot Snapshot) error {
 	}
 	next[snapshot.ProviderName] = Snapshot{ProviderName:snapshot.ProviderName, Products:append([]provider.Product(nil), snapshot.Products...), SyncedAt:snapshot.SyncedAt}
 	if err := s.persistLocked(next); err != nil {
+		if errors.Is(err, ErrCatalogPersistenceAmbiguous) { s.ambiguous = true }
 		return err
 	}
 	s.data = next
+	s.ambiguous = false
 	return nil
 }
 
 func (s *JSONFileStore) All() []Snapshot {
 	s.mu.RLock(); defer s.mu.RUnlock()
+	if s.ambiguous { return nil }
 	names := make([]string,0,len(s.data))
 	for name := range s.data { names = append(names,name) }
 	sort.Strings(names)
@@ -91,7 +97,10 @@ func (s *JSONFileStore) persistLocked(data map[string]Snapshot) error {
 	if err := tmp.Sync(); err != nil { tmp.Close(); return err }
 	if err := tmp.Close(); err != nil { return err }
 	if err := os.Rename(tmpName, s.path); err != nil { return err }
-	return syncDirectory(filepath.Dir(s.path))
+	if err := s.syncDirectory(filepath.Dir(s.path)); err != nil {
+		return fmt.Errorf("%w: %v", ErrCatalogPersistenceAmbiguous, err)
+	}
+	return nil
 }
 
 func syncDirectory(dir string) error {
