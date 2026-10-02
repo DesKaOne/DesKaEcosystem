@@ -501,12 +501,20 @@ catalogStarted := false
 	s.shutdownMu.Unlock()
 	defer cancel()
 
+	workerDone := s.balanceLifecycle.Done()
 	if s.catalogSync == nil {
-		<-ctx.Done()
-		s.shutdownMu.Lock()
-		defer s.shutdownMu.Unlock()
-		workerErr := s.shutdownBalanceWorker(workerShutdownCtx)
-		return shutdownLocked(ctx.Err(), workerErr)
+		select {
+		case <-ctx.Done():
+			s.shutdownMu.Lock()
+			defer s.shutdownMu.Unlock()
+			workerErr := s.shutdownBalanceWorker(workerShutdownCtx)
+			return shutdownLocked(ctx.Err(), workerErr)
+		case <-workerDone:
+			s.shutdownMu.Lock()
+			defer s.shutdownMu.Unlock()
+			workerErr := s.balanceLifecycle.Wait(context.Background())
+			return shutdownLocked(workerErr, nil)
+		}
 	}
 
 	startCatalog := s.catalogLifecycle.Start
@@ -533,6 +541,11 @@ catalogStarted := false
 			defer s.shutdownMu.Unlock()
 			workerErr := s.shutdownBalanceWorker(workerShutdownCtx)
 			return shutdownLocked(ctx.Err(), workerErr)
+		case <-workerDone:
+			s.shutdownMu.Lock()
+			defer s.shutdownMu.Unlock()
+			workerErr := s.balanceLifecycle.Wait(context.Background())
+			return shutdownLocked(workerErr, nil)
 		case <-ticker.C:
 			_ = s.catalogSync.SyncAll(catalogCtx)
 		}
