@@ -486,15 +486,19 @@ catalogStarted := false
 		startBalance = s.balanceStart
 	}
 	s.balanceShutdownCompleted = false
+	workerShutdownCtx, cancel := runtimeShutdownContext(ctx)
 	if err := startBalance(ctx); err != nil {
-		s.shutdownMu.Unlock()
-		if errors.Is(err, operational.ErrSyncWorkerRunning) {
-			return err
+		if !errors.Is(err, operational.ErrSyncWorkerRunning) {
+			workerErr := s.rollbackStartedLifecycles(workerShutdownCtx)
+			s.shutdownMu.Unlock()
+			cancel()
+			return combineRuntimeShutdownError(combineRuntimeShutdownError(err, workerErr), s.Close())
 		}
-		return combineRuntimeShutdownError(err, s.Close())
+		s.shutdownMu.Unlock()
+		cancel()
+		return err
 	}
 	s.shutdownMu.Unlock()
-	workerShutdownCtx, cancel := runtimeShutdownContext(ctx)
 	defer cancel()
 
 	if s.catalogSync == nil {
