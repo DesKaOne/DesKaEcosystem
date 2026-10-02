@@ -154,6 +154,32 @@ func (db *initializationCloseErrorDB) Close() error {
 	return db.closeErr
 }
 
+func TestServiceRunPropagatesUnexpectedWorkerExitAndClosesOwnership(t *testing.T) {
+	service, err := New(operationalMustSyncServiceForRuntimeTest(t, provider.NewRegistry()), time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.catalogSync = nil
+	service.balanceLifecycle.interval = 0
+	transactionDB := &closeErrorDB{}
+	service.databaseOwnership = newRuntimeDatabaseOwnership(transactionDB, nil)
+	service.databaseOwnership.transferToService()
+
+	runErr := service.Run(context.Background())
+	if !errors.Is(runErr, operational.ErrSyncWorkerExited) {
+		t.Fatalf("expected unexpected worker exit to propagate, got %v", runErr)
+	}
+	if service.balanceLifecycle.Running() {
+		t.Fatal("unexpectedly exited worker must not remain active")
+	}
+	if transactionDB.closeCount != 1 {
+		t.Fatalf("expected database ownership cleanup after worker exit, got %d", transactionDB.closeCount)
+	}
+	if !service.databaseOwnership.isClosed() {
+		t.Fatal("expected database ownership to be closed after worker exit")
+	}
+}
+
 func TestServiceRunRejectsConcurrentReentryAtBalanceLifecycle(t *testing.T) {
 	mockProvider := &balanceMock{Provider: mock.New(mock.Config{Products: []provider.Product{{Code: "xld10", Name: "Test"}}}), balance: 1900000}
 	registry := provider.NewRegistry()
