@@ -8649,3 +8649,52 @@ CI #3908 / run 36990414476 completed with success. Test, vet, and race passed; c
 ### Next Concrete Engineering Task
 
 Continue the evidence-based catalog audit into catalog snapshot freshness and stale-data boundaries, specifically verifying that failed or interrupted synchronization cannot advance SyncedAt, overwrite a newer snapshot with older data, or make stale catalog data appear fresh to routing consumers.
+
+
+## Catalog Snapshot Freshness / Stale-Data Boundary Audit
+
+**Date:** 2026-10-02
+
+### Audit Finding
+
+The catalog synchronization path preserves the existing stale-data boundary without requiring a production change:
+
+- SyncProvider() calls the external provider first and only constructs/persists a new Snapshot after GetProducts() succeeds;
+- provider fetch failure or context cancellation therefore cannot advance SyncedAt or replace the previous snapshot;
+- both MemoryStore.Put() and JSONFileStore.Put() reject a snapshot whose SyncedAt is older than the currently stored snapshot with ErrSnapshotOlder;
+- JSON recovery validates the provider identity and non-zero SyncedAt before installing persisted snapshots;
+- routing freshness uses isFresh(), which rejects zero timestamps, timestamps older than CatalogMaxAge, and future timestamps, so a future-dated catalog cannot appear fresh;
+- Router.Select() fails closed with ErrCatalogStale when the persisted catalog is outside the configured freshness window.
+
+The audit found no evidence that an interrupted/failed synchronization can overwrite a newer catalog snapshot or make stale data appear fresh to routing consumers.
+
+### Deterministic Coverage
+
+Existing regression coverage directly exercises the boundary:
+
+- TestJSONFileStoreRejectsOlderSnapshot — older writes are rejected and neither memory nor durable state regresses;
+- TestServiceRunCatalogPersistenceFailureKeepsLifecycleAliveForRetry — a failed catalog persistence attempt does not terminate the runtime and later synchronization can persist a successful snapshot;
+- TestServiceRunCatalogFetchCancellationDefersOwnershipCleanupUntilFetchReturns — cancellation during an in-flight provider fetch does not publish partial catalog state and ownership cleanup waits for the fetch boundary;
+- TestRouterRejectsStaleCatalogSnapshot / TestRouterRejectsStaleCatalogForEnabledHealthyProvider — stale catalog data is not route-eligible;
+- TestRouterRejectsFutureCatalogSnapshot — future-dated catalog data is not route-eligible.
+
+### Safety Invariants
+
+- failed provider fetches never advance catalog SyncedAt;
+- older catalog snapshots cannot overwrite newer stored snapshots;
+- future or stale catalog timestamps cannot authorize routing;
+- catalog freshness is an eligibility gate only and never changes provider lifecycle/readiness;
+- catalog synchronization never mutates payment transactions, balances, ledger state, treasury state, or routing authority;
+- Router.Select() remains the sole routing authority.
+
+### Changed Files
+
+- DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md
+
+### Verification
+
+No production code change was required for this audit. The prior implementation baseline was CI #3908 / run 36990414476, completed / success, with test, vet, and race passing and credential-gated provider validations skipped as expected. The documentation-only commit requires its own repository CI to complete successfully before this audit milestone is considered complete.
+
+### Next Concrete Engineering Task
+
+Continue the evidence-based catalog audit into catalog persistence ambiguity, specifically verifying whether a post-replacement filesystem failure can leave durable catalog state newer than in-memory state and whether that boundary requires conservative recovery semantics.
