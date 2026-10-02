@@ -345,7 +345,7 @@ func TestValidatorRuntimeExposesClonedFinalityCertificate(t *testing.T) {
 }
 
 func TestValidatorRuntimeRejectsAuthorityEpochMismatch(t *testing.T) {
-	runtime, state, validators, power := runtimeFixture(t)
+	_, state, validators, power := runtimeFixture(t)
 	bad, err := NewValidatorAuthoritySet(state.Epoch+1, validators, map[string][]byte{
 		"validator-a": []byte("key-a"),
 		"validator-b": []byte("key-b"),
