@@ -96,7 +96,7 @@ func (a ValidatorAuthoritySet) Clone() ValidatorAuthoritySet {
 	cloned := ValidatorAuthoritySet{
 		Epoch: a.Epoch,
 		Validators: cloneValidatorSet(a.Validators),
-		Keys: make(map[string][]byte, len(a.keys)),
+		keys: make(map[string][]byte, len(a.keys)),
 	}
 	for id, key := range a.keys {
 		cloned.keys[id] = append([]byte(nil), key...)
