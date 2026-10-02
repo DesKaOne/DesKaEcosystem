@@ -27,7 +27,7 @@ type ConsensusSession struct {
     peers      []PeerID
     ctx        consensus.BlockProductionContext
     candidate  *block.Block
-    pending map[uint64]block.Block
+    pending map[string]block.Block
     validators consensus.ValidatorSet
     power      consensus.VotingPowerSet
     validatorResolver node.ValidatorAuthorityResolver
@@ -70,7 +70,7 @@ func NewConsensusSession(
         peers: append([]PeerID(nil), peers...), ctx: ctx,
         validators: validators, power: power,
         validatorResolver: validatorResolver, senderResolver: senderResolver,
-        pending: make(map[uint64]block.Block),
+        pending: make(map[string]block.Block),
     }, nil
 }
 
@@ -136,14 +136,16 @@ func (s *ConsensusSession) PumpOnce() (PeerID, error) {
     case MessageTypeBlock:
         candidate, err := DecodeBlockDevelopment(msg.Payload, s.rules.MaxPayloadSize)
         if err != nil { return from, err }
-        s.pending[uint64(candidate.Header.Height)] = candidate
+        hash, err := block.Hash(candidate)
+        if err != nil { return from, err }
+        s.pending[string(hash[:])] = candidate
         return from, nil
     case MessageTypeConsensus:
         decoded, err := consensus.DecodeMessage(msg.Payload, s.rules)
         if err != nil { return from, err }
         var candidate *block.Block
         if decoded.Type == consensus.MessageTypeProposal {
-            pending, ok := s.pending[uint64(decoded.Height)]
+            pending, ok := s.pending[string(decoded.Payload)]
             if !ok { return from, ErrConsensusSessionCandidateRequired }
             candidate = &pending
         }
@@ -155,9 +157,15 @@ func (s *ConsensusSession) PumpOnce() (PeerID, error) {
 
 func (s *ConsensusSession) ReceiveAndProcess(candidate *block.Block) (PeerID, error) {
     if s == nil || s.transport == nil { return "", ErrNilConsensusSession }
-    from, msg, err := ReceiveConsensus(s.transport, s.rules)
-    if err != nil { return from, err }
-    return from, s.HandlePeerMessage(from, msg, candidate)
+    for {
+        from, msg, err := s.transport.Receive()
+        if err != nil { return from, err }
+        if msg.Type == MessageTypeBlock { continue }
+        if msg.Type != MessageTypeConsensus { return from, ErrUnknownMessage }
+        decoded, err := consensus.DecodeMessage(msg.Payload, s.rules)
+        if err != nil { return from, err }
+        return from, s.HandlePeerMessage(from, decoded, candidate)
+    }
 }
 func (s *ConsensusSession) validateProposalCandidate(msg consensus.Message, candidate block.Block) error {
     rules, err := s.node.Config.BlockRules(nil)
