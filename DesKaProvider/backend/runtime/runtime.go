@@ -349,34 +349,6 @@ ownership.transferToService()
 return service,nil
 }
 
-func enabledCapabilitiesFromDescriptor(descriptor provider.CapabilityDescriptor) []operational.Capability {
-	capabilities := make([]operational.Capability, 0, len(descriptor.Capabilities))
-	for capability, status := range descriptor.Capabilities {
-		if status.AdapterImplemented {
-			capabilities = append(capabilities, operational.Capability(capability))
-		}
-	}
-	sort.Slice(capabilities, func(i, j int) bool { return capabilities[i] < capabilities[j] })
-	return capabilities
-}
-
-func retainEnabledCapabilities(previous []operational.Capability, descriptor provider.CapabilityDescriptor) []operational.Capability {
-	allowed := make(map[provider.Capability]struct{}, len(descriptor.Capabilities))
-	for capability, status := range descriptor.Capabilities {
-		if status.AdapterImplemented {
-			allowed[capability] = struct{}{}
-		}
-	}
-	result := make([]operational.Capability, 0, len(previous))
-	for _, capability := range previous {
-		if _, ok := allowed[provider.Capability(capability)]; ok {
-			result = append(result, capability)
-		}
-	}
-	sort.Slice(result, func(i, j int) bool { return result[i] < result[j] })
-	return result
-}
-
 func capabilitiesFromDescriptor(descriptor provider.CapabilityDescriptor) []operational.Capability {
 	capabilities := make([]operational.Capability, 0, len(descriptor.Capabilities))
 	for capability, status := range descriptor.Capabilities {
