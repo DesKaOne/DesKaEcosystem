@@ -355,7 +355,21 @@ func TestValidatorRuntimeRejectsAuthorityEpochMismatch(t *testing.T) {
 }
 
 func TestValidatorRuntimeAuthoritySnapshotIsDefensive(t *testing.T) {
-	runtime, _, _, _ := runtimeFixture(t)
+	_, state, validators, power := runtimeFixture(t)
+	keys := map[string][]byte{
+		"validator-a": []byte("key-a"),
+		"validator-b": []byte("key-b"),
+		"validator-c": []byte("key-c"),
+	}
+	authoritySnapshot, err := NewValidatorAuthoritySet(state.Epoch, validators, keys)
+	if err != nil { t.Fatal(err) }
+	runtime, err := NewValidatorRuntime(RuntimeConfig{
+		Authority: &authoritySnapshot,
+		Rules: ValidationRules{ProtocolVersion: state.ProtocolVersion, ChainID: state.ChainID},
+		State: state, Validators: validators, VotingPower: power,
+		Threshold: QuorumThreshold{Numerator: 2, Denominator: 3}, Proposer: RoundRobinProposer{},
+	})
+	if err != nil { t.Fatal(err) }
 	authority, err := runtime.Authority()
 	if err != nil { t.Fatal(err) }
 	key, err := authority.PublicKeyForValidator([]byte("validator-a"))
