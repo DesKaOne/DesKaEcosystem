@@ -91,6 +91,7 @@ func TestPostgresSettlementAppendIsAtomicAndIdempotent(t *testing.T) {
 	store, err := NewPostgresStore(db)
 	if err != nil { t.Fatal(err) }
 	for _, account := range []Account{
+		{ID:"customer-main",Type:AccountTypeMain,Currency:"IDR",Name:"Customer Main",Active:true},
 		{ID:"provider-clearing",Type:AccountTypeClearing,Currency:"IDR",Name:"Provider Clearing",Active:true},
 		{ID:"settlement-in",Type:AccountTypeSettlementIn,Currency:"IDR",Name:"Settlement In",Active:true},
 	} {
