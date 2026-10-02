@@ -1,6 +1,7 @@
 package accounting
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sync"
@@ -106,6 +107,15 @@ func NewMemoryStore() *MemoryStore {
 func cloneTransaction(t LedgerTransaction) LedgerTransaction {
 	t.Entries = append([]Entry(nil), t.Entries...)
 	return t
+}
+
+func (s *MemoryStore) AppendContext(_ context.Context, t LedgerTransaction) error {
+	return s.Append(t)
+}
+
+func (s *MemoryStore) GetContext(_ context.Context, id string) (LedgerTransaction, bool, error) {
+	t, ok := s.Get(id)
+	return t, ok, nil
 }
 
 func (s *MemoryStore) Append(t LedgerTransaction) error {
