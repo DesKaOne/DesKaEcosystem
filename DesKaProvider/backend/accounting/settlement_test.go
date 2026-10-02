@@ -46,6 +46,9 @@ func TestSettlementPosterIsIdempotentAndImmutable(t *testing.T) {
 	if err := poster.Post(context.Background(), req); err != nil {
 		t.Fatal(err)
 	}
+	audit, ok, err := ledger.GetSettlementAudit(context.Background(), req.TransactionID)
+	if err != nil || !ok { t.Fatalf("expected durable settlement audit: %v %v", err, ok) }
+	if audit.ReferenceID != req.ReferenceID || audit.SourceID != req.SourceID || audit.Status != ProviderStatusSuccess { t.Fatalf("unexpected settlement audit: %#v", audit) }
 	if err := poster.Post(context.Background(), req); err != nil {
 		t.Fatalf("identical settlement post must be idempotent: %v", err)
 	}
