@@ -8698,3 +8698,108 @@ No production code change was required for this audit. The prior implementation 
 ### Next Concrete Engineering Task
 
 Continue the evidence-based catalog audit into catalog persistence ambiguity, specifically verifying whether a post-replacement filesystem failure can leave durable catalog state newer than in-memory state and whether that boundary requires conservative recovery semantics.
+
+
+## Catalog Persistence Ambiguity / Fail-Closed Recovery Hardening
+
+**Date:** 2026-10-02
+
+### Audit Finding
+
+The existing JSON catalog persistence path already used the correct crash-consistency sequence for filesystem replacement:
+
+- serialize the complete catalog state;
+- write to a temporary file;
+- fsync the temporary file;
+- close the temporary file;
+- atomically replace the target with rename;
+- fsync the containing directory.
+
+Therefore an ordinary interrupted write cannot expose a partially written JSON document.
+
+The audit found one genuine ambiguous-result boundary after the atomic replacement:
+
+- rename can succeed and replace the durable pathname;
+- the following directory fsync can fail;
+- Put() therefore returns an error even though the target pathname may already contain the newer snapshot;
+- before this hardening, the in-memory store remained on the older snapshot and Router.Select() could continue reading that older state because the catalog store exposed it normally.
+
+This creates a same-process durable/in-memory divergence whose persistence outcome is uncertain. The previous implementation was therefore safe against partial JSON corruption, but not explicitly fail-closed for this post-replacement ambiguity.
+
+### Implementation
+
+- added explicit ErrCatalogPersistenceAmbiguous for failures after the target rename has already completed;
+- added an internal ambiguity state to JSONFileStore;
+- after an ambiguous persistence result, Get() and All() fail closed and expose no catalog snapshot until a later successful persistence operation clears the ambiguity;
+- the in-memory snapshot is not advanced by the failed operation;
+- restart/recovery remains conservative: a newly constructed store validates and loads the durable JSON state normally, so a successfully renamed newer snapshot is recoverable;
+- a successful persistence retry clears the ambiguity and restores normal catalog reads;
+- the existing temp-file Sync() + atomic Rename() + directory Sync() sequence remains intact;
+- no routing logic was duplicated or moved; Router.Select() remains the sole routing authority.
+
+### Deterministic Regression Coverage
+
+Added:
+
+- TestJSONFileStoreFailsClosedAfterPostRenamePersistenceAmbiguity
+
+The regression injects a directory-sync failure after rename and verifies:
+
+- Put() returns ErrCatalogPersistenceAmbiguous;
+- in-memory Get() fails closed;
+- aggregate All() fails closed;
+- the renamed durable snapshot is recoverable after constructing a fresh store;
+- a successful persistence retry clears the ambiguity and restores the newer snapshot.
+
+### Persistence / Recovery Result
+
+- partial JSON writes remain prevented by the existing temp-file + file-sync + atomic-rename boundary;
+- post-rename directory-sync failure is now explicitly treated as ambiguous rather than as an ordinary persistence failure;
+- ambiguous same-process catalog state cannot become route-eligible through the catalog store;
+- restart continues to use validated durable state and does not infer state from the failed in-memory publication;
+- no automatic retry was introduced; recovery remains explicit through the next successful synchronization/persistence operation.
+
+### Safety Invariants
+
+- failed or ambiguous persistence never publishes uncertain catalog state to routing consumers;
+- older snapshots cannot overwrite newer in-memory or durable state through the existing monotonicity guard;
+- stale and future-dated catalog timestamps remain rejected by routing freshness checks;
+- catalog persistence ambiguity does not mutate provider lifecycle, capability readiness, operational health, payment transactions, balances, ledger state, treasury state, or routing authority;
+- Router.Select() remains the single routing authority;
+- no automatic provider failover, payment retry, transaction resubmission, provider funding, or duplicate transaction path is introduced.
+
+### Changed Files
+
+- DesKaProvider/backend/catalog/catalog.go
+- DesKaProvider/backend/catalog/json_store.go
+- DesKaProvider/backend/catalog/json_store_test.go
+- DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md
+
+### Verification
+
+Implementation/test HEAD:
+
+fcb28b2122a25aa045f91465f5145ef5e5c1c4d2
+
+Repository CI:
+
+- DesKaProvider CI #3917 / run 36997743714: GREEN
+  - test: PASS
+  - vet: PASS
+  - race: PASS
+  - digiflazz-validation: skipped as credential-gated
+  - iak-read-only: skipped as credential-gated
+  - midtrans-sandbox: skipped as credential-gated
+  - xp-sindonesia-read-only: skipped as credential-gated
+
+No authorized live-provider transaction or external provider request was executed.
+
+### Remaining Recovery Question
+
+The ambiguity boundary is now fail-closed within a running process. A crash can still lose the directory-entry durability of a just-renamed snapshot despite the directory fsync attempt; after restart, the filesystem may therefore expose either the old or new durable snapshot. The current recovery validator correctly rejects structurally invalid, identity-mismatched, zero-timestamp, stale, and future-dated snapshots, but it has no independent generation/journal from which to prove cross-crash monotonicity when the filesystem itself loses the latest rename.
+
+That limitation is not evidence that a production bug remains in the current architecture; adding a journal/generation protocol would materially increase persistence complexity and is not justified without a concrete requirement for cross-crash generation guarantees.
+
+### Next Concrete Engineering Task
+
+Continue the evidence-based persistence audit into provider operational-state recovery under crash/restart, specifically verifying that the existing ProviderStateStore has the same atomicity, ambiguity, monotonicity, corruption, and recovery guarantees without coupling operational state to catalog routing authorization.
