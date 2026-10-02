@@ -18,6 +18,7 @@ var (
 type RuntimeConfig struct {
 	Rules       ValidationRules
 	State       RoundState
+	Authority   *ValidatorAuthoritySet
 	Validators  ValidatorSet
 	VotingPower VotingPowerSet
 	Threshold   QuorumThreshold
@@ -26,6 +27,7 @@ type RuntimeConfig struct {
 
 type ValidatorRuntime struct {
 	rules       ValidationRules
+	authority   *ValidatorAuthoritySet
 	state       RoundState
 	validators  ValidatorSet
 	votingPower VotingPowerSet
@@ -60,6 +62,14 @@ func NewValidatorRuntime(config RuntimeConfig) (*ValidatorRuntime, error) {
 	if config.Proposer == nil {
 		return nil, ErrInvalidConsensusRuntime
 	}
+	if config.Authority != nil {
+		if err := config.Authority.Validate(); err != nil {
+			return nil, err
+		}
+		if !config.Authority.SameContext(config.State) || !sameValidatorSet(config.Validators, config.Authority.ValidatorSet()) {
+			return nil, ErrValidatorAuthorityMismatch
+		}
+	}
 
 	prevotes, err := NewVoteAggregator(
 		config.Rules,
@@ -80,8 +90,14 @@ func NewValidatorRuntime(config RuntimeConfig) (*ValidatorRuntime, error) {
 		return nil, err
 	}
 
+	var authority *ValidatorAuthoritySet
+	if config.Authority != nil {
+		cloned := config.Authority.Clone()
+		authority = &cloned
+	}
 	return &ValidatorRuntime{
 		rules:       config.Rules,
+		authority:   authority,
 		state:       config.State,
 		validators:  cloneValidatorSet(config.Validators),
 		votingPower: cloneVotingPowerSet(config.VotingPower),
@@ -93,6 +109,35 @@ func NewValidatorRuntime(config RuntimeConfig) (*ValidatorRuntime, error) {
 }
 
 func (r *ValidatorRuntime) State() RoundState { return r.state }
+
+func (r *ValidatorRuntime) Authority() (ValidatorAuthoritySet, error) {
+	if r == nil || r.authority == nil {
+		return ValidatorAuthoritySet{}, ErrAuthenticatedConsensusAuthorityMissing
+	}
+	return r.authority.Clone(), nil
+}
+
+func (r *ValidatorRuntime) ConsensusAuthority() (TimeoutAuthorityResolver, error) {
+	if r == nil || r.authority == nil {
+		return nil, ErrAuthenticatedConsensusAuthorityMissing
+	}
+	if !r.authority.SameContext(r.state) {
+		return nil, ErrValidatorAuthorityMismatch
+	}
+	return r.authority.Clone(), nil
+}
+
+func sameValidatorSet(a, b ValidatorSet) bool {
+	if len(a.Validators) != len(b.Validators) {
+		return false
+	}
+	for i := range a.Validators {
+		if !bytes.Equal(a.Validators[i], b.Validators[i]) {
+			return false
+		}
+	}
+	return true
+}
 
 func (r *ValidatorRuntime) Proposal() []byte {
 	if r == nil { return nil }
