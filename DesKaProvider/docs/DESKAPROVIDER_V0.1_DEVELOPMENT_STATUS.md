@@ -9008,3 +9008,82 @@ External provider validation remains credential-gated and was not fabricated or 
 ### Next Concrete Engineering Task
 
 Continue the evidence-based hardening audit into **provider operational-state and runtime readiness publication**, specifically verifying that startup failure or partial initialization cannot expose a Router/Service instance whose ProviderState, operational store, catalog store, or database ownership has not fully converged.
+
+
+## Runtime Partial-Initialization / Publication Boundary Audit
+
+**Date:** 2026-10-02
+
+### Audit Finding
+
+The runtime initialization path was audited for the invariant that a partially initialized `Router`/`Service` generation can never be returned or have database ownership transferred before ProviderState, operational store, catalog store, transaction/audit stores, routing service, and final initialization context checks have converged.
+
+No production correction was required.
+
+The existing `NewFromEnvironmentContext()` sequence constructs dependencies privately, performs provider-state reconciliation before Router construction, constructs the Router and purchase service, then performs a final initialization-context checkpoint immediately before ownership transfer. The named return value and deferred ownership guard ensure that any error before transfer returns `nil` service and closes the partial database generation.
+
+### Publication / Ownership Boundary
+
+The existing ownership guard provides the following invariants:
+
+- database ownership is created only after transaction/audit acquisition succeeds;
+- initialization failures after ownership creation are cleaned up by the deferred guard;
+- ownership is transferred to the returned Service only at the final handoff;
+- failures at deterministic checkpoints (`after-database-acquisition`, `after-provider-state-store`, `after-router`, `after-purchase-service`, and `before-ownership-transfer`) do not expose a Service;
+- cleanup is idempotent and preserves the original initialization error;
+- a failed generation does not poison a subsequent fresh runtime generation;
+- active Service ownership cannot be closed concurrently with an active worker lifecycle.
+
+### State / Store Convergence
+
+Before Router construction, runtime initialization has already:
+
+1. opened the operational store;
+2. loaded/created the persistent ProviderStateStore;
+3. reconciled each registered provider's current capability descriptor and fingerprint;
+4. forced drifted recovered lifecycle state to disabled;
+5. constructed the Router with the reconciled ProviderStateStore and current catalog store;
+6. constructed the purchase/routing service.
+
+No worker lifecycle is started during this publication phase.
+
+### Deterministic Coverage
+
+Existing runtime regression coverage explicitly exercises:
+
+- failure after Router construction;
+- failure after purchase-service construction;
+- failure at the final ownership handoff;
+- initialization failure across all defined ownership checkpoints;
+- provider-state initialization failure after ownership setup;
+- cleanup idempotency;
+- successful fresh initialization after a failed generation;
+- concurrent `Run()` rejection without closing active database ownership;
+- `Close()` rejection while a worker lifecycle is active;
+- worker-exit cleanup of transferred database ownership.
+
+The tests verify both **no partially initialized Service escapes** and **no stale/partial database generation remains owned after failed initialization**.
+
+### Production Change
+
+**None required.**
+
+The audited publication boundary already fails closed and keeps Router/Service construction private until all required initialization gates pass. Introducing an additional publication abstraction would duplicate existing ownership semantics without evidence of a current safety gap.
+
+### Verification
+
+CI baseline for the audited source state:
+
+- DesKaProvider CI #3922 / run 36999646278: **GREEN**
+  - test: PASS
+  - vet: PASS
+  - race: PASS
+  - credential-gated provider validation jobs: skipped as expected
+
+This documentation commit requires its own repository CI to complete successfully before this audit milestone is considered complete.
+
+External provider validation remains credential-gated and is not promoted by this audit.
+
+### Next Concrete Engineering Task
+
+Continue the evidence-based hardening audit into **runtime worker startup/shutdown publication**, specifically verifying that balance/catalog background workers cannot publish stale operational or catalog state, leak goroutines, or retain database ownership across cancellation, unexpected worker exit, or repeated Run/Close cycles.
