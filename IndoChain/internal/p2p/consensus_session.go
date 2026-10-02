@@ -78,7 +78,7 @@ func (s *ConsensusSession) StartProposal(candidate block.Block) error {
     if s == nil || s.node == nil || s.engine == nil {
         return ErrNilConsensusSession
     }
-    if s.committed {
+    s.mu.Lock()\n    defer s.mu.Unlock()\n    if s.committed {
         return errors.New("consensus session already committed")
     }
     proposal, err := s.engine.BuildProposalMessage(candidate)
@@ -102,11 +102,50 @@ func (s *ConsensusSession) StartProposal(candidate block.Block) error {
     return s.broadcastGenerated(generated)
 }
 
+func (s *ConsensusSession) Start() error {
+    if s == nil || s.engine == nil || s.scheduler == nil { return ErrNilConsensusSession }
+    s.mu.Lock()
+    defer s.mu.Unlock()
+    if s.committed { return errors.New("consensus session already committed") }
+    if s.started { return nil }
+    s.started = true
+    return s.armTimeoutLocked()
+}
+
+func (s *ConsensusSession) Stop() {
+    if s == nil { return }
+    s.mu.Lock()
+    s.started = false
+    scheduler := s.scheduler
+    engine := s.engine
+    s.mu.Unlock()
+    if scheduler != nil { _ = scheduler.CancelEngineTimeout(engine) }
+}
+
+func (s *ConsensusSession) handleScheduledTimeout(msg consensus.Message, err error) {
+    s.mu.Lock()
+    defer s.mu.Unlock()
+    if err != nil || !s.started || s.committed { return }
+    if err := s.broadcast(msg); err != nil { return }
+    if _, err := s.engine.TryAdvanceRound(); err == nil {
+        _ = s.armTimeoutLocked()
+    } else {
+        // A single local timeout is evidence, not a round change. The scheduler
+        // stays disarmed until another timeout message supplies quorum.
+    }
+}
+
+func (s *ConsensusSession) armTimeoutLocked() error {
+    if s.scheduler == nil || s.engine == nil { return ErrNilConsensusSession }
+    if !s.started { return nil }
+    return s.scheduler.ArmEngineTimeout(s.engine, s.handleScheduledTimeout)
+}
+
 func (s *ConsensusSession) HandlePeerMessage(from PeerID, msg consensus.Message, candidate *block.Block) error {
     if s == nil || s.engine == nil || s.node == nil {
         return ErrNilConsensusSession
     }
-    if from == "" {
+    s.mu.Lock()\n    defer s.mu.Unlock()\n    if from == "" {
         return ErrConsensusSessionPeerRequired
     }
     if msg.Type == consensus.MessageTypeProposal {
