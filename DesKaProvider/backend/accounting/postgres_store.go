@@ -18,6 +18,14 @@ func NewPostgresStore(db *sql.DB) (*PostgresStore, error) {
 	return &PostgresStore{db: db}, nil
 }
 
+func (s *PostgresStore) AppendContext(ctx context.Context, tx LedgerTransaction) error {
+	return s.Append(ctx, tx)
+}
+
+func (s *PostgresStore) GetContext(ctx context.Context, id string) (LedgerTransaction, bool, error) {
+	return s.Get(ctx, id)
+}
+
 func (s *PostgresStore) Append(ctx context.Context, tx LedgerTransaction) error {
 	if err := tx.Validate(); err != nil {
 		return err
