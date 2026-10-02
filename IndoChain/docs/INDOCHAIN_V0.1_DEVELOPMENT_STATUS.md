@@ -3666,3 +3666,104 @@ Masih terbuka:
 
 **Milestone 4.68 status:** implementation/test completed; implementation CI GREEN; final completion gated on exact final documentation HEAD CI GREEN.
 
+
+
+### 5.0 Production Consensus Event Engine / Timeout Ownership
+
+**Tanggal:** 2026-10-02
+
+**Objective**
+
+Mengintegrasikan orchestration runtime di atas \`ValidatorRuntime\` + \`RoundDriver\` agar lifecycle event consensus dan timeout memiliki owner operasional yang eksplisit, tanpa memindahkan ownership canonical state dari \`Node\` atau ownership transport dari P2P.
+
+Milestone ini supersedes the previously listed 4.69 GC-only target because the larger production-consensus integration is now the higher-value architectural path.
+
+**Implementation**
+
+- \`IndoChain/internal/consensus/engine.go\`
+  - \`ConsensusEngine\` menjadi orchestration layer di atas \`RoundDriver\`;
+  - \`TimeoutPolicy\` mendefinisikan durasi Proposal / Prevote / Precommit;
+  - \`TimeoutToken\` mengikat height, round, phase, dan generation;
+  - stale/cancelled timeout ditolak fail-closed;
+  - timeout lokal ditandatangani dan masuk kembali melalui authenticated \`RoundDriver\`;
+  - round hanya maju melalui quorum-backed timeout evidence;
+  - successful round change otomatis mengaktifkan timeout Proposal baru;
+  - engine tidak memiliki canonical storage, P2P transport, atau wall-clock scheduler.
+- \`IndoChain/docs/consensus-production-event-engine-v0.1.md\`
+  - protocol/operational semantics, timeout lifecycle, restart rule, non-goals, tests, dan invariants didokumentasikan.
+- \`IndoChain/internal/consensus/engine_test.go\`
+  - phase-specific timeout policy;
+  - generation invalidation;
+  - stale timeout rejection;
+  - authenticated timeout generation;
+  - quorum-backed round advancement;
+  - automatic proposal timeout re-arm.
+
+**Protocol semantics**
+
+\`\`\`
+Proposal timeout
+    ↓
+authenticated timeout evidence
+    ↓
+P2P dissemination
+    ↓
+timeout evidence aggregation
+    ↓
+quorum
+    ↓
+TimeoutCertificate
+    ↓
+round + 1 / Proposal
+\`\`\`
+
+Timeout token validity requires exact height/round/phase/generation equality with the currently armed local timer. A local timeout never advances the round by itself.
+
+**Locked invariants**
+
+1. Stale timeout tokens cannot mutate consensus state.
+2. Finalized runtime rejects timeout mutation.
+3. Timeout evidence is authenticated before entering runtime aggregation.
+4. A single timeout cannot bypass quorum.
+5. Failed timeout-quorum attempts preserve evidence for retry.
+6. Successful round change resets phase to Proposal.
+7. New timeout generation invalidates prior timer identity.
+8. Canonical block/state remains owned by Node.
+9. P2P transport remains outside deterministic consensus state ownership.
+10. Validator membership, voting power, signature verification, and quorum validation remain mandatory.
+11. Wall-clock scheduling is operational input, not consensus state.
+12. Restart must discard pre-restart timeout tokens and arm a new token from recovered context.
+
+**Verification**
+
+- Starting implementation HEAD: \`bfb5e261bead45b24c3ed5c44343c5a7ec5c54d1\`.
+- Engine implementation commit: \`219265e8ba959582cff871a8b91c4cfe1bcad330\`.
+- Engine test commit: \`9851d949ee94f255e1f28fe23e27bfbe01787750\`.
+- CI run \`36987030401\` / run #1786: **GREEN**.
+- Tidy: PASS.
+- Test: PASS.
+- Race Test: PASS.
+- Vet: PASS.
+- CI job \`test\`: all required steps completed successfully.
+
+**Known limitations**
+
+This milestone does not yet claim:
+
+- wall-clock scheduler integration;
+- production broadcast/retransmission policy;
+- durable validator-set/epoch lifecycle;
+- canonical protocol serialization freeze;
+- native gas/fee production semantics;
+- full multi-process crash/restart orchestration;
+- EVM execution.
+
+The existing P2P consensus driver remains the transport integration boundary, while Node remains the canonical commit boundary.
+
+**Next meaningful integration target**
+
+**Production Consensus Node Loop / Multi-Node Commit Path:** connect the new event/timeout owner to an actual node lifecycle that produces deterministic candidates, disseminates proposals/votes through P2P, collects quorum, commits finalized blocks exactly once, and recovers safely across restart.
+
+Do not return to 4.69 GC dissemination as the default next milestone unless a concrete GC operational dependency blocks consensus integration.
+
+**Milestone 5.0 status:** implementation/test completed; CI GREEN on exact implementation/test HEAD; status-document update requires final CI verification on its own HEAD.
