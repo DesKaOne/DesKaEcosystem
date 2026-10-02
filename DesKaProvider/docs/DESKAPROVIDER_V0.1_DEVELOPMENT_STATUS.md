@@ -8114,3 +8114,55 @@ The audit introduced no production-code change. The latest verified CI for branc
 ### Next Concrete Engineering Task
 
 Continue with the next evidence-based provider readiness boundary, focusing on credential/configuration-gated capability registration and ensuring no configuration presence alone can promote a provider capability to Enabled, LiveTested, or ProductionReady.
+
+## Credential-Gated Capability Readiness Registration Audit
+
+**Date:** 2026-10-02
+
+### Audit Finding
+
+The provider capability registration boundary was audited for the invariant that configuration or credential presence must not by itself promote a capability to `Enabled`, `LiveTested`, or `ProductionReady`.
+
+The current runtime registration path explicitly records configured providers with:
+- `Configured=true` only when the corresponding configuration is present and loadable;
+- `AdapterImplemented=true` and `Tested=true` only for repository-backed adapter contracts;
+- `Enabled=false`;
+- `LiveTested=false`;
+- `ProductionReady=false`.
+
+The registry independently validates capability status before registration. `Enabled` requires an implemented adapter; `LiveTested` requires implementation, tests, and enablement; and `ProductionReady` requires verification, configuration, implementation, tests, enablement, and live validation.
+
+### Change
+
+Added deterministic regression coverage to make this boundary explicit:
+
+- a configured/tested capability remains `Enabled=false`, `LiveTested=false`, and `ProductionReady=false`;
+- invalid readiness combinations are rejected by `CapabilityStatus.Validate()`.
+
+No provider credential or external request is used by these tests.
+
+### Safety Boundary / Invariants
+
+- configuration presence is not transaction authority;
+- credentials do not automatically enable routing;
+- live validation cannot be inferred from configuration or repository tests;
+- production readiness cannot be inferred from credential availability;
+- `Router.Select()` remains the sole routing authority;
+- no automatic retry, failover, resubmission, provider funding, ledger mutation, customer-balance mutation, treasury movement, duplicate transaction creation, or public API exposure is introduced.
+
+### Changed Files
+
+- `DesKaProvider/backend/Provider/registry_test.go`
+- `DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md`
+
+### Verification
+
+Code commit:
+
+- `a0645fc8c45fa151d6b9403e27a731056ec9177b` — readiness registration regression tests
+
+Credential-gated provider validation remains SKIPPED without authorized live credentials/provider access.
+
+### Next Concrete Engineering Task
+
+Continue the evidence-based readiness audit into capability reconciliation/lifecycle mutation boundaries, specifically verifying that readiness state changes are atomic, preserve unrelated provider state under concurrency, and cannot mutate routing eligibility through partial state updates.
