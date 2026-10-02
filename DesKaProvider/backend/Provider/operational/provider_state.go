@@ -190,6 +190,7 @@ func (s *ProviderStateStore) Put(state ProviderState) error {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	current, existed := s.states[state.ProviderName]
 	next := make(map[string]ProviderState, len(s.states)+1)
 	for name, existing := range s.states {
 		next[name] = existing
@@ -205,7 +206,11 @@ func (s *ProviderStateStore) Put(state ProviderState) error {
 		sort.Slice(states, func(i, j int) bool { return states[i].ProviderName < states[j].ProviderName })
 		if err := s.persistence.Save(states); err != nil {
 			if errors.Is(err, ErrProviderStatePersistenceAmbiguous) {
-				s.states[state.ProviderName] = safeStateAfterAmbiguousPersistence(current, state)
+				if existed {
+					s.states[state.ProviderName] = safeStateAfterAmbiguousPersistence(current, state)
+				} else {
+					delete(s.states, state.ProviderName)
+				}
 			}
 			return err
 		}
