@@ -118,8 +118,8 @@ func TestRegistryConfiguredCapabilityDoesNotAutoPromoteReadiness(t *testing.T) {
 	if status.Enabled || status.LiveTested || status.ProductionReady {
 		t.Fatalf("configuration must not auto-promote readiness: %#v", status)
 	}
-	if status.State() != CapabilityTested {
-		t.Fatalf("expected TESTED state, got %s", status.State())
+	if status.State() != CapabilityDisabled {
+		t.Fatalf("expected DISABLED state, got %s", status.State())
 	}
 }
 
@@ -140,7 +140,7 @@ func TestCapabilityStatusValidateRejectsInvalidReadinessPromotion(t *testing.T) 
 			name: "production-ready without live validation",
 			status: CapabilityStatus{
 				Verified: true, Configured: true, AdapterImplemented: true,
-				Tested: true, Enabled: true,
+				Tested: true, Enabled: true, LiveTested: false,
 			},
 		},
 	}
