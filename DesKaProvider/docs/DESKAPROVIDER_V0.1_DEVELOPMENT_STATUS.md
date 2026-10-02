@@ -8060,3 +8060,57 @@ The latest CI gate therefore remains satisfied; no code change was introduced by
 ### Next Concrete Engineering Task
 
 Continue with the next evidence-based provider readiness or persistence/recovery boundary. Do not refine PostgreSQL commit-outcome classification until the concrete database/driver contract is established and deterministic failure-injection coverage can model that contract safely.
+
+## Transaction Submission / Reconciliation Read-Boundary Audit
+
+**Date:** 2026-10-02
+
+### Audit Finding
+
+The transaction-service caller boundary was audited after the PostgreSQL persistence ambiguity parity review. The durable transaction read paths used by purchase submission, payment submission, payment reconciliation, and payment webhook processing all use the error-aware `getTransactionContextE()` path when the configured store implements `ContextReadTransactionStore`.
+
+This preserves the distinction between:
+- a genuine missing durable transaction;
+- request cancellation/deadline failure; and
+- an underlying persistence/database read failure.
+
+The purchase path fails before provider selection or external submission when the existing-state read fails. Payment reconciliation and webhook processing likewise stop before applying a financial state transition when their durable transaction read fails.
+
+### Decision
+
+No production-code change is justified by this audit. The caller boundary already preserves persistence read failures and does not reinterpret them as authorization, duplicate-submission permission, terminal state, or ordinary not-found results.
+
+The legacy `getTransactionContext()` helper remains compatibility-only and intentionally discards read errors for callers that explicitly choose that behavior; the audited financial submission/reconciliation paths do not use it.
+
+### Deterministic Coverage
+
+Repository tests already cover the error-aware transaction-store contract and the service behavior around durable state ownership/CAS boundaries. The audited paths retain:
+- atomic create-if-absent as the external submission authorization boundary;
+- versioned compare-and-transition for durable state changes;
+- reconciliation as the recovery path after ambiguous external outcomes;
+- no automatic retry or provider resubmission after persistence uncertainty.
+
+No provider transaction or external financial side effect is executed by this audit.
+
+### Safety Boundary / Invariants
+
+- persistence read failure never authorizes a new provider submission;
+- persistence read failure never creates a duplicate transaction;
+- persistence read failure never implies a terminal transaction state;
+- durable reference identity remains authoritative;
+- Router.Select() remains the sole routing authority;
+- no automatic retry, provider failover, duplicate purchase/payment creation, provider funding, ledger mutation, customer-balance mutation, treasury movement, or public API exposure is introduced.
+
+### External Validation
+
+No authorized live-provider transaction or external provider request was executed. The boundary is fully repository-testable without provider credentials.
+
+### Verification
+
+The audit introduced no production-code change. The latest verified CI for branch HEAD `6755dd1e8bcc4544e5d4f8543750c95164c34c63` remains GREEN:
+
+- Pull Request #3819 / run `36980813998`: **completed / success**
+
+### Next Concrete Engineering Task
+
+Continue with the next evidence-based provider readiness boundary, focusing on credential/configuration-gated capability registration and ensuring no configuration presence alone can promote a provider capability to Enabled, LiveTested, or ProductionReady.
