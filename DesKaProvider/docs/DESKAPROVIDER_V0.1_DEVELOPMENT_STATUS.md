@@ -8238,3 +8238,68 @@ No authorized live-provider transaction or external provider request was execute
 ### Next Concrete Engineering Task
 
 Continue the evidence-based readiness audit at the remaining capability/lifecycle mutation callers, specifically checking that runtime startup synchronization and explicit administrative enablement use the same atomic state-preservation boundary and cannot reintroduce stale capability enablement after reconciliation.
+
+
+## Runtime Startup Synchronization / Explicit Enablement Boundary Audit
+
+**Date:** 2026-10-02
+
+### Audit Finding
+
+The runtime startup path and explicit administrative lifecycle path were audited after the capability reconciliation atomicity hardening.
+
+The explicit administrative EnableProvider() path already delegates to ProviderStateStore.SetLifecycle(). It changes only the operational lifecycle gate and does not mutate registry capability readiness or capability enablement. Therefore it does not reintroduce stale capability state.
+
+The runtime startup path did have a remaining mutation-boundary inconsistency: it manually reconstructed lifecycle/capability state and persisted it through the generic ProviderStateStore.Put(), duplicating reconciliation logic outside the new atomic reconciliation boundary.
+
+### Implementation
+
+- runtime startup synchronization now uses ProviderStateStore.ReconcileCapabilityState() for existing provider state;
+- capability membership, fingerprint, and drift-driven lifecycle disablement therefore use the same atomic mutation boundary as explicit administrative reconciliation;
+- missing providers are first seeded with the default disabled ProviderState, then passed through the atomic reconciliation operation;
+- obsolete runtime-local capability reconciliation helpers were removed;
+- explicit administrative enablement remains lifecycle-only through SetLifecycle();
+- explicit enablement cannot restore a removed capability because reconciliation updates the operational capability gate from current registry metadata before lifecycle re-enable.
+
+### Deterministic Coverage
+
+Existing runtime regression coverage was reviewed and retained:
+
+- restart preserves an explicitly disabled capability;
+- unrelated capability state survives restart;
+- lifecycle remains independently controlled;
+- capability drift disables lifecycle and resynchronizes current capability metadata;
+- explicit re-enable restores lifecycle without promoting registry Enabled, LiveTested, or ProductionReady.
+
+The store-level reconciliation tests additionally cover removed-capability pruning and concurrent capability mutation preservation.
+
+### Safety Boundary / Invariants
+
+- startup synchronization and administrative reconciliation share the same atomic provider-state mutation boundary;
+- explicit EnableProvider() changes lifecycle only;
+- stale or removed capability state cannot be promoted back into the operational enablement gate by lifecycle enablement;
+- capability readiness remains separate from operational lifecycle;
+- Router.Select() remains the sole routing authority;
+- no automatic retry, provider failover, transaction resubmission, provider funding, ledger mutation, customer-balance mutation, treasury movement, duplicate transaction creation, or public API exposure is introduced.
+
+### Changed Files
+
+- DesKaProvider/backend/runtime/runtime.go
+- DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md
+
+### Verification
+
+Implementation commits:
+
+- 1648b3d5e230e7116c06518afa62aa4b2ac61061 — route runtime startup synchronization through atomic reconciliation;
+- 0e96762e5ad1f2683888276db19bcddcf16cfe99 — remove obsolete duplicated reconciliation helpers.
+
+Full repository test, vet, race, and CI verification is required on the resulting HEAD before this milestone is considered complete.
+
+### External Validation
+
+No authorized live-provider transaction or external provider request was executed. Credential-gated provider validation remains skipped unless explicitly authorized and credentials/provider access are available.
+
+### Next Concrete Engineering Task
+
+Continue the evidence-based mutation-boundary audit into persistent provider-state failure semantics, specifically verifying that ambiguous persistence during runtime startup cannot leave the in-memory lifecycle/capability state more permissive than the durable state.
