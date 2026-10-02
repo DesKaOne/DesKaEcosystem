@@ -97,7 +97,9 @@ func (s *ConsensusSession) StartProposal(candidate block.Block) error {
     if s == nil || s.node == nil || s.engine == nil {
         return ErrNilConsensusSession
     }
-    s.mu.Lock()\n    defer s.mu.Unlock()\n    if s.committed {
+    s.mu.Lock()
+    defer s.mu.Unlock()
+    if s.committed {
         return errors.New("consensus session already committed")
     }
     proposal, err := s.engine.BuildProposalMessage(candidate)
@@ -190,7 +192,9 @@ func (s *ConsensusSession) HandlePeerMessage(from PeerID, msg consensus.Message,
     if s == nil || s.engine == nil || s.node == nil {
         return ErrNilConsensusSession
     }
-    s.mu.Lock()\n    defer s.mu.Unlock()\n    if from == "" {
+    s.mu.Lock()
+    defer s.mu.Unlock()
+    if from == "" {
         return ErrConsensusSessionPeerRequired
     }
     if msg.Type == consensus.MessageTypeProposal {
