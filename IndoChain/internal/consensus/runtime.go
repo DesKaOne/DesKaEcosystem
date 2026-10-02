@@ -128,10 +128,10 @@ func (r *ValidatorRuntime) PersistenceContext(validatorDigest [32]byte, votingPo
 		return PersistenceContext{}, ErrInvalidConsensusRuntime
 	}
 	return PersistenceContext{
-		ProtocolVersion: r.state.ProtocolVersion,
-		ChainID: r.state.ChainID,
+		ProtocolVersion: uint64(r.state.ProtocolVersion),
+		ChainID: uint64(r.state.ChainID),
 		Epoch: r.state.Epoch,
-		Height: r.state.Height,
+		Height: uint64(r.state.Height),
 		Round: r.state.Round,
 		Phase: uint8(r.state.Phase),
 		ValidatorAuthorityDigest: authorityDigest(*r.authority),
