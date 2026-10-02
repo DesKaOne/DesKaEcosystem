@@ -8540,33 +8540,35 @@ Continue the evidence-based runtime lifecycle audit into catalog-worker shutdown
 
 ### Audit Finding
 
-The catalog path is synchronous inside Service.Run(), so catalog synchronization itself cannot execute concurrently with the runtime's final database-ownership cleanup in the same Run goroutine. However, two lifecycle-boundary gaps remained around injectable startup/shutdown seams:
+The catalog path is synchronous inside Service.Run(), so catalog synchronization itself cannot execute concurrently with the runtime's final database-ownership cleanup in the same Run goroutine. The repository's existing regression suite also establishes an intentional convergence contract: a catalog shutdown hook may fail while leaving the catalog lifecycle active, and in that state database cleanup must remain deferred until a later shutdown attempt converges.
 
-- a catalog-start seam could activate the catalog lifecycle and then return an error; the previous rollback helper only rolled back the balance lifecycle;
-- a custom catalog-shutdown seam could return an error while leaving the catalog lifecycle marked running, allowing Run() to return without clearing the logical lifecycle state and preventing database ownership cleanup.
+A separate compatible gap remained: a catalog-start seam could activate the catalog lifecycle and then return an error, while the previous rollback helper only rolled back the balance lifecycle.
 
 ### Implementation
 
 - rollbackStartedLifecycles() now rolls back both an active balance lifecycle and an active catalog lifecycle, preserving all rollback errors with errors.Join;
-- shutdownCatalogLifecycle() now treats the catalog lifecycle state as the ownership boundary: after a custom shutdown hook returns, any still-running catalog lifecycle is forcibly cancelled through its own lifecycle shutdown boundary before Run() can proceed to database cleanup;
+- the existing deferred-shutdown convergence semantics are preserved: a failed catalog shutdown does not forcibly clear a still-active catalog lifecycle, and database ownership remains open while any lifecycle remains active;
 - existing ordering remains balance shutdown -> catalog shutdown -> database ownership cleanup;
 - no catalog synchronization retry/failover, provider routing mutation, payment retry, transaction resubmission, funding, ledger mutation, customer-balance mutation, treasury movement, or public API exposure is introduced.
+
+### CI Feedback / Correction
+
+Initial CI #3898 exposed that an attempted forced catalog cancellation was incompatible with existing lifecycle-convergence tests. Those tests require database cleanup to remain deferred when a catalog shutdown hook fails and the lifecycle is still active. The forced-cancel portion was removed; only partial catalog-start rollback remains in the production change.
 
 ### Deterministic Coverage
 
 Added:
 
 - TestServiceRunCatalogStartFailureRollsBackPartiallyStartedCatalogLifecycle
-- TestServiceRunCatalogShutdownErrorCannotLeaveLifecycleActive
 
-The tests verify partial catalog-start rollback, preservation of the original catalog shutdown error, inactive balance/catalog lifecycles before Run() returns, and exactly-once database ownership cleanup.
+The test verifies that a catalog lifecycle activated before a reported start failure is rolled back together with the balance lifecycle, and that database ownership closes only after both lifecycle boundaries have converged.
 
 ### Safety Invariants
 
-- Run() cannot return with the catalog lifecycle logically active after a catalog shutdown boundary;
-- a partially activated catalog lifecycle is rolled back when catalog startup reports an error;
-- database ownership is closed only after active runtime lifecycles have been cleared;
 - synchronous catalog synchronization remains cancellation-aware and cannot race with the same-goroutine ownership cleanup path;
+- a partially activated catalog lifecycle is rolled back when catalog startup reports an error;
+- a failed catalog shutdown does not permit database cleanup while the catalog lifecycle remains active;
+- lifecycle convergence remains retryable and does not replay already-successful shutdown boundaries;
 - Router.Select() remains the sole routing authority.
 
 ### Changed Files
@@ -8579,10 +8581,11 @@ The tests verify partial catalog-start rollback, preservation of the original ca
 
 Implementation commits:
 
-- 1d5376e8628c06283fc2bb05dfb453cfc5d709c9 — catalog lifecycle rollback and shutdown boundary hardening;
-- 765cbca4c6eec74187afc38ec4fc9bd7e5648e27 — deterministic regression coverage.
+- 1d5376e8628c06283fc2bb05dfb453cfc5d709c9 — initial catalog lifecycle rollback/shutdown boundary audit;
+- 064f748646d5fce13089bf3ce03a0f0644ccc5d1 — preserve deferred catalog shutdown convergence semantics after CI feedback;
+- 541ce97b63b9523ecaf91041748675f66a13ecc9 — deterministic partial catalog-start rollback coverage.
 
-Repository CI for the resulting HEAD is required to complete successfully before this milestone is considered complete. Credential-gated provider validations remain skipped unless authorized credentials and provider access are available.
+CI #3898 initially failed on the forced-shutdown semantics; CI #3904 / run 36989758526 verified the corrected implementation with completed / success. Test, vet, and race passed; credential-gated provider validations remained skipped as expected.
 
 ### Next Concrete Engineering Task
 
