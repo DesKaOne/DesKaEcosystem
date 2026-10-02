@@ -30,17 +30,19 @@ func accountingPostgresDB(t *testing.T) *sql.DB {
 	return db
 }
 
-func applyLedgerMigration(t *testing.T, db *sql.DB) {
+func applyAccountingMigrations(t *testing.T, db *sql.DB) {
 	t.Helper()
 	_, file, _, ok := runtime.Caller(0)
 	if !ok { t.Fatal("resolve test path") }
-	path := filepath.Join(filepath.Dir(file), "..", "migrations", "004_double_entry_ledger.sql")
-	b, err := os.ReadFile(path)
-	if err != nil { t.Fatal(err) }
-	for _, statement := range strings.Split(strings.Join(func() []string { var lines []string; for _, line := range strings.Split(string(b), "\n") { if strings.HasPrefix(strings.TrimSpace(line), "--") { continue }; lines = append(lines, line) }; return lines }(), "\n"), ";") {
+	for _, name := range []string{"004_double_entry_ledger.sql", "005_settlement_audit.sql"} {
+		path := filepath.Join(filepath.Dir(file), "..", "migrations", name)
+		b, err := os.ReadFile(path)
+		if err != nil { t.Fatal(err) }
+		for _, statement := range strings.Split(strings.Join(func() []string { var lines []string; for _, line := range strings.Split(string(b), "\n") { if strings.HasPrefix(strings.TrimSpace(line), "--") { continue }; lines = append(lines, line) }; return lines }(), "\n"), ";") {
 		statement = strings.TrimSpace(statement)
-		if statement == "" || strings.HasPrefix(statement, "--") { continue }
-		if _, err := db.Exec(statement); err != nil { t.Fatalf("apply ledger migration: %v", err) }
+			if statement == "" || strings.HasPrefix(statement, "--") { continue }
+			if _, err := db.Exec(statement); err != nil { t.Fatalf("apply accounting migration %s: %v", name, err) }
+		}
 	}
 }
 
@@ -52,7 +54,7 @@ func TestPostgresLedgerAppendIsImmutableAndIdempotent(t *testing.T) {
 	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil { t.Fatal(err) }
 	t.Cleanup(func(){ _, _ = db.ExecContext(context.Background(),"DROP SCHEMA "+schema+" CASCADE") })
 	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil { t.Fatal(err) }
-	applyLedgerMigration(t, db)
+	applyAccountingMigrations(t, db)
 
 	store, err := NewPostgresStore(db)
 	if err != nil { t.Fatal(err) }
