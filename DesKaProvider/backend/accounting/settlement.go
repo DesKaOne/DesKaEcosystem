@@ -69,7 +69,7 @@ func (p *SettlementPoster) Post(ctx context.Context, req SettlementPostingReques
 	tx := LedgerTransaction{
 		ID: req.TransactionID, ReferenceID: req.ReferenceID,
 		SourceType: req.SourceType, SourceID: req.SourceID,
-		Currency: req.Currency, Description: req.Description,
+		Currency: req.Currency, Description: req.Description, CreatedAt: req.CreatedAt,
 		Entries: append([]Entry(nil), req.Entries...),
 	}
 	// Append owns idempotency and immutable identity. This method deliberately
