@@ -1107,3 +1107,25 @@ This boundary intentionally does not:
 - infer debit/credit accounts from provider names or product metadata.
 
 The caller must provide the exact accounts and entries before financial mutation is permitted. An ambiguous or failed ledger persistence result is returned to the caller; this layer performs no compensating provider action.
+
+
+## 40. Durable Settlement Audit and Correlation Boundary
+
+Settlement posting now persists an explicit audit correlation record alongside the ledger transaction.
+
+The audit record contains:
+
+- immutable event ID;
+- ledger transaction ID;
+- financial reference ID;
+- source type and source ID;
+- terminal settlement status;
+- posting timestamp.
+
+The transaction ID is unique in the audit table, and reference/source fields are indexed for operational correlation. The audit record is metadata only; it is not a second financial source of truth and does not carry balance amounts.
+
+For PostgreSQL, settlement ledger entries and the audit correlation record are committed in the same database transaction. If either persistence step fails, neither is committed. A repeated identical settlement post is idempotent only when both the ledger identity and audit identity match; a changed audit correlation for an existing transaction is rejected.
+
+The in-memory implementation follows the same atomic semantic for deterministic tests.
+
+This boundary still performs no provider retry, failover, resubmission, funding, treasury movement, customer balance mutation, or automatic provider-to-ledger inference.
