@@ -8590,3 +8590,62 @@ CI #3898 initially failed on the forced-shutdown semantics; CI #3904 / run 36989
 ### Next Concrete Engineering Task
 
 Continue the evidence-based runtime lifecycle audit into catalog synchronization error propagation and cancellation semantics, specifically verifying that provider catalog failures remain operationally observable without converting transient catalog failure into hidden runtime health or ownership-state changes.
+
+
+## Catalog Synchronization Error Propagation / Cancellation Semantics Audit
+
+**Date:** 2026-10-02
+
+### Audit Finding
+
+Catalog synchronization is synchronous within Service.Run(). Each provider failure returned by SyncProvider() is recorded in SyncStatus and returned through SyncAll(); the runtime intentionally does not terminate merely because a catalog provider is temporarily unavailable. Catalog status is operationally observable through the runtime's status accessors.
+
+Cancellation is preserved as an explicit boundary: an in-flight provider catalog fetch receives the catalog lifecycle context, and runtime ownership cleanup occurs only after the fetch returns and lifecycle shutdown converges.
+
+No production change was required to the synchronization/error-propagation path.
+
+### Deterministic Coverage
+
+Added:
+
+- TestServiceRunCatalogProviderFailureRemainsObservableWithoutStoppingRuntime
+
+The regression verifies that a transient provider catalog error:
+
+- is recorded in SyncStatus.LastError;
+- increments ConsecutiveFailures;
+- does not stop the catalog lifecycle;
+- does not close runtime database ownership;
+- still allows normal cancellation to converge all lifecycles and close ownership exactly once.
+
+Existing coverage also verifies:
+
+- catalog persistence failure remains retryable;
+- in-flight catalog fetch cancellation defers ownership cleanup until the fetch returns;
+- direct provider catalog failure is exposed through sync status;
+- status persistence failures remain separately observable and do not convert a successful catalog sync into a provider failure.
+
+### Safety Invariants
+
+- transient catalog provider failure does not silently promote provider health or lifecycle readiness;
+- catalog synchronization failure does not mutate payment transactions, balances, ledger state, treasury state, or routing authority;
+- Router.Select() remains the sole routing authority;
+- cancellation does not bypass an in-flight provider call;
+- database ownership closes only after lifecycle shutdown has converged.
+
+### Changed Files
+
+- DesKaProvider/backend/runtime/runtime_test.go
+- DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md
+
+### Verification
+
+Implementation commit:
+
+- b3170346ef05db8ef56af907fb4aa9ed75a6ccc4 — deterministic catalog provider failure propagation coverage.
+
+CI #3908 / run 36990414476 completed with success. Test, vet, and race passed; credential-gated provider validations remained skipped as expected.
+
+### Next Concrete Engineering Task
+
+Continue the evidence-based catalog audit into catalog snapshot freshness and stale-data boundaries, specifically verifying that failed or interrupted synchronization cannot advance SyncedAt, overwrite a newer snapshot with older data, or make stale catalog data appear fresh to routing consumers.
