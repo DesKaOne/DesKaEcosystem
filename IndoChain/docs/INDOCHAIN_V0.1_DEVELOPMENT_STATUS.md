@@ -4030,3 +4030,87 @@ producer
 
 **Milestone 5.3 status:** implementation/test completed; implementation HEAD CI GREEN; final status-document HEAD requires its own CI gate.
 
+
+
+### 5.4 Consensus Timeout Scheduler Boundary / Recovery
+
+**Tanggal:** 2026-10-02
+
+**Objective**
+
+Memasang wall-clock timeout scheduler sebagai boundary operasional eksternal yang mengantarkan timeout event ke ConsensusEngine, tanpa memindahkan clock ownership atau canonical-state ownership ke consensus state machine. Lifecycle scheduler juga harus dapat difence saat timer diganti, dibatalkan, shutdown, atau restart.
+
+**Implementation**
+
+- IndoChain/internal/consensus/timeout_scheduler.go
+  - ConsensusTimeoutScheduler menggunakan time.AfterFunc melalui injectable ConsensusTimeoutTimerFactory;
+  - Schedule mengganti timer lama dengan epoch scheduler baru dan hanya mengirim token dari schedule aktif;
+  - ArmEngineTimeout mengambil token/duration dari ConsensusEngine.ArmTimeout lalu mengirim timeout event kembali melalui ConsensusEngine.HandleTimeout;
+  - CancelEngineTimeout melakukan fencing scheduler sekaligus invalidasi token engine;
+  - Stop menjadi lifecycle fence untuk shutdown/restart dan menunggu callback yang sudah benar-benar masuk agar tidak melewati boundary lifecycle;
+  - scheduler tidak menafsirkan consensus state, tidak membuat timeout evidence sendiri, dan tidak melakukan P2P dissemination.
+- IndoChain/internal/consensus/timeout_scheduler_test.go
+  - deterministic fake timer untuk replacement/cancellation;
+  - stale timer replacement tidak boleh memanggil handler;
+  - cancelled timer tidak boleh menghasilkan event;
+  - scheduler lama setelah Stop tidak boleh mengantarkan pre-restart timer, termasuk ketika token consensus pertama pada instance baru memiliki context/generation yang sama.
+
+**Operational semantics**
+
+ConsensusEngine.ArmTimeout()
+        ↓
+TimeoutToken + duration
+        ↓
+ConsensusTimeoutScheduler
+        ↓
+wall-clock timer
+        ↓
+HandleTimeout(token)
+        ↓
+authenticated timeout evidence
+        ↓
+P2P dissemination / evidence batching
+        ↓
+ConsensusEngine.TryAdvanceRound()
+
+**Locked invariants**
+
+1. Wall-clock scheduling tetap berada di luar consensus runtime.
+2. Setiap replacement/cancel/stop melakukan scheduler-epoch fencing.
+3. Timer stale tidak boleh menghasilkan timeout event ke caller.
+4. Timeout event yang lolos scheduler tetap diverifikasi oleh ConsensusEngine.HandleTimeout melalui height/round/phase/generation token.
+5. Restart wajib menghentikan scheduler instance lama sebelum consensus instance baru mengambil ownership operasional.
+6. Scheduler tidak mengubah canonical Node state.
+7. Scheduler tidak menganggap satu local timeout sebagai quorum atau round-change; quorum timeout evidence tetap diproses oleh existing RoundDriver/runtime boundary.
+8. Timer factory dapat diinjeksi sehingga lifecycle dan race semantics dapat diuji tanpa wall-clock nondeterminism.
+9. Callback yang sudah diterima sebelum Stop selesai terlebih dahulu; callback yang belum melewati scheduler fence tidak boleh masuk ke handler setelah stop.
+10. Tidak ada durable mutation atau speculative consensus recovery yang dilakukan scheduler.
+
+**Verification**
+
+- Initial scheduler implementation commits: 3270e9608f26d0995b5897f672702ff481fa50ac, 9ae70a0d8b536da15cd59e4953026d659e761b72, 003d5c7644d488d215f9394943c46da9dc2c6fd9.
+- CI run #1841 pada 003d5c7644d488d215f9394943c46da9dc2c6fd9: RED karena test file awal berisi deklarasi scheduler production yang terduplikasi; failure diperbaiki tanpa mengubah consensus semantics.
+- Final implementation/test HEAD: d57c14e762e48bee2798a88a18cf507e3e6a1f23.
+- CI run #1843 / 36997614405: GREEN.
+- Tidy: PASS.
+- Test: PASS.
+- Race Test: PASS.
+- Vet: PASS.
+
+**Known limitations**
+
+Milestone ini menyediakan scheduler lifecycle boundary, bukan full production node scheduler service. Masih terbuka:
+
+- binding scheduler lifecycle ke long-running node/session event loop;
+- timeout evidence retransmission, backpressure, dan peer failure policy;
+- durable validator-set/epoch lifecycle;
+- automatic crash/restart recovery multi-process yang memulihkan consensus context dari durable evidence;
+- canonical consensus serialization freeze;
+- gas/fee production semantics;
+- EVM execution.
+
+**Next meaningful integration target**
+
+**5.5 Consensus Scheduler ↔ Node/P2P Event Loop Integration:** mengikat scheduler ke lifecycle ConsensusSession/node sehingga timeout evidence otomatis masuk ke transport, evidence quorum dapat memicu round-change tanpa caller manual, dan shutdown/restart melakukan fencing scheduler serta recovery boundary secara eksplisit.
+
+**Milestone 5.4 status:** implementation/test completed; implementation HEAD CI GREEN; final status-document HEAD requires its own CI gate.
