@@ -3850,3 +3850,98 @@ This milestone still does not provide the complete Node/P2P multi-process produc
 **5.2 Node Consensus Session / Multi-Node Commit Path:** bind `ConsensusEngine.ProcessMessage` to real P2P receive/send, deterministic candidate production, finality publication, and the existing `Node.CommitFinalityEvidenceAndPublishConsensus` canonical handoff. Acceptance requires a multi-node test demonstrating convergence and exactly-once canonical commit.
 
 **Milestone 5.1 status:** implementation/test completed; CI GREEN on implementation HEAD. Final documentation HEAD requires its own CI verification.
+
+### 5.2 Node Consensus Session / Multi-Node Commit Path
+
+**Tanggal:** 2026-10-02
+
+**Objective**
+
+Mengikat ConsensusEngine ke lifecycle operasional node dan P2P: proposal authenticated, local vote generation, peer fan-out, finality detection, dan canonical commit exactly-once. Candidate block tetap divalidasi terhadap canonical node state sebelum runtime consensus berubah.
+
+**Implementation**
+
+- IndoChain/internal/consensus/engine_proposal.go
+  - ConsensusEngine.BuildProposalMessage membangun dan menandatangani proposal dari candidate deterministik;
+  - proposal payload tetap merupakan development block hash, sehingga canonical serialization tidak dibekukan prematur.
+- IndoChain/internal/p2p/consensus_session.go
+  - ConsensusSession menjadi node-owned operational bridge untuk ConsensusEngine, transport consensus, dan Node.CommitFinalityEvidenceAndPublishConsensus;
+  - proposal candidate divalidasi non-mutating melalui ValidateBlockCandidateForConsensus + authenticated proposer signature sebelum ProcessMessage;
+  - generated prevote/precommit dari engine langsung didiseminasikan ke configured peers;
+  - finality certificate memicu canonical commit hanya setelah runtime finalized;
+  - session memiliki exactly-once commit guard dan tidak mengambil ownership canonical storage;
+  - session sengaja tidak memiliki clock/scheduler, validator-set lifecycle, atau canonical wire serialization.
+- IndoChain/internal/p2p/consensus_session_test.go
+  - dua node + in-memory transport;
+  - proposer proposal → local/remote prevote → local/remote precommit;
+  - kedua node mencapai canonical height/hash yang sama;
+  - duplicate commit path tidak mengubah canonical head;
+  - proposal tanpa candidate ditolak fail-closed.
+
+**Protocol semantics**
+
+```
+deterministic candidate
+        ↓
+authenticated proposal
+        ↓
+ConsensusEngine.ProcessMessage
+        ↓
+local prevote + P2P broadcast
+        ↓
+prevote quorum
+        ↓
+local precommit + P2P broadcast
+        ↓
+precommit quorum
+        ↓
+FinalityCertificate
+        ↓
+Node.CommitFinalityEvidenceAndPublishConsensus
+        ↓
+canonical commit + runtime height advance
+```
+
+**Locked invariants**
+
+1. Candidate tidak menjadi canonical hanya karena proposal diterima.
+2. Proposal candidate harus cocok dengan height, epoch, round, chain/protocol context, previous hash, proposer, execution result, state root, dan payload hash.
+3. Proposal signature diverifikasi terhadap validator authority sebelum phase mutation.
+4. Generated local votes tetap melewati ConsensusEngine/authenticated runtime pipeline.
+5. Local vote contribution hanya dihitung sekali per phase.
+6. Generated events adalah dissemination artifacts; tidak dilakukan network loopback ke runtime penghasilnya.
+7. Finality certificate tetap diverifikasi oleh existing consensus/node authority boundaries.
+8. Canonical storage hanya dimutasi melalui existing Node commit handoff.
+9. Session tidak memiliki ownership atas wall-clock scheduling atau durable consensus state.
+10. Duplicate finality publication tidak boleh menghasilkan canonical head mutation kedua.
+
+**Known limitations**
+
+Milestone ini menutup synchronous in-memory multi-node commit path, tetapi belum mengklaim full production cluster loop. Masih terbuka:
+
+- asynchronous production event loop / scheduler integration;
+- automatic candidate exchange orchestration inside one node event loop;
+- peer discovery, retransmission, backpressure, dan network failure policy;
+- durable validator-set/epoch lifecycle;
+- automatic crash/restart multi-process consensus recovery;
+- canonical protocol serialization freeze;
+- gas/fee production semantics;
+- EVM execution.
+
+**Verification**
+
+- Engine proposal implementation commit: 2126419b73b70bc840940e7103ca928b40164869.
+- Consensus session implementation commit: cac7f8f2286b3323f38a05e5b5775e0f5e445c35.
+- Multi-node test/fix HEAD: 3267563b3e322fb3649c8aa601ac2d44f14a9403.
+- CI run #1817 / 36988141780: **GREEN**.
+- Tidy: PASS.
+- Test: PASS.
+- Race Test: PASS.
+- Vet: PASS.
+- A prior CI run #1809 exposed the expected import-cycle regression from the first placement; the session was moved from node into the p2p boundary, and the corrected exact HEAD is green.
+
+**Next meaningful integration target**
+
+**5.3 Asynchronous Consensus Node Loop / Candidate Exchange:** mengintegrasikan candidate exchange, transport receive/serve, timeout scheduling boundary, dan multi-node event pumping sehingga session tidak lagi membutuhkan caller untuk memasok candidate secara manual pada proposal receive path.
+
+**Milestone 5.2 status:** implementation/test completed; implementation HEAD CI GREEN; final status-document HEAD requires its own CI verification.
