@@ -115,7 +115,7 @@ type PersistenceContext struct {
 	Height          uint64
 	Round           uint64
 	Phase           uint8
-	ValidatorDigest [32]byte
+	ValidatorAuthorityDigest [32]byte
 	VotingPowerDigest [32]byte
 	ThresholdNumerator uint64
 	ThresholdDenominator uint64
@@ -136,7 +136,7 @@ func (c PersistenceContext) CanonicalBytes() []byte {
 	put(c.Height)
 	put(c.Round)
 	buf.WriteByte(c.Phase)
-	buf.Write(c.ValidatorDigest[:])
+	buf.Write(c.ValidatorAuthorityDigest[:])
 	buf.Write(c.VotingPowerDigest[:])
 	put(c.ThresholdNumerator)
 	put(c.ThresholdDenominator)
