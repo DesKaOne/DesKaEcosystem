@@ -39,9 +39,10 @@ func TestConsensusSessionPumpCandidateBeforeProposal(t *testing.T) {
     if err:=sa.StartProposal(candidate);err!=nil{t.Fatal(err)}
     if _,err:=sb.PumpOnce();err!=nil{t.Fatal(err)} // candidate
     if _,err:=sb.PumpOnce();err!=nil{t.Fatal(err)} // proposal + local prevote
-    if _,err:=sa.PumpOnce();err!=nil{t.Fatal(err)} // remote prevote
-    if _,err:=sa.PumpOnce();err!=nil{t.Fatal(err)} // remote precommit
-    if _,err:=sb.PumpOnce();err!=nil{t.Fatal(err)} // remote precommit
+    if _,err:=sb.PumpOnce();err!=nil{t.Fatal(err)} // remote prevote -> local precommit
+    if _,err:=sa.PumpOnce();err!=nil{t.Fatal(err)} // remote prevote -> local precommit
+    if _,err:=sa.PumpOnce();err!=nil{t.Fatal(err)} // remote precommit -> finality
+    if _,err:=sb.PumpOnce();err!=nil{t.Fatal(err)} // remote precommit -> finality
     if nodeA.HeadHash!=nodeB.HeadHash || nodeA.Head.Header.Height!=1 || nodeB.Head.Header.Height!=1 { t.Fatal("event pump did not converge canonical heads") }
     _=time.Second
 }
