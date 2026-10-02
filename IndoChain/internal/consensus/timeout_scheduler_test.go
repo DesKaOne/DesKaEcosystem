@@ -1,133 +1,134 @@
 package consensus
 
 import (
-	"errors"
 	"sync"
+	"testing"
 	"time"
 )
 
-var (
-	ErrNilConsensusTimeoutScheduler = errors.New("nil consensus timeout scheduler")
-	ErrInvalidConsensusTimeoutDuration = errors.New("invalid consensus timeout duration")
-)
-
-type ConsensusTimeoutTimer interface {
-	Stop() bool
-}
-
-type ConsensusTimeoutTimerFactory func(time.Duration, func()) ConsensusTimeoutTimer
-
-func defaultConsensusTimeoutTimerFactory(duration time.Duration, callback func()) ConsensusTimeoutTimer {
-	return time.AfterFunc(duration, callback)
-}
-
-// ConsensusTimeoutScheduler owns wall-clock timer lifecycle outside the
-// consensus state machine. It fences cancelled/replaced timers with its own
-// lifecycle epoch and waits for an in-flight callback before Stop returns.
-type ConsensusTimeoutScheduler struct {
+type schedulerTestTimer struct {
 	mu      sync.Mutex
-	wait    sync.WaitGroup
-	factory ConsensusTimeoutTimerFactory
-	timer   ConsensusTimeoutTimer
-	token   TimeoutToken
-	epoch   uint64
-	armed   bool
+	stopped bool
+	fireFn  func()
 }
 
-func NewConsensusTimeoutScheduler(factory ConsensusTimeoutTimerFactory) (*ConsensusTimeoutScheduler, error) {
-	if factory == nil {
-		factory = defaultConsensusTimeoutTimerFactory
-	}
-	return &ConsensusTimeoutScheduler{factory: factory}, nil
+func (t *schedulerTestTimer) Stop() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	wasActive := !t.stopped
+	t.stopped = true
+	return wasActive
 }
 
-// Schedule replaces any previously scheduled timer. The supplied token must
-// have been produced by ConsensusEngine.ArmTimeout. The scheduler never
-// interprets consensus state; it only delivers the exact token to the caller.
-func (s *ConsensusTimeoutScheduler) Schedule(token TimeoutToken, duration time.Duration, handler func(TimeoutToken)) error {
-	if s == nil {
-		return ErrNilConsensusTimeoutScheduler
-	}
-	if duration <= 0 || handler == nil {
-		return ErrInvalidConsensusTimeoutDuration
-	}
-
-	s.mu.Lock()
-	if s.timer != nil {
-		s.timer.Stop()
-	}
-	s.epoch++
-	epoch := s.epoch
-	s.armed = true
-	s.token = token
-	s.timer = nil
-	s.mu.Unlock()
-
-	timer := s.factory(duration, func() {
-		s.mu.Lock()
-		if !s.armed || s.epoch != epoch {
-			s.mu.Unlock()
-			return
-		}
-		s.armed = false
-		s.timer = nil
-		s.wait.Add(1)
-		s.mu.Unlock()
-
-		defer s.wait.Done()
-		handler(token)
-	})
-
-	s.mu.Lock()
-	if !s.armed || s.epoch != epoch {
-		timer.Stop()
-	} else {
-		s.timer = timer
-	}
-	s.mu.Unlock()
-	return nil
-}
-
-// Cancel fences the current timer and never invokes its handler.
-func (s *ConsensusTimeoutScheduler) Cancel() {
-	if s == nil {
+func (t *schedulerTestTimer) Fire() {
+	t.mu.Lock()
+	if t.stopped {
+		t.mu.Unlock()
 		return
 	}
-	s.mu.Lock()
-	s.epoch++
-	s.armed = false
-	timer := s.timer
-	s.timer = nil
-	s.mu.Unlock()
-	if timer != nil {
-		timer.Stop()
+	fn := t.fireFn
+	t.stopped = true
+	t.mu.Unlock()
+	fn()
+}
+
+type schedulerTestClock struct {
+	mu     sync.Mutex
+	timers []*schedulerTestTimer
+}
+
+func (c *schedulerTestClock) AfterFunc(_ time.Duration, fn func()) ConsensusTimeoutTimer {
+	timer := &schedulerTestTimer{fireFn: fn}
+	c.mu.Lock()
+	c.timers = append(c.timers, timer)
+	c.mu.Unlock()
+	return timer
+}
+
+func (c *schedulerTestClock) Timer(index int) *schedulerTestTimer {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.timers[index]
+}
+
+func TestConsensusTimeoutSchedulerFencesReplacedTimer(t *testing.T) {
+	clock := &schedulerTestClock{}
+	scheduler, err := NewConsensusTimeoutScheduler(clock.AfterFunc)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	first := TimeoutToken{Height: 7, Round: 0, Phase: PhaseProposal, Generation: 1}
+	second := TimeoutToken{Height: 7, Round: 0, Phase: PhaseProposal, Generation: 2}
+	var got []TimeoutToken
+	if err := scheduler.Schedule(first, time.Second, func(token TimeoutToken) { got = append(got, token) }); err != nil {
+		t.Fatal(err)
+	}
+	if err := scheduler.Schedule(second, time.Second, func(token TimeoutToken) { got = append(got, token) }); err != nil {
+		t.Fatal(err)
+	}
+
+	clock.Timer(0).Fire()
+	if len(got) != 0 {
+		t.Fatalf("replaced timer invoked handler: %+v", got)
+	}
+	clock.Timer(1).Fire()
+	if len(got) != 1 || got[0] != second {
+		t.Fatalf("active timer result = %+v", got)
 	}
 }
 
-// Stop is a lifecycle fence intended for node/session shutdown or restart.
-// It prevents future callbacks and waits until an already-delivered callback
-// has completed before returning.
-func (s *ConsensusTimeoutScheduler) Stop() {
-	if s == nil {
-		return
+func TestConsensusTimeoutSchedulerCancelFencesTimer(t *testing.T) {
+	clock := &schedulerTestClock{}
+	scheduler, err := NewConsensusTimeoutScheduler(clock.AfterFunc)
+	if err != nil {
+		t.Fatal(err)
 	}
-	s.mu.Lock()
-	s.epoch++
-	s.armed = false
-	timer := s.timer
-	s.timer = nil
-	s.mu.Unlock()
-	if timer != nil {
-		timer.Stop()
+	token := TimeoutToken{Height: 7, Round: 1, Phase: PhasePrevote, Generation: 3}
+	called := false
+	if err := scheduler.Schedule(token, time.Second, func(TimeoutToken) { called = true }); err != nil {
+		t.Fatal(err)
 	}
-	s.wait.Wait()
+	scheduler.Cancel()
+	clock.Timer(0).Fire()
+	if called {
+		t.Fatal("cancelled timeout invoked handler")
+	}
+	if scheduler.Armed() {
+		t.Fatal("scheduler remained armed after cancel")
+	}
 }
 
-func (s *ConsensusTimeoutScheduler) Armed() bool {
-	if s == nil {
-		return false
+func TestConsensusTimeoutSchedulerStopFencesPreRestartTimer(t *testing.T) {
+	clock := &schedulerTestClock{}
+	oldScheduler, err := NewConsensusTimeoutScheduler(clock.AfterFunc)
+	if err != nil {
+		t.Fatal(err)
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.armed
+	oldToken := TimeoutToken{Height: 9, Round: 2, Phase: PhasePrecommit, Generation: 1}
+	oldCalled := false
+	if err := oldScheduler.Schedule(oldToken, time.Second, func(TimeoutToken) { oldCalled = true }); err != nil {
+		t.Fatal(err)
+	}
+
+	oldScheduler.Stop()
+
+	newScheduler, err := NewConsensusTimeoutScheduler(clock.AfterFunc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	newToken := oldToken
+	newCalled := false
+	if err := newScheduler.Schedule(newToken, time.Second, func(TimeoutToken) { newCalled = true }); err != nil {
+		t.Fatal(err)
+	}
+
+	clock.Timer(0).Fire()
+	if oldCalled {
+		t.Fatal("pre-restart timer escaped scheduler stop fence")
+	}
+	clock.Timer(1).Fire()
+	if !newCalled {
+		t.Fatal("new scheduler did not deliver its active timer")
+	}
 }
