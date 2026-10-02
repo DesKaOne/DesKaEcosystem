@@ -14,6 +14,7 @@ var (
     ErrNilConsensusSession = errors.New("nil node consensus session")
     ErrConsensusSessionCandidateRequired = errors.New("consensus proposal candidate required")
     ErrConsensusSessionPeerRequired = errors.New("consensus session peer required")
+    ErrConsensusSessionProposalProducerRequired = errors.New("consensus proposal producer required")
 )
 
 // ConsensusSession is the node-owned operational bridge between the
@@ -35,6 +36,7 @@ type ConsensusSession struct {
     committed bool
     mu sync.Mutex
     scheduler *consensus.ConsensusTimeoutScheduler
+    producer consensus.BlockProducer
     started bool
 }
 
@@ -69,6 +71,26 @@ func NewConsensusSessionWithScheduler(
     senderResolver node.TransactionAuthorityResolver,
     timerFactory consensus.ConsensusTimeoutTimerFactory,
 ) (*ConsensusSession, error) {
+    return NewConsensusSessionWithSchedulerAndProducer(
+        n, engine, transport, rules, peers, ctx, validators, power,
+        validatorResolver, senderResolver, timerFactory, nil,
+    )
+}
+
+func NewConsensusSessionWithSchedulerAndProducer(
+    n *node.Node,
+    engine *consensus.ConsensusEngine,
+    transport Transport,
+    rules consensus.ValidationRules,
+    peers []PeerID,
+    ctx consensus.BlockProductionContext,
+    validators consensus.ValidatorSet,
+    power consensus.VotingPowerSet,
+    validatorResolver node.ValidatorAuthorityResolver,
+    senderResolver node.TransactionAuthorityResolver,
+    timerFactory consensus.ConsensusTimeoutTimerFactory,
+    producer consensus.BlockProducer,
+) (*ConsensusSession, error) {
     if n == nil || engine == nil {
         return nil, ErrNilConsensusSession
     }
@@ -98,6 +120,7 @@ func NewConsensusSessionWithScheduler(
         validatorResolver: validatorResolver, senderResolver: senderResolver,
         pending: make(map[string]block.Block),
         scheduler: scheduler,
+        producer: producer,
     }, nil
 }
 
@@ -143,6 +166,11 @@ func (s *ConsensusSession) StartProposal(candidate block.Block) error {
     if s.committed {
         return errors.New("consensus session already committed")
     }
+    return s.startProposalLocked(candidate)
+}
+
+func (s *ConsensusSession) startProposalLocked(candidate block.Block) error {
+    s.ctx.State = s.engine.Runtime().State()
     proposal, err := s.engine.BuildProposalMessage(candidate)
     if err != nil {
         return err
@@ -168,6 +196,35 @@ func (s *ConsensusSession) StartProposal(candidate block.Block) error {
     return s.armTimeoutLocked()
 }
 
+func (s *ConsensusSession) handoffRoundProposalLocked() error {
+    expected, err := s.engine.ExpectedProposer()
+    if err != nil {
+        return err
+    }
+    if !bytes.Equal(expected, s.engine.ValidatorID()) {
+        return nil
+    }
+
+    var candidate block.Block
+    if s.candidate != nil && bytes.Equal(s.candidate.Header.Proposer, expected) {
+        candidate = *cloneConsensusCandidate(*s.candidate)
+    } else {
+        if s.producer == nil {
+            return ErrConsensusSessionProposalProducerRequired
+        }
+        state := s.engine.Runtime().State()
+        candidate, err = s.producer.ProduceBlock(consensus.BlockProductionContext{
+            State:        state,
+            PreviousHash: s.ctx.PreviousHash,
+            Proposer:     append([]byte(nil), expected...),
+        })
+        if err != nil {
+            return err
+        }
+    }
+    return s.startProposalLocked(candidate)
+}
+
 func (s *ConsensusSession) handleScheduledTimeout(msg consensus.Message, err error) {
     s.mu.Lock()
     defer s.mu.Unlock()
@@ -178,7 +235,7 @@ func (s *ConsensusSession) handleScheduledTimeout(msg consensus.Message, err err
         return
     }
     if _, err := s.engine.TryAdvanceRound(); err == nil {
-        _ = s.armTimeoutLocked()
+        _ = s.handoffRoundProposalLocked()
     }
 }
 
@@ -222,7 +279,7 @@ func (s *ConsensusSession) HandlePeerMessage(from PeerID, msg consensus.Message,
     }
     if s.started {
         if _, err := s.engine.TryAdvanceRound(); err == nil {
-            return s.armTimeoutLocked()
+            return s.handoffRoundProposalLocked()
         }
         return s.armTimeoutLocked()
     }
@@ -301,10 +358,12 @@ func (s *ConsensusSession) validateProposalCandidate(msg consensus.Message, cand
         return err
     }
     rules.Transaction.PublicKeyResolver = s.senderResolver
-    if err := consensus.ValidateBlockCandidateContext(msg, s.ctx, candidate); err != nil {
+    ctx := s.ctx
+    ctx.State = s.engine.Runtime().State()
+    if err := consensus.ValidateBlockCandidateContext(msg, ctx, candidate); err != nil {
         return err
     }
-    payload, err := consensus.ValidateBlockCandidateForConsensus(s.ctx, candidate, s.node.State, rules)
+    payload, err := consensus.ValidateBlockCandidateForConsensus(ctx, candidate, s.node.State, rules)
     if err != nil {
         return err
     }
