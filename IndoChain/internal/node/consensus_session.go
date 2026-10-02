@@ -93,18 +93,18 @@ func (s *ConsensusSession) StartProposal(candidate block.Block) error {
         return err
     }
     rules.Transaction.PublicKeyResolver = s.senderResolver
+    proposal, err := s.engine.BuildProposalMessage(candidate)
+    if err != nil {
+        return err
+    }
     if err := s.engine.Runtime().ValidateAuthenticatedBlockProposal(
-        mustProposalMessage(s.engine, candidate),
+        proposal,
         candidate,
         s.ctx,
         s.node.State,
         rules,
         s.validatorResolver,
     ); err != nil {
-        return err
-    }
-    proposal, err := s.engine.BuildProposalMessage(candidate)
-    if err != nil {
         return err
     }
     // The candidate is retained only as the exact block bound to the current
@@ -218,7 +218,3 @@ func cloneCandidate(candidate block.Block) *block.Block {
     return &out
 }
 
-func mustProposalMessage(engine *consensus.ConsensusEngine, candidate block.Block) consensus.Message {
-    msg, _ := engine.BuildProposalMessage(candidate)
-    return msg
-}
