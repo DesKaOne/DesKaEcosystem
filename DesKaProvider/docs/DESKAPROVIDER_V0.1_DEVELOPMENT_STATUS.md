@@ -4058,6 +4058,12 @@ Complete deterministic provider response-code/state mapping for the documented D
 - LiveTested and ProductionReady remain explicit and unpromoted;
 - no speculative provider behavior is introduced.
 
+### CI Correction / Final Verification
+
+- d496f3588eebf43d7427e136dc952d71ca03c02f — expose raw worker terminal error for runtime observation;
+- e4148c5ba436df93a83dbfe7723f8c4273f3a90a — runtime distinguishes unexpected worker cancellation from normal runtime shutdown;
+- CI #3888 / run 36988519072 — completed / success.
+
 ### Next Concrete Engineering Task
 
 Continue provider contract completion with the remaining adapter-specific gaps, starting with deterministic fixture/mapper coverage for XP SINDONESIA where the authoritative provider documentation available to the repository is currently incomplete; do not invent undocumented response codes or states.
@@ -8519,7 +8525,7 @@ The runtime regression forces the lifecycle's worker interval to the invalid val
 
 ### Verification
 
-The baseline HEAD before this audit was CI #3870 / run 36987605846, completed successfully. A fresh CI run for the resulting implementation and status-document HEAD must complete successfully, including test, vet, and race; credential-gated provider validations remain skipped unless authorized credentials and provider access are available.
+The baseline HEAD before this audit was CI #3870 / run 36987605846, completed successfully. CI #3880 / run 36988098341 initially exposed regression-test issues: the lifecycle test expected the new sentinel instead of the underlying invalid-interval error, and the runtime test attempted to access an unexported lifecycle field. Those tests were corrected. CI #3884 / run 36988311560 then exposed that Wait() intentionally normalizes context cancellation, so runtime needed a read-only raw terminal-error boundary to distinguish an unexpected worker cancellation from runtime shutdown. The corrected implementation was verified by CI #3888 / run 36988519072, completed successfully with test and race passing; credential-gated provider validations remained skipped.
 
 ### Next Concrete Engineering Task
 
