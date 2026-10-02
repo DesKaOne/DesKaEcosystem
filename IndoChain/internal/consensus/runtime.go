@@ -108,6 +108,41 @@ func NewValidatorRuntime(config RuntimeConfig) (*ValidatorRuntime, error) {
 	}, nil
 }
 
+func (r *ValidatorRuntime) PersistenceContext(validatorDigest [32]byte, votingPowerDigest [32]byte, proposerPolicy, proposerPolicyVersion string) (PersistenceContext, error) {
+	if r == nil {
+		return PersistenceContext{}, ErrInvalidConsensusRuntime
+	}
+	if err := r.state.Validate(); err != nil {
+		return PersistenceContext{}, err
+	}
+	if r.authority == nil {
+		return PersistenceContext{}, ErrAuthenticatedConsensusAuthorityMissing
+	}
+	if err := r.authority.Validate(); err != nil {
+		return PersistenceContext{}, err
+	}
+	if !r.authority.SameContext(r.state) || !sameValidatorSet(r.validators, r.authority.ValidatorSet()) {
+		return PersistenceContext{}, ErrValidatorAuthorityMismatch
+	}
+	if proposerPolicy == "" || proposerPolicyVersion == "" {
+		return PersistenceContext{}, ErrInvalidConsensusRuntime
+	}
+	return PersistenceContext{
+		ProtocolVersion: r.state.ProtocolVersion,
+		ChainID: r.state.ChainID,
+		Epoch: r.state.Epoch,
+		Height: r.state.Height,
+		Round: r.state.Round,
+		Phase: uint8(r.state.Phase),
+		ValidatorAuthorityDigest: authorityDigest(*r.authority),
+		VotingPowerDigest: votingPowerDigest,
+		ThresholdNumerator: r.threshold.Numerator,
+		ThresholdDenominator: r.threshold.Denominator,
+		ProposerPolicy: proposerPolicy,
+		ProposerPolicyVersion: proposerPolicyVersion,
+	}, nil
+}
+
 func (r *ValidatorRuntime) State() RoundState { return r.state }
 
 func (r *ValidatorRuntime) Authority() (ValidatorAuthoritySet, error) {
