@@ -2,8 +2,10 @@ package consensus
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"errors"
 	"sort"
+	"encoding/binary"
 )
 
 var (
@@ -99,11 +101,19 @@ func authorityDigest(a ValidatorAuthoritySet) [32]byte {
 	// Keep digest construction deterministic and independent of map iteration.
 	ids := append([][]byte(nil), a.Validators.Validators...)
 	sort.Slice(ids, func(i, j int) bool { return bytes.Compare(ids[i], ids[j]) < 0 })
-	h := newDigestWriter()
-	h.WriteU64(a.Epoch)
+	h := sha256.New()
+	var epoch [8]byte
+	binary.BigEndian.PutUint64(epoch[:], a.Epoch)
+	h.Write(epoch[:])
+	var length [8]byte
 	for _, id := range ids {
-		h.WriteBytes(id)
-		h.WriteBytes(a.Keys[string(id)])
+		binary.BigEndian.PutUint64(length[:], uint64(len(id)))
+		h.Write(length[:]); h.Write(id)
+		key := a.Keys[string(id)]
+		binary.BigEndian.PutUint64(length[:], uint64(len(key)))
+		h.Write(length[:]); h.Write(key)
 	}
-	return h.Sum()
+	var sum [32]byte
+	copy(sum[:], h.Sum(nil))
+	return sum
 }
