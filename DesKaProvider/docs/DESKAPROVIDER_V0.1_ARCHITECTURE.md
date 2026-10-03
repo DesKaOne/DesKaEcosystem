@@ -1143,3 +1143,8 @@ No provider retry, failover, resubmission, funding, treasury movement, or implic
 A PostgreSQL settlement commit error is classified as `ErrSettlementPersistenceAmbiguous`. The settlement caller must treat this as an unresolved accounting state and must not retry, fail over, or resubmit the provider transaction from this layer. Durable ledger/audit lookup is the reconciliation path for determining whether the intended posting exists.
 
 This classification is deliberately distinct from validation rejection and immutable ledger conflict. The accounting boundary therefore exposes three operational classes: rejected input, immutable conflict, and ambiguous persistence outcome.
+
+
+## 42. Persisted Provider Transaction Is Settlement Authorization Input
+
+Settlement can now read the durable routing TransactionState and authorize posting only when that persisted transaction is terminal-success. The bridge does not transition provider state and does not contact an external provider. Ledger transaction ID, currency, description, timestamp, and balanced ledger entries remain explicit accounting inputs; no accounting data is inferred from provider lifecycle fields.
