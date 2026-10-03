@@ -62,6 +62,16 @@ type ReconciliationReader interface {
 	Reconcile(context.Context) (ReconciliationReport, error)
 }
 
+// Stable snapshot-capture classifications. Callers may use errors.Is to
+// distinguish which observational dataset boundary failed without depending
+// on error strings or treating the failure as a financial mutation outcome.
+var (
+	ErrReconciliationProviderRead   = errors.New("reconciliation provider transaction read failed")
+	ErrReconciliationLedgerRead     = errors.New("reconciliation ledger read failed")
+	ErrReconciliationAuditRead      = errors.New("reconciliation settlement audit read failed")
+	ErrReconciliationFingerprint    = errors.New("reconciliation snapshot fingerprint failed")
+)
+
 type reconciliationSnapshotFingerprinter func([]routing.TransactionState, []LedgerTransaction, []SettlementAudit) (string, error)
 
 type SettlementReconciler struct {
@@ -82,7 +92,7 @@ func (r *SettlementReconciler) readSnapshot(ctx context.Context) (reconciliation
 	captureStartedAt := time.Now().UTC()
 	states, err := r.transactions.AllContextE(ctx)
 	if err != nil {
-		return reconciliationSnapshot{}, fmt.Errorf("read provider transactions: %w", err)
+		return reconciliationSnapshot{}, fmt.Errorf("%w: %w", ErrReconciliationProviderRead, err)
 	}
 	ledgerReader := "legacy-memory-or-unsupported"
 	if _, ok := r.ledger.(ContextLedgerReader); ok {
@@ -92,7 +102,7 @@ func (r *SettlementReconciler) readSnapshot(ctx context.Context) (reconciliation
 	}
 	ledgerTransactions, err := readLedgerTransactions(ctx, r.ledger)
 	if err != nil {
-		return reconciliationSnapshot{}, fmt.Errorf("read ledger transactions: %w", err)
+		return reconciliationSnapshot{}, fmt.Errorf("%w: %w", ErrReconciliationLedgerRead, err)
 	}
 
 	var audits []SettlementAudit
@@ -101,14 +111,14 @@ func (r *SettlementReconciler) readSnapshot(ctx context.Context) (reconciliation
 		auditReader = "context-bulk"
 		audits, err = reader.AllSettlementAudits(ctx)
 		if err != nil {
-			return reconciliationSnapshot{}, fmt.Errorf("read settlement audits: %w", err)
+			return reconciliationSnapshot{}, fmt.Errorf("%w: %w", ErrReconciliationAuditRead, err)
 		}
 	} else {
 		audits = make([]SettlementAudit, 0, len(ledgerTransactions))
 		for _, tx := range ledgerTransactions {
 			audit, ok, err := r.audit.GetSettlementAudit(ctx, tx.ID)
 			if err != nil {
-				return reconciliationSnapshot{}, fmt.Errorf("read settlement audit %s: %w", tx.ID, err)
+				return reconciliationSnapshot{}, fmt.Errorf("%w: %s: %w", ErrReconciliationAuditRead, tx.ID, err)
 			}
 			if ok {
 				audits = append(audits, audit)
@@ -127,7 +137,7 @@ func (r *SettlementReconciler) readSnapshot(ctx context.Context) (reconciliation
 	}
 	fingerprint, err := fingerprinter(states, ledgerTransactions, audits)
 	if err != nil {
-		return reconciliationSnapshot{}, fmt.Errorf("fingerprint reconciliation snapshot: %w", err)
+		return reconciliationSnapshot{}, fmt.Errorf("%w: %w", ErrReconciliationFingerprint, err)
 	}
 	captureCompletedAt := time.Now().UTC()
 	return reconciliationSnapshot{
