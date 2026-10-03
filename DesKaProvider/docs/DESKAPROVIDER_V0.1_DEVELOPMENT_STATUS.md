@@ -9594,3 +9594,23 @@ Coverage added for pending rejection, terminal-success authorization, missing tr
 
 ### Next milestone
 Extend reconciliation/read-model visibility across provider transaction state and settlement audit without coupling recovery to financial mutation.
+
+
+## Settlement Reconciliation Read Model
+
+**Date:** 2026-10-03
+
+Added a read-only reconciliation boundary across persisted provider transaction state, double-entry ledger, and settlement audit.
+
+### Reported states
+- `NOT_SETTLEABLE` — provider transaction is not terminal success.
+- `LEDGER_MISSING` — terminal success has no correlated ledger transaction.
+- `AUDIT_MISSING` — ledger exists but settlement audit is absent.
+- `CORRELATED` — provider state, ledger identity, and settlement audit correlation agree.
+- `CORRELATION_CONFLICT` — durable audit identity does not match the ledger/provider reference.
+
+### Safety
+The reconciler has no write dependency and cannot repair missing settlement, retry providers, resubmit transactions, or mutate balances. It is an observation/read-model boundary only.
+
+### Next milestone
+Strengthen reconciliation with durable PostgreSQL integration coverage and explicit orphan detection while preserving the read-only invariant.
