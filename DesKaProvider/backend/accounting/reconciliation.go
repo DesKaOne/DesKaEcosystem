@@ -188,7 +188,7 @@ func (r *SettlementReconciler) Reconcile(ctx context.Context) (ReconciliationRep
 
 func readLedgerTransactions(ctx context.Context, store interface{}) ([]LedgerTransaction, error) {
 	if durable, ok := store.(ContextLedgerReader); ok {
-		return durable.All(ctx)
+		return durable.AllContext(ctx)
 	}
 	if memory, ok := store.(Store); ok {
 		return memory.All(), nil
