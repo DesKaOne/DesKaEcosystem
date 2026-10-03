@@ -167,3 +167,33 @@ func TestReconstructConsensusRuntimeWithAuthorityRejectsEpochMismatch(t *testing
 		t.Fatalf("error = %v, want %v", err, consensus.ErrValidatorAuthorityMismatch)
 	}
 }
+
+func TestReconstructConsensusRuntimeWithAuthorityAndContextReplay(t *testing.T) {
+	store := storage.NewMemoryStore()
+	n, err := NewDevnet(store)
+	if err != nil { t.Fatal(err) }
+	validators, power := recoveryValidatorConfig(t)
+	authority, err := consensus.NewValidatorAuthoritySet(0, validators, map[string][]byte{
+		"validator-a": []byte("key-a"),
+		"validator-b": []byte("key-b"),
+		"validator-c": []byte("key-c"),
+	})
+	if err != nil { t.Fatal(err) }
+	evidenceStore := storage.NewMemoryConsensusEvidenceStore()
+	recovery, ctx, err := n.ReconstructConsensusRuntimeWithAuthorityAndContextReplay(
+		0, validators, power,
+		consensus.QuorumThreshold{Numerator: 2, Denominator: 3},
+		consensus.RoundRobinProposer{}, evidenceStore, authority,
+		[32]byte{8}, "round-robin-v0-dev", "1",
+	)
+	if err != nil { t.Fatal(err) }
+	if recovery.Runtime == nil || ctx.ValidatorAuthorityDigest == ([32]byte{}) {
+		t.Fatal("authority-bound context replay did not construct runtime/context")
+	}
+	if len(recovery.Evidence) != 0 {
+		t.Fatalf("unexpected recovered evidence count %d", len(recovery.Evidence))
+	}
+	if got := recovery.Runtime.State(); got.Phase != consensus.PhaseProposal {
+		t.Fatalf("runtime phase after empty replay = %v", got.Phase)
+	}
+}
