@@ -95,6 +95,10 @@ type Store interface {
 	All() []LedgerTransaction
 }
 
+type ContextLedgerReader interface {
+	All(context.Context) ([]LedgerTransaction, error)
+}
+
 type MemoryStore struct {
 	mu           sync.RWMutex
 	transactions map[string]LedgerTransaction
