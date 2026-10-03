@@ -51,6 +51,30 @@ func (n *Node) ReconstructConsensusRuntimeWithAuthority(
 	return n.reconstructConsensusRuntime(epoch, validators, votingPower, threshold, proposer, &authority, nil)
 }
 
+// ReconstructConsensusRuntimeWithAuthorityAndEvidence rebuilds canonical consensus state,
+// binds the recovered runtime to the supplied validator authority snapshot, and separately
+// recovers authenticated evidence using the same immutable authority snapshot.
+func (n *Node) ReconstructConsensusRuntimeWithAuthorityAndEvidence(
+	epoch uint64,
+	validators consensus.ValidatorSet,
+	votingPower consensus.VotingPowerSet,
+	threshold consensus.QuorumThreshold,
+	proposer consensus.ProposerSelector,
+	evidenceStore consensus.EvidenceStore,
+	authority consensus.ValidatorAuthoritySet,
+) (ConsensusRecovery, error) {
+	if evidenceStore == nil {
+		return ConsensusRecovery{}, consensus.ErrNilEvidenceStore
+	}
+	resolver, err := authority.ConsensusAuthorityResolver()
+	if err != nil {
+		return ConsensusRecovery{}, err
+	}
+	return n.reconstructConsensusRuntime(epoch, validators, votingPower, threshold, proposer, &authority, func(state consensus.RoundState) ([]consensus.Message, error) {
+		return consensus.RecoverAuthenticatedEvidence(evidenceStore, state, validators, resolver)
+	})
+}
+
 // ReconstructConsensusRuntimeWithEvidence rebuilds the runtime from durable
 // canonical state and separately recovers authenticated evidence for the same
 // canonical height. Evidence is returned as validated data; this boundary does
