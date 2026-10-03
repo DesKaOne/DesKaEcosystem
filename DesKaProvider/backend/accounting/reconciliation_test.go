@@ -100,3 +100,64 @@ func TestSettlementReconcilerReportsOrphanedLedgerAndAudit(t *testing.T) {
 	if !orphanAudit { t.Fatal("expected orphaned audit diagnostic") }
 	if len(txStore.All()) != 0 { t.Fatal("reconciliation must not create provider state") }
 }
+
+
+func TestSettlementReconcilerReportsDuplicateLedgerReferenceDeterministically(t *testing.T) {
+	ctx := context.Background()
+	txStore := routing.NewMemoryTransactionStore()
+	ledger := NewMemoryStore()
+	state := terminalPayment("duplicate-reference")
+	if err := txStore.Put(state); err != nil { t.Fatal(err) }
+
+	for _, id := range []string{"ledger-b", "ledger-a"} {
+		if err := ledger.Append(LedgerTransaction{
+			ID:id, ReferenceID:"duplicate-reference", SourceType:"PROVIDER_SETTLEMENT", SourceID:id,
+			Currency:"IDR", Description:"duplicate", CreatedAt:time.Date(2026,10,3,13,0,0,0,time.UTC),
+			Entries:settlementEntries(),
+		}); err != nil { t.Fatal(err) }
+	}
+
+	reconciler, err := NewSettlementReconciler(txStore, ledger, ledger)
+	if err != nil { t.Fatal(err) }
+	report, err := reconciler.Reconcile(ctx)
+	if err != nil { t.Fatal(err) }
+	if len(report.Items) != 1 { t.Fatalf("got %d items: %#v", len(report.Items), report.Items) }
+	item := report.Items[0]
+	if item.Status != ReconciliationDuplicateReference {
+		t.Fatalf("got %s", item.Status)
+	}
+	want := []string{"ledger-a", "ledger-b"}
+	if len(item.LedgerTransactionIDs) != len(want) {
+		t.Fatalf("got IDs %#v", item.LedgerTransactionIDs)
+	}
+	for i := range want {
+		if item.LedgerTransactionIDs[i] != want[i] {
+			t.Fatalf("got IDs %#v", item.LedgerTransactionIDs)
+		}
+	}
+	if len(ledger.All()) != 2 { t.Fatal("reconciliation must not mutate ledger state") }
+}
+
+func TestSettlementReconcilerReportsDuplicateProviderReference(t *testing.T) {
+	ctx := context.Background()
+	txStore := routing.NewMemoryTransactionStore()
+	ledger := NewMemoryStore()
+	for _, id := range []string{"provider-a", "provider-b"} {
+		state := terminalPayment("same-provider-reference")
+		state.Request.ReferenceID = id
+		state.Payment.ReferenceID = "same-provider-reference"
+		if err := txStore.Put(state); err != nil { t.Fatal(err) }
+	}
+	_ = ledger
+
+	reconciler, err := NewSettlementReconciler(txStore, ledger, ledger)
+	if err != nil { t.Fatal(err) }
+	report, err := reconciler.Reconcile(ctx)
+	if err != nil { t.Fatal(err) }
+	if len(report.Items) != 2 { t.Fatalf("got %d items: %#v", len(report.Items), report.Items) }
+	for _, item := range report.Items {
+		if item.Status != ReconciliationLedgerMissing {
+			t.Fatalf("got %s", item.Status)
+		}
+	}
+}
