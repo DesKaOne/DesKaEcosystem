@@ -165,6 +165,16 @@ func (s *MemoryStore) GetSettlementAudit(_ context.Context, transactionID string
 	return a, ok, nil
 }
 
+func (s *MemoryStore) AllSettlementAudits(_ context.Context) ([]SettlementAudit, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]SettlementAudit, 0, len(s.audits))
+	for _, audit := range s.audits {
+		out = append(out, audit)
+	}
+	return out, nil
+}
+
 func (s *MemoryStore) Append(t LedgerTransaction) error {
 	if err := t.Validate(); err != nil {
 		return err
