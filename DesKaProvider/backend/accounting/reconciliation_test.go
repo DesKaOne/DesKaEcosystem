@@ -826,7 +826,7 @@ func TestSettlementReconcilerDoesNotCorrelateWhenAuditStatusIsNonSuccess(t *test
 	}
 	audit := SettlementAudit{
 		EventID: "audit-status-event", TransactionID: ledgerTx.ID, ReferenceID: ledgerTx.ReferenceID,
-		SourceType: ledgerTx.SourceType, SourceID: ledgerTx.SourceID, Status: provider.StatusFailed,
+		SourceType: ledgerTx.SourceType, SourceID: ledgerTx.SourceID, Status: string(provider.StatusFailed),
 		CreatedAt: ledgerTx.CreatedAt,
 	}
 	if err := ledger.AppendSettlement(ctx, ledgerTx, audit); err != nil { t.Fatal(err) }
