@@ -4623,7 +4623,7 @@ Impact: recovery context mismatch menjadi deterministic dan fail-closed tanpa me
 
 **5.8g Context-Aware Durable Evidence Recovery:** tambahkan recovery API yang secara eksplisit menerima `PersistenceContext`/digest dan hanya mengembalikan evidence yang identity key-nya cocok dengan context tersebut.
 
-**Milestone 5.8f status:** implementation/test committed; exact-head CI gate pending after restoring the implementation source on the branch.
+**Milestone 5.8f status:** DONE — exact-head CI GREEN pada SHA `913f8e7355519846ed611481ea07f6282b377dbb` (dua `test` check-runs sukses).
 
 
 ### 5.8g Context-Aware Durable Evidence Recovery — 2026-10-03
@@ -4669,4 +4669,52 @@ Intended behavior: context-bound writes dan reads memakai identity derivation ya
 
 **5.8h Runtime Recovery Evidence Replay Boundary:** setelah context-bound evidence berhasil dipulihkan, definisikan replay/reconstruction boundary yang memverifikasi context dan replay evidence secara deterministik tanpa langsung memutasi canonical chain state.
 
-**Milestone 5.8g status:** implementation/test committed; exact-head CI gate pending.
+**Milestone 5.8g status:** DONE — exact-head CI GREEN pada SHA `913f8e7355519846ed611481ea07f6282b377dbb` (dua `test` check-runs sukses).
+
+
+
+### 5.8h Runtime Recovery Evidence Replay Boundary — 2026-10-03
+
+**Objective**
+
+Menyediakan boundary replay untuk context-bound durable evidence yang hanya melewati API validasi runtime existing dan tidak melakukan commit canonical block/state.
+
+**Implementation**
+
+- IndoChain/internal/consensus/runtime.go
+  - menambahkan ReplayRecoveredEvidence(messages []Message);
+  - evidence diurutkan deterministic berdasarkan round/type/sender;
+  - proposal dan vote direplay melalui AcceptProposal/AddVote;
+  - round advancement dilakukan hanya untuk evidence pada round yang lebih baru;
+  - replay tidak memanggil FinalizeProposal dan tidak menyentuh canonical chain/state storage.
+- IndoChain/internal/consensus/runtime_test.go
+  - coverage deterministic replay;
+  - coverage round advancement dari recovered evidence;
+  - coverage bahwa replay berhenti pada runtime phase hasil evidence dan tidak finalize otomatis.
+
+**Architecture correction**
+
+Current behavior sebelum 5.8h: context-bound evidence sudah dapat dipersist dan dipulihkan, tetapi belum ada boundary runtime yang menerima hasil recovery dan menerapkannya ke consensus runtime secara deterministic.
+
+Intended behavior: recovery output masuk kembali melalui runtime validation path, tanpa bypass ke canonical storage atau automatic finalization.
+
+**Locked invariants**
+
+1. Replay hanya menggunakan runtime APIs yang sudah ada.
+2. Evidence order deterministic.
+3. Invalid or conflicting evidence fails through existing validation errors.
+4. Replay tidak melakukan canonical block/state commit.
+5. Replay tidak melakukan automatic finalization.
+6. Financial-service boundary dan validator/economic policy tetap tidak berubah.
+
+**Verification**
+
+- Implementation commit: 7f26b181b7e811d199e32464fc394f4280c66bc5.
+- Test commit: 371840307ce6ebb24effd0104db71ab815cd56d2.
+- Exact-head CI gate for current documentation/test state is required before marking 5.8h DONE.
+
+**Next meaningful integration target**
+
+**5.8i Authority-Bound Runtime Replay Integration:** hubungkan context-aware evidence recovery, authority-bound runtime construction, dan replay boundary melalui node recovery path tanpa mengubah canonical storage ownership.
+
+**Milestone 5.8h status:** implementation/test committed; exact-head CI gate pending.
