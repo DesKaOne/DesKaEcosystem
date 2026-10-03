@@ -114,11 +114,17 @@ func cloneTransaction(t LedgerTransaction) LedgerTransaction {
 	return t
 }
 
-func (s *MemoryStore) AppendContext(_ context.Context, t LedgerTransaction) error {
+func (s *MemoryStore) AppendContext(ctx context.Context, t LedgerTransaction) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	return s.Append(t)
 }
 
-func (s *MemoryStore) GetContext(_ context.Context, id string) (LedgerTransaction, bool, error) {
+func (s *MemoryStore) GetContext(ctx context.Context, id string) (LedgerTransaction, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return LedgerTransaction{}, false, err
+	}
 	t, ok := s.Get(id)
 	return t, ok, nil
 }
