@@ -10175,3 +10175,66 @@ Engineering estimate remains approximately 88%. This milestone strengthens deter
 Continue the reconciliation persistence-reader audit into PostgreSQL-backed provider-transaction read failures and legacy per-ledger audit-reader cancellation/error propagation, only where the concrete repository interfaces expose a safe deterministic test seam.
 
 No automatic retry, provider failover, transaction resubmission, provider funding, customer ledger mutation, treasury movement, duplicate purchase creation, or public API exposure is included.
+
+## Milestone #58 — Reconciliation Persistence-Reader Boundary Hardening
+
+**Date:** 2026-10-03
+
+### Scope
+
+- verify PostgreSQL-backed provider-transaction reader failures are classified as provider-read failures and fail closed;
+- verify PostgreSQL-backed provider-transaction context cancellation remains distinguishable through the reconciliation error chain;
+- verify the legacy per-ledger settlement-audit reader propagates storage/cancellation errors without falling back to an empty dataset;
+- preserve the existing read-only reconciliation and fail-closed snapshot boundary.
+
+### Implementation
+
+- added deterministic PostgreSQL provider-transaction read-failure coverage using a closed database handle;
+- added deterministic PostgreSQL provider-transaction context-cancellation coverage using an open sql.DB with an already-canceled context, so the reader returns context.Canceled instead of a closed-database error;
+- verified provider read failures retain ErrReconciliationProviderRead and the underlying PostgreSQL/context cause through errors.Is;
+- added legacy per-ledger audit-reader failure coverage proving the original audit error remains in the error chain;
+- added an explicit no-fallback regression guard proving a legacy audit read failure is not converted into an empty financial dataset or partial reconciliation result;
+- verified failed reads return no reconciliation items and no partial snapshot metadata;
+- no production reconciliation algorithm or financial mutation behavior changed.
+
+### Changed Files
+
+- DesKaProvider/backend/accounting/reconciliation_reader_persistence_test.go
+- DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md
+
+### Safety Boundary / Invariants
+
+- PostgreSQL/context reader failures remain observational read failures and never authorize retry, failover, resubmission, repair, reversal, or any financial mutation;
+- context cancellation remains distinguishable from storage failure and is never treated as permission to retry or resubmit an uncertain transaction;
+- legacy audit-reader errors are never replaced by an empty dataset, preventing false reconciliation success from partial persistence visibility;
+- failed snapshot establishment returns no reconciliation items and no partial lifecycle/count/provenance/fingerprint metadata;
+- reconciliation remains strictly read-only;
+- no provider funding, customer-balance mutation, ledger mutation, treasury movement, duplicate transaction creation, blockchain action, or public API exposure is introduced.
+
+### Verification
+
+Implementation/test HEAD:
+
+**1c459a950c79b204153fc25b207a0dfcf7b35c32**
+
+DesKaProvider CI #4240 / run 37131080310: **GREEN**
+
+- test: PASS
+- vet: PASS
+- race: PASS
+- midtrans-sandbox: SKIPPED as expected
+- xp-sindonesia-read-only: SKIPPED as expected
+- digiflazz-validation: SKIPPED as expected
+- iak-read-only: SKIPPED as expected
+
+No authorized live-provider transaction or external provider request was executed by this milestone.
+
+### Progress
+
+Engineering estimate remains approximately **88%**. This milestone closes another deterministic reconciliation read/error-propagation boundary but does not introduce a new production financial capability or execution path.
+
+### Next Concrete Engineering Task
+
+Continue the reconciliation persistence audit into remaining concrete reader boundaries and recovery semantics, prioritizing any persistence path where ambiguous visibility could otherwise be mistaken for an empty dataset, while preserving fail-closed, read-only behavior.
+
+No automatic provider retry, failover, transaction resubmission, provider funding, customer ledger mutation, treasury movement, duplicate transaction creation, or public API exposure is included in the next milestone.
