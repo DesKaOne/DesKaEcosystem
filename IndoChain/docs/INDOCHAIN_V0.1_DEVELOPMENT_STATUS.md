@@ -4474,7 +4474,10 @@ Menyediakan construction helper pada `ValidatorRuntime` yang mengambil state, au
 
 - Implementation/test commits: `5f41b52581c71b4ea794d5a9235b447f251f78b9`, `63a2090d43efee68cc871f85a4d9952929e73d75`, `922b98cee4b03ecdfb54e5b4ee004b89c4556939`, `34309c7dc3c42dafe3b1701bef93307a60bd76c0`.
 - Exact HEAD CI run #1945 / `37072353439` pada `63a2090` **RED** pada step Test karena assertion type mismatch; Tidy PASS, Test build FAIL, Race/Vet skipped.
-- Fix commit `34309c7` telah dipush ke branch yang sama; milestone belum dinyatakan DONE sampai exact-head CI GREEN terverifikasi.
+- Fix commit `34309c7` memperbaiki assertion type mismatch, tetapi follow-up CI run #1948/#1949 menunjukkan persistence vector digest masih salah.
+- CI run #1949 / `37121146256` pada docs HEAD `cd70ee6` juga **RED** hanya pada `TestConsensusPersistenceVectorDeterministic`; semua package lain yang mencapai test report PASS, namun Race/Vet belum dijalankan karena Test gagal.
+- CI memberi expected SHA-256 serialized-vector digest `fa75e63fdbbf87ca94b9733660974ed81d32b24f0d9a311657d98efb161f4cf2`; test diperbaiki pada commit `28435e9defdc927d9f1d9cbb06950cdc7f9d62f2`.
+- Exact-head CI GREEN tetap menjadi gate sebelum milestone 5.8c dinyatakan DONE.
 
 **Next meaningful integration target**
 
