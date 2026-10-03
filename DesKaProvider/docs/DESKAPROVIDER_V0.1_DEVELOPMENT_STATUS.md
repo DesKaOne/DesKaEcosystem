@@ -10611,3 +10611,64 @@ Engineering estimate remains approximately **88%**. This milestone closes a conc
 Continue the reconciliation persistence/recovery audit into cross-table consistency and persistence-outcome ambiguity, prioritizing cases where independently readable durable records can disagree or disappear across restart without being safely distinguishable from a genuinely empty or settled state. Preserve deterministic, observational, fail-closed behavior and require explicit action for uncertain financial state.
 
 No automatic provider retry, failover, transaction resubmission, provider funding, customer ledger mutation, treasury movement, duplicate purchase creation, blockchain action, or public API exposure is included in the next milestone.
+
+
+## Milestone #65 — Surface Financial Records for Non-Success Provider State
+
+**Date:** 2026-10-04
+
+### Scope
+
+- ensure reconciliation does not hide durable financial records merely because the corresponding provider transaction is in a non-success state;
+- preserve the provider failure classification while surfacing matching ledger/audit identities for deterministic investigation;
+- keep the change observational and read-only, with no automatic repair, reversal, retry, resubmission, or financial mutation.
+
+### Implementation
+
+- updated provider-transaction reconciliation for non-success statuses to retain `ReconciliationNotSettleable` while attaching matching ledger transaction IDs by provider reference;
+- when exactly one ledger candidate exists, matching settlement-audit EventIDs are also surfaced deterministically and sorted;
+- added regression coverage proving a failed provider transaction with matching ledger/audit records reports those financial identities instead of hiding them;
+- verified the ledger remains unchanged by reconciliation;
+- no retry, failover, resubmission, repair, reversal, provider execution, or new financial capability was introduced.
+
+### Changed Files
+
+- DesKaProvider/backend/accounting/reconciliation.go
+- DesKaProvider/backend/accounting/reconciliation_test.go
+- DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md
+
+### Safety Boundary / Invariants
+
+- a non-success provider state remains non-settleable and is never promoted to successful settlement;
+- matching ledger/audit records are surfaced only as reconciliation evidence and never treated as authorization for payment, purchase, retry, resubmission, repair, or reversal;
+- ambiguous or duplicate financial identity remains diagnostic and does not trigger automatic action;
+- reconciliation remains observational, deterministic, read-only, and fail-closed on reader errors;
+- no provider funding, customer-balance mutation, ledger mutation, treasury movement, duplicate transaction creation, blockchain action, or public API exposure is introduced.
+
+### Verification
+
+Implementation/test final HEAD:
+
+**c225830fa03127ab456c996293d6312853d25856**
+
+DesKaProvider CI #4294 / run 37140293845: **GREEN**
+
+- test: PASS
+- vet: PASS
+- race: PASS
+- midtrans-sandbox: SKIPPED as expected
+- iak-read-only: SKIPPED as expected
+- xp-sindonesia-read-only: SKIPPED as expected
+- digiflazz-validation: SKIPPED as expected
+
+No authorized live-provider transaction or external provider request was executed by this milestone.
+
+### Progress
+
+Engineering estimate remains approximately **88%**. This milestone closes a concrete reconciliation observability/cross-table consistency gap: provider non-success state no longer masks independently persisted ledger/audit evidence. It does not add a new financial capability or execution path.
+
+### Next Concrete Engineering Task
+
+Continue the reconciliation cross-table consistency audit into status/identity agreement between provider transactions, ledger transactions, and settlement audits, prioritizing cases where independently readable records can disagree while still being incorrectly considered correlated. Preserve deterministic, observational, fail-closed behavior and require explicit action for uncertain financial state.
+
+No automatic provider retry, failover, transaction resubmission, provider funding, customer ledger mutation, treasury movement, duplicate purchase creation, blockchain action, or public API exposure is included in the next milestone.
