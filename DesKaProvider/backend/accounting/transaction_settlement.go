@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/backend/routing"
+	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/routing"
 )
 
 var ErrSettlementTransactionNotFound = errors.New("provider transaction not found")
