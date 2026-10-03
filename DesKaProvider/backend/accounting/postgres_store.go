@@ -148,6 +148,32 @@ func (s *PostgresStore) All(ctx context.Context) ([]LedgerTransaction, error) {
 	return out, nil
 }
 
+func (s *PostgresStore) AllContext(ctx context.Context) ([]LedgerTransaction, error) {
+	return s.All(ctx)
+}
+
+func (s *PostgresStore) AllSettlementAudits(ctx context.Context) ([]SettlementAudit, error) {
+	rows, err := s.db.QueryContext(ctx,
+		"SELECT event_id,transaction_id,reference_id,source_type,source_id,status,created_at FROM settlement_audit ORDER BY created_at,event_id",
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list settlement audits: %w", err)
+	}
+	defer rows.Close()
+	out := make([]SettlementAudit, 0)
+	for rows.Next() {
+		var audit SettlementAudit
+		if err := rows.Scan(&audit.EventID,&audit.TransactionID,&audit.ReferenceID,&audit.SourceType,&audit.SourceID,&audit.Status,&audit.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan settlement audit: %w", err)
+		}
+		out = append(out, audit)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate settlement audits: %w", err)
+	}
+	return out, nil
+}
+
 func (s *PostgresStore) CreateAccount(ctx context.Context, account Account) (Account, bool, error) {
 	if err := account.Validate(); err != nil {
 		return Account{}, false, err
