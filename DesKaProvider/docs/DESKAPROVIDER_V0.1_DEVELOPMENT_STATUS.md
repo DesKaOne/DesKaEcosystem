@@ -10751,3 +10751,29 @@ Verification:
 Progress estimate: ~88%; this milestone closes a material reconciliation correctness gap but does not by itself justify a large percentage increase.
 
 Next concrete task: continue the reconciliation persistence/recovery audit for settlement-entry semantic agreement (direction/account-role expectations and any provider fields that materially determine the ledger posting), while preserving fail-closed/read-only behavior.
+
+
+## Milestone #68 — Financial Amount Overflow Safety
+
+Status: **COMPLETE — CI green**.
+
+Scope: harden financially material amount aggregation so signed int64 overflow cannot make ledger validation or reconciliation economic agreement produce a false equality.
+
+Implementation:
+- Added checked amount addition in `DesKaProvider/backend/accounting/ledger.go`.
+- `LedgerTransaction.Validate()` now fails closed with `ErrInvalidLedgerTransaction` when debit or credit aggregation would overflow.
+- `reconciliationEconomicAgreement()` now uses the same checked aggregation and treats overflow as non-agreement rather than accepting an ambiguous arithmetic result.
+- Added deterministic regression coverage for ledger amount overflow and reconciliation economic conflict behavior.
+
+Safety invariants:
+- Overflow is never interpreted as a valid financial balance.
+- No automatic repair, reversal, retry, resubmission, or mutation is introduced.
+- Existing reconciliation remains observational and read-only.
+
+Verification:
+- Implementation/test HEAD: `17e3567036409fb17b5e375e1e6fc05a82073ac6`.
+- CI #4328 / run `37153502247` GREEN: test PASS, vet PASS, race PASS; provider credential-gated jobs skipped.
+
+Progress estimate: ~88%; this is a financial-safety hardening milestone and does not justify inflating overall completion percentage.
+
+Next concrete task: continue the reconciliation audit for persisted settlement semantics that are actually represented by the current data model; do not invent account-role rules absent from provider/ledger contracts.
