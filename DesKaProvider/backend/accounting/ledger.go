@@ -187,6 +187,11 @@ func (s *MemoryStore) Get(id string) (LedgerTransaction, bool) {
 	return cloneTransaction(t), true
 }
 
+func (s *MemoryStore) AllContext(ctx context.Context) ([]LedgerTransaction, error) {
+	_ = ctx
+	return s.All(), nil
+}
+
 func (s *MemoryStore) All() []LedgerTransaction {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
