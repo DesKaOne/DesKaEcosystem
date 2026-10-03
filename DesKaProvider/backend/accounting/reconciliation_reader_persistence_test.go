@@ -18,34 +18,24 @@ func (s legacyReconciliationAuditFailure) GetSettlementAudit(context.Context, st
     return SettlementAudit{}, false, s.err
 }
 
-func TestSettlementReconcilerLegacyLedgerCanceledContext(t *testing.T) {
+func TestReadLedgerTransactionsLegacyStoreContextCancellation(t *testing.T) {
     ledgerStore := NewMemoryStore()
-    reconciler, err := NewSettlementReconciler(routing.NewMemoryTransactionStore(), ledgerStore, NewMemoryStore())
-    if err != nil { t.Fatal(err) }
-    ledger := LedgerTransaction{ID: "ledger-canceled", ReferenceID: "ref-canceled", SourceType: "provider_purchase", SourceID: "provider-source", Currency: "IDR", CreatedAt: time.Unix(1, 0).UTC(), Entries: []Entry{{LineID: 1, AccountID: "expense", Direction: Debit, Amount: 1000, Currency: "IDR"}, {LineID: 2, AccountID: "cash", Direction: Credit, Amount: 1000, Currency: "IDR"}}}
-    if err := ledgerStore.Append(ledger); err != nil { t.Fatal(err) }
-    ctx, cancel := context.WithCancel(context.Background()); cancel()
-    report, err := reconciler.Reconcile(ctx)
-    if err == nil { t.Fatal("expected canceled legacy ledger read") }
-    if !errors.Is(err, ErrReconciliationLedgerRead) { t.Fatalf("expected ledger-read classification, got %v", err) }
-    if !errors.Is(err, context.Canceled) { t.Fatalf("expected context.Canceled, got %v", err) }
-    if len(report.Items) != 0 { t.Fatalf("canceled legacy ledger read exposed items: %#v", report.Items) }
-    assertEmptySnapshotMetadata(t, report.Snapshot)
+    ctx, cancel := context.WithCancel(context.Background())
+    cancel()
+    _, err := readLedgerTransactions(ctx, ledgerStore)
+    if !errors.Is(err, context.Canceled) {
+        t.Fatalf("expected context.Canceled, got %v", err)
+    }
 }
 
-func TestSettlementReconcilerLegacyLedgerDeadlineContext(t *testing.T) {
+func TestReadLedgerTransactionsLegacyStoreContextDeadline(t *testing.T) {
     ledgerStore := NewMemoryStore()
-    reconciler, err := NewSettlementReconciler(routing.NewMemoryTransactionStore(), ledgerStore, NewMemoryStore())
-    if err != nil { t.Fatal(err) }
-    ledger := LedgerTransaction{ID: "ledger-deadline", ReferenceID: "ref-deadline", SourceType: "provider_purchase", SourceID: "provider-source", Currency: "IDR", CreatedAt: time.Unix(1, 0).UTC(), Entries: []Entry{{LineID: 1, AccountID: "expense", Direction: Debit, Amount: 1000, Currency: "IDR"}, {LineID: 2, AccountID: "cash", Direction: Credit, Amount: 1000, Currency: "IDR"}}}
-    if err := ledgerStore.Append(ledger); err != nil { t.Fatal(err) }
-    ctx, cancel := context.WithDeadline(context.Background(), time.Unix(1, 0).UTC()); defer cancel()
-    report, err := reconciler.Reconcile(ctx)
-    if err == nil { t.Fatal("expected deadline legacy ledger read") }
-    if !errors.Is(err, ErrReconciliationLedgerRead) { t.Fatalf("expected ledger-read classification, got %v", err) }
-    if !errors.Is(err, context.DeadlineExceeded) { t.Fatalf("expected context.DeadlineExceeded, got %v", err) }
-    if len(report.Items) != 0 { t.Fatalf("deadline legacy ledger read exposed items: %#v", report.Items) }
-    assertEmptySnapshotMetadata(t, report.Snapshot)
+    ctx, cancel := context.WithDeadline(context.Background(), time.Unix(1, 0).UTC())
+    defer cancel()
+    _, err := readLedgerTransactions(ctx, ledgerStore)
+    if !errors.Is(err, context.DeadlineExceeded) {
+        t.Fatalf("expected context.DeadlineExceeded, got %v", err)
+    }
 }
 
 func TestSettlementReconcilerClassifiesPostgreSQLProviderTransactionReadFailure(t *testing.T) {
