@@ -329,6 +329,40 @@ func TestSettlementReconcilerMaterializesOneReadSnapshot(t *testing.T) {
 	}
 }
 
+func TestSettlementReconcilerSnapshotMetadataReportsCaptureProvenance(t *testing.T) {
+	ctx := context.Background()
+	txStore := routing.NewMemoryTransactionStore()
+	ledger := NewMemoryStore()
+	if err := txStore.Put(terminalPayment("metadata-ref")); err != nil {
+		t.Fatal(err)
+	}
+	reconciler, err := NewSettlementReconciler(txStore, ledger, ledger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := time.Now().UTC()
+	report, err := reconciler.Reconcile(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after := time.Now().UTC()
+	if report.Snapshot.CapturedAt.Before(before) || report.Snapshot.CapturedAt.After(after) {
+		t.Fatalf("unexpected capture time: %s", report.Snapshot.CapturedAt)
+	}
+	if report.Snapshot.ProviderTransactionCount != 1 || report.Snapshot.LedgerTransactionCount != 0 || report.Snapshot.SettlementAuditCount != 0 {
+		t.Fatalf("unexpected snapshot counts: %#v", report.Snapshot)
+	}
+	if report.Snapshot.ProviderReader != "context-all" {
+		t.Fatalf("unexpected provider reader: %q", report.Snapshot.ProviderReader)
+	}
+	if report.Snapshot.LedgerReader != "memory-store" {
+		t.Fatalf("unexpected ledger reader: %q", report.Snapshot.LedgerReader)
+	}
+	if report.Snapshot.SettlementAuditReader != "context-bulk" {
+		t.Fatalf("unexpected audit reader: %q", report.Snapshot.SettlementAuditReader)
+	}
+}
+
 func TestReconciliationItemKeyIsIndependentOfCandidateInputOrder(t *testing.T) {
 	a := TransactionReconciliation{
 		ReferenceID:"ref", ProviderStatus:ProviderStatusSuccess, Status:ReconciliationDuplicateReference,
