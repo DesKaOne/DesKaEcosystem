@@ -44,8 +44,8 @@ func TestValidatePersistedSettlementAuditRejectsIncompleteRows(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected incomplete persisted settlement audit to be rejected")
 	}
-	if !errors.Is(err, errors.New("invalid settlement audit")) {
-		t.Fatalf("expected settlement audit validation failure, got %v", err)
+	if !errors.Is(err, ErrInvalidSettlementAudit) {
+		t.Fatalf("expected invalid settlement audit classification, got %v", err)
 	}
 }
 
