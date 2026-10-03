@@ -18,9 +18,17 @@ func reconciliationEconomicAgreement(state routing.TransactionState, tx LedgerTr
 	for _, entry := range tx.Entries {
 		switch entry.Direction {
 		case Debit:
-			debit += entry.Amount
+			var err error
+			debit, err = checkedAmountAdd(debit, entry.Amount)
+			if err != nil {
+				return false
+			}
 		case Credit:
-			credit += entry.Amount
+			var err error
+			credit, err = checkedAmountAdd(credit, entry.Amount)
+			if err != nil {
+				return false
+			}
 		default:
 			return false
 		}
