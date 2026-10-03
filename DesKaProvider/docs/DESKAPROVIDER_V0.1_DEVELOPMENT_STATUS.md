@@ -10484,3 +10484,70 @@ Engineering estimate remains approximately **88%**. This milestone closes a conc
 Continue the persistence/recovery audit into durable restart semantics and concrete durable-store write/read boundaries, prioritizing any path where partial persistence or unavailable storage could be interpreted as a successful or empty financial state. Preserve fail-closed, observational recovery and require explicit action for uncertain financial state.
 
 No automatic provider retry, failover, transaction resubmission, provider funding, customer ledger mutation, treasury movement, duplicate transaction creation, blockchain action, or public API exposure is included in the next milestone.
+
+## Milestone #63 — Durable Read Validation Against Partial Persistence
+
+**Date:** 2026-10-03
+
+### Scope
+
+- prevent PostgreSQL durable reads from surfacing incomplete ledger rows as valid financial transactions;
+- prevent invalid persisted settlement-audit rows from being exposed as valid reconciliation evidence;
+- preserve fail-closed reconciliation when durable storage contains partial or malformed financial state;
+- keep restart/recovery observational and require explicit action for uncertain state.
+
+### Implementation
+
+- PostgresStore.Get now validates the fully materialized ledger transaction after loading its entries and returns an error when persisted rows violate the double-entry ledger invariant;
+- PostgresStore.All inherits the same validation boundary through Get, so one invalid persisted transaction fails the durable dataset read instead of being silently omitted or returned partially;
+- PostgresStore.AllSettlementAudits now validates every persisted audit row before exposing the dataset;
+- PostgresStore.GetSettlementAudit now validates the persisted audit before returning it as present;
+- introduced stable ErrInvalidSettlementAudit classification for malformed persisted settlement-audit state;
+- added deterministic validation tests proving partial ledger rows and incomplete settlement-audit rows are rejected, while complete persisted shapes remain accepted;
+- existing atomic PostgreSQL settlement writes and ErrSettlementPersistenceAmbiguous commit semantics remain unchanged;
+- no retry, failover, resubmission, repair, reversal, provider execution, or new financial capability was introduced.
+
+### Changed Files
+
+- DesKaProvider/backend/accounting/postgres_store.go
+- DesKaProvider/backend/accounting/settlement_audit.go
+- DesKaProvider/backend/accounting/persistence_validation.go
+- DesKaProvider/backend/accounting/persistence_validation_test.go
+- DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md
+
+### Safety Boundary / Invariants
+
+- a durable ledger header without the required complete balanced entries can never be returned as a valid ledger transaction;
+- a malformed durable settlement audit can never be returned as valid reconciliation evidence;
+- durable read corruption/partial persistence becomes a read failure, never not found, empty dataset, or successful settlement evidence;
+- reconciliation therefore fails closed instead of converting partial durable visibility into CORRELATED;
+- no automatic retry, provider failover, transaction resubmission, duplicate transaction creation, provider funding, customer-balance mutation, treasury movement, blockchain action, or public API exposure is introduced;
+- existing atomic write/idempotency/conflict semantics remain unchanged for valid durable state.
+
+### Verification
+
+Implementation/test HEAD:
+
+**952831d52bc658fd35ac15aa373cf4502ad802fc**
+
+DesKaProvider CI #4280 / run 37137920931: **GREEN**
+
+- test: PASS
+- vet: PASS
+- race: PASS
+- midtrans-sandbox: SKIPPED as expected
+- iak-read-only: SKIPPED as expected
+- xp-sindonesia-read-only: SKIPPED as expected
+- digiflazz-validation: SKIPPED as expected
+
+No authorized live-provider transaction or external provider request was executed by this milestone.
+
+### Progress
+
+Engineering estimate remains approximately **88%**. This milestone closes a concrete durable-read integrity gap where partial/malformed persisted financial rows could previously be surfaced as valid state. It does not add a new financial capability or execution path.
+
+### Next Concrete Engineering Task
+
+Continue the durable restart/recovery audit into cross-table read consistency and persistence-outcome ambiguity, prioritizing deterministic checks that distinguish a genuinely empty durable dataset from incomplete or uncertain financial visibility without introducing automatic repair or resubmission.
+
+No automatic provider retry, failover, transaction resubmission, provider funding, customer ledger mutation, treasury movement, duplicate purchase creation, blockchain action, or public API exposure is included in the next milestone.
