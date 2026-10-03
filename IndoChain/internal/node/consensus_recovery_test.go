@@ -264,3 +264,51 @@ func TestConsensusRecoveryBuildNextBlockCandidateRejectsStalePreviousHash(t *tes
 		t.Fatalf("error = %v, want %v", err, ErrConsensusRecoveryMismatch)
 	}
 }
+
+
+func TestConsensusRecoveryBuildNextBlockProposalFromCanonicalState(t *testing.T) {
+	store := storage.NewMemoryStore()
+	n, err := NewDevnet(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	validators, power := recoveryValidatorConfig(t)
+	recovered, err := n.ReconstructConsensusRuntime(
+		0, validators, power,
+		consensus.QuorumThreshold{Numerator: 2, Denominator: 3},
+		consensus.RoundRobinProposer{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rules, err := n.Config.BlockRules(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proposal, err := recovered.BuildNextBlockProposalFromRecovery(
+		n.State, n.Head.Header.Timestamp+1, nil, nil, rules,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, err := recovered.NextBlockContext()
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := consensus.ValidateProducedBlock(ctx, proposal.Candidate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !proposal.SamePayload(payload[:]) {
+		t.Fatal("proposal payload does not identify recovered candidate")
+	}
+	if proposal.Candidate.Header.Height != n.Head.Header.Height+1 {
+		t.Fatalf("candidate height = %d, want %d", proposal.Candidate.Header.Height, n.Head.Header.Height+1)
+	}
+	if proposal.Candidate.Header.PreviousHash != n.HeadHash {
+		t.Fatal("proposal candidate previous hash did not come from canonical recovery")
+	}
+	if got := recovered.Runtime.State(); got.Phase != consensus.PhaseProposal {
+		t.Fatalf("runtime phase = %v, want proposal before handoff", got.Phase)
+	}
+}
