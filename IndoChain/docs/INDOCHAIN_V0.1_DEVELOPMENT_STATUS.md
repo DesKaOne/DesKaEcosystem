@@ -4717,4 +4717,54 @@ Intended behavior: recovery output masuk kembali melalui runtime validation path
 
 **5.8i Authority-Bound Runtime Replay Integration:** hubungkan context-aware evidence recovery, authority-bound runtime construction, dan replay boundary melalui node recovery path tanpa mengubah canonical storage ownership.
 
-**Milestone 5.8h status:** implementation/test committed; exact-head CI gate pending.
+**Milestone 5.8h status:** DONE — exact-head CI GREEN pada SHA `a2b0907ce061b1cce24294d8e841c4e68fbc4bd3` (IndoChain CI run #2008 sukses).
+
+
+### 5.8i Authority-Bound Runtime Replay Integration — 2026-10-03
+
+**Objective**
+
+Menghubungkan context-aware durable evidence recovery, authority-bound runtime reconstruction, dan deterministic replay melalui satu node recovery path tanpa mengubah ownership canonical block/state storage.
+
+**Implementation**
+
+- `IndoChain/internal/node/consensus_recovery.go`
+  - menambahkan `ReconstructConsensusRuntimeWithAuthorityAndContextReplay(...)`;
+  - recovery runtime dibangun dari durable canonical node state dan explicit `ValidatorAuthoritySet`;
+  - `PersistenceContext` dibentuk dari runtime hasil recovery dengan voting-power digest dan proposer policy/version sebagai explicit persistence inputs;
+  - evidence dipulihkan melalui `RecoverAuthenticatedEvidenceWithContext` memakai resolver yang diturunkan dari authority snapshot runtime yang sama;
+  - recovered evidence diterapkan melalui `ValidatorRuntime.ReplayRecoveredEvidence` tanpa canonical block/state commit.
+- `IndoChain/internal/node/consensus_recovery_test.go`
+  - coverage construction runtime + context pada authority-bound recovery path;
+  - coverage empty context-bound evidence replay menjaga runtime pada phase Proposal dan tidak menghasilkan canonical mutation.
+
+**Architecture correction**
+
+Current behavior sebelum 5.8i: authority-bound runtime recovery, context-bound evidence recovery, dan replay boundary sudah tersedia sebagai primitives terpisah tetapi belum tersambung melalui satu node reconstruction path.
+
+Intended behavior: node recovery menyediakan explicit authority snapshot, exact persistence context, context-aware evidence recovery, lalu replay kembali melalui runtime validation boundary.
+
+Impact: restart/recovery path tidak lagi bergantung pada anonymous runtime atau legacy evidence identity untuk operational consensus replay, sementara canonical block/state tetap menjadi ownership node storage.
+
+**Locked invariants**
+
+1. Runtime authority dan evidence resolver berasal dari immutable authority snapshot yang sama.
+2. Persistence context digest mengikat authority, voting-power, threshold, dan proposer policy/version context.
+3. Evidence yang identity key-nya tidak cocok dengan exact persistence context ditolak fail-closed.
+4. Replay masuk melalui runtime API existing dan tidak melakukan canonical block/state commit.
+5. Replay tidak melakukan automatic finalization.
+6. Legacy recovery/evidence APIs tetap dipertahankan.
+7. Tidak ada validator lifecycle mutation, staking, reward, slashing, atau financial-service logic di IndoChain recovery path.
+
+**Verification**
+
+- Implementation/test baseline commits: `2bba754f4fb0f5257af3a8d6d9daa1e955c9276e`, `a2b0907ce061b1cce24294d8e841c4e68fbc4bd3`.
+- Exact-head GitHub Actions: **GREEN** — IndoChain CI run #2008 / `37131685756` pada SHA `a2b0907ce061b1cce24294d8e841c4e68fbc4bd3`.
+- CI conclusion: `success`; exact HEAD matches branch `dev/indochain-v0.1`.
+- Local test/race/vet tetap tidak tersedia dari workspace; GitHub Actions menjadi release gate.
+
+**Next meaningful integration target**
+
+**5.8j Consensus Recovery Replay → Block Production Handoff:** hubungkan runtime hasil replay ke `BlockProductionContext`/next-block candidate path dengan invariant bahwa canonical previous hash/state-root tetap berasal dari durable node state dan replay state tidak dapat menggantikan canonical storage snapshot.
+
+**Milestone 5.8i status:** DONE — exact-head CI GREEN pada SHA `a2b0907ce061b1cce24294d8e841c4e68fbc4bd3` (IndoChain CI run #2008 sukses).
