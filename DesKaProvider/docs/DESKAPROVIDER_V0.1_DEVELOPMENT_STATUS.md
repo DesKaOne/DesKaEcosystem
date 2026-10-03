@@ -9614,3 +9614,42 @@ The reconciler has no write dependency and cannot repair missing settlement, ret
 
 ### Next milestone
 Strengthen reconciliation with durable PostgreSQL integration coverage and explicit orphan detection while preserving the read-only invariant.
+
+
+## Milestone #44 — Durable Settlement Reconciliation Coverage & Orphan Detection
+
+**Date:** 2026-10-03
+
+### Implementation
+
+- extended the read-only reconciliation model with context-aware durable ledger reads;
+- added durable settlement-audit enumeration for PostgreSQL;
+- added explicit `ORPHANED_LEDGER` diagnostics when a ledger transaction has no persisted provider transaction reference;
+- added explicit `ORPHANED_AUDIT` diagnostics when an audit record points to a missing ledger transaction;
+- added deterministic memory coverage and PostgreSQL integration coverage for both orphan classes;
+- verified reconciliation does not mutate provider transaction state or durable ledger state.
+
+### Safety Boundary / Invariants
+
+- reconciliation remains read-only;
+- orphan detection never creates, repairs, deletes, reverses, or rewrites financial records;
+- PostgreSQL reads use the existing durable accounting store and do not introduce a second financial source of truth;
+- provider lifecycle state remains separate from ledger accounting;
+- no automatic retry, provider failover, or transaction resubmission is introduced;
+- no customer balance mutation, treasury movement, provider funding, or public API exposure is introduced.
+
+### Verification
+
+The milestone is complete only after the **latest commit's CI is GREEN**, including the repository test/race gates. Credential-gated provider jobs remain skipped when the required external credentials are unavailable.
+
+### Next Milestone
+
+**Milestone #45 — Reconciliation Correlation Invariant Hardening**
+
+Scope:
+
+- make provider-reference uniqueness and ledger/audit correlation assumptions explicit in the read model;
+- add deterministic diagnostics for duplicate financial references rather than silently selecting one ledger transaction;
+- preserve the read-only reconciliation boundary.
+
+No automatic financial repair, retry, failover, provider resubmission, treasury movement, provider funding, or customer balance mutation is included.
