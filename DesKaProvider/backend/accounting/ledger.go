@@ -3,6 +3,7 @@ package accounting
 import (
 	"context"
 	"errors"
+	"math"
 	"fmt"
 	"sync"
 	"time"
@@ -61,9 +62,17 @@ func (t LedgerTransaction) Validate() error {
 		}
 		switch e.Direction {
 		case Debit:
-			debit += e.Amount
+			var err error
+			debit, err = checkedAmountAdd(debit, e.Amount)
+			if err != nil {
+				return fmt.Errorf("%w: debit overflow on entry %d", ErrInvalidLedgerTransaction, i+1)
+			}
 		case Credit:
-			credit += e.Amount
+			var err error
+			credit, err = checkedAmountAdd(credit, e.Amount)
+			if err != nil {
+				return fmt.Errorf("%w: credit overflow on entry %d", ErrInvalidLedgerTransaction, i+1)
+			}
 		default:
 			return fmt.Errorf("%w: invalid direction on entry %d", ErrInvalidLedgerTransaction, i+1)
 		}
@@ -72,6 +81,13 @@ func (t LedgerTransaction) Validate() error {
 		return fmt.Errorf("%w: debits=%d credits=%d", ErrInvalidLedgerTransaction, debit, credit)
 	}
 	return nil
+}
+
+func checkedAmountAdd(current, amount int64) (int64, error) {
+	if amount < 0 || current > math.MaxInt64-amount {
+		return 0, errors.New("ledger amount overflow")
+	}
+	return current + amount, nil
 }
 
 func sameLedgerTransaction(a, b LedgerTransaction) bool {
