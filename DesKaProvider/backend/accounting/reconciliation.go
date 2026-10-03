@@ -2,8 +2,12 @@ package accounting
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"sort"
 	"strings"
+	"bytes"
 	"errors"
 	"time"
 	"fmt"
@@ -44,6 +48,7 @@ type ReconciliationSnapshotMetadata struct {
 	ProviderReader                 string
 	LedgerReader                   string
 	SettlementAuditReader          string
+	SnapshotFingerprint             string
 }
 
 type ReconciliationReport struct {
@@ -111,6 +116,10 @@ func (r *SettlementReconciler) readSnapshot(ctx context.Context) (reconciliation
 	states = append([]routing.TransactionState(nil), states...)
 	ledgerTransactions = append([]LedgerTransaction(nil), ledgerTransactions...)
 	audits = append([]SettlementAudit(nil), audits...)
+	fingerprint, err := reconciliationSnapshotFingerprint(states, ledgerTransactions, audits)
+	if err != nil {
+		return reconciliationSnapshot{}, fmt.Errorf("fingerprint reconciliation snapshot: %w", err)
+	}
 	return reconciliationSnapshot{
 		states: states,
 		ledger: ledgerTransactions,
@@ -123,6 +132,7 @@ func (r *SettlementReconciler) readSnapshot(ctx context.Context) (reconciliation
 			ProviderReader: "context-all",
 			LedgerReader: ledgerReader,
 			SettlementAuditReader: auditReader,
+			SnapshotFingerprint: fingerprint,
 		},
 	}, nil
 }
@@ -332,6 +342,48 @@ func (r *SettlementReconciler) Reconcile(ctx context.Context) (ReconciliationRep
 	})
 	report.Snapshot = snapshot.metadata
 	return report, nil
+}
+
+func reconciliationSnapshotFingerprint(states []routing.TransactionState, ledgerTransactions []LedgerTransaction, audits []SettlementAudit) (string, error) {
+	canonicalize := func(values any, length int) ([]json.RawMessage, error) {
+		raw := make([]json.RawMessage, 0, length)
+		switch items := values.(type) {
+		case []routing.TransactionState:
+			for _, item := range items {
+				b, err := json.Marshal(item)
+				if err != nil { return nil, err }
+				raw = append(raw, b)
+			}
+		case []LedgerTransaction:
+			for _, item := range items {
+				b, err := json.Marshal(item)
+				if err != nil { return nil, err }
+				raw = append(raw, b)
+			}
+		case []SettlementAudit:
+			for _, item := range items {
+				b, err := json.Marshal(item)
+				if err != nil { return nil, err }
+				raw = append(raw, b)
+			}
+		}
+		sort.Slice(raw, func(i, j int) bool { return bytes.Compare(raw[i], raw[j]) < 0 })
+		return raw, nil
+	}
+	provider, err := canonicalize(states, len(states))
+	if err != nil { return "", err }
+	ledger, err := canonicalize(ledgerTransactions, len(ledgerTransactions))
+	if err != nil { return "", err }
+	auditsJSON, err := canonicalize(audits, len(audits))
+	if err != nil { return "", err }
+	payload, err := json.Marshal(struct {
+		Provider []json.RawMessage `json:"provider"`
+		Ledger   []json.RawMessage `json:"ledger"`
+		Audits   []json.RawMessage `json:"audits"`
+	}{Provider: provider, Ledger: ledger, Audits: auditsJSON})
+	if err != nil { return "", err }
+	digest := sha256.Sum256(payload)
+	return hex.EncodeToString(digest[:]), nil
 }
 
 func reconciliationItemKey(item TransactionReconciliation) string {
