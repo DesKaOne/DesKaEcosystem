@@ -10777,3 +10777,64 @@ Verification:
 Progress estimate: ~88%; this is a financial-safety hardening milestone and does not justify inflating overall completion percentage.
 
 Next concrete task: continue the reconciliation audit for persisted settlement semantics that are actually represented by the current data model; do not invent account-role rules absent from provider/ledger contracts.
+
+
+## Milestone #69 — Orphan Ledger / Settlement Audit Identity Consistency
+
+**Date:** 2026-10-04
+
+### Scope
+
+- prevent reconciliation from treating a settlement audit as valid evidence for an orphaned ledger transaction when the audit's immutable correlation identity disagrees with the ledger transaction;
+- preserve duplicate audit identity diagnostics instead of selecting an arbitrary candidate;
+- keep reconciliation deterministic, observational, read-only, and fail-closed.
+
+### Implementation
+
+- added an explicit settlement-audit-to-ledger identity matcher covering `TransactionID`, `ReferenceID`, `SourceType`, and `SourceID`;
+- hardened the orphaned-ledger reconciliation path so a single audit with mismatched immutable identity is reported as `CORRELATION_CONFLICT` instead of being silently treated as unrelated/orphaned evidence;
+- preserved `DUPLICATE_AUDIT_IDENTITY` when multiple audit candidates exist for the same ledger transaction or EventID identity;
+- retained matching ledger/audit identifiers in the diagnostic result so cross-table disagreement remains directly auditable;
+- added deterministic regression coverage proving an identity-mismatched audit is surfaced as correlation conflict and reconciliation does not mutate the ledger.
+
+### Changed Files
+
+- `DesKaProvider/backend/accounting/reconciliation.go`
+- `DesKaProvider/backend/accounting/reconciliation_test.go`
+
+### Safety Boundary / Invariants
+
+- cross-table identity disagreement is never normalized into a valid correlation;
+- reconciliation never repairs, rewrites, deletes, reverses, retries, resubmits, or otherwise mutates financial records;
+- duplicate audit identity remains diagnostic evidence and never authorizes selection of an arbitrary audit;
+- reconciliation remains observational and read-only;
+- no provider funding, customer-balance mutation, ledger mutation, treasury movement, duplicate transaction creation, blockchain action, or public API exposure is introduced;
+- uncertain financial state remains fail-closed and requires explicit action outside reconciliation.
+
+### Verification
+
+Implementation/test final HEAD:
+
+**7dbbffbfe571fb42234a5b36079057c27098c276**
+
+DesKaProvider CI **#4336 / run 37155013632: GREEN**
+
+- test: PASS
+- vet: PASS
+- race: PASS
+- xp-sindonesia-read-only: SKIPPED as expected
+- iak-read-only: SKIPPED as expected
+- digiflazz-validation: SKIPPED as expected
+- midtrans-sandbox: SKIPPED as expected
+
+The implementation/test HEAD was verified with the complete normal test/vet/race suite. Credential-gated provider validations remained skipped because authorized external credentials were unavailable. No authorized live-provider transaction or external provider request was executed.
+
+### Progress
+
+Engineering estimate remains approximately **88%**. This milestone closes a concrete cross-table reconciliation identity gap without adding a new financial capability, accounting source of truth, or provider execution path.
+
+### Next Concrete Engineering Task
+
+Continue the reconciliation correctness audit only against settlement semantics actually represented by the current provider/ledger data model. Prioritize any remaining cross-table identity or economically material agreement gap that can be proven from existing contracts; do not invent account-role semantics or provider behavior absent authoritative evidence.
+
+No automatic provider retry, failover, transaction resubmission, provider funding, customer ledger mutation, treasury movement, duplicate purchase creation, blockchain action, or public API exposure is included in the next milestone.
