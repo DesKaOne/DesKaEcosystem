@@ -52,7 +52,6 @@ func (n *Node) ReconstructConsensusRuntimeWithAuthority(
 }
 
 // ReconstructConsensusRuntimeWithEvidence rebuilds the runtime from durable
-// ReconstructConsensusRuntimeWithEvidence rebuilds the runtime from durable
 // canonical state and separately recovers authenticated evidence for the same
 // canonical height. Evidence is returned as validated data; this boundary does
 // not replay it into ValidatorRuntime automatically.
