@@ -433,6 +433,9 @@ func readLedgerTransactions(ctx context.Context, store interface{}) ([]LedgerTra
 		return durable.AllContext(ctx)
 	}
 	if memory, ok := store.(Store); ok {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		return memory.All(), nil
 	}
 	return nil, errors.New("ledger dependency does not implement a supported read interface")
