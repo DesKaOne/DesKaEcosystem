@@ -9578,3 +9578,19 @@ Engineering estimate remains approximately 88% pending final CI verification.
 
 ### Next milestone
 Use the persisted provider transaction terminal-state record as an explicit input to settlement posting, once the actual provider transaction lifecycle integration point is identified and verified from repository code.
+
+
+## Persisted Provider Transaction → Explicit Settlement Integration
+
+**Date:** 2026-10-03
+
+Added an accounting bridge that reads the persisted routing TransactionState before settlement posting. Pending/failed/missing transactions are rejected. A terminal-success state can authorize posting, while all accounting identity and ledger entries remain explicit inputs.
+
+### Safety
+The bridge is read-only against provider transaction state. It performs no provider retry, failover, resubmission, or lifecycle mutation. Provider lifecycle success is authorization evidence only; the double-entry ledger remains the financial source of truth.
+
+### Tests
+Coverage added for pending rejection, terminal-success authorization, missing transaction, and rejection when accounting inputs are omitted rather than inferred.
+
+### Next milestone
+Extend reconciliation/read-model visibility across provider transaction state and settlement audit without coupling recovery to financial mutation.
