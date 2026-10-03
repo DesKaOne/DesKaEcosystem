@@ -1148,3 +1148,8 @@ This classification is deliberately distinct from validation rejection and immut
 ## 42. Persisted Provider Transaction Is Settlement Authorization Input
 
 Settlement can now read the durable routing TransactionState and authorize posting only when that persisted transaction is terminal-success. The bridge does not transition provider state and does not contact an external provider. Ledger transaction ID, currency, description, timestamp, and balanced ledger entries remain explicit accounting inputs; no accounting data is inferred from provider lifecycle fields.
+
+
+## 43. Settlement Reconciliation Is Read-Only
+
+`SettlementReconciler` correlates durable routing `TransactionState`, ledger transactions, and settlement audit records into a read model. It reports non-settleable provider states and correlation gaps/conflicts without creating, changing, retrying, or repairing financial records. Reconciliation therefore remains observational; financial mutation requires the explicit settlement command boundary.
