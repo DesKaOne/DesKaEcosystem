@@ -579,3 +579,52 @@ func TestReconciliationSnapshotFingerprintPreservesDatasetDomainSeparation(t *te
 		t.Fatal("fingerprint must preserve dataset-domain boundaries")
 	}
 }
+
+
+func TestSettlementReconcilerFailsClosedWhenSnapshotFingerprintFails(t *testing.T) {
+	ctx := context.Background()
+	txStore := routing.NewMemoryTransactionStore()
+	ledger := NewMemoryStore()
+	if err := txStore.Put(terminalPayment("fingerprint-failure")); err != nil {
+		t.Fatal(err)
+	}
+	fingerprintErr := errors.New("fingerprint unavailable")
+	reconciler, err := NewSettlementReconciler(txStore, ledger, ledger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reconciler.fingerprint = func([]routing.TransactionState, []LedgerTransaction, []SettlementAudit) (string, error) {
+		return "", fingerprintErr
+	}
+
+	report, err := reconciler.Reconcile(ctx)
+	if !errors.Is(err, fingerprintErr) {
+		t.Fatalf("expected fingerprint error to propagate, got %v", err)
+	}
+	if len(report.Items) != 0 {
+		t.Fatalf("failed fingerprint must not expose reconciliation items: %#v", report.Items)
+	}
+	assertEmptySnapshotMetadata(t, report.Snapshot)
+}
+
+func TestSettlementReconcilerUsesDefaultFingerprintWhenDependencyUnset(t *testing.T) {
+	ctx := context.Background()
+	txStore := routing.NewMemoryTransactionStore()
+	ledger := NewMemoryStore()
+	if err := txStore.Put(terminalPayment("fingerprint-default")); err != nil {
+		t.Fatal(err)
+	}
+	reconciler, err := NewSettlementReconciler(txStore, ledger, ledger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reconciler.fingerprint = nil
+
+	report, err := reconciler.Reconcile(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Snapshot.SnapshotFingerprint == "" {
+		t.Fatal("default fingerprint implementation must populate snapshot fingerprint")
+	}
+}
