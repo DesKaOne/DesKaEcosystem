@@ -138,23 +138,43 @@ func TestSettlementReconcilerReportsDuplicateLedgerReferenceDeterministically(t 
 	if len(ledger.All()) != 2 { t.Fatal("reconciliation must not mutate ledger state") }
 }
 
+type duplicateProviderReferenceStore struct {
+	*routing.MemoryTransactionStore
+	duplicate routing.TransactionState
+}
+
+func (s duplicateProviderReferenceStore) AllContextE(ctx context.Context) ([]routing.TransactionState, error) {
+	states, err := s.MemoryTransactionStore.AllContextE(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return append(states, s.duplicate), nil
+}
+
 func TestSettlementReconcilerReportsDuplicateProviderReference(t *testing.T) {
 	ctx := context.Background()
-	txStore := routing.NewMemoryTransactionStore()
-	ledger := NewMemoryStore()
-	for _, id := range []string{"provider-a", "provider-b"} {
-		state := terminalPayment("same-provider-reference")
-		state.Request.ReferenceID = id
-		state.Payment.ReferenceID = "same-provider-reference"
-		if err := txStore.Put(state); err != nil { t.Fatal(err) }
+	base := terminalPayment("same-provider-reference")
+	duplicate := terminalPayment("same-provider-reference")
+	txStore := duplicateProviderReferenceStore{
+		MemoryTransactionStore: routing.NewMemoryTransactionStore(),
+		duplicate:              duplicate,
 	}
-	_ = ledger
+	if err := txStore.Put(base); err != nil {
+		t.Fatal(err)
+	}
+	ledger := NewMemoryStore()
 
 	reconciler, err := NewSettlementReconciler(txStore, ledger, ledger)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	report, err := reconciler.Reconcile(ctx)
-	if err != nil { t.Fatal(err) }
-	if len(report.Items) != 2 { t.Fatalf("got %d items: %#v", len(report.Items), report.Items) }
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Items) != 2 {
+		t.Fatalf("got %d items: %#v", len(report.Items), report.Items)
+	}
 	for _, item := range report.Items {
 		if item.Status != ReconciliationDuplicateReference {
 			t.Fatalf("got %s", item.Status)
