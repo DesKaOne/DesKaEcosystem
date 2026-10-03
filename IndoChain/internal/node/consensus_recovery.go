@@ -67,7 +67,7 @@ func (n *Node) ReconstructConsensusRuntimeWithEvidence(
 	if evidenceStore == nil {
 		return ConsensusRecovery{}, consensus.ErrNilEvidenceStore
 	}
-\treturn n.reconstructConsensusRuntime(epoch, validators, votingPower, threshold, proposer, nil, func(state consensus.RoundState) ([]consensus.Message, error) {
+	return n.reconstructConsensusRuntime(epoch, validators, votingPower, threshold, proposer, nil, func(state consensus.RoundState) ([]consensus.Message, error) {
 		return consensus.RecoverAuthenticatedEvidence(evidenceStore, state, validators, authority)
 	})
 }
