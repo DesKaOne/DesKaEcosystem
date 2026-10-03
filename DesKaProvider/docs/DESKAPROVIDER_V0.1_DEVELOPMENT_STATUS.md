@@ -10238,3 +10238,64 @@ Engineering estimate remains approximately **88%**. This milestone closes anothe
 Continue the reconciliation persistence audit into remaining concrete reader boundaries and recovery semantics, prioritizing any persistence path where ambiguous visibility could otherwise be mistaken for an empty dataset, while preserving fail-closed, read-only behavior.
 
 No automatic provider retry, failover, transaction resubmission, provider funding, customer ledger mutation, treasury movement, duplicate transaction creation, or public API exposure is included in the next milestone.
+
+
+## Milestone #59 — Legacy Per-Ledger Audit Context Failure Propagation
+
+**Date:** 2026-10-03
+
+### Scope
+
+- verify the legacy per-ledger settlement-audit reader preserves explicit context cancellation and deadline failures;
+- preserve stable reconciliation audit-read classification and the underlying context error through the error chain;
+- prevent context failures from being interpreted as missing audit data or an empty financial dataset;
+- preserve the existing read-only, fail-closed snapshot boundary.
+
+### Implementation
+
+- added deterministic context.Canceled coverage for the legacy per-ledger audit reader;
+- added deterministic context.DeadlineExceeded coverage for the same reader boundary;
+- verified both failures retain ErrReconciliationAuditRead and the original context error through errors.Is;
+- verified canceled/deadline audit reads return no reconciliation items and no partial snapshot metadata;
+- no production reconciliation algorithm, financial mutation, provider execution, retry, failover, or resubmission behavior changed.
+
+### Changed Files
+
+- DesKaProvider/backend/accounting/reconciliation_reader_persistence_test.go
+- DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md
+
+### Safety Boundary / Invariants
+
+- context cancellation/deadline remains an observational read failure and never authorizes retry, failover, resubmission, repair, reversal, or financial mutation;
+- legacy per-ledger audit visibility failures are never converted into an empty dataset or false reconciliation success;
+- failed snapshot establishment returns no reconciliation items and no partial lifecycle/count/provenance/fingerprint metadata;
+- reconciliation remains strictly read-only;
+- no provider funding, customer-balance mutation, ledger mutation, treasury movement, duplicate transaction creation, blockchain action, or public API exposure is introduced.
+
+### Verification
+
+Implementation/test HEAD:
+
+**4b8567530284deb42982d29429bf86de75749a93**
+
+DesKaProvider CI #4244 / run 37131503345: **GREEN**
+
+- test: PASS
+- vet: PASS
+- race: PASS
+- midtrans-sandbox: SKIPPED as expected
+- iak-read-only: SKIPPED as expected
+- xp-sindonesia-read-only: SKIPPED as expected
+- digiflazz-validation: SKIPPED as expected
+
+No authorized live-provider transaction or external provider request was executed by this milestone.
+
+### Progress
+
+Engineering estimate remains approximately **88%**. This milestone closes explicit context failure coverage for the remaining legacy per-ledger audit reader boundary without adding a new production financial capability or execution path.
+
+### Next Concrete Engineering Task
+
+Continue the reconciliation persistence/recovery audit into remaining concrete reader and recovery boundaries, prioritizing any path where ambiguous persistence visibility, restart state, or partial reads could otherwise be mistaken for an empty or settled dataset. Preserve fail-closed, observational, read-only behavior.
+
+No automatic provider retry, failover, transaction resubmission, provider funding, customer ledger mutation, treasury movement, duplicate transaction creation, or public API exposure is included in the next milestone.
