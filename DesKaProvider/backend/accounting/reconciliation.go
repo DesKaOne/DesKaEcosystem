@@ -3,6 +3,7 @@ package accounting
 import (
 	"context"
 	"sort"
+	"strings"
 	"errors"
 	"fmt"
 
@@ -238,7 +239,26 @@ func (r *SettlementReconciler) Reconcile(ctx context.Context) (ReconciliationRep
 			})
 		}
 	}
+	sort.SliceStable(report.Items, func(i, j int) bool {
+		return reconciliationItemKey(report.Items[i]) < reconciliationItemKey(report.Items[j])
+	})
 	return report, nil
+}
+
+func reconciliationItemKey(item TransactionReconciliation) string {
+	ledgerIDs := append([]string(nil), item.LedgerTransactionIDs...)
+	auditIDs := append([]string(nil), item.SettlementAuditEventIDs...)
+	sort.Strings(ledgerIDs)
+	sort.Strings(auditIDs)
+	return strings.Join([]string{
+		item.ReferenceID,
+		item.ProviderStatus,
+		string(item.Status),
+		item.LedgerTransactionID,
+		item.SettlementAuditEventID,
+		strings.Join(ledgerIDs, "\x00"),
+		strings.Join(auditIDs, "\x00"),
+	}, "\x00")
 }
 
 func readLedgerTransactions(ctx context.Context, store interface{}) ([]LedgerTransaction, error) {
