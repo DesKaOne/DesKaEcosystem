@@ -1245,3 +1245,11 @@ Milestone #52 strengthens the observable contract around snapshot metadata. A su
 Capture failure paths are fail-closed at the report boundary. If provider transaction, ledger, or settlement-audit materialization fails, Reconcile returns an error without reconciliation items and without partial snapshot metadata. This prevents callers from treating incomplete provenance, counts, timestamps, or fingerprints as a valid read model.
 
 These are diagnostic/read-model contracts only. They do not participate in financial identity or authorization and introduce no persistence, retry, failover, resubmission, repair, reversal, balance mutation, treasury movement, external-provider action, or blockchain action.
+
+## Reconciliation Snapshot Canonicalization Contract Hardening
+
+Milestone #53 makes the snapshot fingerprint canonicalization contract explicit. The fingerprint payload is versioned with schema_version: v1 and contains separate provider, ledger, and settlement-audit sections. Each dataset is encoded using its JSON representation and its encoded records are sorted bytewise before hashing, so read order does not affect the result. Dataset sections remain domain-separated even when records or counts happen to overlap.
+
+Unsupported internal dataset types fail explicitly instead of being treated as an empty dataset. The resulting SHA-256 hex digest remains diagnostic metadata only; it is not financial identity or authorization and has no mutation semantics.
+
+This hardening does not alter reconciliation correlation, settlement posting, provider lifecycle, ledger persistence, audit persistence, balances, treasury, retries, failover, resubmission, repair, reversal, external-provider calls, or blockchain calls.
