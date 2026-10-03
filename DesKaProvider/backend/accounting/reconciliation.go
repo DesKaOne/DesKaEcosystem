@@ -306,19 +306,26 @@ func (r *SettlementReconciler) Reconcile(ctx context.Context) (ReconciliationRep
 			continue
 		}
 		auditCandidates := auditsByTransaction[tx.ID]
-		auditOK := len(auditCandidates) > 0
-		var audit SettlementAudit
-		if auditOK {
-			audit = auditCandidates[0]
-		}
 		item := TransactionReconciliation{
 			ReferenceID: tx.ReferenceID,
 			ProviderStatus: "UNKNOWN",
 			LedgerTransactionID: tx.ID,
 			Status: ReconciliationOrphanedLedger,
 		}
-		if auditOK {
-			item.SettlementAuditEventID = audit.EventID
+		if len(auditCandidates) > 0 {
+			if len(auditCandidates) != 1 || duplicateAuditTransactions[tx.ID] || duplicateAuditEvents[auditCandidates[0].EventID] {
+				item.Status = ReconciliationDuplicateAuditIdentity
+				for _, candidate := range auditCandidates {
+					item.SettlementAuditEventIDs = append(item.SettlementAuditEventIDs, candidate.EventID)
+				}
+				sort.Strings(item.SettlementAuditEventIDs)
+			} else {
+				audit := auditCandidates[0]
+				item.SettlementAuditEventID = audit.EventID
+				if !settlementAuditMatchesLedger(audit, tx) {
+					item.Status = ReconciliationCorrelationConflict
+				}
+			}
 		}
 		report.Items = append(report.Items, item)
 	}
@@ -443,6 +450,13 @@ func reconciliationSnapshotFingerprint(states []routing.TransactionState, ledger
 	digest := sha256.Sum256(payload)
 	return hex.EncodeToString(digest[:]), nil
 }
+func settlementAuditMatchesLedger(audit SettlementAudit, tx LedgerTransaction) bool {
+	return audit.TransactionID == tx.ID &&
+		audit.ReferenceID == tx.ReferenceID &&
+		audit.SourceType == tx.SourceType &&
+		audit.SourceID == tx.SourceID
+}
+
 func reconciliationItemKey(item TransactionReconciliation) string {
 	ledgerIDs := append([]string(nil), item.LedgerTransactionIDs...)
 	auditIDs := append([]string(nil), item.SettlementAuditEventIDs...)
