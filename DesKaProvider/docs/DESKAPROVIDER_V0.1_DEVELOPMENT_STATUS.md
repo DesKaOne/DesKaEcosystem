@@ -10724,3 +10724,30 @@ Engineering estimate remains approximately **88%**. This milestone closes a conc
 Continue the reconciliation persistence/recovery audit into provider-vs-ledger amount/currency and settlement-entry agreement, ensuring independently persisted financial values cannot be considered correlated when economically material fields disagree. Preserve deterministic, observational, fail-closed behavior and require explicit action for any uncertain financial state.
 
 No automatic provider retry, failover, transaction resubmission, provider funding, customer ledger mutation, treasury movement, duplicate purchase creation, blockchain action, or public API exposure is included in the next milestone.
+
+
+## Milestone #67 — Reconciliation Economic Agreement Guard
+
+Status: **IMPLEMENTED — CI verification pending on synchronized HEAD**.
+
+Scope: close the reconciliation correctness gap where provider-success + ledger identity + successful settlement audit could still be reported as `CORRELATED` even when economically material persisted payment values disagreed.
+
+Implementation:
+- `DesKaProvider/backend/accounting/reconciliation.go` now requires `reconciliationEconomicAgreement(...)` before reporting `CORRELATED`.
+- `DesKaProvider/backend/accounting/reconciliation_economic.go` compares payment currency with ledger currency and requires balanced debit/credit settlement entries to equal the provider payment amount.
+- Any mismatch remains observationally reported as `CORRELATION_CONFLICT`; reconciliation performs no repair, reversal, resubmission, or ledger mutation.
+- Regression coverage added for ledger amount mismatch and ledger currency mismatch, including read-only assertions.
+
+Safety invariants:
+- Economic disagreement is never interpreted as permission to repair or resubmit.
+- Reconciliation remains deterministic, observational, and read-only.
+- Existing identity/status correlation checks remain required in addition to economic agreement.
+
+Verification:
+- Prior status-doc commit `9f87d57c096f9ff5ea0a7791148f723e43bc7123` had CI #4304 green: test PASS, vet PASS, race PASS; provider credential-gated jobs skipped.
+- Implementation started with `d122aa7cf27ae95fd5bbdfda0dc09a4efe619b01`; follow-up helper/test commit is `cdf48fa046fb5cf66759170dd5a34639aa67b439`.
+- CI #4306 for `d122aa7cf27ae95fd5bbdfda0dc09a4efe619b01` is currently in progress; final milestone closure requires the synchronized HEAD CI to be green.
+
+Progress estimate: ~88%; this milestone closes a material reconciliation correctness gap but does not by itself justify a large percentage increase.
+
+Next concrete task: continue the reconciliation persistence/recovery audit for settlement-entry semantic agreement (direction/account-role expectations and any provider fields that materially determine the ledger posting), while preserving fail-closed/read-only behavior.
