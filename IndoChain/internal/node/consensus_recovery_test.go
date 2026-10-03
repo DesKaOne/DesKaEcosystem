@@ -197,3 +197,70 @@ func TestReconstructConsensusRuntimeWithAuthorityAndContextReplay(t *testing.T) 
 		t.Fatalf("runtime phase after empty replay = %v", got.Phase)
 	}
 }
+
+
+func TestConsensusRecoveryBuildNextBlockCandidateFromCanonicalState(t *testing.T) {
+	store := storage.NewMemoryStore()
+	n, err := NewDevnet(store)
+	if err != nil { t.Fatal(err) }
+	validators, power := recoveryValidatorConfig(t)
+	recovered, err := n.ReconstructConsensusRuntime(0, validators, power,
+		consensus.QuorumThreshold{Numerator: 2, Denominator: 3},
+		consensus.RoundRobinProposer{})
+	if err != nil { t.Fatal(err) }
+
+	rules, err := n.Config.BlockRules(nil)
+	if err != nil { t.Fatal(err) }
+	candidate, err := recovered.BuildNextBlockCandidateFromRecovery(
+		n.State, n.Head.Header.Timestamp+1, nil, nil, rules,
+	)
+	if err != nil { t.Fatal(err) }
+	if candidate.Header.Height != n.Head.Header.Height+1 {
+		t.Fatalf("candidate height = %d, want %d", candidate.Header.Height, n.Head.Header.Height+1)
+	}
+	if candidate.Header.PreviousHash != n.HeadHash {
+		t.Fatal("candidate previous hash did not come from canonical recovery")
+	}
+	if candidate.Header.StateRoot != n.State.Root() {
+		t.Fatalf("candidate state root = %x, want canonical %x", candidate.Header.StateRoot, n.State.Root())
+	}
+}
+
+func TestConsensusRecoveryBuildNextBlockCandidateRejectsStaleStateRoot(t *testing.T) {
+	store := storage.NewMemoryStore()
+	n, err := NewDevnet(store)
+	if err != nil { t.Fatal(err) }
+	validators, power := recoveryValidatorConfig(t)
+	recovered, err := n.ReconstructConsensusRuntime(0, validators, power,
+		consensus.QuorumThreshold{Numerator: 2, Denominator: 3},
+		consensus.RoundRobinProposer{})
+	if err != nil { t.Fatal(err) }
+	stale := n.State.Snapshot()
+	stale.Set(types.Address([]byte("stale")), state.Account{Balance: 1})
+	rules, err := n.Config.BlockRules(nil)
+	if err != nil { t.Fatal(err) }
+	if _, err := recovered.BuildNextBlockCandidateFromRecovery(
+		stale, n.Head.Header.Timestamp+1, nil, nil, rules,
+	); !errors.Is(err, ErrConsensusRecoveryMismatch) {
+		t.Fatalf("error = %v, want %v", err, ErrConsensusRecoveryMismatch)
+	}
+}
+
+func TestConsensusRecoveryBuildNextBlockCandidateRejectsStalePreviousHash(t *testing.T) {
+	store := storage.NewMemoryStore()
+	n, err := NewDevnet(store)
+	if err != nil { t.Fatal(err) }
+	validators, power := recoveryValidatorConfig(t)
+	recovered, err := n.ReconstructConsensusRuntime(0, validators, power,
+		consensus.QuorumThreshold{Numerator: 2, Denominator: 3},
+		consensus.RoundRobinProposer{})
+	if err != nil { t.Fatal(err) }
+	recovered.PreviousHash = types.Hash{99}
+	rules, err := n.Config.BlockRules(nil)
+	if err != nil { t.Fatal(err) }
+	if _, err := recovered.BuildNextBlockCandidateFromRecovery(
+		n.State, n.Head.Header.Timestamp+1, nil, nil, rules,
+	); !errors.Is(err, ErrConsensusRecoveryMismatch) {
+		t.Fatalf("error = %v, want %v", err, ErrConsensusRecoveryMismatch)
+	}
+}
