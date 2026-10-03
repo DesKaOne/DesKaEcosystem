@@ -9640,9 +9640,19 @@ Strengthen reconciliation with durable PostgreSQL integration coverage and expli
 
 ### Verification
 
-The milestone is complete only after the **latest commit's CI is GREEN**, including the repository test/race gates.
+Final implementation/test HEAD:
 
-Final CI status is recorded below after the implementation HEAD has completed. Credential-gated provider jobs remain skipped when the required external credentials are unavailable.
+bbc439e87df94f3396f9aa69711d15dd0b3ff765
+
+Final DesKaProvider CI #4097 / run 37121918605: GREEN
+
+- test: PASS
+- race: PASS
+- credential-gated provider validation jobs: skipped as expected
+
+The PostgreSQL reconciliation test verifies durable orphan-ledger detection and read-only behavior. PostgreSQL referential integrity prevents a settlement audit from referencing a missing ledger transaction; memory coverage still exercises the defensive `ORPHANED_AUDIT` diagnostic path.
+
+No provider retry, failover, resubmission, financial repair, customer balance mutation, treasury movement, or provider funding was executed by this milestone.
 
 ### Next Milestone
 
