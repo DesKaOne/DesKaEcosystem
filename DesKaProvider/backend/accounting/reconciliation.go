@@ -2,6 +2,7 @@ package accounting
 
 import (
 	"context"
+	"sort"
 	"errors"
 	"fmt"
 
@@ -19,6 +20,7 @@ const (
 	ReconciliationCorrelationConflict ReconciliationStatus = "CORRELATION_CONFLICT"
 	ReconciliationOrphanedLedger      ReconciliationStatus = "ORPHANED_LEDGER"
 	ReconciliationOrphanedAudit       ReconciliationStatus = "ORPHANED_AUDIT"
+	ReconciliationDuplicateReference ReconciliationStatus = "DUPLICATE_REFERENCE"
 )
 
 type TransactionReconciliation struct {
@@ -26,7 +28,8 @@ type TransactionReconciliation struct {
 	ProviderStatus string
 	LedgerTransactionID string
 	SettlementAuditEventID string
-	Status ReconciliationStatus
+	Status                    ReconciliationStatus
+	LedgerTransactionIDs      []string
 }
 
 type ReconciliationReport struct {
@@ -63,11 +66,16 @@ func (r *SettlementReconciler) Reconcile(ctx context.Context) (ReconciliationRep
 	if err != nil {
 		return ReconciliationReport{}, fmt.Errorf("read ledger transactions: %w", err)
 	}
-	byReference := make(map[string]LedgerTransaction, len(ledgerTransactions))
+	byReference := make(map[string][]LedgerTransaction, len(ledgerTransactions))
 	byLedgerID := make(map[string]LedgerTransaction, len(ledgerTransactions))
 	for _, tx := range ledgerTransactions {
-		byReference[tx.ReferenceID] = tx
+		byReference[tx.ReferenceID] = append(byReference[tx.ReferenceID], tx)
 		byLedgerID[tx.ID] = tx
+	}
+	for referenceID := range byReference {
+		sort.Slice(byReference[referenceID], func(i, j int) bool {
+			return byReference[referenceID][i].ID < byReference[referenceID][j].ID
+		})
 	}
 
 	report := ReconciliationReport{Items: make([]TransactionReconciliation, 0, len(states))}
@@ -87,12 +95,22 @@ func (r *SettlementReconciler) Reconcile(ctx context.Context) (ReconciliationRep
 			continue
 		}
 
-		tx, ledgerOK := byReference[referenceID]
-		if !ledgerOK {
+		candidates := byReference[referenceID]
+		if len(candidates) == 0 {
 			item.Status = ReconciliationLedgerMissing
 			report.Items = append(report.Items, item)
 			continue
 		}
+		if len(candidates) > 1 {
+			item.Status = ReconciliationDuplicateReference
+			item.LedgerTransactionIDs = make([]string, len(candidates))
+			for i, candidate := range candidates {
+				item.LedgerTransactionIDs[i] = candidate.ID
+			}
+			report.Items = append(report.Items, item)
+			continue
+		}
+		tx := candidates[0]
 		item.LedgerTransactionID = tx.ID
 
 		audit, auditOK, err := r.audit.GetSettlementAudit(ctx, tx.ID)
