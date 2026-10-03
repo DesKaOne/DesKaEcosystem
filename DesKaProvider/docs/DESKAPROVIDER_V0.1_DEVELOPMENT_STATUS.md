@@ -10672,3 +10672,55 @@ Engineering estimate remains approximately **88%**. This milestone closes a conc
 Continue the reconciliation cross-table consistency audit into status/identity agreement between provider transactions, ledger transactions, and settlement audits, prioritizing cases where independently readable records can disagree while still being incorrectly considered correlated. Preserve deterministic, observational, fail-closed behavior and require explicit action for uncertain financial state.
 
 No automatic provider retry, failover, transaction resubmission, provider funding, customer ledger mutation, treasury movement, duplicate purchase creation, blockchain action, or public API exposure is included in the next milestone.
+
+## Milestone #66 — Require Successful Settlement Audit for Correlation
+
+**Date:** 2026-10-04
+
+### Scope
+
+- prevent reconciliation from marking provider/ledger/audit records as `CORRELATED` when the independently persisted settlement audit itself has a non-success status;
+- preserve conflicting financial identities as diagnostic evidence;
+- keep reconciliation observational and read-only, with no repair, reversal, retry, resubmission, or provider side effect.
+
+### Implementation
+
+- correlation now requires `SettlementAudit.Status == ProviderStatusSuccess` in addition to existing provider reference, ledger transaction, source type, and source identity checks;
+- a matching audit with a non-success status is classified as correlation conflict rather than successful correlation;
+- added deterministic regression coverage proving conflicting ledger/audit identities remain visible and reconciliation does not mutate the ledger;
+- corrected the test fixture to explicitly convert provider transaction status to the persisted audit string type.
+
+### Safety Boundary / Invariants
+
+- independently persisted status disagreement is never silently normalized;
+- non-success audit state is diagnostic evidence, not authorization for settlement or repair;
+- reconciliation performs no automatic retry, failover, resubmission, reversal, funding, balance mutation, treasury movement, duplicate transaction creation, blockchain action, or provider execution;
+- uncertain cross-table state remains fail-closed and requires explicit action outside reconciliation.
+
+### Verification
+
+Implementation/test final HEAD:
+
+**a122b82c978df04f01799189e7212cc5835e0c8d**
+
+DesKaProvider CI #4302 / run 37142314187: **GREEN**
+
+- test: PASS
+- vet: PASS
+- race: PASS
+- midtrans-sandbox: SKIPPED as expected
+- iak-read-only: SKIPPED as expected
+- xp-sindonesia-read-only: SKIPPED as expected
+- digiflazz-validation: SKIPPED as expected
+
+Previous CI #4300 failed only because the new test fixture used a typed provider status where the persisted audit field requires string; the fixture was corrected without changing the intended production behavior.
+
+### Progress
+
+Engineering estimate remains approximately **88%**. This milestone closes a concrete cross-table consistency gap: a non-success settlement audit can no longer be treated as successful correlation merely because its identity fields match. No new financial execution capability is introduced.
+
+### Next Concrete Engineering Task
+
+Continue the reconciliation persistence/recovery audit into provider-vs-ledger amount/currency and settlement-entry agreement, ensuring independently persisted financial values cannot be considered correlated when economically material fields disagree. Preserve deterministic, observational, fail-closed behavior and require explicit action for any uncertain financial state.
+
+No automatic provider retry, failover, transaction resubmission, provider funding, customer ledger mutation, treasury movement, duplicate purchase creation, blockchain action, or public API exposure is included in the next milestone.
