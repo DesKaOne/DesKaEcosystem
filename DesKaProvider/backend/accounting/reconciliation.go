@@ -222,6 +222,22 @@ func (r *SettlementReconciler) Reconcile(ctx context.Context) (ReconciliationRep
 
 		if status != ProviderStatusSuccess {
 			item.Status = ReconciliationNotSettleable
+			if candidates := byReference[referenceID]; len(candidates) > 0 {
+				item.LedgerTransactionIDs = make([]string, len(candidates))
+				for i, candidate := range candidates {
+					item.LedgerTransactionIDs[i] = candidate.ID
+				}
+			}
+			if len(item.LedgerTransactionIDs) == 1 {
+				auditCandidates := auditsByTransaction[item.LedgerTransactionIDs[0]]
+				if len(auditCandidates) > 0 {
+					item.SettlementAuditEventIDs = make([]string, len(auditCandidates))
+					for i, candidate := range auditCandidates {
+						item.SettlementAuditEventIDs[i] = candidate.EventID
+					}
+					sort.Strings(item.SettlementAuditEventIDs)
+				}
+			}
 			report.Items = append(report.Items, item)
 			continue
 		}
