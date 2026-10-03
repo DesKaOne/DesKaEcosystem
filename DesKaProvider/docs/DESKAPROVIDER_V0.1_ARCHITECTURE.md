@@ -1195,3 +1195,12 @@ Settlement audit identity is now explicit at both the durable store and read-mod
 - duplicate audit diagnostics are deterministically ordered by event/transaction identity and include candidate IDs.
 
 The hardening remains read-only from reconciliation: it never repairs, merges, deletes, reverses, retries, resubmits, or mutates financial records.
+
+
+### Reconciliation Report Determinism & Ordering Contract
+
+The reconciliation read model now applies a canonical ordering to every report item before returning the report. Ordering is derived only from immutable/read-only diagnostic fields: financial reference, provider status, reconciliation status, ledger transaction ID, audit event ID, and sorted candidate identity lists.
+
+Candidate ID lists are canonicalized before comparison, so the result does not depend on database scan order, map iteration order, or the order supplied by a diagnostic reader. Repeated reconciliation over unchanged state therefore returns the same item ordering and canonical candidate ordering.
+
+This is an output/read-model invariant only. It does not mutate provider state, ledger state, settlement audit state, balances, treasury, or external providers.
