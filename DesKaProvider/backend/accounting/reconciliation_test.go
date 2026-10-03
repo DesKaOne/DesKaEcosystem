@@ -503,6 +503,85 @@ func TestSettlementReconcilerSnapshotMetadataContractOnCaptureFailures(t *testin
 	}
 }
 
+func TestSettlementReconcilerFailureClassificationPreservesUnderlyingCause(t *testing.T) {
+	ctx := context.Background()
+	storageErr := errors.New("database connection unavailable")
+
+	cases := []struct {
+		name           string
+		transactions   routing.ContextReadTransactionStore
+		ledger         interface{}
+		audit          SettlementAuditReader
+		classification error
+	}{
+		{
+			name: "provider-storage-error",
+			transactions: failingProviderSnapshotStore{MemoryTransactionStore: routing.NewMemoryTransactionStore(), err: storageErr},
+			ledger: NewMemoryStore(),
+			audit: NewMemoryStore(),
+			classification: ErrReconciliationProviderRead,
+		},
+		{
+			name: "ledger-storage-error",
+			transactions: routing.NewMemoryTransactionStore(),
+			ledger: failingLedgerSnapshotReader{MemoryStore: NewMemoryStore(), err: storageErr},
+			audit: NewMemoryStore(),
+			classification: ErrReconciliationLedgerRead,
+		},
+		{
+			name: "legacy-audit-storage-error",
+			transactions: routing.NewMemoryTransactionStore(),
+			ledger: NewMemoryStore(),
+			audit: failingAuditSnapshotReader{MemoryStore: NewMemoryStore(), err: storageErr},
+			classification: ErrReconciliationAuditRead,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			reconciler, err := NewSettlementReconciler(tc.transactions, tc.ledger, tc.audit)
+			if err != nil {
+				t.Fatal(err)
+			}
+			report, err := reconciler.Reconcile(ctx)
+			if err == nil {
+				t.Fatal("expected snapshot capture failure")
+			}
+			if !errors.Is(err, tc.classification) {
+				t.Fatalf("expected stable classification %v, got %v", tc.classification, err)
+			}
+			if !errors.Is(err, storageErr) {
+				t.Fatalf("expected underlying storage error to remain inspectable, got %v", err)
+			}
+			if len(report.Items) != 0 {
+				t.Fatalf("failed capture must not expose reconciliation items: %#v", report.Items)
+			}
+			assertEmptySnapshotMetadata(t, report.Snapshot)
+		})
+	}
+}
+
+func TestSettlementReconcilerUnsupportedLedgerReaderFailsClosedWithStableClassification(t *testing.T) {
+	ctx := context.Background()
+	txStore := routing.NewMemoryTransactionStore()
+	reconciler, err := NewSettlementReconciler(txStore, struct{}{}, NewMemoryStore())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := reconciler.Reconcile(ctx)
+	if err == nil {
+		t.Fatal("expected unsupported ledger reader failure")
+	}
+	if !errors.Is(err, ErrReconciliationLedgerRead) {
+		t.Fatalf("expected stable ledger-read classification, got %v", err)
+	}
+	if len(report.Items) != 0 {
+		t.Fatalf("unsupported ledger reader must not expose reconciliation items: %#v", report.Items)
+	}
+	assertEmptySnapshotMetadata(t, report.Snapshot)
+}
+
 func TestSettlementReconcilerSnapshotMetadataFingerprintAndLifecycleContract(t *testing.T) {
 	ctx := context.Background()
 	txStore := routing.NewMemoryTransactionStore()
