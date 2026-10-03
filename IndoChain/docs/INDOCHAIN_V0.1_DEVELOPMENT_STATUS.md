@@ -4623,4 +4623,4 @@ Impact: recovery context mismatch menjadi deterministic dan fail-closed tanpa me
 
 **5.8g Context-Aware Durable Evidence Recovery:** tambahkan recovery API yang secara eksplisit menerima `PersistenceContext`/digest dan hanya mengembalikan evidence yang identity key-nya cocok dengan context tersebut.
 
-**Milestone 5.8f status:** implementation/test committed; exact-head CI gate pending.
+**Milestone 5.8f status:** implementation/test committed; exact-head CI gate pending after restoring the implementation source on the branch.
