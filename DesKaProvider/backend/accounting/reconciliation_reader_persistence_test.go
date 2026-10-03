@@ -290,3 +290,59 @@ func TestSettlementReconcilerLegacyAuditReaderDoesNotFallbackToEmptyDataset(t *t
     }
     assertEmptySnapshotMetadata(t, report.Snapshot)
 }
+
+
+func TestMemoryStoreGetContextPropagatesCancellation(t *testing.T) {
+    store := NewMemoryStore()
+    ctx, cancel := context.WithCancel(context.Background())
+    cancel()
+
+    _, ok, err := store.GetContext(ctx, "missing")
+    if !errors.Is(err, context.Canceled) {
+        t.Fatalf("expected context.Canceled, got %v", err)
+    }
+    if ok {
+        t.Fatal("canceled point read must not report a result")
+    }
+}
+
+func TestMemoryStoreGetContextPropagatesDeadline(t *testing.T) {
+    store := NewMemoryStore()
+    ctx, cancel := context.WithDeadline(context.Background(), time.Unix(1, 0).UTC())
+    defer cancel()
+
+    _, ok, err := store.GetContext(ctx, "missing")
+    if !errors.Is(err, context.DeadlineExceeded) {
+        t.Fatalf("expected context.DeadlineExceeded, got %v", err)
+    }
+    if ok {
+        t.Fatal("expired point read must not report a result")
+    }
+}
+
+func TestMemoryStoreAppendContextPropagatesCancellationWithoutMutation(t *testing.T) {
+    store := NewMemoryStore()
+    ctx, cancel := context.WithCancel(context.Background())
+    cancel()
+
+    ledger := LedgerTransaction{
+        ID: "ledger-context-canceled",
+        ReferenceID: "ref-context-canceled",
+        SourceType: "provider_purchase",
+        SourceID: "provider-source",
+        Currency: "IDR",
+        Description: "context cancellation write test",
+        CreatedAt: time.Unix(1, 0).UTC(),
+        Entries: []Entry{
+            {LineID: 1, AccountID: "expense", Direction: Debit, Amount: 1000, Currency: "IDR"},
+            {LineID: 2, AccountID: "cash", Direction: Credit, Amount: 1000, Currency: "IDR"},
+        },
+    }
+
+    if err := store.AppendContext(ctx, ledger); !errors.Is(err, context.Canceled) {
+        t.Fatalf("expected context.Canceled, got %v", err)
+    }
+    if _, ok := store.Get(ledger.ID); ok {
+        t.Fatal("canceled append must not mutate memory ledger")
+    }
+}
