@@ -10299,3 +10299,66 @@ Engineering estimate remains approximately **88%**. This milestone closes explic
 Continue the reconciliation persistence/recovery audit into remaining concrete reader and recovery boundaries, prioritizing any path where ambiguous persistence visibility, restart state, or partial reads could otherwise be mistaken for an empty or settled dataset. Preserve fail-closed, observational, read-only behavior.
 
 No automatic provider retry, failover, transaction resubmission, provider funding, customer ledger mutation, treasury movement, duplicate transaction creation, or public API exposure is included in the next milestone.
+
+
+## Milestone #60 — Legacy Memory Reader Context Propagation
+
+**Date:** 2026-10-03
+
+### Scope
+
+- prevent legacy/in-memory accounting readers from ignoring canceled or expired reconciliation contexts;
+- preserve fail-closed reconciliation behavior when a memory-backed ledger or settlement-audit read is no longer valid under the caller context;
+- keep context failures distinguishable from genuine empty datasets without introducing retry or recovery side effects.
+
+### Implementation
+
+- updated the accounting `MemoryStore` ledger `AllContext` reader to return `ctx.Err()` before exposing data;
+- updated memory-backed settlement-audit `GetSettlementAudit` and `AllSettlementAudits` readers to preserve cancellation/deadline errors;
+- retained the reconciliation `ErrReconciliationLedgerRead` classification boundary around ledger read failures;
+- added deterministic direct-reader coverage for legacy memory ledger cancellation and deadline propagation;
+- verified the existing reconciliation fail-closed snapshot behavior remains unchanged;
+- no production settlement algorithm, provider execution, retry, failover, resubmission, repair, reversal, or financial mutation behavior was introduced.
+
+### Changed Files
+
+- DesKaProvider/backend/accounting/ledger.go
+- DesKaProvider/backend/accounting/reconciliation.go
+- DesKaProvider/backend/accounting/reconciliation_reader_persistence_test.go
+- DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md
+
+### Safety Boundary / Invariants
+
+- cancellation/deadline remains an observational read failure and never authorizes retry, failover, resubmission, repair, reversal, or financial mutation;
+- memory-backed reader cancellation cannot be converted into an empty dataset or false reconciliation success;
+- failed snapshot establishment remains empty/fail-closed with no partial reconciliation metadata;
+- reconciliation remains strictly read-only;
+- no provider funding, customer-balance mutation, ledger mutation, treasury movement, duplicate transaction creation, blockchain action, or public API exposure is introduced.
+
+### Verification
+
+Implementation/test HEAD:
+
+**f27ac6ea9a1322285f0d42b80d8e14205d48ea7b**
+
+DesKaProvider CI #4256 / run 37132492665: **GREEN**
+
+- test: PASS
+- vet: PASS
+- race: PASS
+- midtrans-sandbox: SKIPPED as expected
+- iak-read-only: SKIPPED as expected
+- xp-sindonesia-read-only: SKIPPED as expected
+- digiflazz-validation: SKIPPED as expected
+
+No authorized live-provider transaction or external provider request was executed by this milestone.
+
+### Progress
+
+Engineering estimate remains approximately **88%**. This milestone closes a context-propagation correctness gap in existing memory-backed readers without adding a new production financial capability or execution path.
+
+### Next Concrete Engineering Task
+
+Continue the reconciliation persistence/recovery audit into remaining concrete reader/restart boundaries, especially any persisted reader whose unavailable or partially visible state could be represented as a legitimate empty dataset. Preserve deterministic, observational, fail-closed behavior and require explicit action for any uncertain financial state.
+
+No automatic provider retry, failover, transaction resubmission, provider funding, customer ledger mutation, treasury movement, duplicate transaction creation, or public API exposure is included in the next milestone.
