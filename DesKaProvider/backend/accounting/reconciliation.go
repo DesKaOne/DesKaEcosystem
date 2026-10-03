@@ -349,6 +349,8 @@ func (r *SettlementReconciler) Reconcile(ctx context.Context) (ReconciliationRep
 	return report, nil
 }
 
+const reconciliationSnapshotFingerprintVersion = "v1"
+
 func reconciliationSnapshotFingerprint(states []routing.TransactionState, ledgerTransactions []LedgerTransaction, audits []SettlementAudit) (string, error) {
 	canonicalize := func(values any, length int) ([]json.RawMessage, error) {
 		raw := make([]json.RawMessage, 0, length)
@@ -371,6 +373,8 @@ func reconciliationSnapshotFingerprint(states []routing.TransactionState, ledger
 				if err != nil { return nil, err }
 				raw = append(raw, b)
 			}
+		default:
+			return nil, fmt.Errorf("unsupported snapshot dataset type %T", values)
 		}
 		sort.Slice(raw, func(i, j int) bool { return bytes.Compare(raw[i], raw[j]) < 0 })
 		return raw, nil
@@ -382,15 +386,15 @@ func reconciliationSnapshotFingerprint(states []routing.TransactionState, ledger
 	auditsJSON, err := canonicalize(audits, len(audits))
 	if err != nil { return "", err }
 	payload, err := json.Marshal(struct {
+		SchemaVersion string `json:"schema_version"`
 		Provider []json.RawMessage `json:"provider"`
-		Ledger   []json.RawMessage `json:"ledger"`
-		Audits   []json.RawMessage `json:"audits"`
-	}{Provider: provider, Ledger: ledger, Audits: auditsJSON})
+		Ledger []json.RawMessage `json:"ledger"`
+		Audits []json.RawMessage `json:"audits"`
+	}{SchemaVersion: reconciliationSnapshotFingerprintVersion, Provider: provider, Ledger: ledger, Audits: auditsJSON})
 	if err != nil { return "", err }
 	digest := sha256.Sum256(payload)
 	return hex.EncodeToString(digest[:]), nil
 }
-
 func reconciliationItemKey(item TransactionReconciliation) string {
 	ledgerIDs := append([]string(nil), item.LedgerTransactionIDs...)
 	auditIDs := append([]string(nil), item.SettlementAuditEventIDs...)
