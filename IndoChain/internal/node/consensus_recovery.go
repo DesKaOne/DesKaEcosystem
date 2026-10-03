@@ -68,6 +68,28 @@ func (r ConsensusRecovery) BuildNextBlockCandidateFromRecovery(
 	return candidate, nil
 }
 
+
+// BuildNextBlockProposalFromRecovery constructs the next block candidate from canonical
+// recovery inputs and wraps it in the existing in-memory proposal boundary. It does not
+// mutate canonical node state or finalize the runtime.
+func (r ConsensusRecovery) BuildNextBlockProposalFromRecovery(
+	canonicalState *state.State,
+	timestamp int64,
+	transactions []any,
+	consensusEvidence []byte,
+	rules block.ExecutionRules,
+) (consensus.BlockProposal, error) {
+	candidate, err := r.BuildNextBlockCandidateFromRecovery(canonicalState, timestamp, transactions, consensusEvidence, rules)
+	if err != nil {
+		return consensus.BlockProposal{}, err
+	}
+	ctx, err := r.NextBlockContext()
+	if err != nil {
+		return consensus.BlockProposal{}, err
+	}
+	return consensus.NewBlockProposal(ctx, candidate)
+}
+
 // ReconstructConsensusRuntime rebuilds a fresh consensus runtime from the
 // durable canonical store. Ephemeral proposal/vote/lock/finality evidence is
 // deliberately not restored.
