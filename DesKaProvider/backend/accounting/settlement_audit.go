@@ -34,3 +34,7 @@ type SettlementStore interface {
 type SettlementAuditReader interface {
 	GetSettlementAudit(context.Context, string) (SettlementAudit, bool, error)
 }
+
+type ContextSettlementAuditReader interface {
+	AllSettlementAudits(context.Context) ([]SettlementAudit, error)
+}
