@@ -4,6 +4,8 @@ import (
 	"errors"
 
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/consensus"
+	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/block"
+	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/state"
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/types"
 )
 
@@ -22,6 +24,48 @@ type ConsensusRecovery struct {
 	StateRoot     types.Hash
 	Height        types.Height
 	Evidence      []consensus.Message
+}
+
+
+// BuildNextBlockCandidateFromRecovery constructs the next development block
+// candidate from the durable canonical state represented by ConsensusRecovery.
+// Consensus state may have been replayed, but canonical node state/hash/root
+// remain authoritative inputs for candidate construction.
+func (r ConsensusRecovery) BuildNextBlockCandidateFromRecovery(
+	canonicalState *state.State,
+	timestamp int64,
+	transactions []any,
+	consensusEvidence []byte,
+	rules block.ExecutionRules,
+) (block.Block, error) {
+	if r.Runtime == nil {
+		return block.Block{}, ErrConsensusRecoveryMismatch
+	}
+	ctx, err := r.NextBlockContext()
+	if err != nil {
+		return block.Block{}, err
+	}
+	if canonicalState == nil {
+		return block.Block{}, ErrConsensusRecoveryMismatch
+	}
+	stateSnapshot := canonicalState.Snapshot()
+	if stateSnapshot == nil || stateSnapshot.Root() != r.StateRoot {
+		return block.Block{}, ErrConsensusRecoveryMismatch
+	}
+	candidate, err := consensus.BuildBlockCandidate(consensus.BlockCandidateInput{
+		Context:           ctx,
+		Timestamp:         timestamp,
+		Transactions:      transactions,
+		ConsensusEvidence: consensusEvidence,
+		Rules:             rules,
+	}, stateSnapshot)
+	if err != nil {
+		return block.Block{}, err
+	}
+	if candidate.Header.PreviousHash != r.PreviousHash || candidate.Header.StateRoot == (types.Hash{}) {
+		return block.Block{}, ErrConsensusRecoveryMismatch
+	}
+	return candidate, nil
 }
 
 // ReconstructConsensusRuntime rebuilds a fresh consensus runtime from the
