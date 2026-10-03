@@ -41,7 +41,7 @@ func TestSettlementReconcilerReportsCorrelationStatesWithoutWriting(t *testing.T
 	if err:=poster.Post(ctx,SettlementPostingRequest{
 		TransactionID:"ledger-recon-1",ReferenceID:"recon-1",SourceType:"PROVIDER_SETTLEMENT",SourceID:"recon-1",
 		ProviderStatus:ProviderStatusSuccess,Currency:"IDR",Description:"reconciliation",
-		CreatedAt:state.Payment.CreatedAt,Entries:settlementEntries(),
+		CreatedAt:time.Date(2026,10,3,10,0,0,0,time.UTC),Entries:settlementEntries(),
 	}); err!=nil{t.Fatal(err)}
 
 	report,err=reconciler.Reconcile(ctx)
