@@ -9884,3 +9884,48 @@ Scope:
 - add coverage for capture lifecycle metadata without turning reconciliation into a financial transaction or repair mechanism.
 
 No automatic retry, provider failover, transaction resubmission, provider funding, customer ledger mutation, treasury movement, duplicate purchase creation, or public API exposure is included in #51.
+
+## Milestone #51 — Reconciliation Snapshot Capture Lifecycle Metadata Hardening
+
+**Date:** 2026-10-03
+
+### Implementation
+
+- made snapshot capture lifecycle explicit with CaptureStartedAt and CaptureCompletedAt;
+- retained CapturedAt for compatibility, with its semantic contract now explicitly equal to CaptureCompletedAt;
+- capture start is recorded before any dataset read;
+- capture completion is recorded only after provider transactions, ledger, settlement audits, defensive copies, and snapshot fingerprint generation have completed successfully;
+- added regression coverage for start/completion ordering and the CapturedAt compatibility alias.
+
+### Changed Files
+
+- DesKaProvider/backend/accounting/reconciliation.go
+- DesKaProvider/backend/accounting/reconciliation_test.go
+
+### Safety Boundary / Invariants
+
+- capture timestamps describe reconciliation observation lifecycle only and do not represent financial transaction time, settlement authorization time, or provider execution time;
+- a report is returned only after snapshot materialization and fingerprint generation complete successfully;
+- no persistence or financial mutation is introduced by timestamp capture;
+- snapshot fingerprint remains independent of lifecycle timestamps;
+- no automatic retry, failover, resubmission, repair, reversal, or public API exposure is introduced.
+
+### Verification
+
+Implementation HEAD:
+
+1a33105e5568fdbd137638af31e1a922d62a8de2
+
+CI verification is required on this HEAD before Milestone #51 is considered complete.
+
+### Next Milestone
+
+**Milestone #52 — Reconciliation Snapshot Metadata Contract Coverage**
+
+Scope:
+
+- strengthen the metadata contract across successful and failed snapshot capture paths;
+- verify lifecycle metadata and fingerprint/provenance remain observational and deterministic;
+- preserve the existing reconciliation correlation and financial mutation boundaries.
+
+No automatic retry, provider failover, transaction resubmission, provider funding, customer ledger mutation, treasury movement, duplicate purchase creation, or public API exposure is included in #52.
