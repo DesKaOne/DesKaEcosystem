@@ -10551,3 +10551,63 @@ Engineering estimate remains approximately **88%**. This milestone closes a conc
 Continue the durable restart/recovery audit into cross-table read consistency and persistence-outcome ambiguity, prioritizing deterministic checks that distinguish a genuinely empty durable dataset from incomplete or uncertain financial visibility without introducing automatic repair or resubmission.
 
 No automatic provider retry, failover, transaction resubmission, provider funding, customer ledger mutation, treasury movement, duplicate purchase creation, blockchain action, or public API exposure is included in the next milestone.
+
+## Milestone #64 — Reconciliation Duplicate Identity Must Never Correlate
+
+**Date:** 2026-10-04
+
+### Scope
+
+- prevent reconciliation from correlating a ledger transaction when settlement-audit identity is duplicated;
+- treat duplicate TransactionID or duplicate EventID as an explicit reconciliation mismatch rather than selecting an arbitrary audit candidate;
+- preserve deterministic, observational, read-only reconciliation behavior.
+
+### Implementation
+
+- added deterministic duplicate-audit identity indexing for TransactionID and EventID;
+- reconciliation now refuses CORRELATED status when the target transaction has multiple audit identities or the selected audit EventID is duplicated across transactions;
+- duplicate candidates are reported through ReconciliationDuplicateAuditIdentity with deterministic sorted event IDs;
+- added regression coverage for duplicate audits on one transaction and duplicate EventID shared across transactions;
+- no retry, failover, resubmission, repair, reversal, provider execution, or financial mutation behavior was introduced.
+
+### Changed Files
+
+- DesKaProvider/backend/accounting/reconciliation_identity.go
+- DesKaProvider/backend/accounting/reconciliation.go
+- DesKaProvider/backend/accounting/reconciliation_test.go
+- DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md
+
+### Safety Boundary / Invariants
+
+- duplicate settlement-audit identity is never treated as valid correlation evidence;
+- reconciliation does not select an arbitrary duplicate audit to manufacture a correlated result;
+- duplicate identity remains diagnostic/read-only and does not authorize retry, resubmission, repair, reversal, or provider action;
+- no provider funding, customer-balance mutation, ledger mutation, treasury movement, duplicate transaction creation, blockchain action, or public API exposure is introduced.
+
+### Verification
+
+Implementation/test HEAD:
+
+**320975ccddd34f6a87f6d71c754b1902d5a73036**
+
+DesKaProvider CI #4288 / run 37138645905: **GREEN**
+
+- test: PASS
+- vet: PASS
+- race: PASS
+- midtrans-sandbox: SKIPPED as expected
+- iak-read-only: SKIPPED as expected
+- xp-sindonesia-read-only: SKIPPED as expected
+- digiflazz-validation: SKIPPED as expected
+
+No authorized live-provider transaction or external provider request was executed by this milestone.
+
+### Progress
+
+Engineering estimate remains approximately **88%**. This milestone closes a concrete reconciliation identity-integrity gap without adding a new financial capability or execution path.
+
+### Next Concrete Engineering Task
+
+Continue the reconciliation persistence/recovery audit into cross-table consistency and persistence-outcome ambiguity, prioritizing cases where independently readable durable records can disagree or disappear across restart without being safely distinguishable from a genuinely empty or settled state. Preserve deterministic, observational, fail-closed behavior and require explicit action for uncertain financial state.
+
+No automatic provider retry, failover, transaction resubmission, provider funding, customer ledger mutation, treasury movement, duplicate purchase creation, blockchain action, or public API exposure is included in the next milestone.
