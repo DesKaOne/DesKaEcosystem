@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 	"errors"
+	"time"
 	"fmt"
 
 	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/routing"
@@ -35,8 +36,19 @@ type TransactionReconciliation struct {
 	SettlementAuditEventIDs []string
 }
 
+type ReconciliationSnapshotMetadata struct {
+	CapturedAt                    time.Time
+	ProviderTransactionCount      int
+	LedgerTransactionCount        int
+	SettlementAuditCount           int
+	ProviderReader                 string
+	LedgerReader                   string
+	SettlementAuditReader          string
+}
+
 type ReconciliationReport struct {
-	Items []TransactionReconciliation
+	Items    []TransactionReconciliation
+	Snapshot ReconciliationSnapshotMetadata
 }
 
 type ReconciliationReader interface {
@@ -53,12 +65,20 @@ type reconciliationSnapshot struct {
 	states  []routing.TransactionState
 	ledger  []LedgerTransaction
 	audits  []SettlementAudit
+	metadata ReconciliationSnapshotMetadata
 }
 
 func (r *SettlementReconciler) readSnapshot(ctx context.Context) (reconciliationSnapshot, error) {
+	capturedAt := time.Now().UTC()
 	states, err := r.transactions.AllContextE(ctx)
 	if err != nil {
 		return reconciliationSnapshot{}, fmt.Errorf("read provider transactions: %w", err)
+	}
+	ledgerReader := "legacy-memory-or-unsupported"
+	if _, ok := r.ledger.(ContextLedgerReader); ok {
+		ledgerReader = "context-ledger"
+	} else if _, ok := r.ledger.(Store); ok {
+		ledgerReader = "memory-store"
 	}
 	ledgerTransactions, err := readLedgerTransactions(ctx, r.ledger)
 	if err != nil {
@@ -66,7 +86,9 @@ func (r *SettlementReconciler) readSnapshot(ctx context.Context) (reconciliation
 	}
 
 	var audits []SettlementAudit
+	auditReader := "legacy-per-ledger"
 	if reader, ok := r.audit.(ContextSettlementAuditReader); ok {
+		auditReader = "context-bulk"
 		audits, err = reader.AllSettlementAudits(ctx)
 		if err != nil {
 			return reconciliationSnapshot{}, fmt.Errorf("read settlement audits: %w", err)
@@ -89,7 +111,20 @@ func (r *SettlementReconciler) readSnapshot(ctx context.Context) (reconciliation
 	states = append([]routing.TransactionState(nil), states...)
 	ledgerTransactions = append([]LedgerTransaction(nil), ledgerTransactions...)
 	audits = append([]SettlementAudit(nil), audits...)
-	return reconciliationSnapshot{states: states, ledger: ledgerTransactions, audits: audits}, nil
+	return reconciliationSnapshot{
+		states: states,
+		ledger: ledgerTransactions,
+		audits: audits,
+		metadata: ReconciliationSnapshotMetadata{
+			CapturedAt: capturedAt,
+			ProviderTransactionCount: len(states),
+			LedgerTransactionCount: len(ledgerTransactions),
+			SettlementAuditCount: len(audits),
+			ProviderReader: "context-all",
+			LedgerReader: ledgerReader,
+			SettlementAuditReader: auditReader,
+		},
+	}, nil
 }
 
 func NewSettlementReconciler(
@@ -295,6 +330,7 @@ func (r *SettlementReconciler) Reconcile(ctx context.Context) (ReconciliationRep
 	sort.SliceStable(report.Items, func(i, j int) bool {
 		return reconciliationItemKey(report.Items[i]) < reconciliationItemKey(report.Items[j])
 	})
+	report.Snapshot = snapshot.metadata
 	return report, nil
 }
 
