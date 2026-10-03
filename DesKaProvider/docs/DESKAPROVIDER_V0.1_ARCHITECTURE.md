@@ -1204,3 +1204,12 @@ The reconciliation read model now applies a canonical ordering to every report i
 Candidate ID lists are canonicalized before comparison, so the result does not depend on database scan order, map iteration order, or the order supplied by a diagnostic reader. Repeated reconciliation over unchanged state therefore returns the same item ordering and canonical candidate ordering.
 
 This is an output/read-model invariant only. It does not mutate provider state, ledger state, settlement audit state, balances, treasury, or external providers.
+
+
+## Reconciliation Snapshot Consistency Boundary
+
+Milestone #48 establishes a read-only snapshot boundary inside one reconciliation execution. The reconciler first materializes provider transaction state, ledger transactions, and settlement-audit records, then performs all correlation, duplicate detection, orphan detection, and deterministic ordering against those captured datasets. The reconciliation pass does not issue per-item persistence reads after materialization.
+
+When a durable audit reader is available, all settlement audits are captured through its context-aware bulk reader. Legacy audit readers are materialized once for the ledger transactions visible in the same execution. The captured slices are copied before analysis so caller-owned backing arrays cannot change the report after the snapshot is established.
+
+This boundary is intentionally an observation boundary, not a financial transaction or repair mechanism. It does not mutate provider lifecycle state, ledger state, settlement audit state, balances, treasury, external providers, or blockchain state. It also does not introduce retry, failover, resubmission, or automatic reconciliation repair.
