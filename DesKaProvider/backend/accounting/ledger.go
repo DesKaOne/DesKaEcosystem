@@ -206,6 +206,8 @@ func (s *MemoryStore) AllContext(ctx context.Context) ([]LedgerTransaction, erro
 	return s.All(), nil
 }
 
+var _ ContextLedgerReader = (*MemoryStore)(nil)
+
 func (s *MemoryStore) All() []LedgerTransaction {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
