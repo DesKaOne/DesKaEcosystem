@@ -9739,3 +9739,42 @@ A documentation-synchronized HEAD still requires final CI verification before th
 **Milestone #47 — Reconciliation Report Determinism & Ordering Contract**
 
 Scope: define stable report ordering across provider, ledger, and audit diagnostics so repeated reconciliation produces byte-for-byte equivalent ordering without mutating financial state.
+
+
+## Milestone #47 — Reconciliation Report Determinism & Ordering Contract
+
+**Date:** 2026-10-03
+
+### Implementation
+
+- added a canonical report-item ordering before reconciliation returns;
+- ordering uses reference ID, provider status, reconciliation status, ledger transaction ID, audit event ID, and canonicalized candidate identity lists;
+- candidate ledger/audit IDs are sorted before key generation, removing dependence on database/map/reader input order;
+- added regression tests for repeated reconciliation ordering and candidate-list canonicalization.
+
+### Safety Boundary / Invariants
+
+- deterministic ordering changes only the reconciliation read model;
+- no provider lifecycle mutation, retry, failover, resubmission, funding, or treasury movement;
+- no ledger, settlement audit, customer balance, or external-provider mutation;
+- reconciliation remains observational and read-only.
+
+### Verification
+
+Implementation commit:
+
+711952336b9b902c5805ff8639ed8f88e71253bc
+
+DesKaProvider CI #4139 / run 37123940750: GREEN
+
+- test: PASS
+- race: PASS
+- credential-gated provider validation jobs: skipped as expected
+
+A documentation-synchronized HEAD still requires final CI verification before this milestone is considered complete.
+
+### Next Milestone
+
+**Milestone #48 — Reconciliation Snapshot Consistency Boundary**
+
+Scope: ensure one reconciliation execution observes a consistent read snapshot across provider transaction, ledger, and audit datasets without introducing financial mutation or automatic repair.
