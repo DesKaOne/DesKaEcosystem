@@ -39,7 +39,7 @@ type ReconciliationReader interface {
 
 type SettlementReconciler struct {
 	transactions routing.ContextReadTransactionStore
-	ledger Store
+	ledger interface{}
 	audit SettlementAuditReader
 }
 
