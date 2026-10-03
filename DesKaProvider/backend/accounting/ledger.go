@@ -151,7 +151,12 @@ func (s *MemoryStore) AppendSettlement(_ context.Context, t LedgerTransaction, a
 		return ErrLedgerConflict
 	}
 	if existing, ok := s.audits[audit.TransactionID]; ok && !sameSettlementAudit(existing, audit) {
-		return ErrLedgerConflict
+		return ErrSettlementAuditConflict
+	}
+	for _, existing := range s.audits {
+		if existing.EventID == audit.EventID && !sameSettlementAudit(existing, audit) {
+			return ErrSettlementAuditConflict
+		}
 	}
 	s.transactions[t.ID] = cloneTransaction(t)
 	s.audits[t.ID] = audit
