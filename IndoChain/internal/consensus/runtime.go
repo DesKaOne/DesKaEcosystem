@@ -524,6 +524,49 @@ func (r *ValidatorRuntime) FinalizeProposal(resolver TimeoutAuthorityResolver) (
 	return certificate, nil
 }
 
+// ReplayRecoveredEvidence replays already-authenticated durable evidence through the
+// normal runtime validation paths without committing canonical chain state.
+// Evidence is applied in deterministic order and runtime finalization is left to
+// the caller.
+func (r *ValidatorRuntime) ReplayRecoveredEvidence(messages []Message) error {
+	if r == nil {
+		return ErrInvalidConsensusRuntime
+	}
+	ordered := cloneVotes(messages)
+	sort.Slice(ordered, func(i, j int) bool {
+		if ordered[i].Round != ordered[j].Round {
+			return ordered[i].Round < ordered[j].Round
+		}
+		if ordered[i].Type != ordered[j].Type {
+			return ordered[i].Type < ordered[j].Type
+		}
+		return bytes.Compare(ordered[i].Sender, ordered[j].Sender) < 0
+	})
+	for _, msg := range ordered {
+		if msg.Round != r.state.Round {
+			if msg.Round <= r.state.Round {
+			continue
+			}
+			if err := r.AdvanceRound(msg.Round); err != nil {
+				return err
+			}
+		}
+		switch msg.Type {
+		case MessageTypeProposal:
+			if err := r.AcceptProposal(msg); err != nil {
+				return err
+			}
+		case MessageTypeVote, MessageTypePrevote, MessageTypePrecommit:
+			if err := r.AddVote(msg); err != nil {
+				return err
+			}
+		default:
+			return fmt.Errorf("%w: unsupported replay type %d", ErrInvalidConsensusRuntime, msg.Type)
+		}
+	}
+	return nil
+}
+
 func (r *ValidatorRuntime) FinalizedCertificate() (FinalityCertificate, error) {
 	if r == nil {
 		return FinalityCertificate{}, ErrInvalidConsensusRuntime
