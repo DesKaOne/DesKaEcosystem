@@ -9840,3 +9840,47 @@ Scope: add a deterministic fingerprint of the captured dataset contents for diag
 ### Verification Correction
 
 The snapshot provenance regression test was aligned with the existing `ContextLedgerReader` implementation: the in-memory ledger uses the context-aware ledger reader path. No production behavior or financial boundary changed.
+## Milestone #50 — Reconciliation Snapshot Integrity Fingerprint
+
+**Date:** 2026-10-03
+
+### Implementation
+
+- added a deterministic SHA-256 fingerprint to every reconciliation snapshot;
+- fingerprint input covers the captured provider transaction, ledger transaction, and settlement-audit datasets;
+- each dataset is canonicalized independently by JSON representation before hashing, so database/map/read ordering does not change the fingerprint;
+- exposed the fingerprint through ReconciliationReport.Snapshot.SnapshotFingerprint as diagnostic metadata only;
+- added regression coverage proving equivalent snapshots with different input ordering produce the same fingerprint and content changes produce a different fingerprint.
+
+### Changed Files
+
+- DesKaProvider/backend/accounting/reconciliation.go
+- DesKaProvider/backend/accounting/reconciliation_test.go
+
+### Safety Boundary / Invariants
+
+- the fingerprint is observational metadata and is not a financial identity, authorization token, ledger transaction ID, or settlement event ID;
+- fingerprint generation never mutates provider transaction state, ledger state, settlement audit state, balances, treasury, or external providers;
+- fingerprint generation does not introduce retry, failover, resubmission, repair, reversal, or automatic settlement behavior;
+- snapshot provenance metadata remains separate from the fingerprint content, so capture time and reader-path labels do not make otherwise identical datasets appear different;
+- no public API exposure is introduced.
+
+### Verification
+
+Implementation HEAD:
+
+fe6332c183f2494c3510f4f7702bc349e2645440
+
+CI verification is required on this HEAD before Milestone #50 is considered complete.
+
+### Next Milestone
+
+**Milestone #51 — Reconciliation Snapshot Capture Lifecycle Metadata Hardening**
+
+Scope:
+
+- review the snapshot capture timestamp semantics and make the lifecycle meaning explicit;
+- preserve deterministic fingerprint/provenance separation;
+- add coverage for capture lifecycle metadata without turning reconciliation into a financial transaction or repair mechanism.
+
+No automatic retry, provider failover, transaction resubmission, provider funding, customer ledger mutation, treasury movement, duplicate purchase creation, or public API exposure is included in #51.
