@@ -3,6 +3,7 @@ package accounting
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 )
 
@@ -16,10 +17,12 @@ type SettlementAudit struct {
 	CreatedAt     time.Time
 }
 
+var ErrInvalidSettlementAudit = errors.New("invalid settlement audit")
+
 func (a SettlementAudit) Validate() error {
 	if a.EventID == "" || a.TransactionID == "" || a.ReferenceID == "" ||
 		a.SourceType == "" || a.SourceID == "" || a.Status == "" || a.CreatedAt.IsZero() {
-		return errors.New("invalid settlement audit")
+		return fmt.Errorf("%w: event id, transaction id, reference id, source type, source id, status, and created at are required", ErrInvalidSettlementAudit)
 	}
 	return nil
 }
