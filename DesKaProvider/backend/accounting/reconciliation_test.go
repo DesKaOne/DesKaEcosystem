@@ -346,8 +346,14 @@ func TestSettlementReconcilerSnapshotMetadataReportsCaptureProvenance(t *testing
 		t.Fatal(err)
 	}
 	after := time.Now().UTC()
-	if report.Snapshot.CapturedAt.Before(before) || report.Snapshot.CapturedAt.After(after) {
-		t.Fatalf("unexpected capture time: %s", report.Snapshot.CapturedAt)
+	if report.Snapshot.CaptureStartedAt.Before(before) || report.Snapshot.CaptureStartedAt.After(after) {
+		t.Fatalf("unexpected capture start: %s", report.Snapshot.CaptureStartedAt)
+	}
+	if report.Snapshot.CaptureCompletedAt.Before(report.Snapshot.CaptureStartedAt) || report.Snapshot.CaptureCompletedAt.After(after) {
+		t.Fatalf("unexpected capture completion: start=%s completed=%s", report.Snapshot.CaptureStartedAt, report.Snapshot.CaptureCompletedAt)
+	}
+	if !report.Snapshot.CapturedAt.Equal(report.Snapshot.CaptureCompletedAt) {
+		t.Fatalf("CapturedAt must represent completed capture: captured=%s completed=%s", report.Snapshot.CapturedAt, report.Snapshot.CaptureCompletedAt)
 	}
 	if report.Snapshot.ProviderTransactionCount != 1 || report.Snapshot.LedgerTransactionCount != 0 || report.Snapshot.SettlementAuditCount != 0 {
 		t.Fatalf("unexpected snapshot counts: %#v", report.Snapshot)
