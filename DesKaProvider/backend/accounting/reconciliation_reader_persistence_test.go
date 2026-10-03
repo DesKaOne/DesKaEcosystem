@@ -5,6 +5,7 @@ import (
     "database/sql"
     "errors"
     "testing"
+    "time"
 
     "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/routing"
 )
@@ -114,7 +115,7 @@ func TestSettlementReconcilerClassifiesLegacyPerLedgerAuditReadFailure(t *testin
         SourceID: "provider-source",
         Currency: "IDR",
         Description: "legacy audit failure test",
-        CreatedAt: testLedgerCreatedAt(),
+        CreatedAt: time.Unix(1, 0).UTC(),
         Entries: []Entry{
             {LineID: 1, AccountID: "expense", Direction: Debit, Amount: 1000, Currency: "IDR"},
             {LineID: 2, AccountID: "cash", Direction: Credit, Amount: 1000, Currency: "IDR"},
