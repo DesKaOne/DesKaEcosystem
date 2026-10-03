@@ -102,6 +102,15 @@ func TestSettlementReconcilerReportsOrphanedLedgerAndAudit(t *testing.T) {
 }
 
 
+type duplicateAuditReader struct {
+	SettlementAuditReader
+	allAudits []SettlementAudit
+}
+
+func (r duplicateAuditReader) AllSettlementAudits(_ context.Context) ([]SettlementAudit, error) {
+	return append([]SettlementAudit(nil), r.allAudits...), nil
+}
+
 func TestSettlementReconcilerReportsDuplicateLedgerReferenceDeterministically(t *testing.T) {
 	ctx := context.Background()
 	txStore := routing.NewMemoryTransactionStore()
@@ -180,4 +189,55 @@ func TestSettlementReconcilerReportsDuplicateProviderReference(t *testing.T) {
 			t.Fatalf("got %s", item.Status)
 		}
 	}
+}
+
+
+func TestSettlementAuditIdentityConflictIsExplicit(t *testing.T) {
+	ledger := NewMemoryStore()
+	base := LedgerTransaction{
+		ID:"audit-ledger-a", ReferenceID:"audit-ref-a", SourceType:"PROVIDER_SETTLEMENT", SourceID:"audit-source-a",
+		Currency:"IDR", Description:"audit", CreatedAt:time.Date(2026,10,3,14,0,0,0,time.UTC), Entries:settlementEntries(),
+	}
+	first := SettlementAudit{EventID:"duplicate-event", TransactionID:base.ID, ReferenceID:base.ReferenceID, SourceType:base.SourceType, SourceID:base.SourceID, Status:ProviderStatusSuccess, CreatedAt:base.CreatedAt}
+	if err := ledger.AppendSettlement(context.Background(), base, first); err != nil { t.Fatal(err) }
+	second := base
+	second.ID = "audit-ledger-b"
+	second.ReferenceID = "audit-ref-b"
+	second.SourceID = "audit-source-b"
+	second.CreatedAt = base.CreatedAt.Add(time.Minute)
+	secondAudit := first
+	secondAudit.TransactionID = second.ID
+	secondAudit.ReferenceID = second.ReferenceID
+	secondAudit.SourceID = second.SourceID
+	secondAudit.CreatedAt = second.CreatedAt
+	if err := ledger.AppendSettlement(context.Background(), second, secondAudit); err != ErrSettlementAuditConflict {
+		t.Fatalf("got %v, want %v", err, ErrSettlementAuditConflict)
+	}
+}
+
+func TestSettlementReconcilerReportsDuplicateAuditIdentityDeterministically(t *testing.T) {
+	ctx := context.Background()
+	ledger := NewMemoryStore()
+	base := terminalPayment("audit-duplicate-ref")
+	txStore := routing.NewMemoryTransactionStore()
+	if err := txStore.Put(base); err != nil { t.Fatal(err) }
+	audits := []SettlementAudit{
+		{EventID:"event-a", TransactionID:"ledger-b", ReferenceID:"audit-duplicate-ref", SourceType:"PROVIDER_SETTLEMENT", SourceID:"source-b", Status:ProviderStatusSuccess, CreatedAt:time.Date(2026,10,3,14,0,0,0,time.UTC)},
+		{EventID:"event-a", TransactionID:"ledger-a", ReferenceID:"audit-duplicate-ref", SourceType:"PROVIDER_SETTLEMENT", SourceID:"source-a", Status:ProviderStatusSuccess, CreatedAt:time.Date(2026,10,3,14,1,0,0,time.UTC)},
+	}
+	reader := duplicateAuditReader{SettlementAuditReader:ledger, allAudits:audits}
+	reconciler, err := NewSettlementReconciler(txStore, ledger, reader)
+	if err != nil { t.Fatal(err) }
+	report, err := reconciler.Reconcile(ctx)
+	if err != nil { t.Fatal(err) }
+	var found bool
+	for _, item := range report.Items {
+		if item.Status == ReconciliationDuplicateAuditIdentity && item.SettlementAuditEventID == "event-a" {
+			found = true
+			if len(item.LedgerTransactionIDs) != 2 || item.LedgerTransactionIDs[0] != "ledger-a" || item.LedgerTransactionIDs[1] != "ledger-b" {
+				t.Fatalf("unexpected audit candidates: %#v", item.LedgerTransactionIDs)
+			}
+		}
+	}
+	if !found { t.Fatal("expected duplicate audit identity diagnostic") }
 }
