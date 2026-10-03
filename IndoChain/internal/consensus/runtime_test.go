@@ -320,6 +320,59 @@ func TestValidatorRuntimeRejectsBlockProposalFromWrongContext(t *testing.T) {
 	}
 }
 
+
+func TestValidatorRuntimeReplaysRecoveredEvidenceDeterministically(t *testing.T) {
+	runtime, state, _, _ := runtimeFixture(t)
+	messages := []Message{
+		runtimeMessage(state, "validator-a", MessageTypeProposal, "block-8"),
+		runtimeMessage(state, "validator-a", MessageTypePrevote, "block-8"),
+	}
+	if err := runtime.ReplayRecoveredEvidence(messages); err != nil {
+		t.Fatal(err)
+	}
+	if got := runtime.State().Phase; got != PhasePrevote {
+		t.Fatalf("phase after replay = %v, want %v", got, PhasePrevote)
+	}
+	if !bytes.Equal(runtime.Proposal(), []byte("block-8")) {
+		t.Fatalf("replayed proposal = %q", runtime.Proposal())
+	}
+}
+
+func TestValidatorRuntimeReplayAdvancesThroughRecoveredRound(t *testing.T) {
+	runtime, state, _, _ := runtimeFixture(t)
+	first := runtimeMessage(state, "validator-a", MessageTypeProposal, "block-8")
+	state.Round = 1
+	second := runtimeMessage(state, "validator-b", MessageTypeProposal, "block-9")
+	if err := runtime.ReplayRecoveredEvidence([]Message{first, second}); err != nil {
+		t.Fatal(err)
+	}
+	got := runtime.State()
+	if got.Round != 1 || got.Phase != PhasePrevote {
+		t.Fatalf("unexpected replayed state: round=%d phase=%v", got.Round, got.Phase)
+	}
+	if !bytes.Equal(runtime.Proposal(), []byte("block-9")) {
+		t.Fatalf("latest replayed proposal = %q", runtime.Proposal())
+	}
+}
+
+func TestValidatorRuntimeReplayDoesNotFinalizeOrPersistCanonicalState(t *testing.T) {
+	runtime, state, _, _ := runtimeFixture(t)
+	messages := []Message{
+		runtimeMessage(state, "validator-a", MessageTypeProposal, "block-8"),
+		runtimeMessage(state, "validator-a", MessageTypePrevote, "block-8"),
+		runtimeMessage(state, "validator-b", MessageTypePrevote, "block-8"),
+	}
+	if err := runtime.ReplayRecoveredEvidence(messages); err != nil {
+		t.Fatal(err)
+	}
+	if runtime.State().Phase != PhasePrecommit {
+		t.Fatalf("replay phase = %v, want %v", runtime.State().Phase, PhasePrecommit)
+	}
+	if _, err := runtime.FinalizedCertificate(); !errors.Is(err, ErrInvalidRuntimePhase) {
+		t.Fatalf("replay unexpectedly finalized runtime: %v", err)
+	}
+}
+
 func TestValidatorRuntimeExposesClonedFinalityCertificate(t *testing.T) {
 	runtime, state, _, _ := runtimeFixture(t)
 	if err := runtime.AcceptProposal(runtimeMessage(state, "validator-a", MessageTypeProposal, "block-8")); err != nil { t.Fatal(err) }
