@@ -1,6 +1,7 @@
 package accounting
 
 import (
+	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/routing"
 	"context"
 	"database/sql"
 	"os"
@@ -119,4 +120,61 @@ func TestPostgresSettlementAppendIsAtomicAndIdempotent(t *testing.T) {
 	conflict := audit
 	conflict.EventID = "tampered-event"
 	if err := store.AppendSettlement(ctx, tx, conflict); err != ErrLedgerConflict { t.Fatalf("expected audit identity conflict, got %v", err) }
+}
+
+
+func TestPostgresSettlementReconciliationReportsOrphansReadOnly(t *testing.T) {
+	db := accountingPostgresDB(t)
+	ctx := context.Background()
+	schema := "recon_it_" + strings.ReplaceAll(time.Now().Format("20060102150405.000000000"), ".", "_")
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil { t.Fatal(err) }
+	t.Cleanup(func(){ _, _ = db.ExecContext(context.Background(),"DROP SCHEMA "+schema+" CASCADE") })
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil { t.Fatal(err) }
+	applyAccountingMigrations(t, db)
+
+	store, err := NewPostgresStore(db)
+	if err != nil { t.Fatal(err) }
+	for _, account := range []Account{
+		{ID:"provider-clearing",Type:AccountTypeClearing,Currency:"IDR",Name:"Provider Clearing",Active:true},
+		{ID:"settlement-in",Type:AccountTypeSettlementIn,Currency:"IDR",Name:"Settlement In",Active:true},
+	} {
+		if _, created, err := store.CreateAccount(ctx, account); err != nil || !created { t.Fatalf("create account: %v %v", err, created) }
+	}
+
+	orphan := validLedgerTransaction()
+	orphan.ID = "recon-orphan-ledger"
+	orphan.ReferenceID = "recon-orphan-reference"
+	orphan.SourceID = "recon-orphan-source"
+	orphan.CreatedAt = time.Date(2026,10,3,12,0,0,0,time.UTC)
+	if err := store.Append(ctx, orphan); err != nil { t.Fatal(err) }
+
+	if _, err := db.ExecContext(ctx,
+		"INSERT INTO settlement_audit (event_id,transaction_id,reference_id,source_type,source_id,status,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)",
+		"recon-orphan-audit","missing-ledger","missing-reference","PROVIDER_SETTLEMENT","missing-source",ProviderStatusSuccess,
+		time.Date(2026,10,3,12,1,0,0,time.UTC),
+	); err != nil { t.Fatal(err) }
+
+	txStore := routing.NewMemoryTransactionStore()
+	reconciler, err := NewSettlementReconciler(txStore, store, store)
+	if err != nil { t.Fatal(err) }
+	before, err := store.All(ctx)
+	if err != nil { t.Fatal(err) }
+
+	report, err := reconciler.Reconcile(ctx)
+	if err != nil { t.Fatal(err) }
+
+	var orphanLedger, orphanAudit bool
+	for _, item := range report.Items {
+		switch item.Status {
+		case ReconciliationOrphanedLedger:
+			orphanLedger = item.LedgerTransactionID == orphan.ID
+		case ReconciliationOrphanedAudit:
+			orphanAudit = item.SettlementAuditEventID == "recon-orphan-audit"
+		}
+	}
+	if !orphanLedger || !orphanAudit { t.Fatalf("expected both orphan diagnostics: %#v", report.Items) }
+
+	after, err := store.All(ctx)
+	if err != nil { t.Fatal(err) }
+	if len(after) != len(before) { t.Fatal("reconciliation must not mutate durable ledger state") }
 }
