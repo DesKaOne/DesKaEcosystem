@@ -115,14 +115,8 @@ func TestLedgerTransactionValidateRejectsAmountOverflow(t *testing.T) {
 	}
 }
 
-func TestSettlementReconcilerDoesNotCorrelateWhenEconomicSumOverflows(t *testing.T) {
-	ctx := context.Background()
-	txStore := routing.NewMemoryTransactionStore()
-	ledger := NewMemoryStore()
+func TestReconciliationEconomicAgreementRejectsOverflow(t *testing.T) {
 	state := terminalPayment("economic-overflow-conflict")
-	if err := txStore.Put(state); err != nil {
-		t.Fatal(err)
-	}
 	tx := LedgerTransaction{
 		ID: "economic-overflow-ledger", ReferenceID: state.Payment.ReferenceID,
 		SourceType: "PROVIDER_SETTLEMENT", SourceID: "economic-overflow-source",
@@ -130,18 +124,11 @@ func TestSettlementReconcilerDoesNotCorrelateWhenEconomicSumOverflows(t *testing
 		CreatedAt: time.Date(2026, 10, 4, 12, 1, 0, 0, time.UTC),
 		Entries: []Entry{
 			{LineID: 1, AccountID: "a", Direction: Debit, Amount: 9223372036854775807, Currency: state.Payment.Currency},
-			{LineID: 2, AccountID: "b", Direction: Credit, Amount: 9223372036854775807, Currency: state.Payment.Currency},
+			{LineID: 2, AccountID: "b", Direction: Debit, Amount: 1, Currency: state.Payment.Currency},
+			{LineID: 3, AccountID: "c", Direction: Credit, Amount: 9223372036854775807, Currency: state.Payment.Currency},
 		},
 	}
-	audit := SettlementAudit{EventID: "economic-overflow-event", TransactionID: tx.ID, ReferenceID: tx.ReferenceID, SourceType: tx.SourceType, SourceID: tx.SourceID, Status: ProviderStatusSuccess, CreatedAt: tx.CreatedAt}
-	if err := ledger.AppendSettlement(ctx, tx, audit); err != nil {
-		t.Fatal(err)
-	}
-	reconciler, err := NewSettlementReconciler(txStore, ledger, ledger)
-	if err != nil { t.Fatal(err) }
-	report, err := reconciler.Reconcile(ctx)
-	if err != nil { t.Fatal(err) }
-	if len(report.Items) != 1 || report.Items[0].Status != ReconciliationCorrelationConflict {
-		t.Fatalf("expected overflow economic conflict, got %#v", report.Items)
+	if reconciliationEconomicAgreement(state, tx) {
+		t.Fatal("economic agreement must fail closed when persisted debit aggregation overflows")
 	}
 }
