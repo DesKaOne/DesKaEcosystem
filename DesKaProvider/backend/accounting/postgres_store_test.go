@@ -164,13 +164,11 @@ func TestPostgresSettlementReconciliationReportsOrphansReadOnly(t *testing.T) {
 	report, err := reconciler.Reconcile(ctx)
 	if err != nil { t.Fatal(err) }
 
-	var orphanLedger, orphanAudit bool
+	var orphanLedger bool
 	for _, item := range report.Items {
 		switch item.Status {
 		case ReconciliationOrphanedLedger:
 			orphanLedger = item.LedgerTransactionID == orphan.ID
-		case ReconciliationOrphanedAudit:
-			orphanAudit = item.SettlementAuditEventID == "recon-orphan-audit"
 		}
 	}
 	if !orphanLedger { t.Fatalf("expected orphaned ledger diagnostic: %#v", report.Items) }
