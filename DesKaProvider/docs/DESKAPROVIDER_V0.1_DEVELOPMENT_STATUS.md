@@ -10728,7 +10728,7 @@ No automatic provider retry, failover, transaction resubmission, provider fundin
 
 ## Milestone #67 — Reconciliation Economic Agreement Guard
 
-Status: **IMPLEMENTED — CI verification pending on synchronized HEAD**.
+Status: **COMPLETE — CI green**.
 
 Scope: close the reconciliation correctness gap where provider-success + ledger identity + successful settlement audit could still be reported as `CORRELATED` even when economically material persisted payment values disagreed.
 
@@ -10746,7 +10746,7 @@ Safety invariants:
 Verification:
 - Prior status-doc commit `9f87d57c096f9ff5ea0a7791148f723e43bc7123` had CI #4304 green: test PASS, vet PASS, race PASS; provider credential-gated jobs skipped.
 - Implementation started with `d122aa7cf27ae95fd5bbdfda0dc09a4efe619b01`; follow-up helper/test commit is `cdf48fa046fb5cf66759170dd5a34639aa67b439`.
-- CI #4306 for `d122aa7cf27ae95fd5bbdfda0dc09a4efe619b01` is currently in progress; final milestone closure requires the synchronized HEAD CI to be green.
+- CI #4320 for synchronized HEAD `4ee557f4fdf4211a8cc45c3024e932ee31718dda` is GREEN: test PASS, vet PASS, race PASS; provider credential-gated jobs skipped. Earlier red runs #4306, #4314, and #4316 were resolved as intermediate snapshot/tooling issues before the verified HEAD run.
 
 Progress estimate: ~88%; this milestone closes a material reconciliation correctness gap but does not by itself justify a large percentage increase.
 
