@@ -9836,3 +9836,7 @@ Milestone #49 is complete only when the latest documentation-synchronized commit
 **Milestone #50 — Reconciliation Snapshot Integrity Fingerprint**
 
 Scope: add a deterministic fingerprint of the captured dataset contents for diagnostics and repeated-run comparison, without using the fingerprint as a financial identity or mutation authorization.
+
+### Verification Correction
+
+The snapshot provenance regression test was aligned with the existing `ContextLedgerReader` implementation: the in-memory ledger uses the context-aware ledger reader path. No production behavior or financial boundary changed.
