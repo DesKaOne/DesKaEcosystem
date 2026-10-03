@@ -58,6 +58,7 @@ type ReconciliationReport struct {
 	Snapshot ReconciliationSnapshotMetadata
 }
 
+// Economic agreement is required before a successful provider state can be correlated.
 type ReconciliationReader interface {
 	Reconcile(context.Context) (ReconciliationReport, error)
 }
