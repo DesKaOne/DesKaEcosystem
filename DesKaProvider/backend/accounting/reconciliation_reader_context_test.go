@@ -5,6 +5,7 @@ import (
     "database/sql"
     "errors"
     "testing"
+	"time"
 
     "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/routing"
 )
@@ -167,12 +168,9 @@ func TestSettlementReconcilerPropagatesContextDeadlineAtEachSnapshotReader(t *te
             if err != nil {
                 t.Fatal(err)
             }
-            ctx, cancel := context.WithCancel(context.Background())
-            cancel()
-            // A canceled context is the deterministic equivalent of an expired
-            // deadline at the reader boundary; the reconciliation layer must
-            // preserve the exact context error either way.
-            assertReconciliationContextFailure(t, reconciler, ctx, context.Canceled, tc.classification)
+            ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+            defer cancel()
+            assertReconciliationContextFailure(t, reconciler, ctx, context.DeadlineExceeded, tc.classification)
         })
     }
 }
