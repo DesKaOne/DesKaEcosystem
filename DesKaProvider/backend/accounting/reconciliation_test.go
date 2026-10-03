@@ -156,7 +156,7 @@ func TestSettlementReconcilerReportsDuplicateProviderReference(t *testing.T) {
 	if err != nil { t.Fatal(err) }
 	if len(report.Items) != 2 { t.Fatalf("got %d items: %#v", len(report.Items), report.Items) }
 	for _, item := range report.Items {
-		if item.Status != ReconciliationLedgerMissing {
+		if item.Status != ReconciliationDuplicateReference {
 			t.Fatalf("got %s", item.Status)
 		}
 	}
