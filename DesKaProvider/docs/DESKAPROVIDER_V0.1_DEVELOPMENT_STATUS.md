@@ -998,7 +998,6 @@ Before #276, these reason codes existed but there was no deterministic regressio
 Added `TestExplainProviderRouteOperationalFreshnessHealthBalanceParity`.
 
 The deterministic matrix fixes the router clock and covers:
-
 1. stale operational snapshot;
 2. unhealthy provider;
 3. insufficient provider balance.
@@ -1997,8 +1996,7 @@ Test-only coverage was added for:
    - capability-fingerprint drift produces identical repeated drift diagnostics;
    - explicit reconciliation clears drift but keeps lifecycle disabled;
    - reconciliation result matches an immediate subsequent diagnosis;
-   - explicit lifecycle enable restores only the lifecycle gate;
-   - repeated enabled diagnostics remain identical and drift-free.
+   - explicit lifecycle enable restores only the lifecycle gate;   - repeated enabled diagnostics remain identical and drift-free.
 
 No production routing, provider adapter, authorization, or financial behavior was changed.
 
@@ -2997,8 +2995,7 @@ No speculative RCB PPOB implementation, automatic retry/failover/resubmission, f
 ### Source Finding
 
 - #294 established that aggregate routing errors are a projection of the current candidate set and gate state, not persistent diagnostic state.
-- The remaining boundary was to prove that the broader administrative explanation surface may observe gates that the router short-circuits for routing purposes without feeding those observations back into routing state or error membership.
-- The existing implementation already performs explanation reads through registry/provider-state/operational/catalog inspection and does not call `Router.Select()` or mutate those stores.
+- The remaining boundary was to prove that the broader administrative explanation surface may observe gates that the router short-circuits for routing purposes without feeding those observations back into routing state or error membership.- The existing implementation already performs explanation reads through registry/provider-state/operational/catalog inspection and does not call `Router.Select()` or mutate those stores.
 
 ### Implementation
 
@@ -3997,8 +3994,7 @@ The credential-gated provider validation harness review was committed at the fol
   - race: PASS
   - credential-gated Midtrans sandbox: SKIPPED
   - credential-gated DigiFlazz validation: SKIPPED
-  - credential-gated IAK read-only: SKIPPED
-  - credential-gated XP SINDONESIA read-only: SKIPPED
+  - credential-gated IAK read-only: SKIPPED  - credential-gated XP SINDONESIA read-only: SKIPPED
 - Pull Request CI #3078 / run `36650546352`: **GREEN**
 - no provider credential was used by normal CI;
 - no external provider transaction was executed by this verification checkpoint.
@@ -4998,7 +4994,6 @@ This hardening batch is not considered GREEN-complete until the final branch HEA
 ### Next Concrete Engineering Task
 
 After the current green gate, continue the IAK contract audit only where authoritative documentation supports deterministic mapping/validation. Do not infer undocumented V2 balance semantics or expand the provider-neutral capability surface.
-
 ## IAK Documented Response Code Completeness
 
 **Date:** 2026-09-30
@@ -5998,7 +5993,6 @@ Push CI #3481 / run `36792344488`: **GREEN**
 PostgreSQL service-backed environment initialized successfully. No live DigiFlazz transaction was executed.
 
 ### Current Completion Assessment
-
 This batch closes a concrete documented DigiFlazz PLN inquiry contract mismatch. Overall DesKaProvider v0.1 remains approximately **82%**; the percentage is unchanged because this batch improves provider-contract correctness but does not materially change overall adapter breadth or external validation coverage.
 
 ### Next Concrete Engineering Task
@@ -6997,7 +6991,6 @@ No production behavior or provider capability state changed during this CI corre
 Implementation/test HEAD:
 
 5dc7740964938bcf05a079b03a5aec8fa6b71fb5
-
 - Push CI #3656 / run 36833782330: **GREEN**
   - test: PASS
   - race: PASS
@@ -7997,8 +7990,7 @@ Local execution from the container was unavailable because outbound GitHub DNS/n
 
 Verified CI:
 
-- Push #3811 / run `36979385494`, head `ca11dd767182d2f999af8ced2da7b61ca0c34367`: **GREEN**
-  - test: PASS
+- Push #3811 / run `36979385494`, head `ca11dd767182d2f999af8ced2da7b61ca0c34367`: **GREEN**  - test: PASS
   - race: PASS
   - credential-gated provider validation: SKIPPED
 - Pull Request #3813 / run `36979388237`, head `ca11dd767182d2f999af8ced2da7b61ca0c34367`: **GREEN**
@@ -8997,8 +8989,7 @@ CI baseline before this documentation-only audit:
 
 - DesKaProvider CI #3920 / run 36998423135: **GREEN**
   - test: PASS
-  - vet: PASS
-  - race: PASS
+  - vet: PASS  - race: PASS
   - credential-gated provider validation jobs: skipped as expected
 
 The documentation commit below requires its own repository CI to complete successfully before this audit milestone is considered complete.
@@ -9998,7 +9989,6 @@ No automatic retry, provider failover, transaction resubmission, provider fundin
 Milestone #53 is complete only when the latest documentation-synchronized commit has a completed successful DesKaProvider CI run, including test and race jobs.
 
 ### Next Milestone
-
 **Milestone #54 — Reconciliation Snapshot Fingerprint Failure Semantics**
 
 Scope: explicitly test and harden fingerprint-generation failure propagation so no incomplete snapshot can be treated as valid reconciliation state, while preserving all existing financial mutation boundaries.
@@ -10131,3 +10121,67 @@ Engineering estimate remains approximately **88%**. This milestone strengthens d
 ### Next Milestone
 
 Continue auditing reconciliation persistence-reader contract coverage, with emphasis on context cancellation/deadline propagation and PostgreSQL-backed reader failures, while preserving fail-closed observational semantics.
+
+
+## Milestone #57 — Reconciliation Reader Context / PostgreSQL Failure Propagation Hardening
+
+**Date:** 2026-10-03
+
+### Scope
+
+- verify context cancellation and deadline errors remain distinguishable through each reconciliation snapshot reader boundary;
+- verify PostgreSQL-backed ledger and settlement-audit reader failures remain classified as read failures and fail closed;
+- preserve the stable reconciliation error classifications and original underlying causes;
+- ensure a reader failure cannot be converted into an empty financial dataset or partial reconciliation report.
+
+### Implementation
+
+- added deterministic context-aware reader coverage for provider transactions, ledger transactions, and bulk settlement-audit reads;
+- verified context.Canceled and context.DeadlineExceeded survive the reconciliation error wrapping while remaining discoverable alongside the stable provider/ledger/audit classifications;
+- added deterministic PostgreSQL reader failure coverage using a closed PostgreSQL database handle for ledger and settlement-audit reads;
+- verified PostgreSQL read failures produce the corresponding stable reconciliation classification and no reconciliation items or partial snapshot metadata;
+- preserved the existing reader precedence: context-aware readers are used first, and a failing context-aware reader is never silently replaced by a legacy memory reader;
+- no production reconciliation algorithm, financial mutation, provider execution, retry, failover, or resubmission behavior was introduced.
+
+### Changed Files
+
+- DesKaProvider/backend/accounting/reconciliation_reader_context_test.go
+- DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md
+
+### Safety Boundary / Invariants
+
+- context cancellation/deadline remains an operational read failure, never a permission to retry or mutate financial state;
+- PostgreSQL reader errors remain distinguishable from a genuine empty dataset;
+- unsupported readers fail closed rather than being interpreted as empty financial data;
+- stable classifications remain observational and preserve underlying errors through errors.Is;
+- failed snapshot establishment returns no reconciliation items and no partial lifecycle/count/provenance/fingerprint metadata;
+- reconciliation remains strictly read-only;
+- no automatic provider retry, failover, transaction resubmission, duplicate transaction creation, provider funding, ledger mutation, customer-balance mutation, treasury movement, or public API exposure is introduced.
+
+### Verification
+
+Implementation/test HEAD:
+
+1beffba796e831190e67a2012e615415e0659dee
+
+Fresh DesKaProvider CI is required on this exact implementation HEAD and on the final documentation-synchronized HEAD.
+
+Expected normal CI boundary:
+
+- go test ./...: PASS
+- go vet ./...: PASS
+- go test -race ./...: PASS
+- PostgreSQL service-backed tests: PASS
+- credential-gated provider validation jobs: SKIPPED when authorized credentials are unavailable
+
+No authorized live-provider transaction or external provider request is executed by this milestone.
+
+### Progress
+
+Engineering estimate remains approximately 88%. This milestone strengthens deterministic read/error propagation around an existing observational reconciliation boundary and does not add a new financial capability.
+
+### Next Concrete Engineering Task
+
+Continue the reconciliation persistence-reader audit into PostgreSQL-backed provider-transaction read failures and legacy per-ledger audit-reader cancellation/error propagation, only where the concrete repository interfaces expose a safe deterministic test seam.
+
+No automatic retry, provider failover, transaction resubmission, provider funding, customer ledger mutation, treasury movement, duplicate purchase creation, or public API exposure is included.
