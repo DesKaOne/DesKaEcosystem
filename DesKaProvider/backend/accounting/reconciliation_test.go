@@ -809,3 +809,43 @@ func TestSettlementReconcilerDoesNotCorrelateWhenEventIdentityIsDuplicatedAcross
 	}
 	if !found { t.Fatal("expected duplicate audit event diagnostic") }
 }
+
+
+func TestSettlementReconcilerSurfacesFinancialRecordsForNonSuccessProviderState(t *testing.T) {
+	ctx := context.Background()
+	txStore := routing.NewMemoryTransactionStore()
+	ledger := NewMemoryStore()
+	state := terminalPayment("provider-failed-with-ledger")
+	state.Payment.Status = payment.StatusFailed
+	state.Execution.Result.Status = provider.StatusFailed
+	if err := txStore.Put(state); err != nil { t.Fatal(err) }
+
+	ledgerTx := LedgerTransaction{
+		ID: "provider-failed-ledger", ReferenceID: "provider-failed-with-ledger",
+		SourceType: "PROVIDER_SETTLEMENT", SourceID: "provider-failed-source",
+		Currency: "IDR", Description: "unexpected financial record", CreatedAt: time.Date(2026,10,4,9,0,0,0,time.UTC),
+		Entries: settlementEntries(),
+	}
+	audit := SettlementAudit{
+		EventID: "provider-failed-audit", TransactionID: ledgerTx.ID, ReferenceID: ledgerTx.ReferenceID,
+		SourceType: ledgerTx.SourceType, SourceID: ledgerTx.SourceID, Status: ProviderStatusSuccess,
+		CreatedAt: ledgerTx.CreatedAt,
+	}
+	if err := ledger.AppendSettlement(ctx, ledgerTx, audit); err != nil { t.Fatal(err) }
+
+	reconciler, err := NewSettlementReconciler(txStore, ledger, ledger)
+	if err != nil { t.Fatal(err) }
+	report, err := reconciler.Reconcile(ctx)
+	if err != nil { t.Fatal(err) }
+
+	if len(report.Items) != 1 { t.Fatalf("got %d items: %#v", len(report.Items), report.Items) }
+	item := report.Items[0]
+	if item.Status != ReconciliationNotSettleable { t.Fatalf("got %s", item.Status) }
+	if len(item.LedgerTransactionIDs) != 1 || item.LedgerTransactionIDs[0] != ledgerTx.ID {
+		t.Fatalf("expected financial record identity, got %#v", item.LedgerTransactionIDs)
+	}
+	if len(item.SettlementAuditEventIDs) != 1 || item.SettlementAuditEventIDs[0] != audit.EventID {
+		t.Fatalf("expected audit identity, got %#v", item.SettlementAuditEventIDs)
+	}
+	if len(ledger.All()) != 1 { t.Fatal("reconciliation must remain read-only") }
+}
