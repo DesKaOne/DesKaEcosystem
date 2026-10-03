@@ -199,6 +199,64 @@ func PersistAuthenticatedEvidenceWithContext(
 	return store.PutConsensusEvidence(key, encoded)
 }
 
+
+func RecoverAuthenticatedEvidenceWithContext(
+	store EvidenceStore,
+	state RoundState,
+	validators ValidatorSet,
+	authority TimeoutAuthorityResolver,
+	context PersistenceContext,
+) ([]Message, error) {
+	if store == nil {
+		return nil, ErrNilEvidenceStore
+	}
+	if context.Epoch != state.Epoch || context.Height != uint64(state.Height) {
+		return nil, ErrEvidencePersistenceContextMismatch
+	}
+	records, err := store.LoadConsensusEvidence()
+	if err != nil {
+		return nil, err
+	}
+	rules := ValidationRules{
+		ProtocolVersion: state.ProtocolVersion,
+		ChainID: state.ChainID,
+		RequireSender: true,
+		RequireSignature: true,
+	}
+	contextDigest := PersistenceContextDigest(context)
+	messages := make([]Message, 0, len(records))
+	for key, encoded := range records {
+		msg, err := DecodeMessage(encoded, rules)
+		if err != nil {
+			return nil, ErrConflictingEvidence
+		}
+		computed, err := ConsensusEvidencePersistenceKey(msg, contextDigest)
+		if err != nil || computed != key {
+			return nil, ErrEvidencePersistenceContextMismatch
+		}
+		if msg.Epoch != state.Epoch || msg.Height != state.Height {
+			return nil, ErrEvidenceContextMismatch
+		}
+		messageState := state
+		messageState.Round = msg.Round
+		messageState.Phase = PhaseProposal
+		if err := ValidateDurableEvidenceMessage(msg, messageState, validators, authority); err != nil {
+			return nil, err
+		}
+		messages = append(messages, msg)
+	}
+	sort.Slice(messages, func(i, j int) bool {
+		if messages[i].Round != messages[j].Round {
+			return messages[i].Round < messages[j].Round
+		}
+		if messages[i].Type != messages[j].Type {
+			return messages[i].Type < messages[j].Type
+		}
+		return bytes.Compare(messages[i].Sender, messages[j].Sender) < 0
+	})
+	return messages, nil
+}
+
 // RecoverAuthenticatedEvidence loads and validates all persisted evidence for
 // one exact canonical consensus context. Messages are returned deterministically
 // by round, type, then sender. Recovery is non-mutating and does not replay
