@@ -346,3 +346,64 @@ func TestMemoryStoreAppendContextPropagatesCancellationWithoutMutation(t *testin
         t.Fatal("canceled append must not mutate memory ledger")
     }
 }
+
+
+func TestMemoryStoreAppendSettlementPropagatesCancellationWithoutMutation(t *testing.T) {
+    store := NewMemoryStore()
+    ctx, cancel := context.WithCancel(context.Background())
+    cancel()
+
+    ledger := LedgerTransaction{
+        ID: "settlement-context-canceled", ReferenceID: "ref-settlement-context-canceled",
+        SourceType: "provider_purchase", SourceID: "provider-source", Currency: "IDR",
+        Description: "context cancellation settlement test", CreatedAt: time.Unix(1, 0).UTC(),
+        Entries: []Entry{
+            {LineID: 1, AccountID: "expense", Direction: Debit, Amount: 1000, Currency: "IDR"},
+            {LineID: 2, AccountID: "cash", Direction: Credit, Amount: 1000, Currency: "IDR"},
+        },
+    }
+    audit := SettlementAudit{
+        EventID: "event-settlement-context-canceled", TransactionID: ledger.ID, ReferenceID: ledger.ReferenceID,
+        SourceType: ledger.SourceType, SourceID: ledger.SourceID, Status: "SETTLED", CreatedAt: ledger.CreatedAt,
+    }
+
+    if err := store.AppendSettlement(ctx, ledger, audit); !errors.Is(err, context.Canceled) {
+        t.Fatalf("expected context.Canceled, got %v", err)
+    }
+    if _, ok := store.Get(ledger.ID); ok {
+        t.Fatal("canceled settlement must not mutate memory ledger")
+    }
+    if _, ok, err := store.GetSettlementAudit(context.Background(), ledger.ID); err != nil || ok {
+        t.Fatalf("canceled settlement must not persist audit: ok=%v err=%v", ok, err)
+    }
+}
+
+func TestMemoryStoreAppendSettlementPropagatesDeadlineWithoutMutation(t *testing.T) {
+    store := NewMemoryStore()
+    ctx, cancel := context.WithDeadline(context.Background(), time.Unix(1, 0).UTC())
+    defer cancel()
+
+    ledger := LedgerTransaction{
+        ID: "settlement-context-deadline", ReferenceID: "ref-settlement-context-deadline",
+        SourceType: "provider_purchase", SourceID: "provider-source", Currency: "IDR",
+        Description: "context deadline settlement test", CreatedAt: time.Unix(1, 0).UTC(),
+        Entries: []Entry{
+            {LineID: 1, AccountID: "expense", Direction: Debit, Amount: 1000, Currency: "IDR"},
+            {LineID: 2, AccountID: "cash", Direction: Credit, Amount: 1000, Currency: "IDR"},
+        },
+    }
+    audit := SettlementAudit{
+        EventID: "event-settlement-context-deadline", TransactionID: ledger.ID, ReferenceID: ledger.ReferenceID,
+        SourceType: ledger.SourceType, SourceID: ledger.SourceID, Status: "SETTLED", CreatedAt: ledger.CreatedAt,
+    }
+
+    if err := store.AppendSettlement(ctx, ledger, audit); !errors.Is(err, context.DeadlineExceeded) {
+        t.Fatalf("expected context.DeadlineExceeded, got %v", err)
+    }
+    if _, ok := store.Get(ledger.ID); ok {
+        t.Fatal("expired settlement must not mutate memory ledger")
+    }
+    if _, ok, err := store.GetSettlementAudit(context.Background(), ledger.ID); err != nil || ok {
+        t.Fatalf("expired settlement must not persist audit: ok=%v err=%v", ok, err)
+    }
+}
