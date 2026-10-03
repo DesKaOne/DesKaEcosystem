@@ -136,7 +136,10 @@ func sameSettlementAudit(a, b SettlementAudit) bool {
 		a.CreatedAt.Truncate(time.Microsecond).Equal(b.CreatedAt.Truncate(time.Microsecond))
 }
 
-func (s *MemoryStore) AppendSettlement(_ context.Context, t LedgerTransaction, audit SettlementAudit) error {
+func (s *MemoryStore) AppendSettlement(ctx context.Context, t LedgerTransaction, audit SettlementAudit) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err := t.Validate(); err != nil {
 		return err
 	}
