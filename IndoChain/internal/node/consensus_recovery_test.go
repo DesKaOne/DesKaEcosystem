@@ -70,3 +70,62 @@ func TestConsensusRecoveryNextBlockContextUsesCanonicalPreviousHash(t *testing.T
 	if ctx.PreviousHash != n.HeadHash { t.Fatal("next-block context did not use durable canonical previous hash") }
 	if string(ctx.Proposer) != "validator-a" { t.Fatalf("next-block proposer = %q, want validator-a", ctx.Proposer) }
 }
+
+
+func TestReconstructConsensusRuntimeWithAuthorityBindsRuntimeSnapshot(t *testing.T) {
+	store := storage.NewMemoryStore()
+	n, err := NewDevnet(store)
+	if err != nil { t.Fatal(err) }
+	validators, power := recoveryValidatorConfig(t)
+	authority, err := consensus.NewValidatorAuthoritySet(7, validators, map[string][]byte{
+		"validator-a": []byte("key-a"),
+		"validator-b": []byte("key-b"),
+		"validator-c": []byte("key-c"),
+	})
+	if err != nil { t.Fatal(err) }
+
+	recovered, err := n.ReconstructConsensusRuntimeWithAuthority(
+		7, validators, power,
+		consensus.QuorumThreshold{Numerator: 2, Denominator: 3},
+		consensus.RoundRobinProposer{}, authority,
+	)
+	if err != nil { t.Fatal(err) }
+
+	got, err := recovered.Runtime.Authority()
+	if err != nil { t.Fatal(err) }
+	if got.Epoch != authority.Epoch {
+		t.Fatalf("recovered authority epoch = %d, want %d", got.Epoch, authority.Epoch)
+	}
+	key, err := got.PublicKeyForValidator([]byte("validator-a"))
+	if err != nil || string(key) != "key-a" {
+		t.Fatalf("unexpected recovered validator authority: %q, %v", key, err)
+	}
+
+	ctx, err := recovered.Runtime.PersistenceContext([32]byte{7}, [32]byte{8}, "round-robin-v0-dev", "1")
+	if err != nil { t.Fatal(err) }
+	if ctx.Epoch != 7 || ctx.ValidatorAuthorityDigest == ([32]byte{}) {
+		t.Fatalf("unexpected authority-bound persistence context: %+v", ctx)
+	}
+}
+
+func TestReconstructConsensusRuntimeWithAuthorityRejectsEpochMismatch(t *testing.T) {
+	store := storage.NewMemoryStore()
+	n, err := NewDevnet(store)
+	if err != nil { t.Fatal(err) }
+	validators, power := recoveryValidatorConfig(t)
+	authority, err := consensus.NewValidatorAuthoritySet(8, validators, map[string][]byte{
+		"validator-a": []byte("key-a"),
+		"validator-b": []byte("key-b"),
+		"validator-c": []byte("key-c"),
+	})
+	if err != nil { t.Fatal(err) }
+
+	_, err = n.ReconstructConsensusRuntimeWithAuthority(
+		7, validators, power,
+		consensus.QuorumThreshold{Numerator: 2, Denominator: 3},
+		consensus.RoundRobinProposer{}, authority,
+	)
+	if !errors.Is(err, consensus.ErrValidatorAuthorityMismatch) {
+		t.Fatalf("error = %v, want %v", err, consensus.ErrValidatorAuthorityMismatch)
+	}
+}
