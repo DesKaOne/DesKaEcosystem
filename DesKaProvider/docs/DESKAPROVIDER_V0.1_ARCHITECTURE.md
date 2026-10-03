@@ -1221,3 +1221,10 @@ Milestone #49 adds explicit provenance metadata to each reconciliation report's 
 The metadata is observational only. It is not part of correlation identity, reconciliation ordering, financial authorization, or mutation logic. Capture metadata therefore makes the read boundary diagnosable without changing settlement behavior or introducing retries, repair, failover, resubmission, or financial side effects.
 
 Reader provenance distinguishes the context-aware provider read, the ledger reader path, and whether settlement audits were captured through the durable bulk context-aware reader or the legacy per-ledger compatibility path.
+## Reconciliation Snapshot Integrity Fingerprint
+
+Milestone #50 adds a deterministic integrity fingerprint to the reconciliation snapshot. The fingerprint is computed from the captured provider transaction states, ledger transactions, and settlement-audit records after each dataset has been canonicalized by its JSON representation and sorted independently. The combined canonical payload is hashed with SHA-256.
+
+The resulting SnapshotFingerprint is diagnostic metadata on ReconciliationSnapshotMetadata. It is deliberately distinct from financial identity: it is not a ledger transaction ID, settlement audit event ID, provider transaction ID, authorization token, or repair instruction. Snapshot provenance fields such as capture time and reader path are excluded from the fingerprint so repeated captures of identical dataset contents can be compared independently of execution metadata.
+
+Fingerprint generation is read-only. It does not mutate provider state, ledger state, settlement audit state, balances, treasury, external providers, or blockchain state, and it introduces no retry, failover, resubmission, repair, reversal, or automatic settlement behavior.
