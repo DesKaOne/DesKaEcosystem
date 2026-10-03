@@ -41,6 +41,8 @@ type TransactionReconciliation struct {
 }
 
 type ReconciliationSnapshotMetadata struct {
+	CaptureStartedAt               time.Time
+	CaptureCompletedAt             time.Time
 	CapturedAt                    time.Time
 	ProviderTransactionCount      int
 	LedgerTransactionCount        int
@@ -74,7 +76,7 @@ type reconciliationSnapshot struct {
 }
 
 func (r *SettlementReconciler) readSnapshot(ctx context.Context) (reconciliationSnapshot, error) {
-	capturedAt := time.Now().UTC()
+	captureStartedAt := time.Now().UTC()
 	states, err := r.transactions.AllContextE(ctx)
 	if err != nil {
 		return reconciliationSnapshot{}, fmt.Errorf("read provider transactions: %w", err)
@@ -120,12 +122,15 @@ func (r *SettlementReconciler) readSnapshot(ctx context.Context) (reconciliation
 	if err != nil {
 		return reconciliationSnapshot{}, fmt.Errorf("fingerprint reconciliation snapshot: %w", err)
 	}
+	captureCompletedAt := time.Now().UTC()
 	return reconciliationSnapshot{
 		states: states,
 		ledger: ledgerTransactions,
 		audits: audits,
 		metadata: ReconciliationSnapshotMetadata{
-			CapturedAt: capturedAt,
+			CaptureStartedAt: captureStartedAt,
+			CaptureCompletedAt: captureCompletedAt,
+			CapturedAt: captureCompletedAt,
 			ProviderTransactionCount: len(states),
 			LedgerTransactionCount: len(ledgerTransactions),
 			SettlementAuditCount: len(audits),
