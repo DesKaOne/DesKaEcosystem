@@ -160,7 +160,7 @@ func TestSettlementReconcilerLegacyAuditReaderDoesNotFallbackToEmptyDataset(t *t
         SourceID: "provider-source",
         Currency: "IDR",
         Description: "legacy fallback guard",
-        CreatedAt: testLedgerCreatedAt(),
+        CreatedAt: time.Unix(1, 0).UTC(),
         Entries: []Entry{
             {LineID: 1, AccountID: "expense", Direction: Debit, Amount: 1000, Currency: "IDR"},
             {LineID: 2, AccountID: "cash", Direction: Credit, Amount: 1000, Currency: "IDR"},
