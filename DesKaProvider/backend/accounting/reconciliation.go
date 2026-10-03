@@ -17,6 +17,8 @@ const (
 	ReconciliationAuditMissing ReconciliationStatus = "AUDIT_MISSING"
 	ReconciliationCorrelated ReconciliationStatus = "CORRELATED"
 	ReconciliationCorrelationConflict ReconciliationStatus = "CORRELATION_CONFLICT"
+	ReconciliationOrphanedLedger      ReconciliationStatus = "ORPHANED_LEDGER"
+	ReconciliationOrphanedAudit       ReconciliationStatus = "ORPHANED_AUDIT"
 )
 
 type TransactionReconciliation struct {
@@ -57,18 +59,25 @@ func (r *SettlementReconciler) Reconcile(ctx context.Context) (ReconciliationRep
 	if err != nil {
 		return ReconciliationReport{}, fmt.Errorf("read provider transactions: %w", err)
 	}
-	ledgerTransactions := r.ledger.All()
+	ledgerTransactions, err := readLedgerTransactions(ctx, r.ledger)
+	if err != nil {
+		return ReconciliationReport{}, fmt.Errorf("read ledger transactions: %w", err)
+	}
 	byReference := make(map[string]LedgerTransaction, len(ledgerTransactions))
+	byLedgerID := make(map[string]LedgerTransaction, len(ledgerTransactions))
 	for _, tx := range ledgerTransactions {
 		byReference[tx.ReferenceID] = tx
+		byLedgerID[tx.ID] = tx
 	}
 
 	report := ReconciliationReport{Items: make([]TransactionReconciliation, 0, len(states))}
+	providerReferences := make(map[string]struct{}, len(states))
 	for _, state := range states {
 		referenceID := state.Request.ReferenceID
 		if state.Kind == routing.TransactionKindPayment && state.Payment != nil {
 			referenceID = state.Payment.ReferenceID
 		}
+		providerReferences[referenceID] = struct{}{}
 		status := providerStatusFromTransaction(state)
 		item := TransactionReconciliation{ReferenceID: referenceID, ProviderStatus: status}
 
@@ -105,7 +114,52 @@ func (r *SettlementReconciler) Reconcile(ctx context.Context) (ReconciliationRep
 		item.Status = ReconciliationCorrelated
 		report.Items = append(report.Items, item)
 	}
+
+	for _, tx := range ledgerTransactions {
+		if _, ok := providerReferences[tx.ReferenceID]; ok {
+			continue
+		}
+		audit, auditOK, err := r.audit.GetSettlementAudit(ctx, tx.ID)
+		if err != nil {
+			return ReconciliationReport{}, fmt.Errorf("read settlement audit for orphaned ledger %s: %w", tx.ID, err)
+		}
+		item := TransactionReconciliation{
+			ReferenceID: tx.ReferenceID,
+			ProviderStatus: "UNKNOWN",
+			LedgerTransactionID: tx.ID,
+			Status: ReconciliationOrphanedLedger,
+		}
+		if auditOK {
+			item.SettlementAuditEventID = audit.EventID
+		}
+		report.Items = append(report.Items, item)
+	}
+
+	if audits, ok := r.audit.(ContextSettlementAuditReader); ok {
+		allAudits, err := audits.AllSettlementAudits(ctx)
+		if err != nil {
+			return ReconciliationReport{}, fmt.Errorf("read settlement audits: %w", err)
+		}
+		for _, audit := range allAudits {
+			if _, ledgerOK := byLedgerID[audit.TransactionID]; ledgerOK {
+				continue
+			}
+			report.Items = append(report.Items, TransactionReconciliation{
+				ReferenceID: audit.ReferenceID,
+				ProviderStatus: "UNKNOWN",
+				SettlementAuditEventID: audit.EventID,
+				Status: ReconciliationOrphanedAudit,
+			})
+		}
+	}
 	return report, nil
+}
+
+func readLedgerTransactions(ctx context.Context, store Store) ([]LedgerTransaction, error) {
+	if durable, ok := store.(ContextLedgerReader); ok {
+		return durable.All(ctx)
+	}
+	return store.All(), nil
 }
 
 var _ ReconciliationReader = (*SettlementReconciler)(nil)
