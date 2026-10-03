@@ -1228,3 +1228,11 @@ Milestone #50 adds a deterministic integrity fingerprint to the reconciliation s
 The resulting SnapshotFingerprint is diagnostic metadata on ReconciliationSnapshotMetadata. It is deliberately distinct from financial identity: it is not a ledger transaction ID, settlement audit event ID, provider transaction ID, authorization token, or repair instruction. Snapshot provenance fields such as capture time and reader path are excluded from the fingerprint so repeated captures of identical dataset contents can be compared independently of execution metadata.
 
 Fingerprint generation is read-only. It does not mutate provider state, ledger state, settlement audit state, balances, treasury, external providers, or blockchain state, and it introduces no retry, failover, resubmission, repair, reversal, or automatic settlement behavior.
+
+## Reconciliation Snapshot Capture Lifecycle Metadata Hardening
+
+Milestone #51 makes reconciliation snapshot lifecycle timing explicit. CaptureStartedAt records the instant snapshot capture begins, before provider, ledger, and settlement-audit materialization. CaptureCompletedAt records the instant all three datasets have been materialized, defensive copies created, and the deterministic snapshot fingerprint generated successfully. CapturedAt is retained as a compatibility field and is defined to equal CaptureCompletedAt.
+
+These timestamps are observational lifecycle metadata only. They are not financial transaction timestamps, provider execution timestamps, settlement authorization timestamps, or mutation ordering tokens. A reconciliation report is returned only after snapshot capture and fingerprint generation complete successfully. Lifecycle metadata is excluded from the snapshot fingerprint so repeated captures of identical datasets remain comparable independently of execution timing.
+
+No persistence, retry, failover, resubmission, repair, reversal, balance mutation, treasury movement, or external-provider action is introduced by this boundary.
