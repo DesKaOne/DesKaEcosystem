@@ -1236,3 +1236,12 @@ Milestone #51 makes reconciliation snapshot lifecycle timing explicit. CaptureSt
 These timestamps are observational lifecycle metadata only. They are not financial transaction timestamps, provider execution timestamps, settlement authorization timestamps, or mutation ordering tokens. A reconciliation report is returned only after snapshot capture and fingerprint generation complete successfully. Lifecycle metadata is excluded from the snapshot fingerprint so repeated captures of identical datasets remain comparable independently of execution timing.
 
 No persistence, retry, failover, resubmission, repair, reversal, balance mutation, treasury movement, or external-provider action is introduced by this boundary.
+
+
+## Reconciliation Snapshot Metadata Contract Coverage
+
+Milestone #52 strengthens the observable contract around snapshot metadata. A successful reconciliation report must expose a complete lifecycle/provenance record: CaptureStartedAt, CaptureCompletedAt, CapturedAt as the completion-time compatibility alias, materialized dataset counts, reader-path labels, and a non-empty SnapshotFingerprint. Repeated captures of unchanged datasets must retain the same content fingerprint while remaining distinct execution observations through their lifecycle timestamps.
+
+Capture failure paths are fail-closed at the report boundary. If provider transaction, ledger, or settlement-audit materialization fails, Reconcile returns an error without reconciliation items and without partial snapshot metadata. This prevents callers from treating incomplete provenance, counts, timestamps, or fingerprints as a valid read model.
+
+These are diagnostic/read-model contracts only. They do not participate in financial identity or authorization and introduce no persistence, retry, failover, resubmission, repair, reversal, balance mutation, treasury movement, external-provider action, or blockchain action.
