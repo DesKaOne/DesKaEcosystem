@@ -355,7 +355,7 @@ func TestSettlementReconcilerSnapshotMetadataReportsCaptureProvenance(t *testing
 	if report.Snapshot.ProviderReader != "context-all" {
 		t.Fatalf("unexpected provider reader: %q", report.Snapshot.ProviderReader)
 	}
-	if report.Snapshot.LedgerReader != "memory-store" {
+	if report.Snapshot.LedgerReader != "context-ledger" {
 		t.Fatalf("unexpected ledger reader: %q", report.Snapshot.LedgerReader)
 	}
 	if report.Snapshot.SettlementAuditReader != "context-bulk" {
