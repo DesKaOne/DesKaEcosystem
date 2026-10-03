@@ -407,7 +407,7 @@ func TestValidatorRuntimeBuildsAuthorityBoundPersistenceContext(t *testing.T) {
 
 	context, err := runtime.PersistenceContext([32]byte{7}, [32]byte{8}, "round-robin-v0-dev", "1")
 	if err != nil { t.Fatal(err) }
-	if context.Epoch != state.Epoch || context.Height != state.Height || context.Round != state.Round || context.Phase != uint8(state.Phase) {
+	if context.Epoch != state.Epoch || context.Height != uint64(state.Height) || context.Round != state.Round || context.Phase != uint8(state.Phase) {
 		t.Fatalf("persistence context state mismatch: %+v", context)
 	}
 	wantAuthorityDigest := authorityDigest(authority)
