@@ -10,6 +10,22 @@ import (
     "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/routing"
 )
 
+type nonContextReconciliationProviderReader struct {
+    *routing.MemoryTransactionStore
+}
+
+func (s nonContextReconciliationProviderReader) AllContextE(context.Context) ([]routing.TransactionState, error) {
+    return s.MemoryTransactionStore.All(), nil
+}
+
+type nonContextReconciliationLedgerReader struct {
+    *MemoryStore
+}
+
+func (s nonContextReconciliationLedgerReader) AllContext(context.Context) ([]LedgerTransaction, error) {
+    return s.MemoryStore.All(), nil
+}
+
 type contextAwareReconciliationProviderReader struct {
     *routing.MemoryTransactionStore
 }
@@ -88,7 +104,7 @@ func TestSettlementReconcilerPropagatesContextCancellationAtEachSnapshotReader(t
             name: "ledger",
             build: func() (*SettlementReconciler, error) {
                 return NewSettlementReconciler(
-                    routing.NewMemoryTransactionStore(),
+                    nonContextReconciliationProviderReader{MemoryTransactionStore: routing.NewMemoryTransactionStore()},
                     contextAwareReconciliationLedgerReader{MemoryStore: NewMemoryStore()},
                     NewMemoryStore(),
                 )
@@ -99,8 +115,8 @@ func TestSettlementReconcilerPropagatesContextCancellationAtEachSnapshotReader(t
             name: "bulk-audit",
             build: func() (*SettlementReconciler, error) {
                 return NewSettlementReconciler(
-                    routing.NewMemoryTransactionStore(),
-                    NewMemoryStore(),
+                    nonContextReconciliationProviderReader{MemoryTransactionStore: routing.NewMemoryTransactionStore()},
+                    nonContextReconciliationLedgerReader{MemoryStore: NewMemoryStore()},
                     contextAwareReconciliationAuditReader{MemoryStore: NewMemoryStore()},
                 )
             },
