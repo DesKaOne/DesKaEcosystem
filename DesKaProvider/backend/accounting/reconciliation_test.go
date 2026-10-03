@@ -241,3 +241,43 @@ func TestSettlementReconcilerReportsDuplicateAuditIdentityDeterministically(t *t
 	}
 	if !found { t.Fatal("expected duplicate audit identity diagnostic") }
 }
+
+
+func TestSettlementReconcilerReportOrderingIsDeterministic(t *testing.T) {
+	ctx := context.Background()
+	txStore := routing.NewMemoryTransactionStore()
+	ledger := NewMemoryStore()
+	states := []string{"ref-c", "ref-a", "ref-b"}
+	for _, ref := range states {
+		if err := txStore.Put(terminalPayment(ref)); err != nil { t.Fatal(err) }
+	}
+	reconciler, err := NewSettlementReconciler(txStore, ledger, ledger)
+	if err != nil { t.Fatal(err) }
+	first, err := reconciler.Reconcile(ctx)
+	if err != nil { t.Fatal(err) }
+	second, err := reconciler.Reconcile(ctx)
+	if err != nil { t.Fatal(err) }
+	if len(first.Items) != len(second.Items) { t.Fatalf("report lengths differ: %d vs %d", len(first.Items), len(second.Items)) }
+	for i := range first.Items {
+		if first.Items[i].ReferenceID != second.Items[i].ReferenceID ||
+			first.Items[i].Status != second.Items[i].Status {
+			t.Fatalf("report ordering is unstable: %#v vs %#v", first.Items, second.Items)
+		}
+	}
+	want := []string{"ref-a", "ref-b", "ref-c"}
+	for i, ref := range want {
+		if first.Items[i].ReferenceID != ref { t.Fatalf("got order %#v", first.Items) }
+	}
+}
+
+func TestReconciliationItemKeyIsIndependentOfCandidateInputOrder(t *testing.T) {
+	a := TransactionReconciliation{
+		ReferenceID:"ref", ProviderStatus:ProviderStatusSuccess, Status:ReconciliationDuplicateReference,
+		LedgerTransactionIDs:[]string{"ledger-b","ledger-a"}, SettlementAuditEventIDs:[]string{"event-b","event-a"},
+	}
+	b := TransactionReconciliation{
+		ReferenceID:"ref", ProviderStatus:ProviderStatusSuccess, Status:ReconciliationDuplicateReference,
+		LedgerTransactionIDs:[]string{"ledger-a","ledger-b"}, SettlementAuditEventIDs:[]string{"event-a","event-b"},
+	}
+	if reconciliationItemKey(a) != reconciliationItemKey(b) { t.Fatal("expected canonical item keys to match") }
+}
