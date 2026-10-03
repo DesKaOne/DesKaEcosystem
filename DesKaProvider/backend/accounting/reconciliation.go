@@ -65,7 +65,10 @@ func (r *SettlementReconciler) Reconcile(ctx context.Context) (ReconciliationRep
 
 	report := ReconciliationReport{Items: make([]TransactionReconciliation, 0, len(states))}
 	for _, state := range states {
-		referenceID := transactionReferenceID(state)
+		referenceID := state.Request.ReferenceID
+		if state.Kind == routing.TransactionKindPayment && state.Payment != nil {
+			referenceID = state.Payment.ReferenceID
+		}
 		status := providerStatusFromTransaction(state)
 		item := TransactionReconciliation{ReferenceID: referenceID, ProviderStatus: status}
 
