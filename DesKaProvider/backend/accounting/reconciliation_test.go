@@ -363,6 +363,33 @@ func TestSettlementReconcilerSnapshotMetadataReportsCaptureProvenance(t *testing
 	}
 }
 
+func TestReconciliationSnapshotFingerprintIsDeterministic(t *testing.T) {
+	statesA := []routing.TransactionState{terminalPayment("fingerprint-b"), terminalPayment("fingerprint-a")}
+	statesB := []routing.TransactionState{statesA[1], statesA[0]}
+	ledgerA := []LedgerTransaction{
+		{ID:"ledger-b", ReferenceID:"fingerprint-b", SourceType:"PROVIDER_SETTLEMENT", SourceID:"b", Currency:"IDR", Description:"b", CreatedAt:time.Date(2026,10,3,16,0,0,0,time.UTC), Entries:settlementEntries()},
+		{ID:"ledger-a", ReferenceID:"fingerprint-a", SourceType:"PROVIDER_SETTLEMENT", SourceID:"a", Currency:"IDR", Description:"a", CreatedAt:time.Date(2026,10,3,16,1,0,0,time.UTC), Entries:settlementEntries()},
+	}
+	ledgerB := []LedgerTransaction{ledgerA[1], ledgerA[0]}
+	auditsA := []SettlementAudit{
+		{EventID:"event-b", TransactionID:"ledger-b", ReferenceID:"fingerprint-b", SourceType:"PROVIDER_SETTLEMENT", SourceID:"b", Status:ProviderStatusSuccess, CreatedAt:time.Date(2026,10,3,16,0,0,0,time.UTC)},
+		{EventID:"event-a", TransactionID:"ledger-a", ReferenceID:"fingerprint-a", SourceType:"PROVIDER_SETTLEMENT", SourceID:"a", Status:ProviderStatusSuccess, CreatedAt:time.Date(2026,10,3,16,1,0,0,time.UTC)},
+	}
+	auditsB := []SettlementAudit{auditsA[1], auditsA[0]}
+
+	first, err := reconciliationSnapshotFingerprint(statesA, ledgerA, auditsA)
+	if err != nil { t.Fatal(err) }
+	second, err := reconciliationSnapshotFingerprint(statesB, ledgerB, auditsB)
+	if err != nil { t.Fatal(err) }
+	if first != second { t.Fatalf("fingerprint depends on input order: %s != %s", first, second) }
+
+	changed := append([]routing.TransactionState(nil), statesA...)
+	changed[0].Payment.Amount++
+	third, err := reconciliationSnapshotFingerprint(changed, ledgerA, auditsA)
+	if err != nil { t.Fatal(err) }
+	if first == third { t.Fatal("fingerprint must change when snapshot content changes") }
+}
+
 func TestReconciliationItemKeyIsIndependentOfCandidateInputOrder(t *testing.T) {
 	a := TransactionReconciliation{
 		ReferenceID:"ref", ProviderStatus:ProviderStatusSuccess, Status:ReconciliationDuplicateReference,
