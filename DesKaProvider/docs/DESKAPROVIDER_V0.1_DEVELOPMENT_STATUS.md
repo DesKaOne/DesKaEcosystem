@@ -10041,3 +10041,46 @@ Milestone #54 is complete only when the latest documentation-synchronized commit
 Scope: define and test stable error wrapping/classification for snapshot capture failures so callers can distinguish provider-read, ledger-read, audit-read, and fingerprint failures without treating any of them as financial mutation outcomes.
 
 No automatic retry, provider failover, transaction resubmission, provider funding, customer ledger mutation, treasury movement, duplicate purchase creation, or public API exposure is included in #55.
+
+## Milestone #55 — Reconciliation Snapshot Failure Error Contract
+
+**Date:** 2026-10-03
+
+### Implementation
+
+- added stable sentinel classifications for provider-transaction read, ledger read, settlement-audit read, and reconciliation fingerprint failures;
+- wrapped each snapshot-capture boundary with its stable classification while preserving the original underlying error for `errors.Is`/error-chain inspection;
+- preserved the existing fail-closed contract: capture failure returns no reconciliation items and no partial snapshot metadata;
+- added deterministic regression coverage proving callers can distinguish provider, ledger, audit, and fingerprint failure classes without depending on error strings.
+
+### Changed Files
+
+- DesKaProvider/backend/accounting/reconciliation.go
+- DesKaProvider/backend/accounting/reconciliation_test.go
+- DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md
+
+### Safety Boundary / Invariants
+
+- error classification is observational and does not authorize settlement, ledger mutation, provider lifecycle mutation, retry, failover, resubmission, repair, reversal, treasury movement, or customer-balance mutation;
+- underlying errors remain in the error chain, so cancellation/timeout and storage-specific causes remain inspectable;
+- no fallback or retry path is introduced after a snapshot read/fingerprint failure;
+- failed snapshot establishment remains fail-closed with an empty report and no partial metadata;
+- no public API exposure is introduced.
+
+### Verification
+
+Implementation/test HEAD:
+
+**b85f616c60248f31bd5b80ebbbb2abac6da37c97**
+
+CI verification for the implementation/test HEAD is pending. Milestone #55 is not considered complete until the latest documentation-synchronized commit has a successful DesKaProvider CI run including test and race.
+
+### Progress
+
+Engineering estimate remains approximately **88%**.
+
+This milestone improves deterministic operational error classification around an existing read-only reconciliation boundary; it does not add a new financial source of truth or a new provider execution capability, so the estimate is intentionally not increased.
+
+### Next Milestone
+
+Continue the reconciliation correctness audit into **snapshot failure classification coverage across context cancellation, database errors, and legacy reader paths**, ensuring stable error identity remains preserved without changing the read-only/fail-closed boundary.
