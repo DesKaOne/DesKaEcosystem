@@ -4768,3 +4768,98 @@ Impact: restart/recovery path tidak lagi bergantung pada anonymous runtime atau 
 **5.8j Consensus Recovery Replay → Block Production Handoff:** hubungkan runtime hasil replay ke `BlockProductionContext`/next-block candidate path dengan invariant bahwa canonical previous hash/state-root tetap berasal dari durable node state dan replay state tidak dapat menggantikan canonical storage snapshot.
 
 **Milestone 5.8i status:** DONE — exact-head CI GREEN pada SHA `a2b0907ce061b1cce24294d8e841c4e68fbc4bd3` (IndoChain CI run #2008 sukses).
+
+
+### 5.8j Consensus Recovery Replay → Block Production Handoff — 2026-10-03
+
+**Objective**
+
+Menghubungkan recovery runtime ke next-block candidate construction dengan invariant bahwa canonical previous hash dan state-root tetap berasal dari durable node state, bukan dari replayed ephemeral consensus state.
+
+**Implementation**
+
+- `IndoChain/internal/node/consensus_recovery.go`
+  - menambahkan `ConsensusRecovery.BuildNextBlockCandidateFromRecovery(...)`;
+  - memvalidasi runtime/recovery context, canonical state root, lalu membangun candidate melalui `consensus.BuildBlockCandidate`;
+  - candidate tetap non-mutating terhadap canonical state dan memakai `ConsensusRecovery.PreviousHash` sebagai previous block identity;
+  - menolak stale state-root atau stale previous-hash sebelum candidate diteruskan.
+- `IndoChain/internal/node/consensus_recovery_test.go`
+  - coverage canonical candidate handoff;
+  - coverage stale state-root rejection;
+  - coverage stale previous-hash rejection.
+
+**Architecture correction**
+
+Current behavior sebelum 5.8j: recovery sudah dapat membangun `NextBlockContext`, tetapi belum ada boundary node yang mengubah canonical recovery snapshot menjadi next-block candidate secara eksplisit.
+
+Intended behavior: canonical node state/hash/root tetap menjadi source of truth untuk block candidate, sementara runtime consensus hanya menyediakan ephemeral protocol context seperti round dan proposer.
+
+Impact: recovery replay dapat dilanjutkan ke block-production boundary tanpa memberi runtime authority atas canonical chain/state storage.
+
+**Locked invariants**
+
+1. Previous hash candidate berasal dari durable canonical recovery snapshot.
+2. State root candidate berasal dari canonical state snapshot plus deterministic transaction execution.
+3. Replay state tidak menggantikan canonical node storage.
+4. Candidate construction tidak melakukan canonical commit.
+5. Existing block-production validation contract tetap digunakan.
+6. Financial-service boundary dan economic policy tetap tidak berubah.
+
+**Verification**
+
+- Implementation commit: `8273b652a310b8d265d5e665afa489797e9fa81b`.
+- Test commit: `b855d0dddc84996f56ea2db9a8238d62cf204bb6`.
+- Exact-head CI run #2013 / `37133095845`: **GREEN** — Tidy, Test, Race Test, Vet sukses.
+
+**Next meaningful integration target**
+
+**5.8k Recovered Block Proposal → Runtime/Finality Handoff:** bungkus candidate hasil recovery ke `BlockProposal`, teruskan melalui `AcceptBlockProposal`, lalu pertahankan handoff finality/commit hanya melalui node canonical execution boundary.
+
+**Milestone 5.8j status:** DONE — exact-head CI GREEN pada SHA `b855d0dddc84996f56ea2db9a8238d62cf204bb6`.
+
+
+### 5.8k Recovered Block Candidate → Proposal Boundary — 2026-10-03
+
+**Objective**
+
+Menyediakan handoff eksplisit dari recovered block candidate ke existing `BlockProposal` boundary tanpa langsung memfinalisasi atau mengubah canonical node state.
+
+**Implementation**
+
+- `IndoChain/internal/node/consensus_recovery.go`
+  - menambahkan `ConsensusRecovery.BuildNextBlockProposalFromRecovery(...)`;
+  - helper memanggil candidate builder 5.8j lalu membungkus candidate melalui `consensus.NewBlockProposal`;
+  - context proposal tetap diperoleh dari `NextBlockContext`, sehingga previous hash dan proposer berasal dari recovery/runtime boundary yang tervalidasi.
+- `IndoChain/internal/node/consensus_recovery_test.go`
+  - coverage proposal payload deterministic terhadap recovered candidate;
+  - coverage canonical height/previous hash pada proposal;
+  - coverage runtime tetap berada di Proposal phase sebelum handoff lanjutan.
+
+**Architecture correction**
+
+Current behavior sebelum 5.8k: recovered candidate sudah valid secara block-production contract, tetapi node recovery belum mempunyai helper yang menghubungkannya ke in-memory proposal abstraction yang dikonsumsi `ValidatorRuntime.AcceptBlockProposal`.
+
+Intended behavior: node recovery menghasilkan `BlockProposal` melalui existing consensus boundary, sementara finality generation dan canonical commit tetap menjadi dua langkah terpisah.
+
+Impact: restart/recovery path kini dapat melanjutkan ke proposal validation tanpa bypass runtime consensus atau canonical storage.
+
+**Locked invariants**
+
+1. Candidate payload tetap derived dari block hash melalui `NewBlockProposal`.
+2. Proposal handoff tidak memutasi canonical node state.
+3. Proposal handoff tidak memfinalisasi runtime.
+4. Canonical previous hash/state-root tetap berasal dari durable node recovery.
+5. Existing `AcceptBlockProposal` dan finality/commit boundaries tetap dipertahankan.
+6. Tidak ada validator lifecycle mutation, staking, reward, slashing, atau financial-service logic.
+
+**Verification**
+
+- Implementation commit: `f21e88a9b09220bfd1bf8dbb95bc5db1358145eb`.
+- Test commit / exact HEAD: `096049049396ad486d54804b062277e5a6b0b857`.
+- Exact-head GitHub Actions run #2016 / `37138691427`: **GREEN** — Tidy, Test, Race Test, Vet sukses.
+
+**Next meaningful integration target**
+
+**5.8l Recovered Proposal → Runtime Finality Context:** gunakan `BuildNextBlockProposalFromRecovery` sebagai input `AcceptBlockProposal`, lalu validasikan bahwa finality certificate yang dihasilkan runtime tetap mengikat candidate payload/hash sebelum node commit.
+
+**Milestone 5.8k status:** DONE — exact-head CI GREEN pada SHA `096049049396ad486d54804b062277e5a6b0b857`.
