@@ -10091,3 +10091,43 @@ This milestone improves deterministic operational error classification around an
 ### Next Milestone
 
 Continue the reconciliation correctness audit into **snapshot failure classification coverage across context cancellation, database errors, and legacy reader paths**, ensuring stable error identity remains preserved without changing the read-only/fail-closed boundary.
+
+## Milestone #56 — Reconciliation Failure Error-Chain Coverage
+
+**Date:** 2026-10-03
+
+### Implementation
+
+- added deterministic failure-injection coverage for provider, ledger, and legacy audit storage errors;
+- verified each stable reconciliation classification preserves the original underlying storage error through the Go error chain;
+- added unsupported-ledger-reader coverage proving the dependency contract fails closed and is classified as a ledger-read failure;
+- preserved the existing cancellation/error classification behavior and read-only reconciliation boundary.
+
+### Changed Files
+
+- DesKaProvider/backend/accounting/reconciliation_test.go
+- DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md
+
+### Safety Boundary / Invariants
+
+- classification remains observational and never authorizes settlement, retry, failover, resubmission, repair, reversal, ledger mutation, customer-balance mutation, treasury movement, or provider funding;
+- storage-specific causes remain inspectable through errors.Is, while callers can independently branch on the stable reconciliation boundary classification;
+- unsupported reader dependencies fail closed instead of being treated as empty financial datasets;
+- failed snapshot establishment returns no reconciliation items and no partial snapshot metadata;
+- no public API or runtime recovery mechanism is introduced.
+
+### Verification
+
+Implementation/test HEAD:
+
+**7704c7b8884e5f41cf67985fbdd89ed751961333**
+
+CI verification is required on this implementation HEAD and the subsequent documentation-synchronized HEAD before Milestone #56 is considered complete.
+
+### Progress
+
+Engineering estimate remains approximately **88%**. This milestone strengthens deterministic failure evidence around an existing reconciliation boundary without adding a new production financial capability.
+
+### Next Milestone
+
+Continue auditing reconciliation persistence-reader contract coverage, with emphasis on context cancellation/deadline propagation and PostgreSQL-backed reader failures, while preserving fail-closed observational semantics.
