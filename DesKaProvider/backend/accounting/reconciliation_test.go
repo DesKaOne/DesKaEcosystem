@@ -811,6 +811,42 @@ func TestSettlementReconcilerDoesNotCorrelateWhenEventIdentityIsDuplicatedAcross
 }
 
 
+func TestSettlementReconcilerDoesNotCorrelateWhenAuditStatusIsNonSuccess(t *testing.T) {
+	ctx := context.Background()
+	txStore := routing.NewMemoryTransactionStore()
+	ledger := NewMemoryStore()
+	state := terminalPayment("audit-status-conflict")
+	if err := txStore.Put(state); err != nil { t.Fatal(err) }
+
+	ledgerTx := LedgerTransaction{
+		ID: "audit-status-ledger", ReferenceID: "audit-status-conflict",
+		SourceType: "PROVIDER_SETTLEMENT", SourceID: "audit-status-source",
+		Currency: "IDR", Description: "audit status conflict", CreatedAt: time.Date(2026,10,4,10,0,0,0,time.UTC),
+		Entries: settlementEntries(),
+	}
+	audit := SettlementAudit{
+		EventID: "audit-status-event", TransactionID: ledgerTx.ID, ReferenceID: ledgerTx.ReferenceID,
+		SourceType: ledgerTx.SourceType, SourceID: ledgerTx.SourceID, Status: provider.StatusFailed,
+		CreatedAt: ledgerTx.CreatedAt,
+	}
+	if err := ledger.AppendSettlement(ctx, ledgerTx, audit); err != nil { t.Fatal(err) }
+
+	reconciler, err := NewSettlementReconciler(txStore, ledger, ledger)
+	if err != nil { t.Fatal(err) }
+	report, err := reconciler.Reconcile(ctx)
+	if err != nil { t.Fatal(err) }
+	if len(report.Items) != 1 { t.Fatalf("got %d items: %#v", len(report.Items), report.Items) }
+	item := report.Items[0]
+	if item.Status != ReconciliationCorrelationConflict {
+		t.Fatalf("got %s", item.Status)
+	}
+	if item.LedgerTransactionID != ledgerTx.ID || item.SettlementAuditEventID != audit.EventID {
+		t.Fatalf("expected conflicting identities to remain visible: %#v", item)
+	}
+	if len(ledger.All()) != 1 { t.Fatal("reconciliation must remain read-only") }
+}
+
+
 func TestSettlementReconcilerSurfacesFinancialRecordsForNonSuccessProviderState(t *testing.T) {
 	ctx := context.Background()
 	txStore := routing.NewMemoryTransactionStore()
