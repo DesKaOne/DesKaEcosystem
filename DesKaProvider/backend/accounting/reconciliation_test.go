@@ -1,6 +1,7 @@
 package accounting
 
 import (
+	"errors"
 	"context"
 	"testing"
 	"time"
