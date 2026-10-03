@@ -1168,3 +1168,16 @@ Explicit diagnostics now include:
 - existing `LEDGER_MISSING`, `AUDIT_MISSING`, and `CORRELATION_CONFLICT` continue to describe provider-success settlement gaps.
 
 Orphan detection does not repair, delete, append, retry, reverse, or otherwise mutate financial records. It only makes durable inconsistencies visible to an operator/reconciliation process.
+
+### Reconciliation Correlation Invariant Hardening
+
+Reconciliation must never silently choose one financial record when a reference is non-unique.
+
+The read model now detects DUPLICATE_REFERENCE for:
+
+- multiple persisted provider transaction states resolving to the same financial reference;
+- multiple ledger transactions carrying the same financial reference.
+
+Ledger candidates are sorted by immutable transaction ID before being reported, so diagnostics are deterministic. A duplicate reference is reported instead of selecting one ledger transaction for audit correlation.
+
+This is observational only. Duplicate detection does not merge, delete, reverse, repair, retry, resubmit, or mutate any provider or accounting record.
