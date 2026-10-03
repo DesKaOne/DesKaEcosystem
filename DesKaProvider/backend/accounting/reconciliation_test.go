@@ -457,24 +457,28 @@ func TestSettlementReconcilerSnapshotMetadataContractOnCaptureFailures(t *testin
 		transactions routing.ContextReadTransactionStore
 		ledger       interface{}
 		audit        SettlementAuditReader
+		classification error
 	}{
 		{
 			name:         "provider-read",
 			transactions: failingProviderSnapshotStore{MemoryTransactionStore: routing.NewMemoryTransactionStore(), err: context.Canceled},
 			ledger:       NewMemoryStore(),
 			audit:        NewMemoryStore(),
+			classification: ErrReconciliationProviderRead,
 		},
 		{
 			name:         "ledger-read",
 			transactions: routing.NewMemoryTransactionStore(),
 			ledger:       failingLedgerSnapshotReader{MemoryStore: NewMemoryStore(), err: context.Canceled},
 			audit:        NewMemoryStore(),
+			classification: ErrReconciliationLedgerRead,
 		},
 		{
 			name:         "audit-read",
 			transactions: routing.NewMemoryTransactionStore(),
 			ledger:       NewMemoryStore(),
 			audit:        failingAuditSnapshotReader{MemoryStore: NewMemoryStore(), err: context.Canceled},
+			classification: ErrReconciliationAuditRead,
 		},
 	}
 
@@ -487,6 +491,9 @@ func TestSettlementReconcilerSnapshotMetadataContractOnCaptureFailures(t *testin
 			report, err := reconciler.Reconcile(ctx)
 			if err == nil {
 				t.Fatal("expected snapshot capture failure")
+			}
+			if !errors.Is(err, tc.classification) {
+				t.Fatalf("expected stable snapshot classification %v, got %v", tc.classification, err)
 			}
 			if len(report.Items) != 0 {
 				t.Fatalf("failed capture must not return reconciliation items: %#v", report.Items)
@@ -601,6 +608,9 @@ func TestSettlementReconcilerFailsClosedWhenSnapshotFingerprintFails(t *testing.
 	report, err := reconciler.Reconcile(ctx)
 	if !errors.Is(err, fingerprintErr) {
 		t.Fatalf("expected fingerprint error to propagate, got %v", err)
+	}
+	if !errors.Is(err, ErrReconciliationFingerprint) {
+		t.Fatalf("expected stable fingerprint classification, got %v", err)
 	}
 	if len(report.Items) != 0 {
 		t.Fatalf("failed fingerprint must not expose reconciliation items: %#v", report.Items)
