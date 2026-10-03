@@ -14,6 +14,7 @@ var (
 	ErrUnsupportedEvidenceType   = errors.New("unsupported durable consensus evidence type")
 	ErrEvidenceContextMismatch   = errors.New("durable consensus evidence context mismatch")
 	ErrConflictingEvidence       = errors.New("conflicting consensus evidence")
+	ErrEvidencePersistenceContextMismatch = errors.New("evidence persistence context mismatch")
 )
 
 // EvidenceStore is the persistence boundary for authenticated consensus
@@ -112,6 +113,67 @@ func PersistAuthenticatedEvidence(
 		return err
 	}
 	key, err := ConsensusEvidenceKey(msg)
+	if err != nil {
+		return err
+	}
+	encoded, err := EncodeMessage(msg, ValidationRules{
+		ProtocolVersion: state.ProtocolVersion,
+		ChainID: state.ChainID,
+		RequireSender: true,
+		RequireSignature: true,
+	})
+	if err != nil {
+		return err
+	}
+	existing, err := store.LoadConsensusEvidence()
+	if err != nil {
+		return err
+	}
+	if prior, ok := existing[key]; ok {
+		if bytes.Equal(prior, encoded) {
+			return nil
+		}
+		return ErrConflictingEvidence
+	}
+	return store.PutConsensusEvidence(key, encoded)
+}
+
+
+// ConsensusEvidencePersistenceKey binds the durable evidence identity to the
+// exact persistence context digest while preserving the base consensus identity.
+func ConsensusEvidencePersistenceKey(msg Message, contextDigest [32]byte) (string, error) {
+	baseKey, err := ConsensusEvidenceKey(msg)
+	if err != nil {
+		return "", err
+	}
+	var b bytes.Buffer
+	putBytes(&b, []byte(baseKey))
+	b.Write(contextDigest[:])
+	sum := sha256.Sum256(b.Bytes())
+	return hex.EncodeToString(sum[:]), nil
+}
+
+// PersistAuthenticatedEvidenceWithContext validates authenticated evidence and
+// persists it under an identity bound to the supplied PersistenceContext.
+func PersistAuthenticatedEvidenceWithContext(
+	store EvidenceStore,
+	msg Message,
+	state RoundState,
+	validators ValidatorSet,
+	authority TimeoutAuthorityResolver,
+	context PersistenceContext,
+) error {
+	if store == nil {
+		return ErrNilEvidenceStore
+	}
+	if context.Epoch != msg.Epoch || context.Height != uint64(msg.Height) {
+		return ErrEvidencePersistenceContextMismatch
+	}
+	if err := ValidateDurableEvidenceMessage(msg, state, validators, authority); err != nil {
+		return err
+	}
+	contextDigest := PersistenceContextDigest(context)
+	key, err := ConsensusEvidencePersistenceKey(msg, contextDigest)
 	if err != nil {
 		return err
 	}
