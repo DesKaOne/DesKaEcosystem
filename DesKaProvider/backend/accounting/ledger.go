@@ -163,14 +163,20 @@ func (s *MemoryStore) AppendSettlement(_ context.Context, t LedgerTransaction, a
 	return nil
 }
 
-func (s *MemoryStore) GetSettlementAudit(_ context.Context, transactionID string) (SettlementAudit, bool, error) {
+func (s *MemoryStore) GetSettlementAudit(ctx context.Context, transactionID string) (SettlementAudit, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return SettlementAudit{}, false, err
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	a, ok := s.audits[transactionID]
 	return a, ok, nil
 }
 
-func (s *MemoryStore) AllSettlementAudits(_ context.Context) ([]SettlementAudit, error) {
+func (s *MemoryStore) AllSettlementAudits(ctx context.Context) ([]SettlementAudit, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]SettlementAudit, 0, len(s.audits))
@@ -207,7 +213,9 @@ func (s *MemoryStore) Get(id string) (LedgerTransaction, bool) {
 }
 
 func (s *MemoryStore) AllContext(ctx context.Context) ([]LedgerTransaction, error) {
-	_ = ctx
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	return s.All(), nil
 }
 
