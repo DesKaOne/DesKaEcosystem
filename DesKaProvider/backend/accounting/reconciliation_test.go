@@ -718,3 +718,94 @@ func TestSettlementReconcilerUsesDefaultFingerprintWhenDependencyUnset(t *testin
 		t.Fatal("default fingerprint implementation must populate snapshot fingerprint")
 	}
 }
+
+
+func TestSettlementReconcilerDoesNotCorrelateWhenTransactionHasDuplicateAudits(t *testing.T) {
+	ctx := context.Background()
+	txStore := routing.NewMemoryTransactionStore()
+	ledger := NewMemoryStore()
+	state := terminalPayment("duplicate-audit-transaction")
+	if err := txStore.Put(state); err != nil { t.Fatal(err) }
+	ledgerTx := LedgerTransaction{
+		ID: "duplicate-audit-ledger", ReferenceID: "duplicate-audit-transaction",
+		SourceType: "PROVIDER_SETTLEMENT", SourceID: "duplicate-audit-source",
+		Currency: "IDR", Description: "duplicate audit", CreatedAt: time.Date(2026,10,3,18,0,0,0,time.UTC),
+		Entries: settlementEntries(),
+	}
+	if err := ledger.Append(ledgerTx); err != nil { t.Fatal(err) }
+
+	audits := []SettlementAudit{
+		{EventID:"event-a", TransactionID:ledgerTx.ID, ReferenceID:ledgerTx.ReferenceID, SourceType:ledgerTx.SourceType, SourceID:ledgerTx.SourceID, Status:ProviderStatusSuccess, CreatedAt:ledgerTx.CreatedAt},
+		{EventID:"event-b", TransactionID:ledgerTx.ID, ReferenceID:ledgerTx.ReferenceID, SourceType:ledgerTx.SourceType, SourceID:ledgerTx.SourceID, Status:ProviderStatusSuccess, CreatedAt:ledgerTx.CreatedAt.Add(time.Minute)},
+	}
+	reader := duplicateAuditReader{SettlementAuditReader: ledger, allAudits: audits}
+	reconciler, err := NewSettlementReconciler(txStore, ledger, reader)
+	if err != nil { t.Fatal(err) }
+	report, err := reconciler.Reconcile(ctx)
+	if err != nil { t.Fatal(err) }
+
+	for _, item := range report.Items {
+		if item.Status == ReconciliationCorrelated {
+			t.Fatal("duplicate audit identity must never be reported as correlated")
+		}
+	}
+	found := false
+	for _, item := range report.Items {
+		if item.Status == ReconciliationDuplicateAuditIdentity && item.LedgerTransactionID == ledgerTx.ID {
+			found = true
+			want := []string{"event-a","event-b"}
+			if len(item.SettlementAuditEventIDs) != len(want) {
+				t.Fatalf("got audit IDs %#v", item.SettlementAuditEventIDs)
+			}
+			for i := range want {
+				if item.SettlementAuditEventIDs[i] != want[i] {
+					t.Fatalf("got audit IDs %#v", item.SettlementAuditEventIDs)
+				}
+			}
+		}
+	}
+	if !found { t.Fatal("expected duplicate audit identity diagnostic") }
+}
+
+func TestSettlementReconcilerDoesNotCorrelateWhenEventIdentityIsDuplicatedAcrossTransactions(t *testing.T) {
+	ctx := context.Background()
+	txStore := routing.NewMemoryTransactionStore()
+	ledger := NewMemoryStore()
+	state := terminalPayment("duplicate-event-reference")
+	if err := txStore.Put(state); err != nil { t.Fatal(err) }
+	ledgerTx := LedgerTransaction{
+		ID: "duplicate-event-ledger", ReferenceID: "duplicate-event-reference",
+		SourceType: "PROVIDER_SETTLEMENT", SourceID: "duplicate-event-source",
+		Currency: "IDR", Description: "duplicate event", CreatedAt: time.Date(2026,10,3,18,0,0,0,time.UTC),
+		Entries: settlementEntries(),
+	}
+	orphanTx := ledgerTx
+	orphanTx.ID = "duplicate-event-orphan"
+	orphanTx.ReferenceID = "orphan-reference"
+	orphanTx.SourceID = "orphan-source"
+	if err := ledger.Append(ledgerTx); err != nil { t.Fatal(err) }
+	if err := ledger.Append(orphanTx); err != nil { t.Fatal(err) }
+
+	audits := []SettlementAudit{
+		{EventID:"shared-event", TransactionID:ledgerTx.ID, ReferenceID:ledgerTx.ReferenceID, SourceType:ledgerTx.SourceType, SourceID:ledgerTx.SourceID, Status:ProviderStatusSuccess, CreatedAt:ledgerTx.CreatedAt},
+		{EventID:"shared-event", TransactionID:orphanTx.ID, ReferenceID:orphanTx.ReferenceID, SourceType:orphanTx.SourceType, SourceID:orphanTx.SourceID, Status:ProviderStatusSuccess, CreatedAt:orphanTx.CreatedAt.Add(time.Minute)},
+	}
+	reader := duplicateAuditReader{SettlementAuditReader: ledger, allAudits: audits}
+	reconciler, err := NewSettlementReconciler(txStore, ledger, reader)
+	if err != nil { t.Fatal(err) }
+	report, err := reconciler.Reconcile(ctx)
+	if err != nil { t.Fatal(err) }
+
+	for _, item := range report.Items {
+		if item.LedgerTransactionID == ledgerTx.ID && item.Status == ReconciliationCorrelated {
+			t.Fatal("globally duplicated audit event identity must not correlate")
+		}
+	}
+	found := false
+	for _, item := range report.Items {
+		if item.LedgerTransactionID == ledgerTx.ID && item.Status == ReconciliationDuplicateAuditIdentity {
+			found = true
+		}
+	}
+	if !found { t.Fatal("expected duplicate audit event diagnostic") }
+}
