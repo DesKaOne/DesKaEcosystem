@@ -96,7 +96,7 @@ type Store interface {
 }
 
 type ContextLedgerReader interface {
-	All(context.Context) ([]LedgerTransaction, error)
+	AllContext(context.Context) ([]LedgerTransaction, error)
 }
 
 type MemoryStore struct {
