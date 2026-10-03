@@ -290,7 +290,8 @@ func (r *SettlementReconciler) Reconcile(ctx context.Context) (ReconciliationRep
 		}
 		if audit.ReferenceID != referenceID || audit.TransactionID != tx.ID ||
 			audit.SourceType != tx.SourceType || audit.SourceID != tx.SourceID ||
-			audit.Status != ProviderStatusSuccess {
+			audit.Status != ProviderStatusSuccess ||
+			!reconciliationEconomicAgreement(state, tx) {
 			item.Status = ReconciliationCorrelationConflict
 			report.Items = append(report.Items, item)
 			continue
