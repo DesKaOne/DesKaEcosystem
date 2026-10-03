@@ -4526,4 +4526,52 @@ Mengikat runtime consensus yang direkonstruksi dari durable node state ke `Valid
 
 **5.8e Durable Evidence ↔ Authority Digest Consistency:** ikat recovered authenticated evidence dan persistence authority context ke digest authority yang sama, sehingga evidence dari authority rotation tidak hanya gagal signature verification tetapi juga gagal persistence-context validation secara deterministik.
 
-**Milestone 5.8d status:** implementation/test committed; exact-head CI gate pending.
+**Milestone 5.8d status:** implementation/test committed; exact-head CI GREEN pada SHA `8ba0296f4a14af71cd1a0ab2c04e9b3665d059d4` (GitHub Actions test checks sukses).
+
+### 5.8e Durable Evidence ↔ Authority Digest Consistency — 2026-10-03
+
+**Objective**
+
+Memastikan recovery authenticated evidence dan persistence context menggunakan satu authority snapshot yang sama, sehingga durable evidence tidak dapat lolos recovery dengan authority resolver yang berbeda dari runtime authority.
+
+**Implementation**
+
+- `IndoChain/internal/consensus/validator_authority_set.go`
+  - menambahkan `ConsensusAuthorityResolver()` yang mengembalikan clone authority snapshot yang sama setelah validasi.
+- `IndoChain/internal/node/consensus_recovery.go`
+  - menambahkan `ReconstructConsensusRuntimeWithAuthorityAndEvidence(..., authority ValidatorAuthoritySet)`;
+  - runtime recovery dan authenticated-evidence recovery kini dapat menerima authority snapshot yang sama melalui explicit API;
+  - API recovery+evidence lama tetap dipertahankan untuk backward compatibility.
+- `IndoChain/internal/node/consensus_recovery_test.go`
+  - coverage bahwa authority key yang dipakai runtime authority sama dengan resolver yang diturunkan dari snapshot authority;
+  - coverage persistence context tetap membawa authority digest pada recovery path.
+
+**Architecture correction**
+
+Current behavior sebelum 5.8e: `ReconstructConsensusRuntimeWithEvidence` dapat memverifikasi evidence dengan resolver eksternal sementara runtime hasil recovery tetap anonymous terhadap authority snapshot.
+
+Intended behavior: caller yang memiliki epoch-bound `ValidatorAuthoritySet` dapat mengikat runtime dan evidence recovery ke snapshot authority yang sama secara eksplisit.
+
+Impact: mencegah mismatch authority context pada recovery path tanpa memindahkan validator lifecycle, economic policy, atau canonical storage ke consensus evidence layer.
+
+**Locked invariants**
+
+1. Runtime authority dan evidence resolver dapat berasal dari satu immutable epoch-bound authority snapshot.
+2. Authority snapshot tetap defensive-copy dan deterministic.
+3. Persistence context tetap memperoleh `ValidatorAuthorityDigest` dari runtime authority.
+4. Legacy recovery+evidence API tidak dihapus.
+5. Evidence tetap bukan canonical block/state storage.
+6. Tidak ada validator mutation, staking, reward, slashing, atau financial-service logic.
+
+**Verification**
+
+- Implementation commits: `d31db3d7482ecfb909784b3a570de3866cca8297`, `9160d4d2da1f3e9dd99990c6b0298df9bb4b557c`.
+- Test commit: `e357dab50a295ce92a84883e00d431c095692b2a`.
+- 5.8d exact-head CI: test checks for SHA `8ba0296f4a14af71cd1a0ab2c04e9b3665d059d4` completed **GREEN**.
+- 5.8e exact-head CI gate remains required before this milestone is marked DONE.
+
+**Next meaningful integration target**
+
+**5.8f Authenticated Evidence Persistence ↔ Runtime Persistence Context:** buat helper/contract untuk menyimpan durable evidence bersama `PersistenceContextDigest` dan menolak restore ketika authority/voting-power/proposer-policy context berubah.
+
+**Milestone 5.8e status:** implementation/test committed; exact-head CI gate pending.
