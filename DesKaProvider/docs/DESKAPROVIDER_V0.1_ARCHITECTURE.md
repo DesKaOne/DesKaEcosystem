@@ -1253,3 +1253,9 @@ Milestone #53 makes the snapshot fingerprint canonicalization contract explicit.
 Unsupported internal dataset types fail explicitly instead of being treated as an empty dataset. The resulting SHA-256 hex digest remains diagnostic metadata only; it is not financial identity or authorization and has no mutation semantics.
 
 This hardening does not alter reconciliation correlation, settlement posting, provider lifecycle, ledger persistence, audit persistence, balances, treasury, retries, failover, resubmission, repair, reversal, external-provider calls, or blockchain calls.
+
+## Reconciliation Snapshot Fingerprint Failure Semantics
+
+Milestone #54 makes fingerprint establishment part of the successful snapshot boundary. SettlementReconciler uses an internal fingerprinter dependency seam for deterministic tests; production construction defaults it to reconciliationSnapshotFingerprint. During capture, a fingerprint error is wrapped and propagated, and Reconcile returns an empty report rather than exposing a partially established snapshot.
+
+There is deliberately no alternate fingerprint fallback, retry, repair, or mutation path after a fingerprint error. The fingerprinter seam is internal-only and has no public API or financial authorization semantics. Snapshot metadata remains observational, while an un-fingerprinted dataset is not treated as a valid reconciliation read model.
