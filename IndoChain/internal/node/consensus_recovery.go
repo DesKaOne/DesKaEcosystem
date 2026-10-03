@@ -96,6 +96,49 @@ func (n *Node) ReconstructConsensusRuntimeWithEvidence(
 	})
 }
 
+// ReconstructConsensusRuntimeWithAuthorityAndContextReplay rebuilds the runtime
+// from canonical node state, derives the persistence context from that runtime,
+// recovers evidence bound to the same context, and replays it without canonical
+// chain/state mutation.
+func (n *Node) ReconstructConsensusRuntimeWithAuthorityAndContextReplay(
+	epoch uint64,
+	validators consensus.ValidatorSet,
+	votingPower consensus.VotingPowerSet,
+	threshold consensus.QuorumThreshold,
+	proposer consensus.ProposerSelector,
+	evidenceStore consensus.EvidenceStore,
+	authority consensus.ValidatorAuthoritySet,
+	votingPowerDigest [32]byte,
+	proposerPolicy, proposerPolicyVersion string,
+) (ConsensusRecovery, consensus.PersistenceContext, error) {
+	if evidenceStore == nil {
+		return ConsensusRecovery{}, consensus.PersistenceContext{}, consensus.ErrNilEvidenceStore
+	}
+	recovery, err := n.ReconstructConsensusRuntimeWithAuthority(
+		epoch, validators, votingPower, threshold, proposer, authority,
+	)
+	if err != nil {
+		return ConsensusRecovery{}, consensus.PersistenceContext{}, err
+	}
+	context, err := recovery.Runtime.PersistenceContext(
+		votingPowerDigest, votingPowerDigest, proposerPolicy, proposerPolicyVersion,
+	)
+	if err != nil {
+		return ConsensusRecovery{}, consensus.PersistenceContext{}, err
+	}
+	evidence, err := consensus.RecoverAuthenticatedEvidenceWithContext(
+		evidenceStore, recovery.State, validators, recovery.RuntimeAuthorityResolver(), context,
+	)
+	if err != nil {
+		return ConsensusRecovery{}, consensus.PersistenceContext{}, err
+	}
+	if err := recovery.Runtime.ReplayRecoveredEvidence(evidence); err != nil {
+		return ConsensusRecovery{}, consensus.PersistenceContext{}, err
+	}
+	recovery.Evidence = evidence
+	return recovery, context, nil
+}
+
 // ReconstructConsensusRuntimeAndReplayEvidence rebuilds canonical consensus
 // state and then applies only the deterministic operational subset of
 // authenticated evidence. Failed replay returns no partially-mutated runtime.
