@@ -250,12 +250,29 @@ func (s *PostgresStore) AppendSettlement(ctx context.Context, ledger LedgerTrans
 			return fmt.Errorf("insert settlement ledger entry %d: %w", entry.LineID, err)
 		}
 	}
-	if _, err := tx.ExecContext(ctx,
-		"INSERT INTO settlement_audit (event_id, transaction_id, reference_id, source_type, source_id, status, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)",
+	var insertedAuditID string
+	err = tx.QueryRowContext(ctx,
+		"INSERT INTO settlement_audit (event_id, transaction_id, reference_id, source_type, source_id, status, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (event_id) DO NOTHING RETURNING event_id",
 		audit.EventID, audit.TransactionID, audit.ReferenceID, audit.SourceType, audit.SourceID, audit.Status, audit.CreatedAt,
-	); err != nil {
+	).Scan(&insertedAuditID)
+	if errors.Is(err, sql.ErrNoRows) {
+		var existing SettlementAudit
+		lookupErr := tx.QueryRowContext(ctx,
+			"SELECT event_id,transaction_id,reference_id,source_type,source_id,status,created_at FROM settlement_audit WHERE event_id=$1",
+			audit.EventID,
+		).Scan(&existing.EventID,&existing.TransactionID,&existing.ReferenceID,&existing.SourceType,&existing.SourceID,&existing.Status,&existing.CreatedAt)
+		if lookupErr != nil {
+			return fmt.Errorf("check existing settlement audit event: %w", lookupErr)
+		}
+		if sameSettlementAudit(existing, audit) {
+			return ErrSettlementAuditConflict
+		}
+		return ErrSettlementAuditConflict
+	}
+	if err != nil {
 		return fmt.Errorf("insert settlement audit: %w", err)
 	}
+	_ = insertedAuditID
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("%w: %v", ErrSettlementPersistenceAmbiguous, err)
 	}
