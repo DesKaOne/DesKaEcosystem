@@ -59,6 +59,49 @@ func TestPersistAuthenticatedEvidenceIsIdempotentAndConflictSafe(t *testing.T) {
 	}
 }
 
+
+func TestConsensusEvidencePersistenceKeyBindsPersistenceContext(t *testing.T) {
+	state, validators := evidenceState(t)
+	id := []byte("validator-a")
+	authority, privateKey := testAuthority(t, id)
+	msg := signedEvidenceMessage(t, state, id, MessageTypePrevote, []byte("proposal-hash"), privateKey)
+
+	base := PersistenceContext{
+		ProtocolVersion: uint64(state.ProtocolVersion),
+		ChainID: uint64(state.ChainID),
+		Epoch: state.Epoch,
+		Height: uint64(state.Height),
+		Round: state.Round,
+		Phase: uint8(state.Phase),
+		ValidatorAuthorityDigest: [32]byte{1},
+		VotingPowerDigest: [32]byte{2},
+		ThresholdNumerator: 2,
+		ThresholdDenominator: 3,
+		ProposerPolicy: "round-robin-v0-dev",
+		ProposerPolicyVersion: "1",
+	}
+	first, err := ConsensusEvidencePersistenceKey(msg, PersistenceContextDigest(base))
+	if err != nil { t.Fatal(err) }
+
+	changed := base
+	changed.VotingPowerDigest[0] ^= 0xff
+	second, err := ConsensusEvidencePersistenceKey(msg, PersistenceContextDigest(changed))
+	if err != nil { t.Fatal(err) }
+	if first == second {
+		t.Fatal("persistence context change must change durable evidence key")
+	}
+
+	store := storage.NewMemoryConsensusEvidenceStore()
+	if err := PersistAuthenticatedEvidenceWithContext(store, msg, state, validators, authority, base); err != nil {
+		t.Fatal(err)
+	}
+	badHeight := base
+	badHeight.Height++
+	if err := PersistAuthenticatedEvidenceWithContext(store, msg, state, validators, authority, badHeight); !errors.Is(err, ErrEvidencePersistenceContextMismatch) {
+		t.Fatalf("context mismatch error = %v, want %v", err, ErrEvidencePersistenceContextMismatch)
+	}
+}
+
 func TestRecoverAuthenticatedEvidenceAllowsMultipleRoundsDeterministically(t *testing.T) {
 	state, validators := evidenceState(t)
 	id := []byte("validator-a")
