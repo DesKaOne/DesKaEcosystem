@@ -108,6 +108,9 @@ func (s *PostgresStore) Get(ctx context.Context, id string) (LedgerTransaction, 
 	if err := rows.Err(); err != nil {
 		return LedgerTransaction{}, false, fmt.Errorf("iterate ledger entries: %w", err)
 	}
+	if err := tx.Validate(); err != nil {
+		return LedgerTransaction{}, false, fmt.Errorf("validate persisted ledger transaction: %w", err)
+	}
 	return tx, true, nil
 }
 
@@ -166,6 +169,9 @@ func (s *PostgresStore) AllSettlementAudits(ctx context.Context) ([]SettlementAu
 		if err := rows.Scan(&audit.EventID,&audit.TransactionID,&audit.ReferenceID,&audit.SourceType,&audit.SourceID,&audit.Status,&audit.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan settlement audit: %w", err)
 		}
+		if err := audit.Validate(); err != nil {
+			return nil, fmt.Errorf("validate persisted settlement audit: %w", err)
+		}
 		out = append(out, audit)
 	}
 	if err := rows.Err(); err != nil {
@@ -202,7 +208,6 @@ func (s *PostgresStore) CreateAccount(ctx context.Context, account Account) (Acc
 	}
 	return current, false, nil
 }
-
 
 func (s *PostgresStore) AppendSettlement(ctx context.Context, ledger LedgerTransaction, audit SettlementAudit) error {
 	if err := ledger.Validate(); err != nil {
@@ -287,5 +292,8 @@ func (s *PostgresStore) GetSettlementAudit(ctx context.Context, transactionID st
 	).Scan(&audit.EventID,&audit.TransactionID,&audit.ReferenceID,&audit.SourceType,&audit.SourceID,&audit.Status,&audit.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) { return SettlementAudit{}, false, nil }
 	if err != nil { return SettlementAudit{}, false, fmt.Errorf("get settlement audit: %w", err) }
+	if err := audit.Validate(); err != nil {
+		return SettlementAudit{}, false, fmt.Errorf("validate persisted settlement audit: %w", err)
+	}
 	return audit, true, nil
 }
