@@ -4484,3 +4484,46 @@ Menyediakan construction helper pada `ValidatorRuntime` yang mengambil state, au
 **5.8d Node Recovery ↔ Runtime Authority Binding:** masukkan authority snapshot sebagai explicit recovery dependency sehingga runtime yang direkonstruksi dari durable node state tidak lagi anonymous terhadap public-key authority context.
 
 **Milestone 5.8c status:** implementation/test committed; exact-head CI gate pending.
+
+
+### 5.8d Node Recovery ↔ Runtime Authority Binding — 2026-10-03
+
+**Objective**
+
+Mengikat runtime consensus yang direkonstruksi dari durable node state ke `ValidatorAuthoritySet` secara eksplisit agar recovery tidak menghasilkan runtime anonymous terhadap public-key authority context.
+
+**Implementation**
+
+- `IndoChain/internal/node/consensus_recovery.go`
+  - menambahkan `ReconstructConsensusRuntimeWithAuthority(..., authority consensus.ValidatorAuthoritySet)`;
+  - internal recovery constructor kini menerima optional authority snapshot dan meneruskannya ke `consensus.RuntimeConfig`;
+  - API recovery lama tetap kompatibel tanpa authority untuk existing development paths;
+  - authority-bound path melewati validasi runtime existing sehingga epoch dan validator membership mismatch fail-closed.
+- `IndoChain/internal/node/consensus_recovery_test.go`
+  - coverage recovery dengan authority snapshot;
+  - coverage public-key authority tersedia dari recovered runtime;
+  - coverage persistence context memakai recovered runtime authority;
+  - coverage rejection ketika authority epoch berbeda dari requested recovery epoch.
+
+**Locked invariants**
+
+1. Authority recovery adalah explicit dependency, bukan derived implicit state.
+2. Epoch dan validator membership wajib cocok dengan runtime context.
+3. Authority snapshot tetap immutable/defensive-copy melalui existing consensus boundary.
+4. Canonical block/hash/state-root tetap direcover dari node storage.
+5. Recovery tidak melakukan validator mutation, staking, rewards, slashing, atau monetary policy.
+6. Financial-service boundary tetap tidak berubah.
+7. Legacy recovery constructors tetap kompatibel.
+
+**Verification**
+
+- Implementation commits: `fbe3cd5ba37976ebd0032fc104d37a33c9468a6c`, `9031df9d0b4e5dfa3bc0172cef8ad9addecfbc31`.
+- Test commit: `b1c2dcb7dcafc743c68d6beefcb241dd8d505644`.
+- Exact prerequisite 5.8c HEAD `257e16f0e6d44013fa77a7a293e7e9d503dbd518` passed CI run #1953.
+- 5.8d exact-head CI gate masih pending setelah documentation update ini.
+
+**Next meaningful integration target**
+
+**5.8e Durable Evidence ↔ Authority Digest Consistency:** ikat recovered authenticated evidence dan persistence authority context ke digest authority yang sama, sehingga evidence dari authority rotation tidak hanya gagal signature verification tetapi juga gagal persistence-context validation secara deterministik.
+
+**Milestone 5.8d status:** implementation/test committed; exact-head CI gate pending.
