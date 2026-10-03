@@ -45,7 +45,7 @@ type SettlementReconciler struct {
 
 func NewSettlementReconciler(
 	transactions routing.ContextReadTransactionStore,
-	ledger Store,
+	ledger interface{},
 	audit SettlementAuditReader,
 ) (*SettlementReconciler, error) {
 	if transactions == nil || ledger == nil || audit == nil {
@@ -155,11 +155,14 @@ func (r *SettlementReconciler) Reconcile(ctx context.Context) (ReconciliationRep
 	return report, nil
 }
 
-func readLedgerTransactions(ctx context.Context, store Store) ([]LedgerTransaction, error) {
+func readLedgerTransactions(ctx context.Context, store interface{}) ([]LedgerTransaction, error) {
 	if durable, ok := store.(ContextLedgerReader); ok {
 		return durable.All(ctx)
 	}
-	return store.All(), nil
+	if memory, ok := store.(Store); ok {
+		return memory.All(), nil
+	}
+	return nil, errors.New("ledger dependency does not implement a supported read interface")
 }
 
 var _ ReconciliationReader = (*SettlementReconciler)(nil)
