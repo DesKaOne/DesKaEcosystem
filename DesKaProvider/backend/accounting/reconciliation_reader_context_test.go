@@ -158,7 +158,7 @@ func TestSettlementReconcilerPropagatesContextDeadlineAtEachSnapshotReader(t *te
             name: "ledger",
             build: func() (*SettlementReconciler, error) {
                 return NewSettlementReconciler(
-                    routing.NewMemoryTransactionStore(),
+                    nonContextReconciliationProviderReader{MemoryTransactionStore: routing.NewMemoryTransactionStore()},
                     contextAwareReconciliationLedgerReader{MemoryStore: NewMemoryStore()},
                     NewMemoryStore(),
                 )
@@ -169,8 +169,8 @@ func TestSettlementReconcilerPropagatesContextDeadlineAtEachSnapshotReader(t *te
             name: "bulk-audit",
             build: func() (*SettlementReconciler, error) {
                 return NewSettlementReconciler(
-                    routing.NewMemoryTransactionStore(),
-                    NewMemoryStore(),
+                    nonContextReconciliationProviderReader{MemoryTransactionStore: routing.NewMemoryTransactionStore()},
+                    nonContextReconciliationLedgerReader{MemoryStore: NewMemoryStore()},
                     contextAwareReconciliationAuditReader{MemoryStore: NewMemoryStore()},
                 )
             },
