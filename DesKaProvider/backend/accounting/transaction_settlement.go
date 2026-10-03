@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
 	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/backend/routing"
 )
 
@@ -71,4 +70,3 @@ func providerStatusFromTransaction(state routing.TransactionState) string {
 	return string(state.Execution.Result.Status)
 }
 
-var _ = provider.StatusSuccess
