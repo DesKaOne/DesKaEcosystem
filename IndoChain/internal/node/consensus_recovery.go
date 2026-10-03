@@ -127,7 +127,6 @@ func (n *Node) ReconstructConsensusRuntimeWithAuthorityAndContextReplay(
 		return ConsensusRecovery{}, consensus.PersistenceContext{}, err
 	}
 	evidence, err := consensus.RecoverAuthenticatedEvidenceWithContext(
-		evidenceStore, recovery.State, validators, recovery.RuntimeAuthorityResolver(), context,
 	)
 	if err != nil {
 		return ConsensusRecovery{}, consensus.PersistenceContext{}, err
