@@ -62,10 +62,13 @@ type ReconciliationReader interface {
 	Reconcile(context.Context) (ReconciliationReport, error)
 }
 
+type reconciliationSnapshotFingerprinter func([]routing.TransactionState, []LedgerTransaction, []SettlementAudit) (string, error)
+
 type SettlementReconciler struct {
 	transactions routing.ContextReadTransactionStore
 	ledger interface{}
 	audit SettlementAuditReader
+	fingerprint reconciliationSnapshotFingerprinter
 }
 
 type reconciliationSnapshot struct {
@@ -118,7 +121,11 @@ func (r *SettlementReconciler) readSnapshot(ctx context.Context) (reconciliation
 	states = append([]routing.TransactionState(nil), states...)
 	ledgerTransactions = append([]LedgerTransaction(nil), ledgerTransactions...)
 	audits = append([]SettlementAudit(nil), audits...)
-	fingerprint, err := reconciliationSnapshotFingerprint(states, ledgerTransactions, audits)
+	fingerprinter := r.fingerprint
+	if fingerprinter == nil {
+		fingerprinter = reconciliationSnapshotFingerprint
+	}
+	fingerprint, err := fingerprinter(states, ledgerTransactions, audits)
 	if err != nil {
 		return reconciliationSnapshot{}, fmt.Errorf("fingerprint reconciliation snapshot: %w", err)
 	}
@@ -150,7 +157,7 @@ func NewSettlementReconciler(
 	if transactions == nil || ledger == nil || audit == nil {
 		return nil, errors.New("reconciliation dependencies are required")
 	}
-	return &SettlementReconciler{transactions: transactions, ledger: ledger, audit: audit}, nil
+	return &SettlementReconciler{transactions: transactions, ledger: ledger, audit: audit, fingerprint: reconciliationSnapshotFingerprint}, nil
 }
 
 func (r *SettlementReconciler) Reconcile(ctx context.Context) (ReconciliationReport, error) {
