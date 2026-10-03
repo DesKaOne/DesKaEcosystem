@@ -4574,4 +4574,53 @@ Impact: mencegah mismatch authority context pada recovery path tanpa memindahkan
 
 **5.8f Authenticated Evidence Persistence ↔ Runtime Persistence Context:** buat helper/contract untuk menyimpan durable evidence bersama `PersistenceContextDigest` dan menolak restore ketika authority/voting-power/proposer-policy context berubah.
 
-**Milestone 5.8e status:** implementation/test committed; exact-head CI gate pending.
+**Milestone 5.8e status:** implementation/test committed; exact-head CI GREEN pada SHA `a2e15a193689fc0889cc99402490bee5b1d9749e` (dua GitHub Actions check-run `test` sukses).
+
+### 5.8f Authenticated Evidence Persistence ↔ Runtime Persistence Context — 2026-10-03
+
+**Objective**
+
+Mengikat identity durable authenticated evidence ke `PersistenceContextDigest`, sehingga evidence yang sama secara koordinat consensus tetapi berasal dari voting-power/proposer-policy/authority context berbeda tidak dapat dianggap sebagai record persistence yang sama.
+
+**Implementation**
+
+- `IndoChain/internal/consensus/evidence_store.go`
+  - menambahkan `ConsensusEvidencePersistenceKey(..., contextDigest [32]byte)`;
+  - menambahkan `PersistAuthenticatedEvidenceWithContext(..., context PersistenceContext)`;
+  - helper memvalidasi epoch/height evidence terhadap persistence context sebelum persistence;
+  - persistence tetap idempotent untuk byte record yang sama dan conflict-safe untuk identity yang sama;
+  - API `PersistAuthenticatedEvidence` lama dipertahankan.
+- `IndoChain/internal/consensus/evidence_store_test.go`
+  - coverage bahwa perubahan `VotingPowerDigest` mengubah durable evidence persistence key;
+  - coverage bahwa context height mismatch ditolak dengan `ErrEvidencePersistenceContextMismatch`;
+  - coverage persistence dengan context yang valid.
+
+**Architecture correction**
+
+Current behavior sebelum 5.8f: durable evidence identity hanya mengikat protocol/chain/epoch/height/round/sender/type, sementara persistence context juga membawa authority digest, voting-power digest, dan proposer policy.
+
+Intended behavior: evidence persistence yang dipakai untuk recovery runtime harus dapat dikaitkan ke exact `PersistenceContextDigest`.
+
+Impact: recovery context mismatch menjadi deterministic dan fail-closed tanpa mengubah canonical block/state storage atau menambahkan economic logic.
+
+**Locked invariants**
+
+1. Durable evidence key dapat diikat ke exact `PersistenceContextDigest`.
+2. Perubahan authority/voting-power/proposer context menghasilkan persistence identity yang berbeda.
+3. Epoch/height mismatch antara evidence dan context ditolak sebelum write.
+4. Legacy evidence persistence API tetap kompatibel.
+5. Evidence store tetap terpisah dari canonical chain/state store.
+6. Tidak ada validator mutation, staking, reward, slashing, atau financial-service logic.
+
+**Verification**
+
+- Implementation commit: `a2e15a193689fc0889cc99402490bee5b1d9749e` plus evidence persistence contract changes.
+- Test commit: `fe120255057b3de0ae228270d2ea3d859074f8a1`.
+- Exact-head CI gate for `a2e15a193689fc0889cc99402490bee5b1d9749e`: **GREEN**; both `test` check-runs completed successfully.
+- New 5.8f exact-head CI gate is required before milestone completion.
+
+**Next meaningful integration target**
+
+**5.8g Context-Aware Durable Evidence Recovery:** tambahkan recovery API yang secara eksplisit menerima `PersistenceContext`/digest dan hanya mengembalikan evidence yang identity key-nya cocok dengan context tersebut.
+
+**Milestone 5.8f status:** implementation/test committed; exact-head CI gate pending.
