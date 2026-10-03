@@ -4440,3 +4440,44 @@ Mengikat persistence context secara eksplisit ke authority snapshot validator ag
 **5.8c Runtime ↔ Persistence Context Construction:** sediakan constructor/helper yang membentuk `PersistenceContext` langsung dari `ValidatorRuntime` + authority snapshot sehingga caller tidak dapat membangun recovery context dengan authority digest yang tidak konsisten dengan runtime.
 
 **Milestone 5.8b status:** implementation/test committed; exact-head CI gate pending.
+
+
+### 5.8c Runtime ↔ Persistence Context Construction — 2026-10-03
+
+**Objective**
+
+Menyediakan construction helper pada `ValidatorRuntime` yang mengambil state, authority digest, voting-power digest, quorum threshold, dan proposer policy dari runtime yang sama sehingga caller tidak perlu merakit authority context secara manual.
+
+**Implementation**
+
+- `IndoChain/internal/consensus/runtime.go`
+  - menambahkan `ValidatorRuntime.PersistenceContext(...)`;
+  - helper fail-closed untuk nil/invalid runtime, authority yang hilang/tidak valid, epoch atau validator-set mismatch, dan proposer policy/version kosong;
+  - `PersistenceContext` mengambil `ValidatorAuthorityDigest` langsung dari authority snapshot runtime;
+  - protocol version, chain ID, dan height dikonversi eksplisit ke scalar persistence type `uint64`.
+- `IndoChain/internal/consensus/runtime_test.go`
+  - coverage construction dari runtime + authority snapshot;
+  - coverage authority digest binding, threshold/policy propagation, deterministic context construction;
+  - coverage missing-authority rejection.
+- CI menemukan satu compile regression pada assertion test karena `types.Height` dibandingkan langsung dengan `uint64`; assertion diperbaiki ke `uint64(state.Height)` pada commit `34309c7dc3c42dafe3b1701bef93307a60bd76c0`.
+
+**Locked invariants**
+
+1. Persistence authority digest selalu berasal dari authority snapshot runtime yang telah tervalidasi.
+2. Runtime-derived context wajib memiliki epoch dan validator membership yang sama dengan authority snapshot.
+3. Helper tidak melakukan persistence I/O, validator mutation, atau economic policy.
+4. Caller tetap dapat memasok voting-power digest dan proposer policy/version sebagai explicit persistence inputs.
+5. Canonical block/state storage tetap berada pada node/storage boundary.
+6. Financial-service boundary tidak berubah.
+
+**Verification**
+
+- Implementation/test commits: `5f41b52581c71b4ea794d5a9235b447f251f78b9`, `63a2090d43efee68cc871f85a4d9952929e73d75`, `922b98cee4b03ecdfb54e5b4ee004b89c4556939`, `34309c7dc3c42dafe3b1701bef93307a60bd76c0`.
+- Exact HEAD CI run #1945 / `37072353439` pada `63a2090` **RED** pada step Test karena assertion type mismatch; Tidy PASS, Test build FAIL, Race/Vet skipped.
+- Fix commit `34309c7` telah dipush ke branch yang sama; milestone belum dinyatakan DONE sampai exact-head CI GREEN terverifikasi.
+
+**Next meaningful integration target**
+
+**5.8d Node Recovery ↔ Runtime Authority Binding:** masukkan authority snapshot sebagai explicit recovery dependency sehingga runtime yang direkonstruksi dari durable node state tidak lagi anonymous terhadap public-key authority context.
+
+**Milestone 5.8c status:** implementation/test committed; exact-head CI gate pending.
