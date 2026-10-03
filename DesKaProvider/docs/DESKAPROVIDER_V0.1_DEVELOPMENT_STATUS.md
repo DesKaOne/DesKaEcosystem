@@ -9808,3 +9808,31 @@ Implementation and documentation commits must be followed by DesKaProvider CI ve
 **Milestone #49 — Reconciliation Snapshot Provenance & Capture Metadata**
 
 Scope: make the reconciliation snapshot boundary observable through explicit capture metadata without changing financial state or introducing automatic repair.
+
+## Milestone #49 — Reconciliation Snapshot Provenance & Capture Metadata
+
+**Date:** 2026-10-03
+
+### Implementation
+
+- added `ReconciliationSnapshotMetadata` to reconciliation reports;
+- records UTC capture time and materialized counts for provider transactions, ledger transactions, and settlement audits;
+- records the provider, ledger, and settlement-audit reader paths used to establish the snapshot;
+- added regression coverage for capture timestamp bounds, dataset counts, and reader provenance.
+
+### Safety Boundary / Invariants
+
+- provenance metadata is observational only and does not affect reconciliation correlation, deterministic ordering, or financial authorization;
+- no provider lifecycle mutation, ledger mutation, settlement-audit mutation, customer-balance mutation, treasury movement, external-provider call, or blockchain call is introduced;
+- no retry, failover, resubmission, or automatic reconciliation repair is introduced;
+- the snapshot remains an execution-level read boundary and is not a financial transaction.
+
+### Verification
+
+Milestone #49 is complete only when the latest documentation-synchronized commit has DesKaProvider CI fully successful, including test and race jobs.
+
+### Next Milestone
+
+**Milestone #50 — Reconciliation Snapshot Integrity Fingerprint**
+
+Scope: add a deterministic fingerprint of the captured dataset contents for diagnostics and repeated-run comparison, without using the fingerprint as a financial identity or mutation authorization.
