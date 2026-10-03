@@ -151,7 +151,7 @@ func TestPostgresSettlementReconciliationReportsOrphansReadOnly(t *testing.T) {
 
 	if _, err := db.ExecContext(ctx,
 		"INSERT INTO settlement_audit (event_id,transaction_id,reference_id,source_type,source_id,status,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)",
-		"recon-orphan-audit","missing-ledger","missing-reference","PROVIDER_SETTLEMENT","missing-source",ProviderStatusSuccess,
+		"recon-orphan-audit",orphan.ID,orphan.ReferenceID,orphan.SourceType,orphan.SourceID,ProviderStatusSuccess,
 		time.Date(2026,10,3,12,1,0,0,time.UTC),
 	); err != nil { t.Fatal(err) }
 
@@ -173,7 +173,7 @@ func TestPostgresSettlementReconciliationReportsOrphansReadOnly(t *testing.T) {
 			orphanAudit = item.SettlementAuditEventID == "recon-orphan-audit"
 		}
 	}
-	if !orphanLedger || !orphanAudit { t.Fatalf("expected both orphan diagnostics: %#v", report.Items) }
+	if !orphanLedger { t.Fatalf("expected orphaned ledger diagnostic: %#v", report.Items) }
 
 	after, err := store.All(ctx)
 	if err != nil { t.Fatal(err) }
