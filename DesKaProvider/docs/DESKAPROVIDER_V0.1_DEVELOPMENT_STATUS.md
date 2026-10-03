@@ -9665,3 +9665,34 @@ Scope:
 - preserve the read-only reconciliation boundary.
 
 No automatic financial repair, retry, failover, provider resubmission, treasury movement, provider funding, or customer balance mutation is included.
+
+
+## Milestone #45 — Reconciliation Correlation Invariant Hardening
+
+**Date:** 2026-10-03
+
+### Implementation
+
+- reconciliation no longer silently selects one ledger transaction when a financial reference is duplicated;
+- added explicit `DUPLICATE_REFERENCE` diagnostic;
+- duplicate persisted provider references are reported deterministically;
+- duplicate ledger references are reported with candidate ledger transaction IDs sorted by immutable transaction ID;
+- existing orphan, missing, and correlation-conflict diagnostics remain read-only.
+
+### Safety Boundary / Invariants
+
+- duplicate detection never merges, deletes, reverses, repairs, retries, or resubmits records;
+- no provider lifecycle mutation is introduced;
+- no ledger mutation or customer balance mutation is introduced;
+- the accounting ledger remains the financial source of truth;
+- reconciliation remains an observation/read-model boundary.
+
+### Verification
+
+Final CI verification is required on the latest documentation-synchronized HEAD before this milestone is considered complete.
+
+### Next Milestone
+
+**Milestone #46 — Reconciliation Audit Identity Uniqueness Hardening**
+
+Scope: make settlement audit event identity and transaction correlation uniqueness explicit in the read model and durable store, while preserving the read-only reconciliation boundary.
