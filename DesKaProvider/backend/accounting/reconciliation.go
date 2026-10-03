@@ -180,6 +180,7 @@ func (r *SettlementReconciler) Reconcile(ctx context.Context) (ReconciliationRep
 	allAudits := snapshot.audits
 
 	auditsByTransaction := make(map[string][]SettlementAudit, len(allAudits))
+	duplicateAuditTransactions, duplicateAuditEvents := duplicateAuditIndexes(allAudits)
 	for _, audit := range allAudits {
 		auditsByTransaction[audit.TransactionID] = append(auditsByTransaction[audit.TransactionID], audit)
 	}
@@ -260,6 +261,17 @@ func (r *SettlementReconciler) Reconcile(ctx context.Context) (ReconciliationRep
 			continue
 		}
 		item.SettlementAuditEventID = audit.EventID
+		if len(auditCandidates) != 1 || duplicateAuditTransactions[tx.ID] || duplicateAuditEvents[audit.EventID] {
+			item.Status = ReconciliationDuplicateAuditIdentity
+			item.SettlementAuditEventIDs = make([]string, 0, len(auditCandidates))
+			for _, candidate := range auditCandidates {
+				item.SettlementAuditEventIDs = append(item.SettlementAuditEventIDs, candidate.EventID)
+			}
+			sort.Strings(item.SettlementAuditEventIDs)
+			item.LedgerTransactionIDs = []string{tx.ID}
+			report.Items = append(report.Items, item)
+			continue
+		}
 		if audit.ReferenceID != referenceID || audit.TransactionID != tx.ID ||
 			audit.SourceType != tx.SourceType || audit.SourceID != tx.SourceID {
 			item.Status = ReconciliationCorrelationConflict
