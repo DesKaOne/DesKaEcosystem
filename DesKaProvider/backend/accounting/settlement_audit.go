@@ -25,6 +25,7 @@ func (a SettlementAudit) Validate() error {
 }
 
 var ErrSettlementPersistenceAmbiguous = errors.New("settlement persistence outcome is ambiguous")
+var ErrSettlementAuditConflict = errors.New("settlement audit identity conflict")
 
 type SettlementStore interface {
 	AppendSettlement(context.Context, LedgerTransaction, SettlementAudit) error
