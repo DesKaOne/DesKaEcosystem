@@ -98,6 +98,92 @@ func TestSettlementReconcilerPreservesPostgreSQLProviderContextCancellation(t *t
     assertEmptySnapshotMetadata(t, report.Snapshot)
 }
 
+func TestSettlementReconcilerPropagatesLegacyPerLedgerAuditContextCancellation(t *testing.T) {
+    ledgerStore := NewMemoryStore()
+    auditErr := context.Canceled
+    reconciler, err := NewSettlementReconciler(
+        routing.NewMemoryTransactionStore(),
+        ledgerStore,
+        legacyReconciliationAuditFailure{err: auditErr},
+    )
+    if err != nil {
+        t.Fatal(err)
+    }
+    ledger := LedgerTransaction{
+        ID: "ledger-legacy-audit-canceled",
+        ReferenceID: "ref-legacy-audit-canceled",
+        SourceType: "provider_purchase",
+        SourceID: "provider-source",
+        Currency: "IDR",
+        Description: "legacy audit cancellation test",
+        CreatedAt: time.Unix(1, 0).UTC(),
+        Entries: []Entry{
+            {LineID: 1, AccountID: "expense", Direction: Debit, Amount: 1000, Currency: "IDR"},
+            {LineID: 2, AccountID: "cash", Direction: Credit, Amount: 1000, Currency: "IDR"},
+        },
+    }
+    if err := ledgerStore.Append(ledger); err != nil {
+        t.Fatal(err)
+    }
+    report, err := reconciler.Reconcile(context.Background())
+    if err == nil {
+        t.Fatal("expected legacy audit context cancellation")
+    }
+    if !errors.Is(err, ErrReconciliationAuditRead) {
+        t.Fatalf("expected stable audit-read classification, got %v", err)
+    }
+    if !errors.Is(err, context.Canceled) {
+        t.Fatalf("expected context.Canceled in audit error chain, got %v", err)
+    }
+    if len(report.Items) != 0 {
+        t.Fatalf("canceled legacy audit read must not expose items: %#v", report.Items)
+    }
+    assertEmptySnapshotMetadata(t, report.Snapshot)
+}
+
+func TestSettlementReconcilerPropagatesLegacyPerLedgerAuditContextDeadline(t *testing.T) {
+    ledgerStore := NewMemoryStore()
+    auditErr := context.DeadlineExceeded
+    reconciler, err := NewSettlementReconciler(
+        routing.NewMemoryTransactionStore(),
+        ledgerStore,
+        legacyReconciliationAuditFailure{err: auditErr},
+    )
+    if err != nil {
+        t.Fatal(err)
+    }
+    ledger := LedgerTransaction{
+        ID: "ledger-legacy-audit-deadline",
+        ReferenceID: "ref-legacy-audit-deadline",
+        SourceType: "provider_purchase",
+        SourceID: "provider-source",
+        Currency: "IDR",
+        Description: "legacy audit deadline test",
+        CreatedAt: time.Unix(1, 0).UTC(),
+        Entries: []Entry{
+            {LineID: 1, AccountID: "expense", Direction: Debit, Amount: 1000, Currency: "IDR"},
+            {LineID: 2, AccountID: "cash", Direction: Credit, Amount: 1000, Currency: "IDR"},
+        },
+    }
+    if err := ledgerStore.Append(ledger); err != nil {
+        t.Fatal(err)
+    }
+    report, err := reconciler.Reconcile(context.Background())
+    if err == nil {
+        t.Fatal("expected legacy audit context deadline")
+    }
+    if !errors.Is(err, ErrReconciliationAuditRead) {
+        t.Fatalf("expected stable audit-read classification, got %v", err)
+    }
+    if !errors.Is(err, context.DeadlineExceeded) {
+        t.Fatalf("expected context.DeadlineExceeded in audit error chain, got %v", err)
+    }
+    if len(report.Items) != 0 {
+        t.Fatalf("deadline legacy audit read must not expose items: %#v", report.Items)
+    }
+    assertEmptySnapshotMetadata(t, report.Snapshot)
+}
+
 func TestSettlementReconcilerClassifiesLegacyPerLedgerAuditReadFailure(t *testing.T) {
     auditErr := errors.New("legacy audit store unavailable")
     ledgerStore := NewMemoryStore()
