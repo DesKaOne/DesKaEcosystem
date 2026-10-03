@@ -544,3 +544,38 @@ func TestSettlementReconcilerSnapshotMetadataFingerprintAndLifecycleContract(t *
 		t.Fatal("separate captures must not be represented as the same lifecycle observation")
 	}
 }
+
+
+func TestReconciliationSnapshotFingerprintUsesExplicitSchemaVersion(t *testing.T) {
+	if reconciliationSnapshotFingerprintVersion != "v1" {
+		t.Fatalf("unexpected fingerprint schema version: %q", reconciliationSnapshotFingerprintVersion)
+	}
+	fingerprint, err := reconciliationSnapshotFingerprint(nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fingerprint) != 64 {
+		t.Fatalf("expected SHA-256 hex fingerprint, got %q", fingerprint)
+	}
+}
+
+func TestReconciliationSnapshotFingerprintPreservesDatasetDomainSeparation(t *testing.T) {
+	state := terminalPayment("domain-separated")
+	ledger := LedgerTransaction{
+		ID:"domain-ledger", ReferenceID:"domain-separated", SourceType:"PROVIDER_SETTLEMENT", SourceID:"domain-source",
+		Currency:"IDR", Description:"domain", CreatedAt:time.Date(2026,10,3,17,0,0,0,time.UTC), Entries:settlementEntries(),
+	}
+	audit := SettlementAudit{
+		EventID:"domain-event", TransactionID:ledger.ID, ReferenceID:ledger.ReferenceID, SourceType:ledger.SourceType,
+		SourceID:ledger.SourceID, Status:ProviderStatusSuccess, CreatedAt:ledger.CreatedAt,
+	}
+	first, err := reconciliationSnapshotFingerprint([]routing.TransactionState{state}, []LedgerTransaction{ledger}, []SettlementAudit{audit})
+	if err != nil { t.Fatal(err) }
+	second, err := reconciliationSnapshotFingerprint([]routing.TransactionState{state}, []LedgerTransaction{ledger}, nil)
+	if err != nil { t.Fatal(err) }
+	third, err := reconciliationSnapshotFingerprint(nil, []LedgerTransaction{ledger}, []SettlementAudit{audit})
+	if err != nil { t.Fatal(err) }
+	if first == second || first == third || second == third {
+		t.Fatal("fingerprint must preserve dataset-domain boundaries")
+	}
+}
