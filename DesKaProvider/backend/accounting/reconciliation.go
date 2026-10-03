@@ -179,7 +179,13 @@ func (r *SettlementReconciler) Reconcile(ctx context.Context) (ReconciliationRep
 			eventGroups[audit.EventID] = append(eventGroups[audit.EventID], audit)
 			transactionGroups[audit.TransactionID] = append(transactionGroups[audit.TransactionID], audit)
 		}
-		for eventID, group := range eventGroups {
+		eventIDs := make([]string, 0, len(eventGroups))
+		for eventID := range eventGroups {
+			eventIDs = append(eventIDs, eventID)
+		}
+		sort.Strings(eventIDs)
+		for _, eventID := range eventIDs {
+			group := eventGroups[eventID]
 			if len(group) < 2 {
 				continue
 			}
@@ -197,7 +203,13 @@ func (r *SettlementReconciler) Reconcile(ctx context.Context) (ReconciliationRep
 				LedgerTransactionIDs: ids,
 			})
 		}
-		for transactionID, group := range transactionGroups {
+		transactionIDs := make([]string, 0, len(transactionGroups))
+		for transactionID := range transactionGroups {
+			transactionIDs = append(transactionIDs, transactionID)
+		}
+		sort.Strings(transactionIDs)
+		for _, transactionID := range transactionIDs {
+			group := transactionGroups[transactionID]
 			if len(group) < 2 {
 				continue
 			}
