@@ -1153,3 +1153,18 @@ Settlement can now read the durable routing TransactionState and authorize posti
 ## 43. Settlement Reconciliation Is Read-Only
 
 `SettlementReconciler` correlates durable routing `TransactionState`, ledger transactions, and settlement audit records into a read model. It reports non-settleable provider states and correlation gaps/conflicts without creating, changing, retrying, or repairing financial records. Reconciliation therefore remains observational; financial mutation requires the explicit settlement command boundary.
+
+
+## Settlement Reconciliation — Durable Read Coverage & Orphan Detection
+
+The reconciliation read model supports both in-memory and PostgreSQL-backed accounting reads without changing the financial mutation boundary.
+
+For durable PostgreSQL storage, reconciliation reads the complete ledger transaction set and settlement-audit set through context-aware read interfaces. These reads are observational only.
+
+Explicit diagnostics now include:
+
+- `ORPHANED_LEDGER`: a durable ledger transaction whose financial reference has no corresponding persisted provider transaction state;
+- `ORPHANED_AUDIT`: a durable settlement audit whose ledger transaction ID has no corresponding durable ledger transaction;
+- existing `LEDGER_MISSING`, `AUDIT_MISSING`, and `CORRELATION_CONFLICT` continue to describe provider-success settlement gaps.
+
+Orphan detection does not repair, delete, append, retry, reverse, or otherwise mutate financial records. It only makes durable inconsistencies visible to an operator/reconciliation process.
