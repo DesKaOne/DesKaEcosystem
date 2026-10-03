@@ -6,7 +6,7 @@ import (
  "testing"
  "time"
 
- "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/backend/routing"
+ "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/routing"
  payment "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/internal/Payment"
  provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
 )
