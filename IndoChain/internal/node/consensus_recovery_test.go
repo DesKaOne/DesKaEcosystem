@@ -108,6 +108,44 @@ func TestReconstructConsensusRuntimeWithAuthorityBindsRuntimeSnapshot(t *testing
 	}
 }
 
+
+func TestReconstructConsensusRuntimeWithAuthorityAndEvidenceBindsSameAuthority(t *testing.T) {
+	store := storage.NewMemoryStore()
+	n, err := NewDevnet(store)
+	if err != nil { t.Fatal(err) }
+	validators, power := recoveryValidatorConfig(t)
+	authority, err := consensus.NewValidatorAuthoritySet(0, validators, map[string][]byte{
+		"validator-a": []byte("key-a"),
+		"validator-b": []byte("key-b"),
+		"validator-c": []byte("key-c"),
+	})
+	if err != nil { t.Fatal(err) }
+
+	recovery, err := n.ReconstructConsensusRuntimeWithAuthorityAndEvidence(
+		0, validators, power,
+		consensus.QuorumThreshold{Numerator: 2, Denominator: 3},
+		consensus.RoundRobinProposer{},
+		storage.NewMemoryConsensusEvidenceStore(), authority,
+	)
+	if err != nil { t.Fatal(err) }
+	gotAuthority, err := recovery.Runtime.Authority()
+	if err != nil { t.Fatal(err) }
+	gotResolver, err := authority.ConsensusAuthorityResolver()
+	if err != nil { t.Fatal(err) }
+	gotKey, err := gotAuthority.PublicKeyForValidator([]byte("validator-a"))
+	if err != nil { t.Fatal(err) }
+	wantKey, err := gotResolver.PublicKeyForValidator([]byte("validator-a"))
+	if err != nil { t.Fatal(err) }
+	if string(gotKey) != string(wantKey) {
+		t.Fatalf("runtime/evidence authority key mismatch: %q != %q", gotKey, wantKey)
+	}
+	ctx, err := recovery.Runtime.PersistenceContext([32]byte{1}, [32]byte{2}, "round-robin-v0-dev", "1")
+	if err != nil { t.Fatal(err) }
+	if ctx.ValidatorAuthorityDigest == ([32]byte{}) {
+		t.Fatal("authority-bound persistence context must carry a non-zero authority digest")
+	}
+}
+
 func TestReconstructConsensusRuntimeWithAuthorityRejectsEpochMismatch(t *testing.T) {
 	store := storage.NewMemoryStore()
 	n, err := NewDevnet(store)
