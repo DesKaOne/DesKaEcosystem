@@ -10362,3 +10362,65 @@ Engineering estimate remains approximately **88%**. This milestone closes a cont
 Continue the reconciliation persistence/recovery audit into remaining concrete reader/restart boundaries, especially any persisted reader whose unavailable or partially visible state could be represented as a legitimate empty dataset. Preserve deterministic, observational, fail-closed behavior and require explicit action for any uncertain financial state.
 
 No automatic provider retry, failover, transaction resubmission, provider funding, customer ledger mutation, treasury movement, duplicate transaction creation, or public API exposure is included in the next milestone.
+
+
+## Milestone #61 — Memory Ledger Point-Read Context Safety
+
+**Date:** 2026-10-03
+
+### Scope
+
+- close the remaining context-propagation gap in memory-backed ledger point reads;
+- ensure canceled or expired point reads/writes fail closed instead of exposing or mutating ledger state;
+- preserve the distinction between context failure and a legitimate not-found/empty result.
+
+### Implementation
+
+- updated `MemoryStore.GetContext` to return `ctx.Err()` before reading ledger state;
+- updated `MemoryStore.AppendContext` to return `ctx.Err()` before mutating ledger state;
+- added deterministic cancellation coverage for point reads;
+- added deterministic cancellation coverage proving an aborted append does not mutate the memory ledger;
+- kept existing ledger validation, identity/conflict, and reconciliation semantics unchanged;
+- no production settlement algorithm, provider execution, retry, failover, resubmission, repair, reversal, or financial mutation behavior was introduced beyond preventing a context-invalid write.
+
+### Changed Files
+
+- DesKaProvider/backend/accounting/ledger.go
+- DesKaProvider/backend/accounting/reconciliation_reader_persistence_test.go
+- DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md
+
+### Safety Boundary / Invariants
+
+- canceled/expired context cannot authorize a ledger point read;
+- canceled/expired context cannot mutate the memory ledger through `AppendContext`;
+- a context failure is never converted into a not-found or empty dataset;
+- reconciliation remains read-only and fail-closed;
+- no automatic provider retry, failover, transaction resubmission, provider funding, customer-balance mutation, treasury movement, duplicate transaction creation, blockchain action, or public API exposure is introduced.
+
+### Verification
+
+Implementation/test HEAD:
+
+**f64767d83d67207c10d974ea788485fc308ad798**
+
+DesKaProvider CI #4260 / run 37132942651: **GREEN**
+
+- test: PASS
+- vet: PASS
+- race: PASS
+- midtrans-sandbox: SKIPPED as expected
+- iak-read-only: SKIPPED as expected
+- xp-sindonesia-read-only: SKIPPED as expected
+- digiflazz-validation: SKIPPED as expected
+
+No authorized live-provider transaction or external provider request was executed by this milestone.
+
+### Progress
+
+Engineering estimate remains approximately **88%**. This milestone closes a remaining context-propagation gap in memory-backed ledger point boundaries without adding a new production financial capability or execution path.
+
+### Next Concrete Engineering Task
+
+Continue the reconciliation persistence/recovery audit into concrete restart and durable-read boundaries, prioritizing cases where a storage layer can successfully return an empty/partial view despite incomplete persistence visibility. Preserve deterministic, observational, fail-closed behavior and require explicit action for uncertain financial state.
+
+No automatic provider retry, failover, transaction resubmission, provider funding, customer ledger mutation, treasury movement, duplicate transaction creation, blockchain action, or public API exposure is included in the next milestone.
