@@ -62,3 +62,41 @@ func TestSettlementReconcilerDoesNotRepairMissingSettlement(t *testing.T) {
 	if report.Items[0].Status!=ReconciliationLedgerMissing{t.Fatal(report.Items[0].Status)}
 	if len(ledger.All())!=before{t.Fatal("reconciliation must not create ledger entries")}
 }
+
+
+func TestSettlementReconcilerReportsOrphanedLedgerAndAudit(t *testing.T) {
+	ctx := context.Background()
+	txStore := routing.NewMemoryTransactionStore()
+	ledger := NewMemoryStore()
+
+	if err := ledger.Append(LedgerTransaction{
+		ID:"orphan-ledger", ReferenceID:"orphan-reference", SourceType:"PROVIDER_SETTLEMENT", SourceID:"orphan-source",
+		Currency:"IDR", Description:"orphan", CreatedAt:time.Date(2026,10,3,11,0,0,0,time.UTC),
+		Entries:settlementEntries(),
+	}); err != nil { t.Fatal(err) }
+
+	audit := SettlementAudit{
+		EventID:"orphan-audit", TransactionID:"missing-ledger", ReferenceID:"missing-reference",
+		SourceType:"PROVIDER_SETTLEMENT", SourceID:"missing-source", Status:ProviderStatusSuccess,
+		CreatedAt:time.Date(2026,10,3,11,1,0,0,time.UTC),
+	}
+	ledger.audits[audit.TransactionID] = audit
+
+	reconciler, err := NewSettlementReconciler(txStore, ledger, ledger)
+	if err != nil { t.Fatal(err) }
+	report, err := reconciler.Reconcile(ctx)
+	if err != nil { t.Fatal(err) }
+
+	var orphanLedger, orphanAudit bool
+	for _, item := range report.Items {
+		switch item.Status {
+		case ReconciliationOrphanedLedger:
+			orphanLedger = item.LedgerTransactionID == "orphan-ledger"
+		case ReconciliationOrphanedAudit:
+			orphanAudit = item.SettlementAuditEventID == "orphan-audit"
+		}
+	}
+	if !orphanLedger { t.Fatal("expected orphaned ledger diagnostic") }
+	if !orphanAudit { t.Fatal("expected orphaned audit diagnostic") }
+	if len(txStore.All()) != 0 { t.Fatal("reconciliation must not create provider state") }
+}
