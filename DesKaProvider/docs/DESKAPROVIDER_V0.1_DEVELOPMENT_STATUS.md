@@ -9696,3 +9696,46 @@ Final CI verification is required on the latest documentation-synchronized HEAD 
 **Milestone #46 — Reconciliation Audit Identity Uniqueness Hardening**
 
 Scope: make settlement audit event identity and transaction correlation uniqueness explicit in the read model and durable store, while preserving the read-only reconciliation boundary.
+
+
+## Milestone #46 — Reconciliation Audit Identity Uniqueness Hardening
+
+**Date:** 2026-10-03
+
+### Implementation
+
+- defined explicit ErrSettlementAuditConflict for conflicting immutable audit identity;
+- hardened the in-memory settlement store so conflicting event_id values cannot be silently reused across transactions;
+- hardened the PostgreSQL settlement append path to detect an existing conflicting audit event identity while retaining the database primary-key/unique constraints;
+- added DUPLICATE_AUDIT_IDENTITY reconciliation diagnostics for duplicate audit event IDs and duplicate transaction correlations;
+- made duplicate-audit diagnostics deterministic by sorting event and transaction identity candidates;
+- preserved the existing one-audit-per-ledger-transaction correlation invariant.
+
+### Safety Boundary / Invariants
+
+- reconciliation remains read-only;
+- duplicate audit identities are diagnosed, never merged or repaired automatically;
+- no provider lifecycle mutation, retry, failover, or resubmission is introduced;
+- no ledger mutation, customer balance mutation, treasury movement, or provider funding is introduced;
+- the settlement audit remains metadata/correlation evidence, not a second financial source of truth.
+
+### Verification
+
+Implementation HEAD:
+
+b25f582783244d053b0df065a41864bd0f5b7535
+
+DesKaProvider CI #4131 / run 37123031752: GREEN
+
+- test: PASS
+- vet: PASS
+- race: PASS
+- credential-gated provider validation jobs: skipped as expected
+
+A documentation-synchronized HEAD still requires final CI verification before this milestone is considered complete.
+
+### Next Milestone
+
+**Milestone #47 — Reconciliation Report Determinism & Ordering Contract**
+
+Scope: define stable report ordering across provider, ledger, and audit diagnostics so repeated reconciliation produces byte-for-byte equivalent ordering without mutating financial state.
