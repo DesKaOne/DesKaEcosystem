@@ -21,6 +21,7 @@ const (
 	ReconciliationOrphanedLedger      ReconciliationStatus = "ORPHANED_LEDGER"
 	ReconciliationOrphanedAudit       ReconciliationStatus = "ORPHANED_AUDIT"
 	ReconciliationDuplicateReference ReconciliationStatus = "DUPLICATE_REFERENCE"
+	ReconciliationDuplicateAuditIdentity ReconciliationStatus = "DUPLICATE_AUDIT_IDENTITY"
 )
 
 type TransactionReconciliation struct {
@@ -30,6 +31,7 @@ type TransactionReconciliation struct {
 	SettlementAuditEventID string
 	Status                    ReconciliationStatus
 	LedgerTransactionIDs      []string
+	SettlementAuditEventIDs []string
 }
 
 type ReconciliationReport struct {
@@ -170,6 +172,47 @@ func (r *SettlementReconciler) Reconcile(ctx context.Context) (ReconciliationRep
 		allAudits, err := audits.AllSettlementAudits(ctx)
 		if err != nil {
 			return ReconciliationReport{}, fmt.Errorf("read settlement audits: %w", err)
+		}
+		eventGroups := make(map[string][]SettlementAudit, len(allAudits))
+		transactionGroups := make(map[string][]SettlementAudit, len(allAudits))
+		for _, audit := range allAudits {
+			eventGroups[audit.EventID] = append(eventGroups[audit.EventID], audit)
+			transactionGroups[audit.TransactionID] = append(transactionGroups[audit.TransactionID], audit)
+		}
+		for eventID, group := range eventGroups {
+			if len(group) < 2 {
+				continue
+			}
+			ids := make([]string, 0, len(group))
+			for _, audit := range group {
+				ids = append(ids, audit.TransactionID)
+			}
+			sort.Strings(ids)
+			report.Items = append(report.Items, TransactionReconciliation{
+				ReferenceID: group[0].ReferenceID,
+				ProviderStatus: "UNKNOWN",
+				SettlementAuditEventID: eventID,
+				Status: ReconciliationDuplicateAuditIdentity,
+				SettlementAuditEventIDs: []string{eventID},
+				LedgerTransactionIDs: ids,
+			})
+		}
+		for transactionID, group := range transactionGroups {
+			if len(group) < 2 {
+				continue
+			}
+			eventIDs := make([]string, 0, len(group))
+			for _, audit := range group {
+				eventIDs = append(eventIDs, audit.EventID)
+			}
+			sort.Strings(eventIDs)
+			report.Items = append(report.Items, TransactionReconciliation{
+				ReferenceID: group[0].ReferenceID,
+				ProviderStatus: "UNKNOWN",
+				SettlementAuditEventID: eventIDs[0],
+				Status: ReconciliationDuplicateAuditIdentity,
+				SettlementAuditEventIDs: eventIDs,
+			})
 		}
 		for _, audit := range allAudits {
 			if _, ledgerOK := byLedgerID[audit.TransactionID]; ledgerOK {
