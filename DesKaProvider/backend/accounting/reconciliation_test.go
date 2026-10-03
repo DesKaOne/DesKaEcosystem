@@ -407,3 +407,140 @@ func TestReconciliationItemKeyIsIndependentOfCandidateInputOrder(t *testing.T) {
 	}
 	if reconciliationItemKey(a) != reconciliationItemKey(b) { t.Fatal("expected canonical item keys to match") }
 }
+
+
+type failingProviderSnapshotStore struct {
+	*routing.MemoryTransactionStore
+	err error
+}
+
+func (s failingProviderSnapshotStore) AllContextE(context.Context) ([]routing.TransactionState, error) {
+	return nil, s.err
+}
+
+type failingLedgerSnapshotReader struct {
+	*MemoryStore
+	err error
+}
+
+func (s failingLedgerSnapshotReader) AllContext(context.Context) ([]LedgerTransaction, error) {
+	return nil, s.err
+}
+
+type failingAuditSnapshotReader struct {
+	*MemoryStore
+	err error
+}
+
+func (s failingAuditSnapshotReader) AllSettlementAudits(context.Context) ([]SettlementAudit, error) {
+	return nil, s.err
+}
+
+func assertEmptySnapshotMetadata(t *testing.T, metadata ReconciliationSnapshotMetadata) {
+	t.Helper()
+	if !metadata.CaptureStartedAt.IsZero() || !metadata.CaptureCompletedAt.IsZero() || !metadata.CapturedAt.IsZero() {
+		t.Fatalf("failed capture must not expose partial lifecycle metadata: %#v", metadata)
+	}
+	if metadata.ProviderTransactionCount != 0 || metadata.LedgerTransactionCount != 0 || metadata.SettlementAuditCount != 0 {
+		t.Fatalf("failed capture must not expose partial dataset counts: %#v", metadata)
+	}
+	if metadata.ProviderReader != "" || metadata.LedgerReader != "" || metadata.SettlementAuditReader != "" || metadata.SnapshotFingerprint != "" {
+		t.Fatalf("failed capture must not expose partial provenance/fingerprint: %#v", metadata)
+	}
+}
+
+func TestSettlementReconcilerSnapshotMetadataContractOnCaptureFailures(t *testing.T) {
+	ctx := context.Background()
+	cases := []struct {
+		name         string
+		transactions routing.ContextReadTransactionStore
+		ledger       interface{}
+		audit        SettlementAuditReader
+	}{
+		{
+			name:         "provider-read",
+			transactions: failingProviderSnapshotStore{MemoryTransactionStore: routing.NewMemoryTransactionStore(), err: context.Canceled},
+			ledger:       NewMemoryStore(),
+			audit:        NewMemoryStore(),
+		},
+		{
+			name:         "ledger-read",
+			transactions: routing.NewMemoryTransactionStore(),
+			ledger:       failingLedgerSnapshotReader{MemoryStore: NewMemoryStore(), err: context.Canceled},
+			audit:        NewMemoryStore(),
+		},
+		{
+			name:         "audit-read",
+			transactions: routing.NewMemoryTransactionStore(),
+			ledger:       NewMemoryStore(),
+			audit:        failingAuditSnapshotReader{MemoryStore: NewMemoryStore(), err: context.Canceled},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			reconciler, err := NewSettlementReconciler(tc.transactions, tc.ledger, tc.audit)
+			if err != nil {
+				t.Fatal(err)
+			}
+			report, err := reconciler.Reconcile(ctx)
+			if err == nil {
+				t.Fatal("expected snapshot capture failure")
+			}
+			if len(report.Items) != 0 {
+				t.Fatalf("failed capture must not return reconciliation items: %#v", report.Items)
+			}
+			assertEmptySnapshotMetadata(t, report.Snapshot)
+		})
+	}
+}
+
+func TestSettlementReconcilerSnapshotMetadataFingerprintAndLifecycleContract(t *testing.T) {
+	ctx := context.Background()
+	txStore := routing.NewMemoryTransactionStore()
+	ledger := NewMemoryStore()
+	if err := txStore.Put(terminalPayment("metadata-contract")); err != nil {
+		t.Fatal(err)
+	}
+	reconciler, err := NewSettlementReconciler(txStore, ledger, ledger)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	first, err := reconciler.Reconcile(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := reconciler.Reconcile(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for name, report := range map[string]ReconciliationReport{"first": first, "second": second} {
+		metadata := report.Snapshot
+		if metadata.CaptureStartedAt.IsZero() || metadata.CaptureCompletedAt.IsZero() || metadata.CapturedAt.IsZero() {
+			t.Fatalf("%s capture lifecycle metadata must be populated: %#v", name, metadata)
+		}
+		if metadata.CaptureCompletedAt.Before(metadata.CaptureStartedAt) {
+			t.Fatalf("%s capture completion precedes start: %#v", name, metadata)
+		}
+		if !metadata.CapturedAt.Equal(metadata.CaptureCompletedAt) {
+			t.Fatalf("%s CapturedAt must alias CaptureCompletedAt: %#v", name, metadata)
+		}
+		if metadata.ProviderTransactionCount != 1 || metadata.LedgerTransactionCount != 0 || metadata.SettlementAuditCount != 0 {
+			t.Fatalf("%s unexpected counts: %#v", name, metadata)
+		}
+		if metadata.ProviderReader != "context-all" || metadata.LedgerReader != "context-ledger" || metadata.SettlementAuditReader != "context-bulk" {
+			t.Fatalf("%s unexpected reader provenance: %#v", name, metadata)
+		}
+		if metadata.SnapshotFingerprint == "" {
+			t.Fatalf("%s snapshot fingerprint must be populated", name)
+		}
+	}
+	if first.Snapshot.SnapshotFingerprint != second.Snapshot.SnapshotFingerprint {
+		t.Fatal("equivalent captured datasets must retain the same fingerprint across repeated reconciliation runs")
+	}
+	if first.Snapshot.CaptureStartedAt.Equal(second.Snapshot.CaptureStartedAt) && first.Snapshot.CaptureCompletedAt.Equal(second.Snapshot.CaptureCompletedAt) {
+		t.Fatal("separate captures must not be represented as the same lifecycle observation")
+	}
+}
