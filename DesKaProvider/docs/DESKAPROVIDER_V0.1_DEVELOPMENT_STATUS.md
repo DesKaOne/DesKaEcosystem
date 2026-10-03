@@ -9640,7 +9640,9 @@ Strengthen reconciliation with durable PostgreSQL integration coverage and expli
 
 ### Verification
 
-The milestone is complete only after the **latest commit's CI is GREEN**, including the repository test/race gates. Credential-gated provider jobs remain skipped when the required external credentials are unavailable.
+The milestone is complete only after the **latest commit's CI is GREEN**, including the repository test/race gates.
+
+Final CI status is recorded below after the implementation HEAD has completed. Credential-gated provider jobs remain skipped when the required external credentials are unavailable.
 
 ### Next Milestone
 
