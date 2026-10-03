@@ -92,6 +92,15 @@ func (a ValidatorAuthoritySet) ValidatorSet() ValidatorSet {
 	return cloneValidatorSet(a.Validators)
 }
 
+// ConsensusAuthorityResolver returns the same immutable epoch-bound authority
+// snapshot through the generic authentication boundary.
+func (a ValidatorAuthoritySet) ConsensusAuthorityResolver() (TimeoutAuthorityResolver, error) {
+	if err := a.Validate(); err != nil {
+		return nil, err
+	}
+	return a.Clone(), nil
+}
+
 func (a ValidatorAuthoritySet) Clone() ValidatorAuthoritySet {
 	cloned := ValidatorAuthoritySet{
 		Epoch: a.Epoch,
