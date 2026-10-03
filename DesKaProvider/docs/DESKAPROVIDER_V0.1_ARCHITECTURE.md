@@ -1213,3 +1213,11 @@ Milestone #48 establishes a read-only snapshot boundary inside one reconciliatio
 When a durable audit reader is available, all settlement audits are captured through its context-aware bulk reader. Legacy audit readers are materialized once for the ledger transactions visible in the same execution. The captured slices are copied before analysis so caller-owned backing arrays cannot change the report after the snapshot is established.
 
 This boundary is intentionally an observation boundary, not a financial transaction or repair mechanism. It does not mutate provider lifecycle state, ledger state, settlement audit state, balances, treasury, external providers, or blockchain state. It also does not introduce retry, failover, resubmission, or automatic reconciliation repair.
+
+## Reconciliation Snapshot Provenance & Capture Metadata
+
+Milestone #49 adds explicit provenance metadata to each reconciliation report's read snapshot. The metadata records the UTC capture timestamp, the number of provider transaction states, ledger transactions, and settlement audits materialized, plus the reader path used for each dataset.
+
+The metadata is observational only. It is not part of correlation identity, reconciliation ordering, financial authorization, or mutation logic. Capture metadata therefore makes the read boundary diagnosable without changing settlement behavior or introducing retries, repair, failover, resubmission, or financial side effects.
+
+Reader provenance distinguishes the context-aware provider read, the ledger reader path, and whether settlement audits were captured through the durable bulk context-aware reader or the legacy per-ledger compatibility path.
