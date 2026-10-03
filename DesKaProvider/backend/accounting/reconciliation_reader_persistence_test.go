@@ -97,9 +97,10 @@ func TestSettlementReconcilerPreservesPostgreSQLProviderContextCancellation(t *t
 
 func TestSettlementReconcilerClassifiesLegacyPerLedgerAuditReadFailure(t *testing.T) {
     auditErr := errors.New("legacy audit store unavailable")
+    ledgerStore := NewMemoryStore()
     reconciler, err := NewSettlementReconciler(
         routing.NewMemoryTransactionStore(),
-        NewMemoryStore(),
+        ledgerStore,
         legacyReconciliationAuditFailure{err: auditErr},
     )
     if err != nil {
@@ -113,8 +114,13 @@ func TestSettlementReconcilerClassifiesLegacyPerLedgerAuditReadFailure(t *testin
         SourceID: "provider-source",
         Currency: "IDR",
         Description: "legacy audit failure test",
+        CreatedAt: testLedgerCreatedAt(),
+        Entries: []Entry{
+            {LineID: 1, AccountID: "expense", Direction: Debit, Amount: 1000, Currency: "IDR"},
+            {LineID: 2, AccountID: "cash", Direction: Credit, Amount: 1000, Currency: "IDR"},
+        },
     }
-    if err := reconciler.ledger.(Store).Put(ledger); err != nil {
+    if err := ledgerStore.Append(ledger); err != nil {
         t.Fatal(err)
     }
 
@@ -136,9 +142,10 @@ func TestSettlementReconcilerClassifiesLegacyPerLedgerAuditReadFailure(t *testin
 
 func TestSettlementReconcilerLegacyAuditReaderDoesNotFallbackToEmptyDataset(t *testing.T) {
     auditErr := errors.New("legacy audit query canceled")
+    ledgerStore := NewMemoryStore()
     reconciler, err := NewSettlementReconciler(
         routing.NewMemoryTransactionStore(),
-        NewMemoryStore(),
+        ledgerStore,
         legacyReconciliationAuditFailure{err: auditErr},
     )
     if err != nil {
@@ -152,8 +159,13 @@ func TestSettlementReconcilerLegacyAuditReaderDoesNotFallbackToEmptyDataset(t *t
         SourceID: "provider-source",
         Currency: "IDR",
         Description: "legacy fallback guard",
+        CreatedAt: testLedgerCreatedAt(),
+        Entries: []Entry{
+            {LineID: 1, AccountID: "expense", Direction: Debit, Amount: 1000, Currency: "IDR"},
+            {LineID: 2, AccountID: "cash", Direction: Credit, Amount: 1000, Currency: "IDR"},
+        },
     }
-    if err := reconciler.ledger.(Store).Put(ledger); err != nil {
+    if err := ledgerStore.Append(ledger); err != nil {
         t.Fatal(err)
     }
 
