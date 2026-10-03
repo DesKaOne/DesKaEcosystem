@@ -34,7 +34,21 @@ func (n *Node) ReconstructConsensusRuntime(
 	threshold consensus.QuorumThreshold,
 	proposer consensus.ProposerSelector,
 ) (ConsensusRecovery, error) {
-	return n.reconstructConsensusRuntime(epoch, validators, votingPower, threshold, proposer, nil)
+	return n.reconstructConsensusRuntime(epoch, validators, votingPower, threshold, proposer, nil, nil)
+}
+
+// ReconstructConsensusRuntimeWithAuthority rebuilds a fresh consensus runtime
+// from durable canonical state while binding the runtime to the supplied
+// epoch-bound validator authority snapshot.
+func (n *Node) ReconstructConsensusRuntimeWithAuthority(
+	epoch uint64,
+	validators consensus.ValidatorSet,
+	votingPower consensus.VotingPowerSet,
+	threshold consensus.QuorumThreshold,
+	proposer consensus.ProposerSelector,
+	authority consensus.ValidatorAuthoritySet,
+) (ConsensusRecovery, error) {
+	return n.reconstructConsensusRuntime(epoch, validators, votingPower, threshold, proposer, &authority, nil)
 }
 
 // ReconstructConsensusRuntimeWithEvidence rebuilds the runtime from durable
@@ -53,7 +67,7 @@ func (n *Node) ReconstructConsensusRuntimeWithEvidence(
 	if evidenceStore == nil {
 		return ConsensusRecovery{}, consensus.ErrNilEvidenceStore
 	}
-	return n.reconstructConsensusRuntime(epoch, validators, votingPower, threshold, proposer, func(state consensus.RoundState) ([]consensus.Message, error) {
+\treturn n.reconstructConsensusRuntime(epoch, validators, votingPower, threshold, proposer, nil, func(state consensus.RoundState) ([]consensus.Message, error) {
 		return consensus.RecoverAuthenticatedEvidence(evidenceStore, state, validators, authority)
 	})
 }
@@ -89,6 +103,7 @@ func (n *Node) reconstructConsensusRuntime(
 	votingPower consensus.VotingPowerSet,
 	threshold consensus.QuorumThreshold,
 	proposer consensus.ProposerSelector,
+	authority *consensus.ValidatorAuthoritySet,
 	recoverEvidence func(consensus.RoundState) ([]consensus.Message, error),
 ) (ConsensusRecovery, error) {
 	if n == nil || n.Store == nil {
@@ -114,7 +129,7 @@ func (n *Node) reconstructConsensusRuntime(
 		return ConsensusRecovery{}, err
 	}
 
-	runtime, err := consensus.NewValidatorRuntime(consensus.RuntimeConfig{
+	runtimeConfig := consensus.RuntimeConfig{
 		Rules: consensus.ValidationRules{
 			ProtocolVersion: recovered.Config.ProtocolVersion,
 			ChainID:         recovered.Config.ChainID,
@@ -125,7 +140,9 @@ func (n *Node) reconstructConsensusRuntime(
 		VotingPower: votingPower,
 		Threshold:   threshold,
 		Proposer:    proposer,
-	})
+		Authority:   authority,
+	}
+	runtime, err := consensus.NewValidatorRuntime(runtimeConfig)
 	if err != nil {
 		return ConsensusRecovery{}, err
 	}
