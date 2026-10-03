@@ -270,6 +270,65 @@ func TestSettlementReconcilerReportOrderingIsDeterministic(t *testing.T) {
 	}
 }
 
+func TestSettlementReconcilerMaterializesOneReadSnapshot(t *testing.T) {
+	ctx := context.Background()
+	txStore := routing.NewMemoryTransactionStore()
+	ledger := NewMemoryStore()
+
+	if err := txStore.Put(terminalPayment("snapshot-ref")); err != nil {
+		t.Fatal(err)
+	}
+	if err := ledger.Append(LedgerTransaction{
+		ID:"snapshot-ledger", ReferenceID:"snapshot-ref", SourceType:"PROVIDER_SETTLEMENT", SourceID:"snapshot-source",
+		Currency:"IDR", Description:"snapshot", CreatedAt:time.Date(2026,10,3,15,0,0,0,time.UTC),
+		Entries:settlementEntries(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := ledger.AppendSettlement(ctx,
+		LedgerTransaction{
+			ID:"snapshot-ledger-audit", ReferenceID:"snapshot-audit-ref", SourceType:"PROVIDER_SETTLEMENT", SourceID:"snapshot-audit-source",
+			Currency:"IDR", Description:"snapshot audit", CreatedAt:time.Date(2026,10,3,15,1,0,0,time.UTC),
+			Entries:settlementEntries(),
+		},
+		SettlementAudit{
+			EventID:"snapshot-audit", TransactionID:"snapshot-ledger-audit", ReferenceID:"snapshot-audit-ref",
+			SourceType:"PROVIDER_SETTLEMENT", SourceID:"snapshot-audit-source", Status:ProviderStatusSuccess,
+			CreatedAt:time.Date(2026,10,3,15,1,0,0,time.UTC),
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	reconciler, err := NewSettlementReconciler(txStore, ledger, ledger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := reconciler.readSnapshot(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.states) != 1 || len(snapshot.ledger) != 2 || len(snapshot.audits) != 1 {
+		t.Fatalf("unexpected snapshot sizes: states=%d ledger=%d audits=%d", len(snapshot.states), len(snapshot.ledger), len(snapshot.audits))
+	}
+
+	// Mutate the stores after materialization; the snapshot must remain stable.
+	snapshot.states[0].Payment.Status = payment.StatusFailed
+	snapshot.ledger[0].ReferenceID = "mutated-reference"
+	snapshot.audits[0].ReferenceID = "mutated-audit"
+
+	report, err := reconciler.Reconcile(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Items) == 0 {
+		t.Fatal("expected reconciliation items")
+	}
+	if report.Items[0].ReferenceID == "mutated-reference" || report.Items[0].ReferenceID == "mutated-audit" {
+		t.Fatal("reconciliation must not consume a previously materialized mutable snapshot")
+	}
+}
+
 func TestReconciliationItemKeyIsIndependentOfCandidateInputOrder(t *testing.T) {
 	a := TransactionReconciliation{
 		ReferenceID:"ref", ProviderStatus:ProviderStatusSuccess, Status:ReconciliationDuplicateReference,
