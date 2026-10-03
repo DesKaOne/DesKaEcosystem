@@ -59,9 +59,11 @@ func TestSettlementReconcilerPreservesPostgreSQLProviderContextCancellation(t *t
     if err != nil {
         t.Fatal(err)
     }
-    if err := db.Close(); err != nil {
-        t.Fatal(err)
-    }
+    defer func() {
+        if err := db.Close(); err != nil {
+            t.Fatal(err)
+        }
+    }()
 
     providerStore, err := routing.NewPostgresTransactionStore(db)
     if err != nil {
