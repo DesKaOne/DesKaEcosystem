@@ -1181,3 +1181,17 @@ The read model now detects DUPLICATE_REFERENCE for:
 Ledger candidates are sorted by immutable transaction ID before being reported, so diagnostics are deterministic. A duplicate reference is reported instead of selecting one ledger transaction for audit correlation.
 
 This is observational only. Duplicate detection does not merge, delete, reverse, repair, retry, resubmit, or mutate any provider or accounting record.
+
+
+### Reconciliation Audit Identity Uniqueness Hardening
+
+Settlement audit identity is now explicit at both the durable store and read-model boundaries.
+
+- event_id is treated as an immutable globally unique audit identity.
+- transaction_id is treated as a unique settlement correlation key: one ledger transaction may have at most one settlement audit record.
+- the in-memory settlement store rejects conflicting event identities instead of silently overwriting them;
+- the PostgreSQL settlement append path uses the existing primary-key/unique constraints and classifies an existing conflicting event identity as ErrSettlementAuditConflict;
+- reconciliation reports DUPLICATE_AUDIT_IDENTITY when an audit reader exposes duplicate event IDs or duplicate transaction correlations, rather than selecting one record;
+- duplicate audit diagnostics are deterministically ordered by event/transaction identity and include candidate IDs.
+
+The hardening remains read-only from reconciliation: it never repairs, merges, deletes, reverses, retries, resubmits, or mutates financial records.
