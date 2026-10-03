@@ -10424,3 +10424,63 @@ Engineering estimate remains approximately **88%**. This milestone closes a rema
 Continue the reconciliation persistence/recovery audit into concrete restart and durable-read boundaries, prioritizing cases where a storage layer can successfully return an empty/partial view despite incomplete persistence visibility. Preserve deterministic, observational, fail-closed behavior and require explicit action for uncertain financial state.
 
 No automatic provider retry, failover, transaction resubmission, provider funding, customer ledger mutation, treasury movement, duplicate transaction creation, blockchain action, or public API exposure is included in the next milestone.
+
+## Milestone #62 — Memory Settlement Mutation Context Safety
+
+**Date:** 2026-10-03
+
+### Scope
+
+- close the remaining context-propagation gap on the memory-backed atomic settlement mutation boundary;
+- ensure canceled or expired settlement contexts cannot mutate the in-memory ledger/audit pair;
+- preserve atomic settlement identity/conflict semantics while failing closed on invalid caller context.
+
+### Implementation
+
+- updated `MemoryStore.AppendSettlement` to return `ctx.Err()` before validation or mutation;
+- added deterministic cancellation coverage proving an aborted settlement does not persist ledger or audit state;
+- added deterministic deadline coverage proving an expired settlement does not persist ledger or audit state;
+- kept the existing atomic ledger/audit identity and conflict checks unchanged after the context gate;
+- no retry, failover, resubmission, repair, reversal, provider execution, or new financial capability was introduced.
+
+### Changed Files
+
+- DesKaProvider/backend/accounting/ledger.go
+- DesKaProvider/backend/accounting/reconciliation_reader_persistence_test.go
+- DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md
+
+### Safety Boundary / Invariants
+
+- canceled/expired settlement context cannot authorize the memory-backed atomic ledger/audit mutation;
+- failed context returns before any ledger or audit state is written;
+- context failure is never converted into success, duplicate suppression, not-found, or empty reconciliation data;
+- existing ledger/audit validation, identity, idempotency, and conflict behavior remains unchanged for valid contexts;
+- no automatic provider retry, failover, transaction resubmission, provider funding, customer-balance mutation, treasury movement, duplicate transaction creation, blockchain action, or public API exposure is introduced.
+
+### Verification
+
+Implementation/test HEAD:
+
+**5cc9652b09186979877c3896f1999c8d0ddfefed**
+
+DesKaProvider CI #4268 / run 37133179762: **GREEN**
+
+- test: PASS
+- vet: PASS
+- race: PASS
+- midtrans-sandbox: SKIPPED as expected
+- iak-read-only: SKIPPED as expected
+- xp-sindonesia-read-only: SKIPPED as expected
+- digiflazz-validation: SKIPPED as expected
+
+No authorized live-provider transaction or external provider request was executed by this milestone.
+
+### Progress
+
+Engineering estimate remains approximately **88%**. This milestone closes a concrete context-safety gap in an existing memory-backed financial mutation boundary without adding a new production financial capability or execution path.
+
+### Next Concrete Engineering Task
+
+Continue the persistence/recovery audit into durable restart semantics and concrete durable-store write/read boundaries, prioritizing any path where partial persistence or unavailable storage could be interpreted as a successful or empty financial state. Preserve fail-closed, observational recovery and require explicit action for uncertain financial state.
+
+No automatic provider retry, failover, transaction resubmission, provider funding, customer ledger mutation, treasury movement, duplicate transaction creation, blockchain action, or public API exposure is included in the next milestone.
