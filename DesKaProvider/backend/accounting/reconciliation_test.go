@@ -103,6 +103,48 @@ func TestSettlementReconcilerReportsOrphanedLedgerAndAudit(t *testing.T) {
 }
 
 
+func TestSettlementReconcilerReportsOrphanLedgerAuditIdentityConflict(t *testing.T) {
+	ctx := context.Background()
+	txStore := routing.NewMemoryTransactionStore()
+	ledger := NewMemoryStore()
+	ledgerTx := LedgerTransaction{
+		ID: "orphan-identity-ledger", ReferenceID: "orphan-identity-reference",
+		SourceType: "PROVIDER_SETTLEMENT", SourceID: "orphan-identity-source",
+		Currency: "IDR", Description: "orphan identity", CreatedAt: time.Date(2026, 10, 4, 13, 0, 0, 0, time.UTC),
+		Entries: settlementEntries(),
+	}
+	if err := ledger.Append(ledgerTx); err != nil {
+		t.Fatal(err)
+	}
+	ledger.audits[ledgerTx.ID] = SettlementAudit{
+		EventID: "orphan-identity-audit", TransactionID: ledgerTx.ID,
+		ReferenceID: "wrong-reference", SourceType: ledgerTx.SourceType,
+		SourceID: ledgerTx.SourceID, Status: ProviderStatusSuccess, CreatedAt: ledgerTx.CreatedAt,
+	}
+
+	reconciler, err := NewSettlementReconciler(txStore, ledger, ledger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	report, err := reconciler.Reconcile(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Items) != 1 {
+		t.Fatalf("got %d items: %#v", len(report.Items), report.Items)
+	}
+	item := report.Items[0]
+	if item.Status != ReconciliationCorrelationConflict {
+		t.Fatalf("got %s", item.Status)
+	}
+	if item.LedgerTransactionID != ledgerTx.ID || item.SettlementAuditEventID != "orphan-identity-audit" {
+		t.Fatalf("expected conflicting ledger/audit identity to remain visible: %#v", item)
+	}
+	if len(ledger.All()) != 1 {
+		t.Fatal("reconciliation must remain read-only")
+	}
+}
+
 type duplicateAuditReader struct {
 	SettlementAuditReader
 	allAudits []SettlementAudit
