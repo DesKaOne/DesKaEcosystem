@@ -80,17 +80,30 @@ func (r *SettlementReconciler) Reconcile(ctx context.Context) (ReconciliationRep
 
 	report := ReconciliationReport{Items: make([]TransactionReconciliation, 0, len(states))}
 	providerReferences := make(map[string]struct{}, len(states))
+	providerReferenceCounts := make(map[string]int, len(states))
 	for _, state := range states {
 		referenceID := state.Request.ReferenceID
 		if state.Kind == routing.TransactionKindPayment && state.Payment != nil {
 			referenceID = state.Payment.ReferenceID
 		}
 		providerReferences[referenceID] = struct{}{}
+		providerReferenceCounts[referenceID]++
+	}
+	for _, state := range states {
+		referenceID := state.Request.ReferenceID
+		if state.Kind == routing.TransactionKindPayment && state.Payment != nil {
+			referenceID = state.Payment.ReferenceID
+		}
 		status := providerStatusFromTransaction(state)
 		item := TransactionReconciliation{ReferenceID: referenceID, ProviderStatus: status}
 
 		if status != ProviderStatusSuccess {
 			item.Status = ReconciliationNotSettleable
+			report.Items = append(report.Items, item)
+			continue
+		}
+		if providerReferenceCounts[referenceID] > 1 {
+			item.Status = ReconciliationDuplicateReference
 			report.Items = append(report.Items, item)
 			continue
 		}
