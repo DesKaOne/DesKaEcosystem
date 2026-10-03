@@ -4624,3 +4624,49 @@ Impact: recovery context mismatch menjadi deterministic dan fail-closed tanpa me
 **5.8g Context-Aware Durable Evidence Recovery:** tambahkan recovery API yang secara eksplisit menerima `PersistenceContext`/digest dan hanya mengembalikan evidence yang identity key-nya cocok dengan context tersebut.
 
 **Milestone 5.8f status:** implementation/test committed; exact-head CI gate pending after restoring the implementation source on the branch.
+
+
+### 5.8g Context-Aware Durable Evidence Recovery — 2026-10-03
+
+**Objective**
+
+Menyediakan recovery API yang secara eksplisit menerima PersistenceContext dan hanya menerima durable evidence yang identity key-nya cocok dengan PersistenceContextDigest.
+
+**Implementation**
+
+- IndoChain/internal/consensus/evidence_store.go
+  - menambahkan RecoverAuthenticatedEvidenceWithContext(..., context PersistenceContext);
+  - fail-closed ketika epoch/height context tidak sama dengan recovery state;
+  - recompute ConsensusEvidencePersistenceKey dengan context digest dan menolak record dengan identity yang tidak cocok;
+  - authenticated message validation dan deterministic ordering tetap dipertahankan;
+  - legacy RecoverAuthenticatedEvidence tetap dipertahankan untuk backward compatibility pada legacy-keyed records.
+- IndoChain/internal/consensus/evidence_store_test.go
+  - coverage context mismatch;
+  - coverage successful context-bound recovery from context-keyed evidence.
+
+**Architecture correction**
+
+Current behavior sebelum 5.8g: 5.8f dapat menulis evidence memakai persistence-context-bound key, tetapi recovery API existing hanya mengenali legacy key sehingga record context-bound belum dapat dipulihkan melalui contract yang sama.
+
+Intended behavior: context-bound writes dan reads memakai identity derivation yang sama dan fail-closed terhadap context change.
+
+**Locked invariants**
+
+1. Recovery context digest harus sama dengan identity digest saat persistence.
+2. Epoch/height context mismatch ditolak sebelum records diproses.
+3. Record keyed dengan legacy ConsensusEvidenceKey tidak dianggap valid sebagai context-bound evidence.
+4. Authenticated signature/validator validation tetap dijalankan setelah key match.
+5. Recovery deterministik dan non-mutating.
+6. Evidence store tetap bukan canonical block/state storage; tidak ada economic or financial-service logic.
+
+**Verification**
+
+- Implementation commits: 6f3bf42b12dd8c64407cc0a30cefd804d50e6621, df745569f9f0465f39b01688e3709ba9adb24e48.
+- Test commit: 9333e8c900a751f954edff17764c68bde65354bd.
+- Exact-head CI gate remains required before marking 5.8f/5.8g complete.
+
+**Next meaningful integration target**
+
+**5.8h Runtime Recovery Evidence Replay Boundary:** setelah context-bound evidence berhasil dipulihkan, definisikan replay/reconstruction boundary yang memverifikasi context dan replay evidence secara deterministik tanpa langsung memutasi canonical chain state.
+
+**Milestone 5.8g status:** implementation/test committed; exact-head CI gate pending.
