@@ -35,7 +35,7 @@ func applyAccountingMigrations(t *testing.T, db *sql.DB) {
 	t.Helper()
 	_, file, _, ok := runtime.Caller(0)
 	if !ok { t.Fatal("resolve test path") }
-	for _, name := range []string{"004_double_entry_ledger.sql", "005_settlement_audit.sql"} {
+	for _, name := range []string{"004_double_entry_ledger.sql", "005_settlement_audit.sql", "006_ledger_constraint_hardening.sql"} {
 		path := filepath.Join(filepath.Dir(file), "..", "migrations", name)
 		b, err := os.ReadFile(path)
 		if err != nil { t.Fatal(err) }
