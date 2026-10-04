@@ -79,6 +79,9 @@ type PersistenceOutcomeEvidence struct {
 
 type PersistenceOutcomeReader interface {
 	ResolvePersistenceOutcomeContext(ctx context.Context, referenceID string, expected TransactionState) (PersistenceOutcome, TransactionState, error)
+}
+
+type PersistenceOutcomeEvidenceReader interface {
 	ResolvePersistenceOutcomeEvidenceContext(ctx context.Context, referenceID string, expected TransactionState) (PersistenceOutcomeEvidence, TransactionState, error)
 }
 
