@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/consensus"
+	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/crypto"
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/state"
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/types"
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/storage"
@@ -19,7 +20,7 @@ func recoveryValidatorConfig(t *testing.T) (consensus.ValidatorSet, consensus.Vo
 		{ValidatorID: ids[0], Power: 4}, {ValidatorID: ids[1], Power: 3}, {ValidatorID: ids[2], Power: 3},
 	})
 	if err != nil { t.Fatal(err) }
-	return validators, power
+	return validators, power 
 }
 
 func TestReconstructConsensusRuntimeUsesDurableCanonicalState(t *testing.T) {
@@ -320,12 +321,13 @@ func TestConsensusRecoveryProposalToRuntimeFinalityHandoff(t *testing.T) {
 	if err != nil { t.Fatal(err) }
 
 	validators, power := recoveryValidatorConfig(t)
-	signerA := mustTestSigner(t, 23)
-	signerB := mustTestSigner(t, 24)
+	signerA := testEd25519Signer(t, 23)
+	signerB := testEd25519Signer(t, 24)
+	signerC := testEd25519Signer(t, 25)
 	authority, err := consensus.NewValidatorAuthoritySet(0, validators, map[string][]byte{
 		"validator-a": signerA.PublicKey(),
 		"validator-b": signerB.PublicKey(),
-		"validator-c": mustTestSigner(t, 25).PublicKey(),
+		"validator-c": signerC.PublicKey(),
 	})
 	if err != nil { t.Fatal(err) }
 	authorityResolver, err := authority.ConsensusAuthorityResolver()
@@ -416,4 +418,19 @@ func TestConsensusRecoveryProposalToRuntimeFinalityHandoff(t *testing.T) {
 	if n.HeadHash == (types.Hash{}) {
 		t.Fatal("canonical head hash is empty after finalized handoff")
 	}
+}
+
+func testEd25519Signer(t *testing.T, seed byte) *crypto.Ed25519Signer {
+	t.Helper()
+	seedBytes := make([]byte, 32)
+	seedBytes[0] = seed
+	keyPair, err := crypto.NewEd25519KeyPair(seedBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer, err := crypto.NewEd25519Signer(keyPair.PrivateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return signer
 }
