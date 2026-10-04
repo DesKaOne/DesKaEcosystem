@@ -72,10 +72,11 @@ func (r ReconciliationReport) OperatorReport() ReconciliationOperatorReport {
 			switch evidence.Resolution {
 			case ReconciliationPersistenceConfirmedApplied:
 				// Durable "applied" evidence is only operator-confirmable when
-				// the reconciliation itself established a valid correlation.
-				// Otherwise persistence evidence must not override a missing or
-				// conflicting financial identity/linkage.
-				if item.Status == ReconciliationCorrelated {
+				// the reconciliation established a valid correlation AND the
+				// snapshot was verified across all participating stores.
+				// Mixed or unverified observations are never authoritative.
+				if item.Status == ReconciliationCorrelated &&
+					r.Snapshot.SnapshotConsistency == ReconciliationSnapshotConsistencyCapturedVerified {
 					operatorItem.ResolutionClass = ReconciliationOperatorConfirmed
 					summary.ConfirmedItems++
 				} else {
@@ -83,8 +84,13 @@ func (r ReconciliationReport) OperatorReport() ReconciliationOperatorReport {
 					summary.ReviewItems++
 				}
 			case ReconciliationPersistenceConfirmedNotApplied:
-				operatorItem.ResolutionClass = ReconciliationOperatorConfirmed
-				summary.ConfirmedItems++
+				if r.Snapshot.SnapshotConsistency == ReconciliationSnapshotConsistencyCapturedVerified {
+					operatorItem.ResolutionClass = ReconciliationOperatorConfirmed
+					summary.ConfirmedItems++
+				} else {
+					operatorItem.ResolutionClass = ReconciliationOperatorReview
+					summary.ReviewItems++
+				}
 			case ReconciliationPersistenceNeedsReviewConflict:
 				operatorItem.ResolutionClass = ReconciliationOperatorReview
 				summary.ReviewItems++
