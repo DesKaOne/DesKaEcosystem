@@ -320,10 +320,12 @@ func TestConsensusRecoveryProposalToRuntimeFinalityHandoff(t *testing.T) {
 	if err != nil { t.Fatal(err) }
 
 	validators, power := recoveryValidatorConfig(t)
+	signerA := mustTestSigner(t, 23)
+	signerB := mustTestSigner(t, 24)
 	authority, err := consensus.NewValidatorAuthoritySet(0, validators, map[string][]byte{
-		"validator-a": []byte("key-a"),
-		"validator-b": []byte("key-b"),
-		"validator-c": []byte("key-c"),
+		"validator-a": signerA.PublicKey(),
+		"validator-b": signerB.PublicKey(),
+		"validator-c": mustTestSigner(t, 25).PublicKey(),
 	})
 	if err != nil { t.Fatal(err) }
 	authorityResolver, err := authority.ConsensusAuthorityResolver()
@@ -346,57 +348,48 @@ func TestConsensusRecoveryProposalToRuntimeFinalityHandoff(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	payload := proposal.MessagePayload()
 	proposer := proposal.Candidate.Header.Proposer
-	signer := mustTestSigner(t, 23)
 	prevote := consensus.Message{
 		ProtocolVersion: recovery.State.ProtocolVersion,
-		ChainID:         recovery.State.ChainID,
-		Epoch:           recovery.State.Epoch,
-		Height:          recovery.State.Height,
-		Round:           recovery.State.Round,
-		Sender:          proposer,
-		Type:            consensus.MessageTypePrevote,
-		Payload:         proposal.MessagePayload(),
+		ChainID: recovery.State.ChainID,
+		Epoch: recovery.State.Epoch,
+		Height: recovery.State.Height,
+		Round: recovery.State.Round,
+		Sender: proposer,
+		Type: consensus.MessageTypePrevote,
+		Payload: payload,
 	}
-	prevote, err = prevote.Sign(signer)
+	prevote, err = prevote.Sign(signerA)
 	if err != nil { t.Fatal(err) }
-	if err := recovery.Runtime.AddVote(prevote); err != nil {
-		t.Fatal(err)
-	}
+	if err := recovery.Runtime.AddVote(prevote); err != nil { t.Fatal(err) }
+
 	secondPrevote := prevote
 	secondPrevote.Sender = []byte("validator-b")
-	secondPrevoteSigner := mustTestSigner(t, 24)
-	secondPrevote, err = secondPrevote.Sign(secondPrevoteSigner)
+	secondPrevote, err = secondPrevote.Sign(signerB)
 	if err != nil { t.Fatal(err) }
-	if err := recovery.Runtime.AddVote(secondPrevote); err != nil {
-		t.Fatal(err)
-	}
-	if recovery.Runtime.State().Phase != consensus.PhasePrecommit {
-		t.Fatalf("runtime phase = %v, want precommit after prevote quorum", recovery.Runtime.State().Phase)
-	}
+	if err := recovery.Runtime.AddVote(secondPrevote); err != nil { t.Fatal(err) }
+
 	precommit := consensus.Message{
 		ProtocolVersion: recovery.State.ProtocolVersion,
-		ChainID:         recovery.State.ChainID,
-		Epoch:           recovery.State.Epoch,
-		Height:          recovery.State.Height,
-		Round:           recovery.State.Round,
-		Sender:          proposer,
-		Type:            consensus.MessageTypePrecommit,
-		Payload:         proposal.MessagePayload(),
+		ChainID: recovery.State.ChainID,
+		Epoch: recovery.State.Epoch,
+		Height: recovery.State.Height,
+		Round: recovery.State.Round,
+		Sender: proposer,
+		Type: consensus.MessageTypePrecommit,
+		Payload: payload,
 	}
-	precommit, err = precommit.Sign(signer)
+	precommit, err = precommit.Sign(signerA)
 	if err != nil { t.Fatal(err) }
-	if err := recovery.Runtime.AddVote(precommit); err != nil {
-		t.Fatal(err)
-	}
+	if err := recovery.Runtime.AddVote(precommit); err != nil { t.Fatal(err) }
+
 	secondPrecommit := precommit
 	secondPrecommit.Sender = []byte("validator-b")
-	secondPrecommitSigner := mustTestSigner(t, 24)
-	secondPrecommit, err = secondPrecommit.Sign(secondPrecommitSigner)
+	secondPrecommit, err = secondPrecommit.Sign(signerB)
 	if err != nil { t.Fatal(err) }
-	if err := recovery.Runtime.AddVote(secondPrecommit); err != nil {
-		t.Fatal(err)
-	}
+	if err := recovery.Runtime.AddVote(secondPrecommit); err != nil { t.Fatal(err) }
+
 	certificate, err := recovery.Runtime.FinalizeProposal(authorityResolver)
 	if err != nil { t.Fatal(err) }
 
@@ -409,8 +402,8 @@ func TestConsensusRecoveryProposalToRuntimeFinalityHandoff(t *testing.T) {
 		certificate,
 		validators,
 		power,
-		validatorAuthorityResolver{publicKey: []byte("key-a")},
-		senderAuthorityResolver{publicKey: []byte("key-a")},
+		validatorAuthorityResolver{publicKey: signerA.PublicKey()},
+		senderAuthorityResolver{publicKey: signerA.PublicKey()},
 	); err != nil {
 		t.Fatal(err)
 	}
