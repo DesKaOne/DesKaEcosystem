@@ -47,6 +47,29 @@ func (r SettlementPostingRequest) Validate() error {
 }
 
 
+type SettlementPersistenceOutcome string
+
+const (
+	SettlementPersistenceApplied    SettlementPersistenceOutcome = "applied"
+	SettlementPersistenceNotApplied SettlementPersistenceOutcome = "not_applied"
+	SettlementPersistenceConflict   SettlementPersistenceOutcome = "conflict"
+	SettlementPersistenceUnknown    SettlementPersistenceOutcome = "unknown"
+)
+
+func classifySettlementPersistenceOutcome(ledgerFound bool, auditFound bool, ledgerMatches bool, auditMatches bool) SettlementPersistenceOutcome {
+	if ledgerFound && auditFound && ledgerMatches && auditMatches {
+		return SettlementPersistenceApplied
+	}
+	if !ledgerFound && !auditFound {
+		return SettlementPersistenceNotApplied
+	}
+	return SettlementPersistenceConflict
+}
+
+type SettlementPersistenceOutcomeReader interface {
+	ResolveSettlementPersistenceOutcome(ctx context.Context, ledger LedgerTransaction, audit SettlementAudit) (SettlementPersistenceOutcome, error)
+}
+
 type SettlementPoster struct {
 	ledger SettlementStore
 }
