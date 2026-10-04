@@ -937,6 +937,8 @@ func TestSettlementReconcilerLabelsLegacyMixedSnapshot(t *testing.T) {
 	ledger := validLedgerTransaction()
 	ledger.ID = "legacy-mixed-snapshot"
 	ledger.ReferenceID = "legacy-mixed-reference"
+	ledger.Entries[0].Amount = 1000
+	ledger.Entries[1].Amount = 1000
 	if err := ledgerStore.Append(ledger); err != nil {
 		t.Fatal(err)
 	}
