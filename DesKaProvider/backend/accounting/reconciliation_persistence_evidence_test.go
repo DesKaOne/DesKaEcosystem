@@ -88,3 +88,34 @@ func TestReconciliationReportWithPersistenceEvidenceIsNonMutating(t *testing.T) 
 		t.Fatalf("resolution = %q, want unknown review", got.Resolution)
 	}
 }
+
+func TestReconciliationReportWithPersistenceEvidenceRejectsDuplicateReferenceAmbiguity(t *testing.T) {
+	start := time.Date(2026, 10, 4, 12, 3, 0, 0, time.UTC)
+	end := start.Add(300 * time.Millisecond)
+	report := ReconciliationReport{
+		Items: []TransactionReconciliation{
+			{ReferenceID: "duplicate-ref", Status: ReconciliationDuplicateReference},
+			{ReferenceID: "duplicate-ref", Status: ReconciliationDuplicateReference},
+		},
+		Snapshot: ReconciliationSnapshotMetadata{
+			CaptureStartedAt: start,
+			CaptureCompletedAt: end,
+			SnapshotConsistency: ReconciliationSnapshotConsistencyCapturedVerified,
+		},
+	}
+	evidence := ReconciliationPersistenceEvidence{
+		Resolution: ReconciliationPersistenceConfirmedApplied,
+		Outcome: "applied",
+		Observed: true,
+		Source: "postgres.provider_transactions",
+		ObservedAt: end,
+		Version: 8,
+	}
+
+	enriched := report.WithPersistenceEvidence("duplicate-ref", evidence)
+	for i, item := range enriched.Items {
+		if item.PersistenceEvidence != nil {
+			t.Fatalf("duplicate reference item %d must remain without persistence evidence: %+v", i, item.PersistenceEvidence)
+		}
+	}
+}
