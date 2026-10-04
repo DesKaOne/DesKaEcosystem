@@ -39,10 +39,8 @@ func applyAccountingMigrations(t *testing.T, db *sql.DB) {
 		path := filepath.Join(filepath.Dir(file), "..", "migrations", name)
 		b, err := os.ReadFile(path)
 		if err != nil { t.Fatal(err) }
-		for _, statement := range strings.Split(strings.Join(func() []string { var lines []string; for _, line := range strings.Split(string(b), "\n") { if strings.HasPrefix(strings.TrimSpace(line), "--") { continue }; lines = append(lines, line) }; return lines }(), "\n"), ";") {
-		statement = strings.TrimSpace(statement)
-			if statement == "" || strings.HasPrefix(statement, "--") { continue }
-			if _, err := db.Exec(statement); err != nil { t.Fatalf("apply accounting migration %s: %v", name, err) }
+		if _, err := db.Exec(string(b)); err != nil {
+			t.Fatalf("apply accounting migration %s: %v", name, err)
 		}
 	}
 }
