@@ -10982,7 +10982,7 @@ Documents an actual boundary of the current multi-store architecture without int
 
 ### Verification
 
-Pending full test, vet, race, push, and latest CI verification on the final HEAD.
+Final CI verification is recorded below in `### Milestone #72 Final Verification`.
 
 ### Remaining Risk
 
