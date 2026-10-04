@@ -932,7 +932,9 @@ func TestSettlementReconcilerSurfacesFinancialRecordsForNonSuccessProviderState(
 	if len(ledger.All()) != 1 { t.Fatal("reconciliation must remain read-only") }
 }
 
-type legacyPerLedgerAuditReader struct { MemoryStore }\n\nfunc TestSettlementReconcilerLabelsLegacyMixedSnapshot(t *testing.T) {
+type legacyPerLedgerAuditReader struct { MemoryStore }
+
+func TestSettlementReconcilerLabelsLegacyMixedSnapshot(t *testing.T) {
 	ledgerStore := NewMemoryStore()
 	ledger := validLedgerTransaction()
 	ledger.ID = "legacy-mixed-snapshot"
