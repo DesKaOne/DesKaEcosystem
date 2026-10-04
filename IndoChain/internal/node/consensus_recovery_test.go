@@ -358,12 +358,14 @@ func TestConsensusRecoveryProposalToRuntimeFinalityHandoff(t *testing.T) {
 		Type: consensus.MessageTypePrevote,
 		Payload: proposal.MessagePayload(),
 	}
-	precommit, err = precommit.Sign(signer)
+	prevote, err := precommit.Sign(signer)
 	if err != nil { t.Fatal(err) }
-	if err := recovery.Runtime.AddVote(precommit); err != nil {
+	if err := recovery.Runtime.AddVote(prevote); err != nil {
 		t.Fatal(err)
 	}
 	precommit.Type = consensus.MessageTypePrecommit
+	precommit, err = precommit.Sign(signer)
+	if err != nil { t.Fatal(err) }
 	if err := recovery.Runtime.AddVote(precommit); err != nil {
 		t.Fatal(err)
 	}
