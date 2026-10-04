@@ -12077,3 +12077,88 @@ This hardens the operator delivery boundary without broadening financial authori
 Continue auditing the evidence-to-V1 path for semantic provenance loss, especially whether evidence attribution can ever be presented as snapshot-bound without an explicit observation scope.
 
 No automatic provider retry, failover, transaction resubmission, provider funding, customer-balance mutation, treasury movement, duplicate purchase creation, blockchain action, or public financial mutation is included.
+
+---
+
+## Milestone #87 — Explicit Persistence Evidence Observation Scope
+
+**Date:** 2026-10-04
+
+### Objective
+
+Prevent persistence evidence observed independently or after reconciliation capture from being presented as snapshot-bound merely because reconciliation metadata was copied onto the evidence envelope.
+
+### Problem / Root Cause
+
+ReconciliationPersistenceEvidence.WithSnapshotMetadata() previously copied the reconciliation capture window and consistency class onto evidence without recording whether the evidence observation itself belonged to that snapshot. The operator projection then required a verified snapshot but could still promote independently observed confirmed_applied or confirmed_not_applied evidence to confirmed.
+
+This was a semantic provenance gap: snapshot provenance and evidence-observation provenance are separate facts and must not be conflated.
+
+### Implementation
+
+- Added explicit ReconciliationPersistenceEvidenceScope:
+  - unspecified
+  - snapshot_bound
+  - independent
+- Transaction and settlement persistence evidence classified from the durable outcome readers is explicitly marked independent because those observations are not mechanically proven to be part of the reconciliation snapshot capture.
+- WithSnapshotMetadata() continues to copy report metadata only; it no longer implies or changes evidence binding scope.
+- Operator confirmation now requires all of:
+  - valid reconciliation correlation where applicable;
+  - captured_verified snapshot consistency;
+  - explicit snapshot_bound evidence scope.
+- independent and unspecified evidence remain review/unresolved rather than becoming authoritative.
+- V1 operator delivery now preserves evidence_scope and normalizes an empty scope to explicit unspecified.
+- Added deterministic regression tests proving post-snapshot/independent evidence cannot be promoted and snapshot metadata cannot silently bind evidence.
+- No persistence write, provider call, retry, resubmission, repair, reversal, funding, balance mutation, or ledger mutation was introduced.
+
+### Safety Impact
+
+The provenance chain is now explicit:
+
+reconciliation snapshot provenance != persistence evidence observation provenance
+
+A verified snapshot alone cannot authorize an evidence observation that was made independently. Confirmation requires an explicit producer assertion that the evidence is snapshot-bound.
+
+This closes a concrete false-authority path without inventing temporal heuristics or pretending that separate store reads are atomic.
+
+### V1 Contract Impact
+
+The V1 operator item now exposes evidence_scope so downstream read-only consumers can distinguish:
+
+- snapshot_bound — explicitly attributed to the reconciliation snapshot;
+- independent — observed outside the snapshot binding;
+- unspecified — no binding attribution was supplied.
+
+The delivery contract remains read-only and versioned.
+
+### Tests / CI
+
+Implementation/test HEAD ea4e1b0d69a3123565cc93614640bdf7f147ba7d:
+
+- Push CI run **37203296535**: **GREEN**
+  - test: PASS
+  - vet: PASS
+  - race: PASS
+  - credential-gated provider validation jobs: skipped as expected
+
+The first implementation/test attempt exposed a V1 serialization expectation for an empty scope; the contract was corrected to normalize empty scope to explicit unspecified, and the final implementation CI is green.
+
+### Remaining Risk
+
+- Cross-store atomicity remains unavailable by design.
+- snapshot_bound is an explicit provenance assertion from the evidence producer; this milestone does not create a distributed transaction or cryptographically prove that assertion.
+- Mixed/unknown/conflict states remain non-actionable without explicit review.
+- Live-provider compatibility remains credential-gated.
+- No authenticated public reconciliation API exists in the repository.
+
+### Progress
+
+Engineering readiness: **~97%**.
+
+This closes the identified semantic provenance gap between reconciliation snapshot metadata and persistence-evidence observation scope. It remains below 99% because cross-store atomicity, live-provider validation, authenticated delivery integration, and producer-level proof of snapshot binding remain unresolved.
+
+### Next Highest-Value Milestone
+
+Audit how snapshot_bound evidence can be produced and whether its producer contract can carry a verifiable snapshot identity/fingerprint without coupling reconciliation to a distributed transaction. Keep independent observations read-only and non-authoritative.
+
+No automatic provider retry, failover, transaction resubmission, provider funding, customer-balance mutation, treasury movement, duplicate purchase creation, blockchain action, or public financial mutation is included.
