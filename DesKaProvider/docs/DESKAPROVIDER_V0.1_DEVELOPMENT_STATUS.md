@@ -11509,3 +11509,91 @@ This milestone closes the explicit operator-state/provenance representation gap 
 Integrate evidence-aware operator output with the existing reconciliation/report delivery boundary, while preserving explicit capture provenance and ensuring `unknown`/`conflict` cannot be auto-resolved or converted into financial mutations.
 
 No automatic provider retry, failover, transaction resubmission, provider funding, customer-balance mutation, treasury movement, duplicate purchase creation, blockchain action, or public API exposure is included.
+
+
+---
+
+## Milestone #80 — Read-Only Operator Reconciliation Projection
+
+**Date:** 2026-10-04
+
+### Objective
+
+Integrate the evidence-aware reconciliation state into a deterministic operator/report projection without exposing a mutation-capable API or changing financial persistence.
+
+### Problem / Root Cause
+
+Milestone #79 attached persistence evidence to reconciliation items, but there was still no stable delivery-safe projection for operator tooling. Consumers could inspect the raw report, yet the distinction between confirmed evidence, conflict requiring review, unresolved evidence, and items without evidence was not normalized into one read-only output.
+
+### Implementation
+
+- Added `ReconciliationOperatorReport` as a read-only projection of `ReconciliationReport`.
+- Added `ReconciliationOperatorItem` with reconciliation status, persistence resolution, evidence provenance, observation flags, and durable version.
+- Added operator resolution classes:
+  - `confirmed`
+  - `review`
+  - `unresolved`
+- Added deterministic summary counts for total, confirmed, review, unresolved, and no-evidence items.
+- `unknown` / absent evidence remains unresolved; no evidence is inferred from reconciliation status alone.
+- Projection preserves snapshot metadata from the underlying reconciliation report.
+- No HTTP endpoint, provider retry, persistence repair, reversal, resubmission, funding, balance mutation, or ledger mutation was introduced.
+
+### Safety Impact
+
+The operator boundary is explicitly observational:
+
+`reconciliation report -> read-only operator projection`.
+
+The projection cannot authorize a financial transition. In particular, conflict evidence is surfaced as `review`, while missing or unknown evidence remains `unresolved`.
+
+### Architecture Impact
+
+The architecture now separates three concerns:
+
+1. durable persistence evidence;
+2. reconciliation evidence state;
+3. operator/report presentation.
+
+This prevents presentation logic from becoming an implicit financial state machine and keeps reconciliation/report delivery independent from provider execution.
+
+### Tests
+
+Added deterministic regression coverage for:
+
+- applied evidence -> confirmed operator state;
+- conflict evidence -> review state;
+- missing evidence -> unresolved state;
+- summary counters;
+- source/timestamp/version provenance preservation;
+- source reconciliation report remains unchanged.
+
+### CI
+
+Code HEAD `a07ec7a380eddc77b3ea28b55e0e0300f930e4a4`:
+
+- Push CI run **37199723167**: **GREEN**
+  - test: PASS
+  - race: PASS
+  - credential-gated provider validation jobs: skipped as expected
+
+No authorized live-provider transaction or external financial mutation was executed by this milestone.
+
+### Remaining Risk
+
+- Operator projection is read-only and does not itself perform evidence lookup; callers must supply evidence already captured by the reconciliation workflow.
+- Cross-store atomicity remains unavailable.
+- `unknown` and `conflict` still require human/operator decisions.
+- Live-provider compatibility remains credential-gated.
+- Broader production-readiness gaps remain outside this milestone.
+
+### Progress
+
+Engineering readiness: **~95%**.
+
+This closes the delivery/projection gap between evidence-aware reconciliation and operator-facing reporting while retaining the read-only financial boundary. It remains below 99% because live-provider validation, cross-store atomicity, and broader production-readiness boundaries remain unresolved.
+
+### Next Highest-Value Milestone
+
+Harden the reconciliation/report delivery contract itself: deterministic schema/versioning, explicit snapshot provenance, and tests that prevent operator output from silently dropping evidence or converting review states into actionable financial commands.
+
+No automatic provider retry, failover, transaction resubmission, provider funding, customer-balance mutation, treasury movement, duplicate purchase creation, blockchain action, or public financial mutation is included.
