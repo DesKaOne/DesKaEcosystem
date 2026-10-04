@@ -292,20 +292,37 @@ func (s *PostgresStore) AppendSettlement(ctx context.Context, ledger LedgerTrans
 }
 
 func (s *PostgresStore) ResolveSettlementPersistenceOutcome(ctx context.Context, ledger LedgerTransaction, audit SettlementAudit) (SettlementPersistenceOutcome, error) {
+	evidence, err := s.ResolveSettlementPersistenceEvidence(ctx, ledger, audit)
+	if err != nil {
+		return SettlementPersistenceUnknown, err
+	}
+	return evidence.Outcome, nil
+}
+
+func (s *PostgresStore) ResolveSettlementPersistenceEvidence(ctx context.Context, ledger LedgerTransaction, audit SettlementAudit) (SettlementPersistenceEvidence, error) {
+	observedAt := time.Now().UTC()
 	currentLedger, ledgerFound, err := s.Get(ctx, ledger.ID)
 	if err != nil {
-		return SettlementPersistenceUnknown, fmt.Errorf("resolve settlement ledger outcome: %w", err)
+		return SettlementPersistenceEvidence{
+			Outcome: SettlementPersistenceUnknown, Source: "postgres.ledger_transactions+settlement_audit", ObservedAt: observedAt,
+		}, fmt.Errorf("resolve settlement ledger outcome: %w", err)
 	}
 	currentAudit, auditFound, err := s.GetSettlementAudit(ctx, audit.TransactionID)
 	if err != nil {
-		return SettlementPersistenceUnknown, fmt.Errorf("resolve settlement audit outcome: %w", err)
+		return SettlementPersistenceEvidence{
+			Outcome: SettlementPersistenceUnknown, LedgerObserved: ledgerFound, Source: "postgres.ledger_transactions+settlement_audit", ObservedAt: observedAt,
+		}, fmt.Errorf("resolve settlement audit outcome: %w", err)
 	}
-	return classifySettlementPersistenceOutcome(
+	outcome := classifySettlementPersistenceOutcome(
 		ledgerFound,
 		auditFound,
 		ledgerFound && sameLedgerTransaction(currentLedger, ledger),
 		auditFound && sameSettlementAudit(currentAudit, audit),
-	), nil
+	)
+	return SettlementPersistenceEvidence{
+		Outcome: outcome, LedgerObserved: ledgerFound, AuditObserved: auditFound,
+		Source: "postgres.ledger_transactions+settlement_audit", ObservedAt: observedAt,
+	}, nil
 }
 
 func (s *PostgresStore) GetSettlementAudit(ctx context.Context, transactionID string) (SettlementAudit, bool, error) {
