@@ -11597,3 +11597,91 @@ This closes the delivery/projection gap between evidence-aware reconciliation an
 Harden the reconciliation/report delivery contract itself: deterministic schema/versioning, explicit snapshot provenance, and tests that prevent operator output from silently dropping evidence or converting review states into actionable financial commands.
 
 No automatic provider retry, failover, transaction resubmission, provider funding, customer-balance mutation, treasury movement, duplicate purchase creation, blockchain action, or public financial mutation is included.
+
+
+---
+
+## Milestone #81 — Versioned Read-Only Operator Report Delivery Contract
+
+**Date:** 2026-10-04
+
+### Objective
+
+Harden the operator reconciliation delivery boundary so consumers receive a deterministic, versioned schema with explicit snapshot provenance and persistence evidence.
+
+### Problem / Root Cause
+
+Milestone #80 provided a read-only operator projection, but its Go structs were not yet a dedicated delivery contract. Generic serialization could expose implementation field names or omit newly important provenance fields when consumers integrated the report outside the accounting package.
+
+### Implementation
+
+- Added ReconciliationOperatorReportSchemaVersion = "v1".
+- Added dedicated V1 delivery DTOs for snapshot provenance, operator items, summary, and the report envelope.
+- Added ReconciliationOperatorReport.V1() as a pure projection into the versioned delivery contract.
+- Added explicit JSON field names for:
+  - schema version;
+  - capture start/end and captured timestamps;
+  - source reader identities;
+  - snapshot consistency, fingerprint, and capture window;
+  - reconciliation status;
+  - persistence resolution/class;
+  - observation flags;
+  - evidence source/timestamp/version;
+  - ledger/audit identities;
+  - deterministic summary counters.
+- The V1 contract contains no financial command, retry, resubmission, repair, reversal, or mutation instruction.
+
+### Safety Impact
+
+The delivery boundary is now explicitly observational:
+
+reconciliation report -> operator projection -> versioned V1 delivery DTO.
+
+unknown remains unresolved, and conflict remains review. Serialization cannot reinterpret either state as an executable financial action.
+
+### Architecture Impact
+
+The accounting domain model and external delivery representation are now separated. This permits future schema evolution without changing the underlying reconciliation or persistence evidence model.
+
+Snapshot provenance is copied explicitly rather than relying on generic struct serialization, reducing the risk that operator consumers silently lose capture-window or evidence provenance.
+
+### Tests
+
+Added deterministic regression coverage for:
+
+- fixed schema version v1;
+- preservation of snapshot readers, timestamps, counts, consistency, fingerprint, and capture window;
+- preservation of unknown and conflict resolution classes;
+- preservation of evidence source/version and ledger/audit observation flags;
+- JSON serialization containing the required version, provenance, and evidence fields.
+
+### CI
+
+Final implementation HEAD d58319a404744e708096df1a0386e4b1848a6fbc:
+
+- Push CI run 37200556968: GREEN
+  - test: PASS
+  - race: PASS
+  - credential-gated provider validation jobs: skipped as expected
+
+No authorized live-provider transaction or external financial mutation was executed by this milestone.
+
+### Remaining Risk
+
+- V1 is a delivery contract, not a cross-store consistency mechanism.
+- Cross-store atomicity remains unavailable.
+- unknown and conflict still require human/operator or higher-level workflow decisions.
+- Live-provider compatibility remains credential-gated.
+- Future schema versions must preserve the same non-actionable semantics unless explicitly reviewed.
+
+### Progress
+
+Engineering readiness: ~96%.
+
+This milestone closes the schema/provenance delivery gap for operator reconciliation output while preserving the read-only financial boundary. It remains below 99% because live-provider validation, cross-store atomicity, and broader production-readiness boundaries remain unresolved.
+
+### Next Highest-Value Milestone
+
+Integrate the versioned operator report contract into the existing delivery boundary, if one exists, with explicit compatibility tests and no mutation-capable path. If no delivery boundary exists yet, the next step should be a read-only adapter only—not a public financial API.
+
+No automatic provider retry, failover, transaction resubmission, provider funding, customer-balance mutation, treasury movement, duplicate purchase creation, blockchain action, or public financial mutation is included.
