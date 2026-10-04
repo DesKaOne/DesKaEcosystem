@@ -30,6 +30,7 @@ type ReconciliationOperatorItemV1 struct {
 	ResolutionClass      ReconciliationOperatorResolution  `json:"resolution_class"`
 	PersistenceOutcome   string                             `json:"persistence_outcome"`
 	EvidenceObserved     bool                               `json:"evidence_observed"`
+	EvidenceScope        ReconciliationPersistenceEvidenceScope `json:"evidence_scope"`
 	EvidenceSource       string                             `json:"evidence_source"`
 	EvidenceObservedAt   time.Time                          `json:"evidence_observed_at"`
 	PersistenceVersion   int64                              `json:"persistence_version"`
@@ -120,6 +121,7 @@ func (r ReconciliationOperatorReport) V1() ReconciliationOperatorReportV1 {
 			ResolutionClass: item.ResolutionClass,
 			PersistenceOutcome: item.PersistenceOutcome,
 			EvidenceObserved: item.EvidenceObserved,
+			EvidenceScope: item.EvidenceScope,
 			EvidenceSource: item.EvidenceSource,
 			EvidenceObservedAt: item.EvidenceObservedAt,
 			PersistenceVersion: item.PersistenceVersion,
