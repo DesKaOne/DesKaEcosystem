@@ -38,6 +38,7 @@ type TransactionReconciliation struct {
 	Status                    ReconciliationStatus
 	LedgerTransactionIDs      []string
 	SettlementAuditEventIDs []string
+	PersistenceEvidence *ReconciliationPersistenceEvidence
 }
 
 type ReconciliationSnapshotMetadata struct {
@@ -281,6 +282,20 @@ func NewSettlementReconciler(
 		return nil, errors.New("reconciliation dependencies are required")
 	}
 	return &SettlementReconciler{transactions: transactions, ledger: ledger, audit: audit, fingerprint: reconciliationSnapshotFingerprint}, nil
+}
+
+func (r ReconciliationReport) WithPersistenceEvidence(referenceID string, evidence ReconciliationPersistenceEvidence) ReconciliationReport {
+	result := r
+	result.Items = append([]TransactionReconciliation(nil), r.Items...)
+	evidence = evidence.WithSnapshotMetadata(r.Snapshot)
+	for i := range result.Items {
+		if result.Items[i].ReferenceID != referenceID {
+			continue
+		}
+		copy := evidence
+		result.Items[i].PersistenceEvidence = &copy
+	}
+	return result
 }
 
 func (r *SettlementReconciler) Reconcile(ctx context.Context) (ReconciliationReport, error) {
