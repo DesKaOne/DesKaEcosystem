@@ -186,16 +186,15 @@ func TestFileConsensusEvidenceStoreSurvivesReopen(t *testing.T) {
 
 
 func authorityDigestFromFixture(authority StaticValidatorAuthority) [32]byte {
-	// The context only needs a deterministic authority identity for this fixture.
 	return sha256.Sum256([]byte("test-authority"))
 }
 
 func TestPersistAndRecoverFinalityCertificateWithContext(t *testing.T) {
-	_, state, validators, power := runtimeFixture(t)
 	f := newAuthenticatedRuntimeFixture(t)
+	state := f.runtime.State()
 	authority := f.resolver
-	if err := f.runtime.AddVote(runtimeMessage(f.state, "validator-a", MessageTypePrevote, "persisted-finality")); err != nil { t.Fatal(err) }
-	if err := f.runtime.AddVote(runtimeMessage(f.state, "validator-b", MessageTypePrevote, "persisted-finality")); err != nil { t.Fatal(err) }
+	if err := f.runtime.AddVote(runtimeMessage(state, "validator-a", MessageTypePrevote, "persisted-finality")); err != nil { t.Fatal(err) }
+	if err := f.runtime.AddVote(runtimeMessage(state, "validator-b", MessageTypePrevote, "persisted-finality")); err != nil { t.Fatal(err) }
 	if err := f.runtime.AddVote(authenticatedPrecommit(t, f.runtime.State(), "validator-a", f.signerA, "persisted-finality")); err != nil { t.Fatal(err) }
 	if err := f.runtime.AddVote(authenticatedPrecommit(t, f.runtime.State(), "validator-b", f.signerB, "persisted-finality")); err != nil { t.Fatal(err) }
 	certificate, err := f.runtime.FinalizeProposal(authority)
@@ -217,12 +216,12 @@ func TestPersistAndRecoverFinalityCertificateWithContext(t *testing.T) {
 	}
 	store := storage.NewMemoryConsensusEvidenceStore()
 	key, err := PersistFinalityCertificateWithContext(
-		store, certificate, state, validators, power, authority, context, f.signerA, []byte("validator-a"),
+		store, certificate, state, f.validators, f.power, authority, context, f.signerA, []byte("validator-a"),
 	)
 	if err != nil { t.Fatal(err) }
 
 	recovered, recoveredKey, err := RecoverFinalityCertificateWithContext(
-		store, state, validators, power, authority, context,
+		store, state, f.validators, f.power, authority, context,
 	)
 	if err != nil { t.Fatal(err) }
 	if recoveredKey != key { t.Fatalf("recovered key = %q, want %q", recoveredKey, key) }
@@ -232,7 +231,7 @@ func TestPersistAndRecoverFinalityCertificateWithContext(t *testing.T) {
 
 	restarted, err := NewValidatorRuntime(RuntimeConfig{
 		Rules: ValidationRules{ProtocolVersion: state.ProtocolVersion, ChainID: state.ChainID, RequireSender: true},
-		State: state, Validators: validators, VotingPower: power,
+		State: state, Validators: f.validators, VotingPower: f.power,
 		Threshold: QuorumThreshold{Numerator: 2, Denominator: 3}, Proposer: RoundRobinProposer{},
 	})
 	if err != nil { t.Fatal(err) }
@@ -244,15 +243,16 @@ func TestPersistAndRecoverFinalityCertificateWithContext(t *testing.T) {
 
 func TestPersistFinalityCertificateWithContextRejectsContextChange(t *testing.T) {
 	f := newAuthenticatedRuntimeFixture(t)
-	if err := f.runtime.AddVote(runtimeMessage(f.state, "validator-a", MessageTypePrevote, "context-finality")); err != nil { t.Fatal(err) }
-	if err := f.runtime.AddVote(runtimeMessage(f.state, "validator-b", MessageTypePrevote, "context-finality")); err != nil { t.Fatal(err) }
+	state := f.runtime.State()
+	if err := f.runtime.AddVote(runtimeMessage(state, "validator-a", MessageTypePrevote, "context-finality")); err != nil { t.Fatal(err) }
+	if err := f.runtime.AddVote(runtimeMessage(state, "validator-b", MessageTypePrevote, "context-finality")); err != nil { t.Fatal(err) }
 	if err := f.runtime.AddVote(authenticatedPrecommit(t, f.runtime.State(), "validator-a", f.signerA, "context-finality")); err != nil { t.Fatal(err) }
 	if err := f.runtime.AddVote(authenticatedPrecommit(t, f.runtime.State(), "validator-b", f.signerB, "context-finality")); err != nil { t.Fatal(err) }
 	certificate, err := f.runtime.FinalizeProposal(f.resolver)
 	if err != nil { t.Fatal(err) }
 	context := PersistenceContext{
-		ProtocolVersion: uint64(f.state.ProtocolVersion), ChainID: uint64(f.state.ChainID),
-		Epoch: f.state.Epoch, Height: uint64(f.state.Height), Round: certificate.Round,
+		ProtocolVersion: uint64(state.ProtocolVersion), ChainID: uint64(state.ChainID),
+		Epoch: state.Epoch, Height: uint64(state.Height), Round: certificate.Round,
 		Phase: uint8(PhaseFinalized), ValidatorAuthorityDigest: [32]byte{1},
 		VotingPowerDigest: [32]byte{2}, ThresholdNumerator: 2, ThresholdDenominator: 3,
 		ProposerPolicy: "round-robin-v0-dev", ProposerPolicyVersion: "1",
@@ -260,7 +260,7 @@ func TestPersistFinalityCertificateWithContextRejectsContextChange(t *testing.T)
 	mismatched := context
 	mismatched.Height++
 	_, err = PersistFinalityCertificateWithContext(
-		storage.NewMemoryConsensusEvidenceStore(), certificate, f.state, f.validators, f.power, f.resolver,
+		storage.NewMemoryConsensusEvidenceStore(), certificate, state, f.validators, f.power, f.resolver,
 		mismatched, f.signerA, []byte("validator-a"),
 	)
 	if !errors.Is(err, ErrEvidencePersistenceContextMismatch) {
