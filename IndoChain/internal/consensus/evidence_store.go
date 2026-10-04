@@ -287,7 +287,7 @@ func PersistFinalityCertificateWithContext(
 		certificate.Round != context.Round {
 		return "", ErrEvidencePersistenceContextMismatch
 	}
-	if err := ValidateFinalityCertificateWithAuthority(certificate, state, validators, authority); err != nil {
+	if err := ValidateFinalityCertificateWithAuthority(certificate, state, validators, votingPower, authority); err != nil {
 		return "", err
 	}
 	if _, err := authority.PublicKeyForValidator(sender); err != nil {
@@ -340,7 +340,7 @@ func RecoverFinalityCertificateWithContext(
 		if err != nil {
 			return FinalityCertificate{}, "", err
 		}
-		if err := ValidateFinalityCertificateWithAuthority(certificate, state, validators, authority); err != nil {
+		if err := ValidateFinalityCertificateWithAuthority(certificate, state, validators, votingPower, authority); err != nil {
 			return FinalityCertificate{}, "", err
 		}
 		if certificate.Epoch != context.Epoch || certificate.Height != types.Height(context.Height) || certificate.Round != context.Round {
