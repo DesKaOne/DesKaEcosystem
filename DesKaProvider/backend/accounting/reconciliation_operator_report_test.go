@@ -92,6 +92,30 @@ func TestReconciliationPersistenceEvidenceBindToSnapshotRequiresFingerprint(t *t
 	}
 }
 
+func TestReconciliationOperatorReportRejectsMismatchedSnapshotFingerprintForNotApplied(t *testing.T) {
+	report := ReconciliationReport{
+		Snapshot: ReconciliationSnapshotMetadata{
+			SnapshotConsistency: ReconciliationSnapshotConsistencyCapturedVerified,
+			SnapshotFingerprint: "snap-current",
+		},
+		Items: []TransactionReconciliation{{
+			ReferenceID: "ref-1",
+			Status: ReconciliationCorrelated,
+			PersistenceEvidence: &ReconciliationPersistenceEvidence{
+				Resolution: ReconciliationPersistenceConfirmedNotApplied,
+				Outcome: "not_applied",
+				Observed: true,
+				ObservationScope: ReconciliationPersistenceEvidenceScopeSnapshotBound,
+				SnapshotFingerprint: "snap-other",
+			},
+		}},
+	}
+	view := report.OperatorReport()
+	if view.Summary.ConfirmedItems != 0 || view.Summary.ReviewItems != 1 {
+		t.Fatalf("mismatched not-applied fingerprint was confirmed: %+v", view.Summary)
+	}
+}
+
 func TestReconciliationOperatorReportRejectsMismatchedSnapshotFingerprint(t *testing.T) {
 	report := ReconciliationReport{
 		Snapshot: ReconciliationSnapshotMetadata{SnapshotConsistency: ReconciliationSnapshotConsistencyCapturedVerified, SnapshotFingerprint: "snap-current"},
