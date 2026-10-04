@@ -363,6 +363,13 @@ func TestConsensusRecoveryProposalToRuntimeFinalityHandoff(t *testing.T) {
 	if err := recovery.Runtime.AddVote(prevote); err != nil {
 		t.Fatal(err)
 	}
+	secondPrevote := prevote
+	secondPrevote.Sender = []byte("validator-b")
+	secondPrevote, err = secondPrevote.Sign(mustTestSigner(t, 24))
+	if err != nil { t.Fatal(err) }
+	if err := recovery.Runtime.AddVote(secondPrevote); err != nil {
+		t.Fatal(err)
+	}
 	if recovery.Runtime.State().Phase != consensus.PhasePrecommit {
 		t.Fatalf("runtime phase = %v, want precommit after prevote quorum", recovery.Runtime.State().Phase)
 	}
