@@ -425,7 +425,7 @@ func TestConsensusRecoveryProposalToRuntimeFinalityHandoff(t *testing.T) {
 		certificate,
 		validators,
 		power,
-		validatorAuthorityResolver{publicKey: signerA.PublicKey()},
+		recoveryValidatorAuthorityResolver{authority: authority},
 		senderAuthorityResolver{publicKey: signerA.PublicKey()},
 	); err != nil {
 		t.Fatal(err)
@@ -454,4 +454,13 @@ func testEd25519Signer(t *testing.T, seed byte) *crypto.Ed25519Signer {
 		t.Fatal(err)
 	}
 	return signer
+}
+
+
+type recoveryValidatorAuthorityResolver struct {
+	authority consensus.ValidatorAuthoritySet
+}
+
+func (r recoveryValidatorAuthorityResolver) PublicKeyForValidator(validatorID []byte) ([]byte, error) {
+	return r.authority.PublicKeyForValidator(validatorID)
 }
