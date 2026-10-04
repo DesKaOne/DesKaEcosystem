@@ -871,9 +871,13 @@ func TestSettlementReconcilerDoesNotCorrelateWhenAuditStatusIsNonSuccess(t *test
 		SourceType: ledgerTx.SourceType, SourceID: ledgerTx.SourceID, Status: string(provider.StatusFailed),
 		CreatedAt: ledgerTx.CreatedAt,
 	}
-	if err := ledger.AppendSettlement(ctx, ledgerTx, audit); err != nil { t.Fatal(err) }
+	if err := ledger.Append(ledgerTx); err != nil { t.Fatal(err) }
 
-	reconciler, err := NewSettlementReconciler(txStore, ledger, ledger)
+	// Inject the non-success audit through the read-model seam. A real SettlementStore
+	// rejects non-success settlement audits at its mutation boundary; reconciliation
+	// still must fail closed if a legacy/external reader exposes one.
+	auditReader := duplicateAuditReader{SettlementAuditReader: ledger, allAudits: []SettlementAudit{audit}}
+	reconciler, err := NewSettlementReconciler(txStore, ledger, auditReader)
 	if err != nil { t.Fatal(err) }
 	report, err := reconciler.Reconcile(ctx)
 	if err != nil { t.Fatal(err) }
