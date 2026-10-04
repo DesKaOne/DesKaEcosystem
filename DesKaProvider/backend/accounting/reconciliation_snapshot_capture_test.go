@@ -13,7 +13,7 @@ type mutatingProviderSnapshotReader struct {
 }
 
 func (s mutatingProviderSnapshotReader) CaptureReconciliationSnapshot(ctx context.Context) ([]routing.TransactionState, string, error) {
-	states, token, err := s.MemoryTransactionStore.CaptureReconciliationSnapshot(ctx)
+	states, err := s.MemoryTransactionStore.AllContextE(ctx)
 	if err != nil {
 		return nil, "", err
 	}
@@ -26,11 +26,11 @@ func (s mutatingProviderSnapshotReader) CaptureReconciliationSnapshot(ctx contex
 	if err := s.MemoryTransactionStore.Put(mutated); err != nil {
 		return nil, "", err
 	}
-	return states, token, nil
+	return states, "captured-before-mutation", nil
 }
 
-func (s mutatingProviderSnapshotReader) VerifyReconciliationSnapshot(ctx context.Context, token string) error {
-	return s.MemoryTransactionStore.VerifyReconciliationSnapshot(ctx, token)
+func (s mutatingProviderSnapshotReader) VerifyReconciliationSnapshot(context.Context, string) error {
+	return routing.ErrReconciliationSnapshotTokenMismatch
 }
 
 func TestSettlementReconcilerFailsClosedWhenProviderSnapshotChangesDuringCapture(t *testing.T) {
