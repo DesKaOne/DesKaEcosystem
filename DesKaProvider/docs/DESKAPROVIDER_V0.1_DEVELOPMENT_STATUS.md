@@ -11336,3 +11336,76 @@ The increase reflects that the ambiguity classifier is now consumed by the trans
 Strengthen explicit reconciliation/operator evidence for unresolved `unknown` and `conflict` persistence outcomes, including deterministic provenance that distinguishes "not observed" from "not durable" without mutating financial state.
 
 No automatic provider retry, failover, transaction resubmission, provider funding, customer-balance mutation, treasury movement, duplicate purchase creation, blockchain action, or public API exposure is included.
+
+
+---
+
+## Milestone #78 — Explicit Persistence Evidence Provenance
+
+**Date:** 2026-10-04
+
+### Objective
+
+Make unresolved persistence outcomes operationally distinguishable by attaching explicit read-only provenance to durable observations, especially the difference between observed absence (`not_applied`) and unreadable state (`unknown`).
+
+### Problem / Root Cause
+
+Milestone #77 consumed persistence outcomes at runtime, but the outcome enum alone did not preserve enough evidence for reconciliation/operator handling. In particular, `not_applied` can only mean absence when the durable source was actually read successfully; a database read failure must remain `unknown` rather than being interpreted as absence.
+
+Settlement additionally needs to distinguish complete evidence from partial cross-store evidence, where ledger and settlement-audit observations may disagree or one side may be unavailable.
+
+### Implementation
+
+- Added transaction `PersistenceOutcomeEvidence` with Outcome, Observed, Source, ObservedAt, and durable Version when a transaction row was observed.
+- Added `PersistenceOutcomeEvidenceReader` as a separate optional interface so existing outcome consumers remain compatible.
+- PostgreSQL transaction resolution now records source and observation timestamp; read failure returns `unknown` with `Observed=false` rather than `not_applied`.
+- Added settlement `SettlementPersistenceEvidence` with independent `LedgerObserved` and `AuditObserved` flags, source, timestamp, and outcome.
+- Added `SettlementPersistenceEvidenceReader` as a separate optional interface, preserving the existing outcome contract.
+- PostgreSQL settlement resolution records whether each durable source was actually observed; partial evidence remains `conflict` and read failure remains `unknown`.
+- Added deterministic regression tests proving observed absence is different from unreadable state and partial settlement evidence is different from unreadable state.
+
+### Safety Impact
+
+This adds evidence provenance without adding financial mutation: `not_applied` is only produced from a successful durable read that found no expected object; `unknown` is retained whenever durable evidence cannot be read; settlement partial evidence remains `conflict`, never silently repaired; provenance is observational only and cannot authorize provider retry, resubmission, reversal, funding, balance mutation, treasury movement, or ledger repair.
+
+### Architecture Impact
+
+Persistence resolution now has two layers: write outcome -> outcome classification -> provenance envelope.
+
+The provenance layer remains optional and read-only. Existing runtime outcome consumers are not forced to depend on the richer evidence interface, preventing unnecessary interface-wide coupling.
+
+Cross-store settlement evidence remains explicitly non-atomic: ledger and audit observations are recorded independently, so partial observation cannot be promoted to success.
+
+### Tests
+
+- transaction observed absence -> `not_applied`;
+- transaction unreadable -> `unknown` with `Observed=false`;
+- settlement ledger-only evidence -> `conflict`;
+- settlement unreadable evidence -> `unknown` with both source observations false.
+
+### CI
+
+- Commit `e640105c47059a93a715afc75d8cbd6d7f45b12c` push CI: **GREEN** (test PASS, race PASS; credential-gated provider validation skipped).
+- PR CI for the same commit: pending final documentation commit verification.
+
+A previous intermediate commit `f0169a0b3d3b77aa39d3b9193d61dcca16668904` failed because the new evidence interface was temporarily added as a mandatory extension to the existing outcome reader. The corrected `e640...` commit separated the evidence reader into an optional interface and passed test and race.
+
+### Remaining Risk
+
+- Evidence is observational and does not make distributed persistence atomic.
+- `unknown` still requires explicit reconciliation/operator handling.
+- Cross-store settlement evidence remains non-atomic by design.
+- Live-provider compatibility remains credential-gated.
+- Broader production-readiness gaps remain outside this milestone.
+
+### Progress
+
+Engineering readiness: **~93%**.
+
+The increase reflects explicit provenance for durable evidence and a backward-compatible evidence boundary. This remains below 99% because unresolved outcomes still require operator/reconciliation decisions, cross-store atomicity is intentionally absent, and live-provider validation remains credential-gated.
+
+### Next Highest-Value Milestone
+
+Strengthen reconciliation/operator workflows to persist and surface evidence provenance for `unknown` and `conflict` outcomes, including deterministic capture-window metadata and explicit non-mutating resolution states.
+
+No automatic provider retry, failover, transaction resubmission, provider funding, customer-balance mutation, treasury movement, duplicate purchase creation, blockchain action, or public API exposure is included.
