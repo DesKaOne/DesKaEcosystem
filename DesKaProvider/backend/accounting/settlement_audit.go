@@ -24,6 +24,9 @@ func (a SettlementAudit) Validate() error {
 		a.SourceType == "" || a.SourceID == "" || a.Status == "" || a.CreatedAt.IsZero() {
 		return fmt.Errorf("%w: event id, transaction id, reference id, source type, source id, status, and created at are required", ErrInvalidSettlementAudit)
 	}
+	if a.Status != ProviderStatusSuccess {
+		return fmt.Errorf("%w: settlement audit status must be %q", ErrInvalidSettlementAudit, ProviderStatusSuccess)
+	}
 	return nil
 }
 
