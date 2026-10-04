@@ -209,3 +209,34 @@ func TestPostgresLedgerSchemaRejectsInvalidEntryDirectionAndCurrency(t *testing.
 		"constraint-tx",3,"constraint-account","CREDIT",100,"USD","")
 	if err == nil { t.Fatal("schema must reject ledger-entry currency mismatch") }
 }
+
+func TestPostgresStoreAllCapturesLedgerTransactionsInSingleShape(t *testing.T) {
+	db := accountingPostgresDB(t)
+	ctx := context.Background()
+	schema := "ledger_all_" + strings.ReplaceAll(time.Now().Format("20060102150405.000000000"), ".", "_")
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil { t.Fatal(err) }
+	t.Cleanup(func(){ _, _ = db.ExecContext(context.Background(),"DROP SCHEMA "+schema+" CASCADE") })
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil { t.Fatal(err) }
+	applyAccountingMigrations(t, db)
+
+	store, err := NewPostgresStore(db)
+	if err != nil { t.Fatal(err) }
+	account := Account{ID:"all-account",Type:"CLEARING",Currency:"IDR",Name:"All Account",Active:true}
+	if _, _, err := store.CreateAccount(ctx, account); err != nil { t.Fatal(err) }
+	for _, id := range []string{"all-1","all-2"} {
+		tx := LedgerTransaction{
+			ID:id, ReferenceID:id+"-ref", SourceType:"TEST", SourceID:id+"-src",
+			Currency:"IDR", Description:id, CreatedAt:time.Unix(100,0).UTC(),
+			Entries:[]Entry{{LineID:1,AccountID:account.ID,Direction:Debit,Amount:1000,Currency:"IDR",Memo:"debit"},{LineID:2,AccountID:account.ID,Direction:Credit,Amount:1000,Currency:"IDR",Memo:"credit"}},
+		}
+		if err := store.Append(ctx, tx); err != nil { t.Fatal(err) }
+	}
+
+	got, err := store.All(ctx)
+	if err != nil { t.Fatal(err) }
+	if len(got) != 2 { t.Fatalf("expected 2 ledger transactions, got %d", len(got)) }
+	for _, tx := range got {
+		if len(tx.Entries) != 2 { t.Fatalf("transaction %s expected 2 entries, got %#v", tx.ID, tx.Entries) }
+		if tx.Entries[0].LineID != 1 || tx.Entries[1].LineID != 2 { t.Fatalf("transaction %s entries out of order: %#v", tx.ID, tx.Entries) }
+	}
+}
