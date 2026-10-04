@@ -8,6 +8,14 @@ import (
 
 type ReconciliationPersistenceResolution string
 
+type ReconciliationPersistenceEvidenceScope string
+
+const (
+	ReconciliationPersistenceEvidenceScopeUnspecified ReconciliationPersistenceEvidenceScope = "unspecified"
+	ReconciliationPersistenceEvidenceScopeSnapshotBound ReconciliationPersistenceEvidenceScope = "snapshot_bound"
+	ReconciliationPersistenceEvidenceScopeIndependent ReconciliationPersistenceEvidenceScope = "independent"
+)
+
 const (
 	ReconciliationPersistenceConfirmedApplied    ReconciliationPersistenceResolution = "confirmed_applied"
 	ReconciliationPersistenceConfirmedNotApplied ReconciliationPersistenceResolution = "confirmed_not_applied"
@@ -27,6 +35,7 @@ type ReconciliationPersistenceEvidence struct {
 	CaptureStartedAt    time.Time
 	CaptureCompletedAt  time.Time
 	SnapshotConsistency string
+	ObservationScope    ReconciliationPersistenceEvidenceScope
 }
 
 func ClassifyTransactionPersistenceEvidence(evidence routing.PersistenceOutcomeEvidence) ReconciliationPersistenceEvidence {
@@ -35,8 +44,9 @@ func ClassifyTransactionPersistenceEvidence(evidence routing.PersistenceOutcomeE
 		Outcome:    string(evidence.Outcome),
 		Observed:   evidence.Observed,
 		Source:     evidence.Source,
-		ObservedAt: evidence.ObservedAt,
-		Version:    evidence.Version,
+		ObservedAt:      evidence.ObservedAt,
+		Version:         evidence.Version,
+		ObservationScope: ReconciliationPersistenceEvidenceScopeIndependent,
 	}
 }
 
@@ -73,6 +83,9 @@ func classifyReconciliationPersistenceOutcome(outcome string, observed bool) Rec
 }
 
 func (r ReconciliationPersistenceEvidence) WithSnapshotMetadata(snapshot ReconciliationSnapshotMetadata) ReconciliationPersistenceEvidence {
+	// Snapshot metadata describes the reconciliation report that carries this
+	// evidence. It must not imply that the evidence observation itself was
+	// captured inside that snapshot. Binding is an explicit producer claim.
 	r.CaptureStartedAt = snapshot.CaptureStartedAt
 	r.CaptureCompletedAt = snapshot.CaptureCompletedAt
 	r.SnapshotConsistency = snapshot.SnapshotConsistency
