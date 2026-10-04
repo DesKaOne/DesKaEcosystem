@@ -66,8 +66,17 @@ func classifySettlementPersistenceOutcome(ledgerFound bool, auditFound bool, led
 	return SettlementPersistenceConflict
 }
 
+type SettlementPersistenceEvidence struct {
+	Outcome        SettlementPersistenceOutcome
+	LedgerObserved bool
+	AuditObserved  bool
+	Source         string
+	ObservedAt     time.Time
+}
+
 type SettlementPersistenceOutcomeReader interface {
 	ResolveSettlementPersistenceOutcome(ctx context.Context, ledger LedgerTransaction, audit SettlementAudit) (SettlementPersistenceOutcome, error)
+	ResolveSettlementPersistenceEvidence(ctx context.Context, ledger LedgerTransaction, audit SettlementAudit) (SettlementPersistenceEvidence, error)
 }
 
 type SettlementPoster struct {
