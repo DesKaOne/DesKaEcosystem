@@ -278,6 +278,66 @@ func TestReconciliationOperatorReportV1PreservesDeliveryContract(t *testing.T) {
 	}
 }
 
+func TestReconciliationOperatorReportV1ValidateRejectsInconsistentSummary(t *testing.T) {
+	report := ReconciliationOperatorReportV1{
+		SchemaVersion: ReconciliationOperatorReportSchemaVersion,
+		Items: []ReconciliationOperatorItemV1{{
+			ReferenceID: "ref-1",
+			ResolutionClass: ReconciliationOperatorConfirmed,
+		}},
+		Summary: ReconciliationOperatorSummaryV1{
+			TotalItems: 0,
+			ConfirmedItems: 0,
+		},
+	}
+	if err := report.Validate(); err == nil {
+		t.Fatal("inconsistent V1 summary must be rejected")
+	}
+}
+
+func TestReconciliationOperatorReportV1ValidateRejectsUnknownResolutionClass(t *testing.T) {
+	report := ReconciliationOperatorReportV1{
+		SchemaVersion: ReconciliationOperatorReportSchemaVersion,
+		Items: []ReconciliationOperatorItemV1{{
+			ReferenceID: "ref-invalid",
+			ResolutionClass: ReconciliationOperatorResolution("invalid"),
+		}},
+		Summary: ReconciliationOperatorSummaryV1{
+			TotalItems: 1,
+		},
+	}
+	if err := report.Validate(); err == nil {
+		t.Fatal("unsupported resolution class must be rejected")
+	}
+}
+
+func TestReconciliationOperatorReportV1ValidateAcceptsProjectedReport(t *testing.T) {
+	observedAt := time.Date(2026, 10, 4, 12, 30, 0, 0, time.UTC)
+	report := ReconciliationReport{
+		Snapshot: ReconciliationSnapshotMetadata{
+			CaptureStartedAt: startTimeForOperatorTest(),
+			CaptureCompletedAt: observedAt,
+			SnapshotConsistency: ReconciliationSnapshotConsistencyCapturedVerified,
+		},
+		Items: []TransactionReconciliation{{
+			ReferenceID: "ref-valid",
+			Status: ReconciliationCorrelated,
+			PersistenceEvidence: &ReconciliationPersistenceEvidence{
+				Resolution: ReconciliationPersistenceConfirmedApplied,
+				Outcome: "applied",
+				Observed: true,
+				Source: "postgres.provider_transactions",
+				ObservedAt: observedAt,
+				Version: 15,
+			},
+		}},
+	}
+	delivery := report.OperatorReport().V1()
+	if err := delivery.Validate(); err != nil {
+		t.Fatalf("projected V1 report must validate: %v", err)
+	}
+}
+
 func contains(value, required string) bool {
 	return len(value) >= len(required) && stringIndex(value, required) >= 0
 }
