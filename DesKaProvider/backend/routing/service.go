@@ -892,16 +892,38 @@ func (s *Service) persistLocked(ctx context.Context, request PurchaseRequest, ex
 }
 
 func (s *Service) persistTransition(ctx context.Context, referenceID string, previous, next TransactionState) error {
+	var err error
 	if store, ok := s.Store.(ContextTransactionStore); ok {
-		if err := store.PutIfCurrentContext(ctx, referenceID, previous, next); err != nil {
-			return fmt.Errorf("persist atomic transaction transition: %w", err)
-		}
+		err = store.PutIfCurrentContext(ctx, referenceID, previous, next)
+	} else {
+		err = putTransactionContext(ctx, s.Store, next)
+	}
+	if err == nil {
 		return nil
 	}
-	if err := putTransactionContext(ctx, s.Store, next); err != nil {
-		return fmt.Errorf("persist transaction transition: %w", err)
+	wrapped := err
+	if _, ok := s.Store.(ContextTransactionStore); ok {
+		wrapped = fmt.Errorf("persist atomic transaction transition: %w", err)
+	} else {
+		wrapped = fmt.Errorf("persist transaction transition: %w", err)
 	}
-	return nil
+	if !errors.Is(err, ErrTransactionPersistenceAmbiguous) {
+		return wrapped
+	}
+	reader, ok := s.Store.(PersistenceOutcomeReader)
+	if !ok {
+		return wrapped
+	}
+	outcome, _, resolveErr := reader.ResolvePersistenceOutcomeContext(ctx, referenceID, next)
+	if resolveErr != nil {
+		return fmt.Errorf("%w; durable outcome resolution failed: %v", wrapped, resolveErr)
+	}
+	if outcome == PersistenceOutcomeApplied {
+		return nil
+	}
+	// not_applied, conflict, and unknown remain unresolved from the caller's
+	// perspective. Never retry or repeat the external provider side effect.
+	return wrapped
 }
 
 func (s *Service) startPurchase(req PurchaseRequest) (*purchaseCall, bool) {
