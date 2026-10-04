@@ -931,3 +931,28 @@ func TestSettlementReconcilerSurfacesFinancialRecordsForNonSuccessProviderState(
 	}
 	if len(ledger.All()) != 1 { t.Fatal("reconciliation must remain read-only") }
 }
+
+func TestSettlementReconcilerLabelsLegacyMixedSnapshot(t *testing.T) {
+	ledgerStore := NewMemoryStore()
+	ledger := validLedgerTransaction()
+	ledger.ID = "legacy-mixed-snapshot"
+	ledger.ReferenceID = "legacy-mixed-reference"
+	if err := ledgerStore.Append(ledger); err != nil {
+		t.Fatal(err)
+	}
+	reconciler, err := NewSettlementReconciler(
+		routing.NewMemoryTransactionStore(),
+		ledgerStore,
+		legacyMemoryAuditReader{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	report, err := reconciler.Reconcile(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Snapshot.SnapshotConsistency != ReconciliationSnapshotConsistencyLegacyMixed {
+		t.Fatalf("expected legacy mixed snapshot classification, got %q", report.Snapshot.SnapshotConsistency)
+	}
+}
