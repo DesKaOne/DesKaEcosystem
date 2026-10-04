@@ -143,7 +143,7 @@ func (s *PostgresStore) All(ctx context.Context) ([]LedgerTransaction, error) {
 		}
 		if lineID.Valid {
 			out[pos].Entries = append(out[pos].Entries, Entry{
-				LineID:int(lineID.Int32),AccountID:accountID.String,Direction:direction.String,Amount:amount.Int64,Currency:entryCurrency.String,Memo:memo.String,
+				LineID:int(lineID.Int32),AccountID:accountID.String,Direction:Direction(direction.String),Amount:amount.Int64,Currency:entryCurrency.String,Memo:memo.String,
 			})
 		}
 	}
