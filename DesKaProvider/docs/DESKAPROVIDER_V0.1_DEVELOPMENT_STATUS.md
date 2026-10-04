@@ -11002,3 +11002,46 @@ GitHub Actions run **4387** / **37178451024** on that commit completed **GREEN**
 - provider credential-gated validation jobs: skipped as expected
 
 The milestone remains intentionally below a 99% readiness claim because this classification does not create a true cross-store atomic reconciliation snapshot. The current architecture still uses separate provider, accounting, and settlement-audit persistence boundaries.
+
+## Milestone #73 — Reconciliation Capture Window Provenance
+
+**Date:** 2026-10-04
+
+### Objective
+
+Expose the observed reconciliation capture window as explicit metadata so callers can distinguish bounded data capture duration from any assumption of atomic cross-store snapshot semantics.
+
+### Implementation
+
+- Added `SnapshotWindowMillis` to `ReconciliationSnapshotMetadata`.
+- Derived the value from the existing `CaptureStartedAt` and `CaptureCompletedAt` lifecycle timestamps.
+- Added regression coverage ensuring the capture window is never negative.
+- Preserved the existing explicit `captured` vs `legacy_mixed` snapshot-consistency classification.
+- Kept reconciliation observational and read-only.
+
+### Safety Impact
+
+- Makes capture duration observable without treating elapsed time as proof of atomicity.
+- Does not convert timeout, ambiguity, or partial observation into financial success/failure.
+- No provider retry, failover, transaction resubmission, ledger mutation, treasury movement, balance mutation, or automatic resolution.
+
+### Architecture Impact
+
+Adds provenance to the existing snapshot metadata while acknowledging that provider transactions, accounting ledger, and settlement audit remain separate persistence boundaries.
+
+### Verification
+
+Implementation/test commit: `388c0cf268edcd23d0982f192e73c9d4df31e7c1`
+
+GitHub Actions run **4395** / **37178695299**: **GREEN**
+- `test`: success
+- `race`: success
+- credential-gated provider validation jobs: skipped as expected
+
+### Remaining Risk
+
+The metadata still does not provide a true cross-store atomic snapshot. A first-class capture contract remains necessary for stores that can coordinate a common consistency boundary.
+
+### Next Highest-Value Milestone
+
+Introduce a provider/ledger/audit snapshot-capture contract as an internal interface, with an explicit atomic-capable implementation path and a safe legacy mixed-reader fallback.
