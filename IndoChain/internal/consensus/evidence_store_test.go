@@ -193,6 +193,8 @@ func TestPersistAndRecoverFinalityCertificateWithContext(t *testing.T) {
 	f := newAuthenticatedRuntimeFixture(t)
 	state := f.runtime.State()
 	authority := f.resolver
+	// Replace the fixture's initial proposal with the payload persisted by this test.
+	f.runtime = newAuthenticatedRuntimeForTestPayload(t, f, "persisted-finality")
 	if err := f.runtime.AddVote(runtimeMessage(state, "validator-a", MessageTypePrevote, "persisted-finality")); err != nil { t.Fatal(err) }
 	if err := f.runtime.AddVote(runtimeMessage(state, "validator-b", MessageTypePrevote, "persisted-finality")); err != nil { t.Fatal(err) }
 	if err := f.runtime.AddVote(authenticatedPrecommit(t, f.runtime.State(), "validator-a", f.signerA, "persisted-finality")); err != nil { t.Fatal(err) }
@@ -244,6 +246,7 @@ func TestPersistAndRecoverFinalityCertificateWithContext(t *testing.T) {
 func TestPersistFinalityCertificateWithContextRejectsContextChange(t *testing.T) {
 	f := newAuthenticatedRuntimeFixture(t)
 	state := f.runtime.State()
+	f.runtime = newAuthenticatedRuntimeForTestPayload(t, f, "context-finality")
 	if err := f.runtime.AddVote(runtimeMessage(state, "validator-a", MessageTypePrevote, "context-finality")); err != nil { t.Fatal(err) }
 	if err := f.runtime.AddVote(runtimeMessage(state, "validator-b", MessageTypePrevote, "context-finality")); err != nil { t.Fatal(err) }
 	if err := f.runtime.AddVote(authenticatedPrecommit(t, f.runtime.State(), "validator-a", f.signerA, "context-finality")); err != nil { t.Fatal(err) }
@@ -266,4 +269,20 @@ func TestPersistFinalityCertificateWithContextRejectsContextChange(t *testing.T)
 	if !errors.Is(err, ErrEvidencePersistenceContextMismatch) {
 		t.Fatalf("error = %v, want context mismatch", err)
 	}
+}
+
+
+func newAuthenticatedRuntimeForTestPayload(t *testing.T, f authenticatedRuntimeFixture, payload string) *ValidatorRuntime {
+	t.Helper()
+	runtime, err := NewValidatorRuntime(RuntimeConfig{
+		Rules: ValidationRules{ProtocolVersion: f.state.ProtocolVersion, ChainID: f.state.ChainID, RequireSender: true},
+		State: f.state, Validators: f.validators, VotingPower: f.power,
+		Threshold: QuorumThreshold{Numerator: 2, Denominator: 3}, Proposer: RoundRobinProposer{},
+		Authority: nil,
+	})
+	if err != nil { t.Fatal(err) }
+	if err := runtime.AcceptProposal(runtimeMessage(f.state, "validator-a", MessageTypeProposal, payload)); err != nil {
+		t.Fatal(err)
+	}
+	return runtime
 }
