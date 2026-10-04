@@ -191,11 +191,9 @@ func authorityDigestFromFixture(authority StaticValidatorAuthority) [32]byte {
 }
 
 func TestPersistAndRecoverFinalityCertificateWithContext(t *testing.T) {
-	runtime, state, validators, power := runtimeFixture(t)
+	_, state, validators, power := runtimeFixture(t)
 	f := newAuthenticatedRuntimeFixture(t)
 	authority := f.resolver
-	certificateRuntime := runtimeFixture
-	_ = certificateRuntime
 	if err := f.runtime.AddVote(runtimeMessage(f.state, "validator-a", MessageTypePrevote, "persisted-finality")); err != nil { t.Fatal(err) }
 	if err := f.runtime.AddVote(runtimeMessage(f.state, "validator-b", MessageTypePrevote, "persisted-finality")); err != nil { t.Fatal(err) }
 	if err := f.runtime.AddVote(authenticatedPrecommit(t, f.runtime.State(), "validator-a", f.signerA, "persisted-finality")); err != nil { t.Fatal(err) }
@@ -262,7 +260,7 @@ func TestPersistFinalityCertificateWithContextRejectsContextChange(t *testing.T)
 	mismatched := context
 	mismatched.Height++
 	_, err = PersistFinalityCertificateWithContext(
-		storage.NewMemoryConsensusEvidenceStore(), certificate, f.state, f.validators, f.resolver,
+		storage.NewMemoryConsensusEvidenceStore(), certificate, f.state, f.validators, f.power, f.resolver,
 		mismatched, f.signerA, []byte("validator-a"),
 	)
 	if !errors.Is(err, ErrEvidencePersistenceContextMismatch) {
