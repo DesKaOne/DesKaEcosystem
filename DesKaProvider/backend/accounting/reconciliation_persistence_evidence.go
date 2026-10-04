@@ -94,17 +94,18 @@ func (r ReconciliationPersistenceEvidence) WithSnapshotMetadata(snapshot Reconci
 	return r
 }
 
-// BindToSnapshot explicitly attributes an evidence observation to a specific
-// reconciliation snapshot. The producer must supply the exact fingerprint it
-// obtained from the same snapshot context; this method does not infer binding
-// from timestamps or copied metadata.
-func (r ReconciliationPersistenceEvidence) BindToSnapshot(snapshot ReconciliationSnapshotMetadata) ReconciliationPersistenceEvidence {
-	if snapshot.SnapshotFingerprint == "" {
+// BindToSnapshot explicitly attributes an evidence observation to the exact
+// reconciliation snapshot context that produced the supplied capability.
+// Metadata copied from a report is insufficient; the non-exportable token
+// prevents callers from manufacturing a snapshot-bound claim from fields
+// alone.
+func (r ReconciliationPersistenceEvidence) BindToSnapshot(context ReconciliationSnapshotBindingContext) ReconciliationPersistenceEvidence {
+	if context.token == nil || context.fingerprint == "" {
 		r.ObservationScope = ReconciliationPersistenceEvidenceScopeUnspecified
 		r.SnapshotFingerprint = ""
 		return r
 	}
 	r.ObservationScope = ReconciliationPersistenceEvidenceScopeSnapshotBound
-	r.SnapshotFingerprint = snapshot.SnapshotFingerprint
+	r.SnapshotFingerprint = context.fingerprint
 	return r
 }
