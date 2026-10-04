@@ -368,6 +368,7 @@ func TestConsensusRecoveryProposalToRuntimeFinalityHandoff(t *testing.T) {
 
 	secondPrevote := prevote
 	secondPrevote.Sender = []byte("validator-b")
+	secondPrevote.Signature = nil
 	secondPrevote, err = secondPrevote.Sign(signerB)
 	if err != nil { t.Fatal(err) }
 	if err := recovery.Runtime.AddVote(secondPrevote); err != nil { t.Fatal(err) }
@@ -388,6 +389,7 @@ func TestConsensusRecoveryProposalToRuntimeFinalityHandoff(t *testing.T) {
 
 	secondPrecommit := precommit
 	secondPrecommit.Sender = []byte("validator-b")
+	secondPrecommit.Signature = nil
 	secondPrecommit, err = secondPrecommit.Sign(signerB)
 	if err != nil { t.Fatal(err) }
 	if err := recovery.Runtime.AddVote(secondPrecommit); err != nil { t.Fatal(err) }
