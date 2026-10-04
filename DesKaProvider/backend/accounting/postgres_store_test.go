@@ -177,3 +177,37 @@ func TestPostgresSettlementReconciliationReportsOrphansReadOnly(t *testing.T) {
 	if err != nil { t.Fatal(err) }
 	if len(after) != len(before) { t.Fatal("reconciliation must not mutate durable ledger state") }
 }
+
+func TestPostgresLedgerSchemaRejectsInvalidEntryDirectionAndCurrency(t *testing.T) {
+	db := accountingPostgresDB(t)
+	ctx := context.Background()
+	schema := "ledger_constraints_" + strings.ReplaceAll(time.Now().Format("20060102150405.000000000"), ".", "_")
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil { t.Fatal(err) }
+	t.Cleanup(func(){ _, _ = db.ExecContext(context.Background(),"DROP SCHEMA "+schema+" CASCADE") })
+	if _, err := db.ExecContext(ctx, "SET search_path TO "+schema); err != nil { t.Fatal(err) }
+	applyAccountingMigrations(t, db)
+
+	if _, err := db.ExecContext(ctx,
+		"INSERT INTO ledger_transactions (transaction_id,reference_id,source_type,source_id,currency,description,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)",
+		"constraint-tx","constraint-ref","TEST","constraint-source","IDR","constraints",time.Now().UTC(),
+	); err != nil { t.Fatal(err) }
+
+	if _, err := db.ExecContext(ctx,
+		"INSERT INTO ledger_accounts (account_id,account_type,owner_id,currency,name,active) VALUES ($1,$2,$3,$4,$5,$6)",
+		"constraint-account","CLEARING","","IDR","Constraint Account",true,
+	); err != nil { t.Fatal(err) }
+
+	if _, err := db.ExecContext(ctx,
+		"INSERT INTO ledger_entries (transaction_id,line_id,account_id,direction,amount,currency,memo) VALUES ($1,$2,$3,$4,$5,$6,$7)",
+		"constraint-tx",1,"constraint-account","DEBIT",100,"IDR",""); err != nil { t.Fatal(err) }
+
+	_, err := db.ExecContext(ctx,
+		"INSERT INTO ledger_entries (transaction_id,line_id,account_id,direction,amount,currency,memo) VALUES ($1,$2,$3,$4,$5,$6,$7)",
+		"constraint-tx",2,"constraint-account","INVALID",100,"IDR","")
+	if err == nil { t.Fatal("schema must reject invalid ledger direction") }
+
+	_, err = db.ExecContext(ctx,
+		"INSERT INTO ledger_entries (transaction_id,line_id,account_id,direction,amount,currency,memo) VALUES ($1,$2,$3,$4,$5,$6,$7)",
+		"constraint-tx",3,"constraint-account","CREDIT",100,"USD","")
+	if err == nil { t.Fatal("schema must reject ledger-entry currency mismatch") }
+}
