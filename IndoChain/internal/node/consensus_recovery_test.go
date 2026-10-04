@@ -388,6 +388,13 @@ func TestConsensusRecoveryProposalToRuntimeFinalityHandoff(t *testing.T) {
 	if err := recovery.Runtime.AddVote(precommit); err != nil {
 		t.Fatal(err)
 	}
+	secondPrecommit := precommit
+	secondPrecommit.Sender = []byte("validator-b")
+	secondPrecommit, err = secondPrecommit.Sign(mustTestSigner(t, 24))
+	if err != nil { t.Fatal(err) }
+	if err := recovery.Runtime.AddVote(secondPrecommit); err != nil {
+		t.Fatal(err)
+	}
 	certificate, err := recovery.Runtime.FinalizeProposal(authorityResolver)
 	if err != nil { t.Fatal(err) }
 
