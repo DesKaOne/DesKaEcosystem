@@ -10947,3 +10947,12 @@ PostgreSQL constraints still do not encode aggregate double-entry balance equali
 
 Audit the remaining economically material ledger/persistence invariants directly represented by the current schema, then close the highest-confidence gap without inventing financial posting rules.
 
+
+
+## Milestone #71 Correction — Versioned Deployment Semantics
+
+The initial implementation identified missing PostgreSQL constraints but amended migration 004 in place. The migration runner records applied versions and skips an already-recorded migration, so an edit to 004 would not harden databases where 004 was already applied.
+
+The corrected implementation restores migration 004 to its original immutable definition and adds migration 006 (`006_ledger_constraint_hardening.sql`). Migration 006 idempotently creates the required unique key, rejects incompatible existing rows before constraint creation, and adds the direction check and transaction-currency foreign key for already-migrated databases. The PostgreSQL accounting test fixture now applies migration 006.
+
+This correction is required for migration correctness on both fresh and already-migrated databases.
