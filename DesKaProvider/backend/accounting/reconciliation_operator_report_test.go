@@ -28,6 +28,7 @@ func TestReconciliationReportOperatorReportIsDeterministicAndReadOnly(t *testing
 					Source: "postgres.provider_transactions",
 					ObservedAt: observedAt,
 					Version: 9,
+					ObservationScope: ReconciliationPersistenceEvidenceScopeSnapshotBound,
 				},
 			},
 			{
@@ -71,6 +72,74 @@ func TestReconciliationReportOperatorReportIsDeterministicAndReadOnly(t *testing
 	}
 	if report.Items[0].PersistenceEvidence.Resolution != ReconciliationPersistenceConfirmedApplied {
 		t.Fatal("operator projection mutated source report")
+	}
+}
+
+
+func TestReconciliationOperatorReportDoesNotTreatIndependentEvidenceAsSnapshotBound(t *testing.T) {
+	observedAt := time.Date(2026, 10, 4, 14, 0, 0, 0, time.UTC)
+	report := ReconciliationReport{
+		Snapshot: ReconciliationSnapshotMetadata{
+			CaptureStartedAt: time.Date(2026, 10, 4, 13, 59, 0, 0, time.UTC),
+			CaptureCompletedAt: time.Date(2026, 10, 4, 13, 59, 30, 0, time.UTC),
+			SnapshotConsistency: ReconciliationSnapshotConsistencyCapturedVerified,
+		},
+		Items: []TransactionReconciliation{
+			{
+				ReferenceID: "ref-independent-applied",
+				Status: ReconciliationCorrelated,
+				PersistenceEvidence: &ReconciliationPersistenceEvidence{
+					Resolution: ReconciliationPersistenceConfirmedApplied,
+					Outcome: "applied",
+					Observed: true,
+					Source: "postgres.provider_transactions",
+					ObservedAt: observedAt,
+					ObservationScope: ReconciliationPersistenceEvidenceScopeIndependent,
+				},
+			},
+			{
+				ReferenceID: "ref-independent-not-applied",
+				Status: ReconciliationCorrelated,
+				PersistenceEvidence: &ReconciliationPersistenceEvidence{
+					Resolution: ReconciliationPersistenceConfirmedNotApplied,
+					Outcome: "not_applied",
+					Observed: true,
+					Source: "postgres.provider_transactions",
+					ObservedAt: observedAt,
+					ObservationScope: ReconciliationPersistenceEvidenceScopeIndependent,
+				},
+			},
+		},
+	}
+	view := report.OperatorReport()
+	if view.Summary.ConfirmedItems != 0 || view.Summary.ReviewItems != 2 {
+		t.Fatalf("independent evidence was promoted: %+v", view.Summary)
+	}
+	for _, item := range view.Items {
+		if item.ResolutionClass != ReconciliationOperatorReview {
+			t.Fatalf("independent evidence resolution = %q; want review", item.ResolutionClass)
+		}
+		if item.EvidenceScope != ReconciliationPersistenceEvidenceScopeIndependent {
+			t.Fatalf("evidence scope = %q; want independent", item.EvidenceScope)
+		}
+	}
+}
+
+func TestReconciliationPersistenceEvidenceMetadataDoesNotImplySnapshotBinding(t *testing.T) {
+	evidence := ReconciliationPersistenceEvidence{
+		Resolution: ReconciliationPersistenceConfirmedApplied,
+		Outcome: "applied",
+		Observed: true,
+		ObservationScope: ReconciliationPersistenceEvidenceScopeIndependent,
+	}
+	snapshot := ReconciliationSnapshotMetadata{
+		CaptureStartedAt: startTimeForOperatorTest(),
+		CaptureCompletedAt: time.Date(2026, 10, 4, 12, 31, 0, 0, time.UTC),
+		SnapshotConsistency: ReconciliationSnapshotConsistencyCapturedVerified,
+	}
+	boundMetadata := evidence.WithSnapshotMetadata(snapshot)
+	if boundMetadata.ObservationScope != ReconciliationPersistenceEvidenceScopeIndependent {
+		t.Fatalf("snapshot metadata changed evidence scope to %q", boundMetadata.ObservationScope)
 	}
 }
 
