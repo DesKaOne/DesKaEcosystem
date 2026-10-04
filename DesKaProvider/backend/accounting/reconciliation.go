@@ -73,12 +73,29 @@ var (
 	ErrReconciliationLedgerRead     = errors.New("reconciliation ledger read failed")
 	ErrReconciliationAuditRead      = errors.New("reconciliation settlement audit read failed")
 	ErrReconciliationFingerprint    = errors.New("reconciliation snapshot fingerprint failed")
+	ErrReconciliationSnapshotChanged = errors.New("reconciliation snapshot changed during verification")
 )
+
+type reconciliationProviderSnapshotCapture interface {
+	CaptureReconciliationSnapshot(context.Context) ([]routing.TransactionState, string, error)
+	VerifyReconciliationSnapshot(context.Context, string) error
+}
+
+type reconciliationLedgerSnapshotCapture interface {
+	CaptureLedgerReconciliationSnapshot(context.Context) ([]LedgerTransaction, string, error)
+	VerifyLedgerReconciliationSnapshot(context.Context, string) error
+}
+
+type reconciliationAuditSnapshotCapture interface {
+	CaptureSettlementAuditReconciliationSnapshot(context.Context) ([]SettlementAudit, string, error)
+	VerifySettlementAuditReconciliationSnapshot(context.Context, string) error
+}
 
 type reconciliationSnapshotFingerprinter func([]routing.TransactionState, []LedgerTransaction, []SettlementAudit) (string, error)
 
 const (
 	ReconciliationSnapshotConsistencyCaptured = "captured"
+	ReconciliationSnapshotConsistencyCapturedVerified = "captured_verified"
 	ReconciliationSnapshotConsistencyLegacyMixed = "legacy_mixed"
 )
 
@@ -98,24 +115,68 @@ type reconciliationSnapshot struct {
 
 func (r *SettlementReconciler) readSnapshot(ctx context.Context) (reconciliationSnapshot, error) {
 	captureStartedAt := time.Now().UTC()
-	states, err := r.transactions.AllContextE(ctx)
-	if err != nil {
-		return reconciliationSnapshot{}, fmt.Errorf("%w: %w", ErrReconciliationProviderRead, err)
-	}
+
+	var (
+		states []routing.TransactionState
+		ledgerTransactions []LedgerTransaction
+		audits []SettlementAudit
+		providerToken string
+		ledgerToken string
+		auditToken string
+		providerVerified bool
+		ledgerVerified bool
+		auditVerified bool
+	)
+
 	ledgerReader := "legacy-memory-or-unsupported"
-	if _, ok := r.ledger.(ContextLedgerReader); ok {
-		ledgerReader = "context-ledger"
-	} else if _, ok := r.ledger.(Store); ok {
-		ledgerReader = "memory-store"
-	}
-	ledgerTransactions, err := readLedgerTransactions(ctx, r.ledger)
-	if err != nil {
-		return reconciliationSnapshot{}, fmt.Errorf("%w: %w", ErrReconciliationLedgerRead, err)
+	auditReader := "legacy-per-ledger"
+
+	if reader, ok := r.transactions.(reconciliationProviderSnapshotCapture); ok {
+		var err error
+		states, providerToken, err = reader.CaptureReconciliationSnapshot(ctx)
+		if err != nil {
+			return reconciliationSnapshot{}, fmt.Errorf("%w: %w", ErrReconciliationProviderRead, err)
+		}
+		providerVerified = true
+	} else {
+		var err error
+		states, err = r.transactions.AllContextE(ctx)
+		if err != nil {
+			return reconciliationSnapshot{}, fmt.Errorf("%w: %w", ErrReconciliationProviderRead, err)
+		}
 	}
 
-	var audits []SettlementAudit
-	auditReader := "legacy-per-ledger"
-	if reader, ok := r.audit.(ContextSettlementAuditReader); ok {
+	if reader, ok := r.ledger.(reconciliationLedgerSnapshotCapture); ok {
+		var err error
+		ledgerTransactions, ledgerToken, err = reader.CaptureLedgerReconciliationSnapshot(ctx)
+		if err != nil {
+			return reconciliationSnapshot{}, fmt.Errorf("%w: %w", ErrReconciliationLedgerRead, err)
+		}
+		ledgerReader = "snapshot-capture"
+		ledgerVerified = true
+	} else {
+		if _, ok := r.ledger.(ContextLedgerReader); ok {
+			ledgerReader = "context-ledger"
+		} else if _, ok := r.ledger.(Store); ok {
+			ledgerReader = "memory-store"
+		}
+		var err error
+		ledgerTransactions, err = readLedgerTransactions(ctx, r.ledger)
+		if err != nil {
+			return reconciliationSnapshot{}, fmt.Errorf("%w: %w", ErrReconciliationLedgerRead, err)
+		}
+	}
+
+	if reader, ok := r.audit.(reconciliationAuditSnapshotCapture); ok {
+		var err error
+		audits, auditToken, err = reader.CaptureSettlementAuditReconciliationSnapshot(ctx)
+		if err != nil {
+			return reconciliationSnapshot{}, fmt.Errorf("%w: %w", ErrReconciliationAuditRead, err)
+		}
+		auditReader = "snapshot-capture"
+		auditVerified = true
+	} else if reader, ok := r.audit.(ContextSettlementAuditReader); ok {
+		var err error
 		auditReader = "context-bulk"
 		audits, err = reader.AllSettlementAudits(ctx)
 		if err != nil {
@@ -134,11 +195,33 @@ func (r *SettlementReconciler) readSnapshot(ctx context.Context) (reconciliation
 		}
 	}
 
-	// Copy the materialized datasets so the reconciliation pass never observes
-	// later mutations through caller-owned backing arrays.
+	// Re-verify store-local capture tokens after all datasets have been read.
+	// A mismatch proves that the observed source changed during the capture
+	// window. Reconciliation fails closed rather than classifying mixed-time
+	// evidence as current.
+	if providerVerified {
+		reader := r.transactions.(reconciliationProviderSnapshotCapture)
+		if err := reader.VerifyReconciliationSnapshot(ctx, providerToken); err != nil {
+			return reconciliationSnapshot{}, fmt.Errorf("%w: provider: %w", ErrReconciliationSnapshotChanged, err)
+		}
+	}
+	if ledgerVerified {
+		reader := r.ledger.(reconciliationLedgerSnapshotCapture)
+		if err := reader.VerifyLedgerReconciliationSnapshot(ctx, ledgerToken); err != nil {
+			return reconciliationSnapshot{}, fmt.Errorf("%w: ledger: %w", ErrReconciliationSnapshotChanged, err)
+		}
+	}
+	if auditVerified {
+		reader := r.audit.(reconciliationAuditSnapshotCapture)
+		if err := reader.VerifySettlementAuditReconciliationSnapshot(ctx, auditToken); err != nil {
+			return reconciliationSnapshot{}, fmt.Errorf("%w: audit: %w", ErrReconciliationSnapshotChanged, err)
+		}
+	}
+
 	states = append([]routing.TransactionState(nil), states...)
 	ledgerTransactions = append([]LedgerTransaction(nil), ledgerTransactions...)
 	audits = append([]SettlementAudit(nil), audits...)
+
 	fingerprinter := r.fingerprint
 	if fingerprinter == nil {
 		fingerprinter = reconciliationSnapshotFingerprint
@@ -148,6 +231,14 @@ func (r *SettlementReconciler) readSnapshot(ctx context.Context) (reconciliation
 		return reconciliationSnapshot{}, fmt.Errorf("%w: %w", ErrReconciliationFingerprint, err)
 	}
 	captureCompletedAt := time.Now().UTC()
+
+	consistency := ReconciliationSnapshotConsistencyCaptured
+	if auditReader == "legacy-per-ledger" {
+		consistency = ReconciliationSnapshotConsistencyLegacyMixed
+	} else if providerVerified && ledgerVerified && auditVerified {
+		consistency = ReconciliationSnapshotConsistencyCapturedVerified
+	}
+
 	return reconciliationSnapshot{
 		states: states,
 		ledger: ledgerTransactions,
@@ -159,15 +250,13 @@ func (r *SettlementReconciler) readSnapshot(ctx context.Context) (reconciliation
 			ProviderTransactionCount: len(states),
 			LedgerTransactionCount: len(ledgerTransactions),
 			SettlementAuditCount: len(audits),
-			ProviderReader: "context-all",
+			ProviderReader: func() string {
+				if providerVerified { return "snapshot-capture" }
+				return "context-all"
+			}(),
 			LedgerReader: ledgerReader,
 			SettlementAuditReader: auditReader,
-			SnapshotConsistency: func() string {
-				if auditReader == "legacy-per-ledger" {
-					return ReconciliationSnapshotConsistencyLegacyMixed
-				}
-				return ReconciliationSnapshotConsistencyCaptured
-			}(),
+			SnapshotConsistency: consistency,
 			SnapshotFingerprint: fingerprint,
 			SnapshotWindowMillis: captureCompletedAt.Sub(captureStartedAt).Milliseconds(),
 		},
