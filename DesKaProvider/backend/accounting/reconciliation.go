@@ -41,16 +41,17 @@ type TransactionReconciliation struct {
 }
 
 type ReconciliationSnapshotMetadata struct {
-	CaptureStartedAt               time.Time
-	CaptureCompletedAt             time.Time
-	CapturedAt                    time.Time
-	ProviderTransactionCount      int
-	LedgerTransactionCount        int
-	SettlementAuditCount           int
-	ProviderReader                 string
-	LedgerReader                   string
-	SettlementAuditReader          string
-	SnapshotFingerprint             string
+	CaptureStartedAt          time.Time
+	CaptureCompletedAt        time.Time
+	CapturedAt                time.Time
+	ProviderTransactionCount  int
+	LedgerTransactionCount    int
+	SettlementAuditCount      int
+	ProviderReader            string
+	LedgerReader              string
+	SettlementAuditReader     string
+	SnapshotConsistency       string
+	SnapshotFingerprint       string
 }
 
 type ReconciliationReport struct {
@@ -74,6 +75,11 @@ var (
 )
 
 type reconciliationSnapshotFingerprinter func([]routing.TransactionState, []LedgerTransaction, []SettlementAudit) (string, error)
+
+const (
+	ReconciliationSnapshotConsistencyCaptured = "captured"
+	ReconciliationSnapshotConsistencyLegacyMixed = "legacy_mixed"
+)
 
 type SettlementReconciler struct {
 	transactions routing.ContextReadTransactionStore
@@ -155,6 +161,12 @@ func (r *SettlementReconciler) readSnapshot(ctx context.Context) (reconciliation
 			ProviderReader: "context-all",
 			LedgerReader: ledgerReader,
 			SettlementAuditReader: auditReader,
+			SnapshotConsistency: func() string {
+				if auditReader == "legacy-per-ledger" {
+					return ReconciliationSnapshotConsistencyLegacyMixed
+				}
+				return ReconciliationSnapshotConsistencyCaptured
+			}(),
 			SnapshotFingerprint: fingerprint,
 		},
 	}, nil
