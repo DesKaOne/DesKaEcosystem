@@ -11765,3 +11765,78 @@ This closes the immediate adapter gap after Milestone #81 without expanding the 
 If an authenticated operator/API boundary is introduced later, integrate this adapter there with explicit authorization and read-only contract tests. Otherwise continue hardening reconciliation evidence and production-readiness boundaries rather than inventing transport infrastructure.
 
 No automatic provider retry, failover, transaction resubmission, provider funding, customer-balance mutation, treasury movement, duplicate purchase creation, blockchain action, or public financial mutation is included.
+---
+
+## Milestone #83 — Fail-Closed Evidence Attachment for Duplicate References
+
+**Date:** 2026-10-04
+
+### Objective
+
+Prevent persistence evidence from being promoted to a confirmed operator state when the reconciliation reference is ambiguous across multiple items.
+
+### Problem / Root Cause
+
+ReconciliationReport.WithPersistenceEvidence(referenceID, evidence) previously attached one evidence envelope to every reconciliation item sharing the same ReferenceID. That is unsafe when the report contains DUPLICATE_REFERENCE: one observation cannot prove which financial record the evidence belongs to.
+
+Without a guard, a single confirmed_applied observation could be copied onto multiple ambiguous reconciliation items and later surfaced as multiple confirmed operator states.
+
+### Implementation
+
+- Changed WithPersistenceEvidence to count matching ReferenceID items before attaching evidence.
+- Evidence is attached only when exactly one reconciliation item matches the reference.
+- Zero matches and duplicate matches now return a copy-on-write report with no evidence attached.
+- Existing snapshot provenance behavior is preserved for uniquely identified items.
+- Added deterministic regression coverage for duplicate-reference ambiguity.
+- No persistence write, provider call, retry, resubmission, repair, reversal, funding, balance mutation, or ledger mutation was introduced.
+
+### Safety Impact
+
+The evidence flow is now explicitly fail-closed:
+
+unique reference -> evidence may be attached
+
+duplicate reference -> evidence remains absent/unresolved
+
+This prevents observational evidence from becoming an implicit disambiguation mechanism. Existing DUPLICATE_REFERENCE reconciliation state remains authoritative until a higher-level workflow provides a uniquely attributable observation.
+
+### Architecture Impact
+
+The reconciliation evidence boundary now respects identity uniqueness as a prerequisite for persistence-evidence enrichment. This keeps evidence provenance separate from correlation repair and prevents presentation-layer confirmation from overriding an underlying identity conflict.
+
+### Tests
+
+Added deterministic regression coverage for:
+
+- duplicate reference with confirmed_applied evidence;
+- no evidence attached to either ambiguous item;
+- existing unique-reference copy-on-write and snapshot-provenance behavior remains covered.
+
+### CI
+
+Implementation commits:
+
+- 33ab77e15df5c3ec550c4b1bf5fde93bbb8b6552 — fail-closed evidence attachment.
+- 78004615ee79991afb8ed3971af44b169f6c0fcb — duplicate-reference regression test.
+
+Final CI status will be recorded on the documentation commit after the GitHub Actions run for the final tree completes.
+
+### Remaining Risk
+
+- A duplicate reference still requires explicit reconciliation/operator handling; this milestone intentionally does not resolve the ambiguity.
+- Cross-store atomicity remains unavailable.
+- Unknown/conflict outcomes remain non-actionable until explicitly reviewed.
+- Live-provider compatibility remains credential-gated.
+- No authenticated public reconciliation API exists in the repository.
+
+### Progress
+
+Engineering readiness: ~97%.
+
+This closes a concrete evidence-attribution safety gap in the reconciliation/operator boundary. It remains below 99% because cross-store atomicity, live-provider validation, authenticated delivery integration, and broader production-readiness boundaries remain unresolved.
+
+### Next Highest-Value Milestone
+
+Continue hardening evidence attribution and operator-read-only boundaries, prioritizing any remaining path where ambiguous identity, stale observation, or incomplete provenance could be interpreted as confirmed financial state.
+
+No automatic provider retry, failover, transaction resubmission, provider funding, customer-balance mutation, treasury movement, duplicate purchase creation, blockchain action, or public financial mutation is included.
