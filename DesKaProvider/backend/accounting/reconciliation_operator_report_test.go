@@ -74,6 +74,43 @@ func TestReconciliationReportOperatorReportIsDeterministicAndReadOnly(t *testing
 	}
 }
 
+func TestReconciliationOperatorReportDoesNotConfirmAppliedEvidenceWithoutCorrelation(t *testing.T) {
+	observedAt := time.Date(2026, 10, 4, 12, 45, 0, 0, time.UTC)
+	for _, status := range []ReconciliationStatus{
+		ReconciliationLedgerMissing,
+		ReconciliationCorrelationConflict,
+		ReconciliationDuplicateReference,
+		ReconciliationDuplicateAuditIdentity,
+	} {
+		report := ReconciliationReport{
+			Snapshot: ReconciliationSnapshotMetadata{
+				CaptureStartedAt: startTimeForOperatorTest(),
+				CaptureCompletedAt: observedAt,
+				SnapshotConsistency: ReconciliationSnapshotConsistencyCapturedVerified,
+			},
+			Items: []TransactionReconciliation{{
+				ReferenceID: "ref-applied-but-unresolved",
+				Status: status,
+				PersistenceEvidence: &ReconciliationPersistenceEvidence{
+					Resolution: ReconciliationPersistenceConfirmedApplied,
+					Outcome: "applied",
+					Observed: true,
+					Source: "postgres.provider_transactions",
+					ObservedAt: observedAt,
+					Version: 11,
+				},
+			}},
+		}
+		view := report.OperatorReport()
+		if view.Items[0].ResolutionClass != ReconciliationOperatorReview {
+			t.Fatalf("status %q promoted applied evidence to %q; want review", status, view.Items[0].ResolutionClass)
+		}
+		if view.Summary.ConfirmedItems != 0 || view.Summary.ReviewItems != 1 {
+			t.Fatalf("status %q summary = %+v; want zero confirmed and one review", status, view.Summary)
+		}
+	}
+}
+
 func TestReconciliationOperatorReportV1PreservesDeliveryContract(t *testing.T) {
 	observedAt := time.Date(2026, 10, 4, 12, 30, 0, 0, time.UTC)
 	report := ReconciliationReport{
