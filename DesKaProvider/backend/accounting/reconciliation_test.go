@@ -372,6 +372,34 @@ func TestSettlementReconcilerMaterializesOneReadSnapshot(t *testing.T) {
 	}
 }
 
+func TestSettlementReconcilerExposesSnapshotBindingContext(t *testing.T) {
+	txStore := routing.NewMemoryTransactionStore()
+	ledger := NewMemoryStore()
+	if err := txStore.Put(terminalPayment("binding-ref")); err != nil {
+		t.Fatal(err)
+	}
+	reconciler, err := NewSettlementReconciler(txStore, ledger, ledger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	report, err := reconciler.Reconcile(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidence := ReconciliationPersistenceEvidence{
+		Resolution: ReconciliationPersistenceConfirmedApplied,
+		Outcome: "applied",
+		Observed: true,
+	}
+	bound := evidence.BindToSnapshot(report.SnapshotBindingContext())
+	if bound.ObservationScope != ReconciliationPersistenceEvidenceScopeSnapshotBound {
+		t.Fatalf("observation scope = %q; want snapshot_bound", bound.ObservationScope)
+	}
+	if bound.SnapshotFingerprint == "" || bound.SnapshotFingerprint != report.Snapshot.SnapshotFingerprint {
+		t.Fatalf("bound fingerprint = %q, report fingerprint = %q", bound.SnapshotFingerprint, report.Snapshot.SnapshotFingerprint)
+	}
+}
+
 func TestSettlementReconcilerSnapshotMetadataReportsCaptureProvenance(t *testing.T) {
 	ctx := context.Background()
 	txStore := routing.NewMemoryTransactionStore()
