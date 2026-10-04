@@ -102,5 +102,26 @@ func (p *SettlementPoster) Post(ctx context.Context, req SettlementPostingReques
 	}
 	// Ledger and audit are persisted through one settlement boundary. This method deliberately
 	// performs no provider retry, failover, resubmission, funding, or balance mutation.
-	return p.ledger.AppendSettlement(ctx, tx, audit)
+	err := p.ledger.AppendSettlement(ctx, tx, audit)
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, ErrSettlementPersistenceAmbiguous) {
+		return err
+	}
+	reader, ok := p.ledger.(SettlementPersistenceOutcomeReader)
+	if !ok {
+		return err
+	}
+	outcome, resolveErr := reader.ResolveSettlementPersistenceOutcome(ctx, tx, audit)
+	if resolveErr != nil {
+		return fmt.Errorf("%w; durable outcome resolution failed: %v", err, resolveErr)
+	}
+	if outcome == SettlementPersistenceApplied {
+		return nil
+	}
+	// not_applied, conflict, and unknown remain unresolved. No settlement retry
+	// or repair is attempted because the commit boundary is intentionally not
+	// promoted into a speculative second write.
+	return err
 }
