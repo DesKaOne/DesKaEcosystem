@@ -291,6 +291,23 @@ func (s *PostgresStore) AppendSettlement(ctx context.Context, ledger LedgerTrans
 	return nil
 }
 
+func (s *PostgresStore) ResolveSettlementPersistenceOutcome(ctx context.Context, ledger LedgerTransaction, audit SettlementAudit) (SettlementPersistenceOutcome, error) {
+	currentLedger, ledgerFound, err := s.Get(ctx, ledger.ID)
+	if err != nil {
+		return SettlementPersistenceUnknown, fmt.Errorf("resolve settlement ledger outcome: %w", err)
+	}
+	currentAudit, auditFound, err := s.GetSettlementAudit(ctx, audit.TransactionID)
+	if err != nil {
+		return SettlementPersistenceUnknown, fmt.Errorf("resolve settlement audit outcome: %w", err)
+	}
+	return classifySettlementPersistenceOutcome(
+		ledgerFound,
+		auditFound,
+		ledgerFound && sameLedgerTransaction(currentLedger, ledger),
+		auditFound && sameSettlementAudit(currentAudit, audit),
+	), nil
+}
+
 func (s *PostgresStore) GetSettlementAudit(ctx context.Context, transactionID string) (SettlementAudit, bool, error) {
 	var audit SettlementAudit
 	err := s.db.QueryRowContext(ctx,
