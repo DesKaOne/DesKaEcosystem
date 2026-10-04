@@ -19,6 +19,7 @@ type ReconciliationOperatorItem struct {
 	PersistenceOutcome   string
 	EvidenceObserved     bool
 	EvidenceScope        ReconciliationPersistenceEvidenceScope
+	SnapshotFingerprint  string
 	EvidenceSource       string
 	EvidenceObservedAt   time.Time
 	PersistenceVersion   int64
@@ -66,6 +67,7 @@ func (r ReconciliationReport) OperatorReport() ReconciliationOperatorReport {
 			operatorItem.PersistenceOutcome = evidence.Outcome
 			operatorItem.EvidenceObserved = evidence.Observed
 			operatorItem.EvidenceScope = evidence.ObservationScope
+			operatorItem.SnapshotFingerprint = evidence.SnapshotFingerprint
 			operatorItem.EvidenceSource = evidence.Source
 			operatorItem.EvidenceObservedAt = evidence.ObservedAt
 			operatorItem.PersistenceVersion = evidence.Version
