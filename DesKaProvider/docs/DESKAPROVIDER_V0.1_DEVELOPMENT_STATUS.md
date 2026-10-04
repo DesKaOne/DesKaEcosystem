@@ -11995,3 +11995,85 @@ This closes a material snapshot-authority gap in the reconciliation/operator bou
 Audit the remaining reconciliation-to-operator paths for any place where snapshot provenance is copied or transformed without preserving its consistency class, especially evidence enrichment and V1 delivery.
 
 No automatic provider retry, failover, transaction resubmission, provider funding, customer-balance mutation, treasury movement, duplicate purchase creation, blockchain action, or public financial mutation is included.
+---
+
+## Milestone #86 — V1 Operator Report Contract Validation
+
+**Date:** 2026-10-04
+
+### Objective
+
+Make the read-only V1 operator report delivery boundary fail closed when its projected items and summary become internally inconsistent.
+
+### Problem / Root Cause
+
+The V1 contract already preserved snapshot provenance and operator resolution state, but the delivery adapter trusted the projection without validating its aggregate invariants. A future projection change could therefore emit a syntactically valid JSON report whose summary no longer matched its items.
+
+### Implementation
+
+- Added ReconciliationOperatorReportV1.Validate().
+- Validation requires the expected V1 schema version.
+- Validation requires summary.total_items == len(items).
+- Validation recomputes confirmed/review/unresolved counts from item resolution classes.
+- Validation rejects unsupported resolution classes.
+- Validation checks the derived no-evidence count against without_evidence_items.
+- EncodeReconciliationOperatorReportV1 now validates the contract before encoding.
+- Invalid contracts return an error and produce no JSON delivery.
+- No persistence write, provider call, retry, resubmission, repair, reversal, funding, balance mutation, or ledger mutation was introduced.
+
+### Safety Impact
+
+The delivery boundary now enforces:
+
+projection -> invariant validation -> JSON delivery
+
+instead of:
+
+projection -> JSON delivery
+
+This protects downstream operator consumers from silently accepting an internally contradictory report.
+
+### Architecture Impact
+
+This is a contract-integrity guard only. It does not resolve evidence, alter reconciliation state, or introduce a new API/transport layer.
+
+Snapshot provenance remains explicitly carried by the V1 snapshot object, including snapshot_consistency and snapshot_fingerprint.
+
+### Tests
+
+Added deterministic coverage for:
+
+- inconsistent total_items;
+- unsupported resolution class;
+- valid projected V1 report;
+- existing V1 provenance and serialization tests continue to pass.
+
+### CI
+
+Implementation/test HEAD 1640d65f2b8c2a563bba287224912450cf3f16e3:
+
+- Push CI run **37202826534**: **GREEN**
+  - test: PASS
+  - vet: PASS
+  - race: PASS
+  - credential-gated provider validation jobs: skipped as expected
+
+### Remaining Risk
+
+- Cross-store atomicity remains unavailable by design.
+- Mixed/unknown/conflict states remain non-actionable without explicit review.
+- Live-provider validation remains credential-gated.
+- No authenticated public reconciliation API exists in the repository.
+- Contract validation cannot prove semantic correctness of external data; it only prevents internally inconsistent delivery.
+
+### Progress
+
+Engineering readiness: **~97%**.
+
+This hardens the operator delivery boundary without broadening financial authority. It remains below 99% because the remaining production-readiness gaps are architectural/operational rather than simple serialization issues.
+
+### Next Highest-Value Milestone
+
+Continue auditing the evidence-to-V1 path for semantic provenance loss, especially whether evidence attribution can ever be presented as snapshot-bound without an explicit observation scope.
+
+No automatic provider retry, failover, transaction resubmission, provider funding, customer-balance mutation, treasury movement, duplicate purchase creation, blockchain action, or public financial mutation is included.
