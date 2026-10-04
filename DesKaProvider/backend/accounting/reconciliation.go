@@ -56,9 +56,27 @@ type ReconciliationSnapshotMetadata struct {
 	SnapshotWindowMillis      int64
 }
 
+type reconciliationSnapshotBindingToken struct{}
+
+type ReconciliationSnapshotBindingContext struct {
+	fingerprint string
+	token       *reconciliationSnapshotBindingToken
+}
+
+// SnapshotBindingContext returns the non-exportable binding capability carried
+// by a report produced by Reconcile. A context cannot be reconstructed from
+// copied snapshot metadata or serialized report fields.
+func (r ReconciliationReport) SnapshotBindingContext() ReconciliationSnapshotBindingContext {
+	return ReconciliationSnapshotBindingContext{
+		fingerprint: r.Snapshot.SnapshotFingerprint,
+		token:       r.snapshotBindingToken,
+	}
+}
+
 type ReconciliationReport struct {
-	Items    []TransactionReconciliation
-	Snapshot ReconciliationSnapshotMetadata
+	Items               []TransactionReconciliation
+	Snapshot            ReconciliationSnapshotMetadata
+	snapshotBindingToken *reconciliationSnapshotBindingToken
 }
 
 // Economic agreement is required before a successful provider state can be correlated.
@@ -541,6 +559,7 @@ func (r *SettlementReconciler) Reconcile(ctx context.Context) (ReconciliationRep
 		return reconciliationItemKey(report.Items[i]) < reconciliationItemKey(report.Items[j])
 	})
 	report.Snapshot = snapshot.metadata
+	report.snapshotBindingToken = &reconciliationSnapshotBindingToken{}
 	return report, nil
 }
 
