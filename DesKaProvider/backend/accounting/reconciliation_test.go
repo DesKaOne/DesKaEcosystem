@@ -967,3 +967,26 @@ func TestSettlementReconcilerLabelsLegacyMixedSnapshot(t *testing.T) {
 		t.Fatalf("expected legacy mixed snapshot classification, got %q", report.Snapshot.SnapshotConsistency)
 	}
 }
+
+func TestSettlementReconcilerSnapshotMetadataExposesCaptureWindow(t *testing.T) {
+	ctx := context.Background()
+	txStore := routing.NewMemoryTransactionStore()
+	if err := txStore.Put(terminalPayment("snapshot-window")); err != nil {
+		t.Fatal(err)
+	}
+	reconciler, err := NewSettlementReconciler(txStore, NewMemoryStore(), NewMemoryStore())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := reconciler.Reconcile(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Snapshot.CaptureCompletedAt.Before(report.Snapshot.CaptureStartedAt) {
+		t.Fatalf("capture completion precedes start: %#v", report.Snapshot)
+	}
+	if report.Snapshot.SnapshotWindowMillis < 0 {
+		t.Fatalf("capture window must never be negative: %#v", report.Snapshot)
+	}
+}
