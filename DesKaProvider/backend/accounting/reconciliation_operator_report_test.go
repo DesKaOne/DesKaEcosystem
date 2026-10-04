@@ -13,6 +13,7 @@ func TestReconciliationReportOperatorReportIsDeterministicAndReadOnly(t *testing
 			CaptureStartedAt: startTimeForOperatorTest(),
 			CaptureCompletedAt: observedAt,
 			SnapshotConsistency: ReconciliationSnapshotConsistencyCapturedVerified,
+			SnapshotFingerprint: "snap-test",
 		},
 		Items: []TransactionReconciliation{
 			{
@@ -29,6 +30,7 @@ func TestReconciliationReportOperatorReportIsDeterministicAndReadOnly(t *testing
 					ObservedAt: observedAt,
 					Version: 9,
 					ObservationScope: ReconciliationPersistenceEvidenceScopeSnapshotBound,
+					SnapshotFingerprint: "snap-test",
 				},
 			},
 			{
