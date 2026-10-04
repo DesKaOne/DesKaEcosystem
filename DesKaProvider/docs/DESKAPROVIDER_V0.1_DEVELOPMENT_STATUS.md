@@ -12307,3 +12307,71 @@ This closes the remaining asymmetric snapshot-identity promotion gap. It remains
 Design and audit an explicit producer-side snapshot context contract only if a real persistence-evidence producer requires it. The contract must carry the exact snapshot identity from capture to evidence production without allowing copied report metadata, timestamps, or unrelated snapshot contexts to establish binding.
 
 No automatic provider retry, failover, transaction resubmission, provider funding, customer-balance mutation, treasury movement, duplicate purchase creation, blockchain action, or public financial mutation is included.
+
+## Milestone #90 — Non-Exportable Snapshot Binding Context
+
+**Date:** 2026-10-04
+
+### Objective
+
+Complete the producer-side lifecycle hardening identified in #89 by preventing callers from manufacturing a snapshot-bound evidence claim from copied ReconciliationSnapshotMetadata.
+
+### Audit Finding
+
+BindToSnapshot previously accepted ReconciliationSnapshotMetadata directly. Although fingerprint equality protected the operator projection from mismatched identities, the binding primitive itself still accepted a metadata value that could be manually constructed or copied from another report.
+
+This was weaker than the intended producer provenance contract.
+
+### Implementation
+
+- Added ReconciliationSnapshotBindingContext.
+- A ReconciliationReport produced by SettlementReconciler.Reconcile() carries an internal, non-exportable binding token.
+- ReconciliationReport.SnapshotBindingContext() exposes only the capability needed by a real evidence producer.
+- ReconciliationPersistenceEvidence.BindToSnapshot() now accepts that binding context instead of raw snapshot metadata.
+- A manually constructed/copied report has no valid internal token and therefore cannot establish snapshot_bound evidence.
+- Serialized or metadata-only representations cannot recreate the binding capability.
+- Existing fingerprint equality remains required at operator confirmation time.
+- Added regression tests for binding from a real reconciliation result, rejecting a manually/copy-constructed report context, and preserving fail-closed behavior for an empty binding context.
+
+### Safety Impact
+
+The binding chain is now:
+
+real Reconcile() result -> non-exportable binding context -> snapshot-bound evidence -> matching fingerprint -> operator confirmation
+
+Copying timestamps, snapshot metadata, fingerprints, or serialized report fields cannot manufacture the binding capability.
+
+No cross-store atomicity is claimed. The context proves that the producer received the capability from a concrete reconciliation result, while fingerprint equality preserves snapshot identity at the projection boundary.
+
+No automatic provider retry, failover, transaction resubmission, provider funding, customer-balance mutation, treasury movement, duplicate purchase creation, blockchain action, or public financial mutation was introduced.
+
+### Tests / CI
+
+Implementation/test commit:
+
+- e2a4aca29744dc9fe5b4b9eabba2bb6d863ce65a
+
+CI run:
+
+- 37204612759 — GREEN / SUCCESS
+- test — PASS
+- race — PASS
+- credential-gated provider validation jobs — SKIPPED
+
+### Remaining Risk
+
+- Cross-store atomicity remains unavailable by design.
+- Fingerprint equality still does not independently prove cross-store producer provenance.
+- There is still no production persistence-evidence producer invoking the new context API.
+- Live-provider compatibility remains credential-gated.
+- Authenticated operator delivery integration remains absent.
+
+### Progress
+
+Engineering readiness: ~97%.
+
+This closes the concrete metadata-copy binding gap identified during the #89 producer lifecycle audit. The remaining material gaps are operational/integration concerns rather than an unguarded snapshot-binding primitive.
+
+### Next Highest-Value Milestone
+
+Audit whether any future evidence producer can safely consume the binding context across package or process boundaries. If no real producer exists yet, preserve the context as an explicit capability contract and do not add adapters that imply unavailable cross-store atomicity.
