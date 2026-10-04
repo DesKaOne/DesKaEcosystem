@@ -11914,3 +11914,84 @@ This closes another concrete state-promotion safety gap while preserving the rea
 Continue auditing operator-state promotion rules for cases where evidence provenance can conflict with reconciliation identity, correlation, or snapshot consistency. Any contradictory state should remain review/unresolved rather than being promoted automatically.
 
 No automatic provider retry, failover, transaction resubmission, provider funding, customer-balance mutation, treasury movement, duplicate purchase creation, blockchain action, or public financial mutation is included.
+
+---
+
+## Milestone #85 — Non-Authoritative Mixed/Unverified Snapshot Handling
+
+**Date:** 2026-10-04
+
+### Objective
+
+Prevent reconciliation operator output from treating persistence evidence as authoritative when the underlying cross-store snapshot was not verified.
+
+### Problem / Root Cause
+
+Milestone #84 correctly prevented confirmed_applied evidence from overriding unresolved correlation. A second promotion path remained: a validly correlated item with persistence evidence could still be classified as operator confirmed when the snapshot metadata was captured or legacy_mixed.
+
+That violates the snapshot contract: mixed or unverified observations cannot be presented as current/authoritative financial evidence.
+
+### Implementation
+
+- confirmed_applied is now operator-confirmed only when:
+  - reconciliation status is CORRELATED; and
+  - snapshot consistency is captured_verified.
+- confirmed_not_applied is also operator-confirmed only from captured_verified snapshots.
+- captured and legacy_mixed evidence now remain review instead of confirmed.
+- No financial mutation, persistence write, provider call, retry, resubmission, repair, reversal, funding, balance mutation, or ledger mutation was introduced.
+
+### Safety Impact
+
+The operator state machine now requires both identity/correlation safety and snapshot consistency:
+
+correlated + captured_verified + applied evidence -> confirmed
+
+correlated + mixed/unverified snapshot + evidence -> review
+
+Thus stale, partial, or legacy mixed observations cannot silently become authoritative operator confirmation.
+
+### Architecture Impact
+
+Snapshot consistency is now an explicit prerequisite at the presentation/evidence boundary rather than merely metadata. This preserves the distinction between an observed value and an authoritative cross-store observation.
+
+The change does not create a distributed transaction or pretend that the three stores are atomically committed.
+
+### Tests
+
+Added deterministic regression coverage for:
+
+- confirmed_applied + CORRELATED + captured -> review;
+- confirmed_applied + CORRELATED + legacy_mixed -> review;
+- confirmed_not_applied + CORRELATED + legacy_mixed -> review;
+- verified snapshots retain existing confirmation behavior.
+
+### CI
+
+Final implementation/test HEAD b5f91353c52032b0d63632647c193ae4ceb9bd4a:
+
+- Push CI run **37202167474**: **GREEN**
+  - test: PASS
+  - vet: PASS
+  - race: PASS
+  - credential-gated provider validation jobs: skipped as expected
+- PR CI run **37202170208** was also triggered for the same HEAD; provider validation remains credential-gated.
+
+### Remaining Risk
+
+- Cross-store atomicity remains unavailable by design.
+- Mixed/unknown/conflict states still require explicit operator or higher-level workflow handling.
+- Live-provider compatibility remains credential-gated.
+- No authenticated public reconciliation API exists in the repository.
+- This milestone does not repair or resolve mixed observations; it only prevents unsafe promotion.
+
+### Progress
+
+Engineering readiness: **~97%**.
+
+This closes a material snapshot-authority gap in the reconciliation/operator boundary. It remains below 99% because cross-store atomicity, live-provider validation, authenticated delivery integration, and broader production-readiness boundaries remain unresolved.
+
+### Next Highest-Value Milestone
+
+Audit the remaining reconciliation-to-operator paths for any place where snapshot provenance is copied or transformed without preserving its consistency class, especially evidence enrichment and V1 delivery.
+
+No automatic provider retry, failover, transaction resubmission, provider funding, customer-balance mutation, treasury movement, duplicate purchase creation, blockchain action, or public financial mutation is included.
