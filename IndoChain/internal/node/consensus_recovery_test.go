@@ -348,22 +348,34 @@ func TestConsensusRecoveryProposalToRuntimeFinalityHandoff(t *testing.T) {
 
 	proposer := proposal.Candidate.Header.Proposer
 	signer := mustTestSigner(t, 23)
-	precommit := consensus.Message{
+	prevote := consensus.Message{
 		ProtocolVersion: recovery.State.ProtocolVersion,
-		ChainID: recovery.State.ChainID,
-		Epoch: recovery.State.Epoch,
-		Height: recovery.State.Height,
-		Round: recovery.State.Round,
-		Sender: proposer,
-		Type: consensus.MessageTypePrevote,
-		Payload: proposal.MessagePayload(),
+		ChainID:         recovery.State.ChainID,
+		Epoch:           recovery.State.Epoch,
+		Height:          recovery.State.Height,
+		Round:           recovery.State.Round,
+		Sender:          proposer,
+		Type:            consensus.MessageTypePrevote,
+		Payload:         proposal.MessagePayload(),
 	}
-	prevote, err := precommit.Sign(signer)
+	prevote, err := prevote.Sign(signer)
 	if err != nil { t.Fatal(err) }
 	if err := recovery.Runtime.AddVote(prevote); err != nil {
 		t.Fatal(err)
 	}
-	precommit.Type = consensus.MessageTypePrecommit
+	if recovery.Runtime.State().Phase != consensus.PhasePrecommit {
+		t.Fatalf("runtime phase = %v, want precommit after prevote quorum", recovery.Runtime.State().Phase)
+	}
+	precommit := consensus.Message{
+		ProtocolVersion: recovery.State.ProtocolVersion,
+		ChainID:         recovery.State.ChainID,
+		Epoch:           recovery.State.Epoch,
+		Height:          recovery.State.Height,
+		Round:           recovery.State.Round,
+		Sender:          proposer,
+		Type:            consensus.MessageTypePrecommit,
+		Payload:         proposal.MessagePayload(),
+	}
 	precommit, err = precommit.Sign(signer)
 	if err != nil { t.Fatal(err) }
 	if err := recovery.Runtime.AddVote(precommit); err != nil {
