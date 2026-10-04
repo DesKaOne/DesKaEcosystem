@@ -11386,7 +11386,7 @@ Cross-store settlement evidence remains explicitly non-atomic: ledger and audit 
 ### CI
 
 - Commit `e640105c47059a93a715afc75d8cbd6d7f45b12c` push CI: **GREEN** (test PASS, race PASS; credential-gated provider validation skipped).
-- PR CI for the same commit: pending final documentation commit verification.
+- PR CI for the same commit: **GREEN** (test PASS, race PASS; credential-gated provider validation skipped).
 
 A previous intermediate commit `f0169a0b3d3b77aa39d3b9193d61dcca16668904` failed because the new evidence interface was temporarily added as a mandatory extension to the existing outcome reader. The corrected `e640...` commit separated the evidence reader into an optional interface and passed test and race.
 
@@ -11407,5 +11407,105 @@ The increase reflects explicit provenance for durable evidence and a backward-co
 ### Next Highest-Value Milestone
 
 Strengthen reconciliation/operator workflows to persist and surface evidence provenance for `unknown` and `conflict` outcomes, including deterministic capture-window metadata and explicit non-mutating resolution states.
+
+No automatic provider retry, failover, transaction resubmission, provider funding, customer-balance mutation, treasury movement, duplicate purchase creation, blockchain action, or public API exposure is included.
+
+
+---
+
+## Milestone #79 — Reconciliation Persistence Evidence State
+
+**Date:** 2026-10-04
+
+### Objective
+
+Bring Milestone #78 persistence provenance into the reconciliation/operator report boundary with explicit non-mutating resolution states and capture-window metadata.
+
+### Problem / Root Cause
+
+Milestone #78 produced durable persistence evidence, but reconciliation reports did not yet have a stable operator-facing representation for the distinction between confirmed durable outcomes and outcomes that still require review. Without an explicit state, downstream operator tooling could accidentally treat `unknown` or `conflict` as equivalent to an ordinary reconciliation mismatch.
+
+The existing reconciliation reader already records capture start/end times and snapshot consistency. The missing piece was a typed evidence envelope that can retain those boundaries together with the persistence outcome without changing financial state.
+
+### Implementation
+
+- Added `ReconciliationPersistenceResolution` with four explicit states:
+  - `confirmed_applied`
+  - `confirmed_not_applied`
+  - `needs_review_unknown`
+  - `needs_review_conflict`
+- Added `ReconciliationPersistenceEvidence` carrying:
+  - outcome;
+  - observed/source provenance;
+  - settlement ledger/audit observation flags;
+  - observation timestamp;
+  - transaction durable version when available;
+  - reconciliation capture start/end timestamps;
+  - snapshot consistency classification.
+- Added deterministic classifiers for transaction and settlement persistence evidence.
+- Added copy-on-write `ReconciliationReport.WithPersistenceEvidence(referenceID, evidence)` so operator/reconciliation tooling can surface evidence on a report item without mutating the original report or any financial store.
+- Snapshot metadata is attached to the evidence envelope at report-enrichment time, preserving the existing distinction between captured, captured-and-verified, and legacy mixed snapshots.
+- No automatic database write, reconciliation repair, provider retry, resubmission, reversal, funding, balance mutation, or ledger mutation was introduced.
+
+### Safety Impact
+
+- `unknown` is always represented as `needs_review_unknown`; it cannot be promoted to success because evidence was unreadable.
+- `conflict` is always represented as `needs_review_conflict`; partial or contradictory evidence is not silently repaired.
+- `not_applied` is only considered `confirmed_not_applied` when the evidence layer says the relevant durable source was actually observed.
+- Evidence enrichment is copy-on-write and observational. Reconciliation remains read-only with respect to financial persistence.
+
+### Architecture Impact
+
+The persistence evidence flow is now:
+
+`ambiguous write -> durable evidence -> typed operator resolution -> reconciliation report enrichment`.
+
+The report enrichment boundary is deliberately separate from provider execution and financial persistence. It does not create a distributed transaction and does not claim cross-store atomicity.
+
+The evidence object retains the reconciliation capture window so operator tooling can correlate persistence provenance with the exact observational snapshot classification.
+
+### Tests
+
+Added deterministic coverage for:
+
+- transaction `applied`, `not_applied`, `unknown`, and `conflict` resolution states;
+- settlement complete, absent, partial/conflicting, and unreadable evidence;
+- preservation of source/timestamp/version provenance;
+- copy-on-write report enrichment;
+- propagation of capture start/end timestamps and snapshot consistency;
+- explicit non-mutation of the original reconciliation report.
+
+### CI
+
+Final implementation HEAD `da54f41e90fe721d779608b367ecb894ac8f71d1`:
+
+- Push CI run **37199493218**: **GREEN**
+  - test: PASS
+  - race: PASS
+  - credential-gated provider validation jobs: skipped as expected
+- Pull Request CI run **37199490625**: **GREEN**
+  - test: PASS
+  - race: PASS
+  - credential-gated provider validation jobs: skipped as expected
+
+No authorized live-provider transaction or external financial mutation was executed by this milestone.
+
+### Remaining Risk
+
+- Evidence is now reportable, but automatic evidence lookup from every reconciliation item is intentionally not enabled; that would add extra store reads and could blur the distinction between a reconciliation snapshot and a persistence-resolution observation.
+- Evidence enrichment is not persisted into the financial stores; the design intentionally keeps reconciliation read-only.
+- Cross-store atomicity remains unavailable.
+- `unknown` and `conflict` still require human/operator or higher-level workflow decisions.
+- Live-provider compatibility remains credential-gated.
+
+### Progress
+
+Engineering readiness: **~94%**.
+
+This milestone closes the explicit operator-state/provenance representation gap while preserving the read-only reconciliation boundary. It remains below 99% because cross-store atomicity, live-provider validation, and other production-readiness boundaries remain unresolved.
+
+### Next Highest-Value Milestone
+
+Integrate evidence-aware operator output with the existing reconciliation/report delivery boundary, while preserving explicit capture provenance and ensuring `unknown`/`conflict` cannot be auto-resolved or converted into financial mutations.
 
 No automatic provider retry, failover, transaction resubmission, provider funding, customer-balance mutation, treasury movement, duplicate purchase creation, blockchain action, or public API exposure is included.
