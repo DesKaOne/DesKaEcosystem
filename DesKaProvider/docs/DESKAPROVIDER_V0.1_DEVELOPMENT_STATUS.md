@@ -10953,3 +10953,41 @@ Aggregate double-entry equality remains an application-level invariant rather th
 
 Make PostgreSQL reconciliation reads a single consistent snapshot boundary, then add concurrency-focused regression coverage without introducing financial mutation or recovery side effects.
 
+
+## Milestone #72 — Reconciliation Snapshot Consistency Classification
+
+**Date:** 2026-10-04
+
+### Objective
+
+Make reconciliation snapshot consistency explicit when the current architecture cannot provide one shared database transaction across provider, ledger, and settlement-audit stores.
+
+### Implementation
+
+- Added `SnapshotConsistency` metadata to reconciliation reports.
+- Added explicit classifications for captured snapshots and legacy mixed-reader snapshots.
+- Legacy per-ledger audit fallback is now observable as `legacy_mixed` rather than being implicitly presented as a uniform snapshot.
+- Added deterministic regression coverage for the legacy mixed classification.
+- Preserved read-only reconciliation semantics; no financial resolution or mutation was introduced.
+
+### Safety Impact
+
+- Prevents operators/callers from interpreting a legacy mixed-reader reconciliation result as a single atomic cross-store snapshot.
+- Does not convert snapshot ambiguity into success/failure.
+- No provider retry, failover, resubmission, ledger mutation, treasury movement, or balance mutation.
+
+### Architecture Impact
+
+Documents an actual boundary of the current multi-store architecture without introducing a cross-store transaction abstraction that the repository does not currently provide.
+
+### Verification
+
+Pending full test, vet, race, push, and latest CI verification on the final HEAD.
+
+### Remaining Risk
+
+The provider transaction store, accounting ledger store, and settlement-audit read model remain separate persistence components; a true cross-store atomic snapshot is not yet available. This milestone makes that limitation explicit rather than hiding it.
+
+### Next Highest-Value Task
+
+Add a first-class snapshot-capture contract at the repository boundary that can be implemented by stores capable of atomic capture, while retaining the explicit mixed-reader fallback for legacy deployments.
