@@ -1,6 +1,9 @@
 package accounting
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 const ReconciliationOperatorReportSchemaVersion = "v1"
 
@@ -49,6 +52,44 @@ type ReconciliationOperatorReportV1 struct {
 	Snapshot      ReconciliationOperatorSnapshotV1  `json:"snapshot"`
 	Items         []ReconciliationOperatorItemV1    `json:"items"`
 	Summary       ReconciliationOperatorSummaryV1   `json:"summary"`
+}
+
+
+// Validate checks the V1 delivery contract without resolving evidence or
+// changing financial state. It rejects internally inconsistent projections
+// before they cross a delivery boundary.
+func (r ReconciliationOperatorReportV1) Validate() error {
+	if r.SchemaVersion != ReconciliationOperatorReportSchemaVersion {
+		return fmt.Errorf("unsupported reconciliation operator report schema version %q", r.SchemaVersion)
+	}
+	if r.Summary.TotalItems != len(r.Items) {
+		return fmt.Errorf("reconciliation operator summary total_items=%d does not match items=%d", r.Summary.TotalItems, len(r.Items))
+	}
+	confirmed, review, unresolved, withoutEvidence := 0, 0, 0, 0
+	for _, item := range r.Items {
+		switch item.ResolutionClass {
+		case ReconciliationOperatorConfirmed:
+			confirmed++
+		case ReconciliationOperatorReview:
+			review++
+		case ReconciliationOperatorUnresolved:
+			unresolved++
+		default:
+			return fmt.Errorf("unsupported reconciliation operator resolution class %q", item.ResolutionClass)
+		}
+		if item.EvidenceSource == "" && item.EvidenceObservedAt.IsZero() &&
+			item.PersistenceOutcome == "" && item.PersistenceVersion == 0 &&
+			!item.EvidenceObserved && !item.LedgerObserved && !item.AuditObserved {
+			withoutEvidence++
+		}
+	}
+	if r.Summary.ConfirmedItems != confirmed ||
+		r.Summary.ReviewItems != review ||
+		r.Summary.UnresolvedItems != unresolved ||
+		r.Summary.WithoutEvidenceItems != withoutEvidence {
+		return fmt.Errorf("reconciliation operator summary counts do not match item classifications")
+	}
+	return nil
 }
 
 // V1 returns the stable, read-only delivery contract for an operator report.
