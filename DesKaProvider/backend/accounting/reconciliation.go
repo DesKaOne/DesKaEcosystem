@@ -202,19 +202,28 @@ func (r *SettlementReconciler) readSnapshot(ctx context.Context) (reconciliation
 	if providerVerified {
 		reader := r.transactions.(reconciliationProviderSnapshotCapture)
 		if err := reader.VerifyReconciliationSnapshot(ctx, providerToken); err != nil {
-			return reconciliationSnapshot{}, fmt.Errorf("%w: provider: %w", ErrReconciliationSnapshotChanged, err)
+			if errors.Is(err, routing.ErrReconciliationSnapshotTokenMismatch) {
+				return reconciliationSnapshot{}, fmt.Errorf("%w: provider: %w", ErrReconciliationSnapshotChanged, err)
+			}
+			return reconciliationSnapshot{}, fmt.Errorf("%w: %w", ErrReconciliationProviderRead, err)
 		}
 	}
 	if ledgerVerified {
 		reader := r.ledger.(reconciliationLedgerSnapshotCapture)
 		if err := reader.VerifyLedgerReconciliationSnapshot(ctx, ledgerToken); err != nil {
-			return reconciliationSnapshot{}, fmt.Errorf("%w: ledger: %w", ErrReconciliationSnapshotChanged, err)
+			if errors.Is(err, ErrReconciliationSnapshotTokenMismatch) {
+				return reconciliationSnapshot{}, fmt.Errorf("%w: ledger: %w", ErrReconciliationSnapshotChanged, err)
+			}
+			return reconciliationSnapshot{}, fmt.Errorf("%w: %w", ErrReconciliationLedgerRead, err)
 		}
 	}
 	if auditVerified {
 		reader := r.audit.(reconciliationAuditSnapshotCapture)
 		if err := reader.VerifySettlementAuditReconciliationSnapshot(ctx, auditToken); err != nil {
-			return reconciliationSnapshot{}, fmt.Errorf("%w: audit: %w", ErrReconciliationSnapshotChanged, err)
+			if errors.Is(err, ErrReconciliationSnapshotTokenMismatch) {
+				return reconciliationSnapshot{}, fmt.Errorf("%w: audit: %w", ErrReconciliationSnapshotChanged, err)
+			}
+			return reconciliationSnapshot{}, fmt.Errorf("%w: %w", ErrReconciliationAuditRead, err)
 		}
 	}
 
