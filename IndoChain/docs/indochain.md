@@ -1028,7 +1028,7 @@ Detail seperti final consensus implementation, VM, tokenomics, cryptographic sui
 
 # EVM Execution & Developer Ecosystem
 
-IndoChain tetap merupakan **blockchain native milik sendiri**. EVM digunakan sebagai execution layer agar developer dapat menggunakan ekosistem smart contract yang sudah dikenal, tanpa menjadikan IndoChain sebagai Ethereum clone.
+IndoChain tetap merupakan blockchain native milik sendiri. EVM digunakan sebagai execution layer agar developer dapat menggunakan ekosistem smart contract yang sudah dikenal, tanpa menjadikan IndoChain sebagai Ethereum clone.
 
 ```text
                     IndoChain
@@ -1051,12 +1051,15 @@ IndoChain tetap merupakan **blockchain native milik sendiri**. EVM digunakan seb
 ## Layering
 
 ### Native Blockchain Layer
+
 Fondasi IndoChain tetap mencakup consensus, validator, P2P, block production, mempool, state, storage, dan finality. Core protocol menggunakan Go sebagai bahasa utama.
 
 ### Native Asset Layer
+
 `dIDR` adalah native asset IndoChain. Detail tokenomics, monetary policy, supply, emission, dan genesis allocation ditetapkan pada spesifikasi ekonomi/protocol tersendiri sebelum mainnet.
 
 ### EVM Execution Layer
+
 Target developer workflow:
 
 ```text
