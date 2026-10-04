@@ -2,7 +2,6 @@ package consensus
 
 import (
 	"crypto/ed25519"
-	"crypto/sha256"
 	"crypto/rand"
 	"errors"
 	"testing"
