@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 )
 
 type PostgresStore struct {
@@ -116,36 +117,42 @@ func (s *PostgresStore) Get(ctx context.Context, id string) (LedgerTransaction, 
 
 func (s *PostgresStore) All(ctx context.Context) ([]LedgerTransaction, error) {
 	rows, err := s.db.QueryContext(ctx,
-		"SELECT transaction_id FROM ledger_transactions ORDER BY created_at,transaction_id",
+		"SELECT t.transaction_id,t.reference_id,t.source_type,t.source_id,t.currency,t.description,t.created_at,e.line_id,e.account_id,e.direction,e.amount,e.currency,e.memo FROM ledger_transactions t LEFT JOIN ledger_entries e ON e.transaction_id=t.transaction_id ORDER BY t.created_at,t.transaction_id,e.line_id",
 	)
 	if err != nil {
-		return nil, fmt.Errorf("list ledger transactions: %w", err)
+		return nil, fmt.Errorf("list ledger transactions with entries: %w", err)
 	}
-	var ids []string
+	defer rows.Close()
+
+	out := make([]LedgerTransaction, 0)
+	index := make(map[string]int)
 	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			rows.Close()
-			return nil, fmt.Errorf("scan ledger transaction id: %w", err)
+		var id, ref, sourceType, sourceID, currency, description string
+		var createdAt time.Time
+		var lineID sql.NullInt32
+		var accountID, direction, entryCurrency, memo sql.NullString
+		var amount sql.NullInt64
+		if err := rows.Scan(&id,&ref,&sourceType,&sourceID,&currency,&description,&createdAt,&lineID,&accountID,&direction,&amount,&entryCurrency,&memo); err != nil {
+			return nil, fmt.Errorf("scan ledger transaction with entry: %w", err)
 		}
-		ids = append(ids, id)
+		pos, ok := index[id]
+		if !ok {
+			pos = len(out)
+			index[id] = pos
+			out = append(out, LedgerTransaction{ID:id,ReferenceID:ref,SourceType:sourceType,SourceID:sourceID,Currency:currency,Description:description,CreatedAt:createdAt})
+		}
+		if lineID.Valid {
+			out[pos].Entries = append(out[pos].Entries, Entry{
+				LineID:int(lineID.Int32),AccountID:accountID.String,Direction:direction.String,Amount:amount.Int64,Currency:entryCurrency.String,Memo:memo.String,
+			})
+		}
 	}
 	if err := rows.Err(); err != nil {
-		rows.Close()
-		return nil, fmt.Errorf("iterate ledger transaction ids: %w", err)
+		return nil, fmt.Errorf("iterate ledger transactions with entries: %w", err)
 	}
-	if err := rows.Close(); err != nil {
-		return nil, fmt.Errorf("close ledger transaction ids: %w", err)
-	}
-
-	out := make([]LedgerTransaction, 0, len(ids))
-	for _, id := range ids {
-		tx, ok, err := s.Get(ctx, id)
-		if err != nil {
-			return nil, err
-		}
-		if ok {
-			out = append(out, tx)
+	for _, tx := range out {
+		if err := tx.Validate(); err != nil {
+			return nil, fmt.Errorf("validate persisted ledger transaction: %w", err)
 		}
 	}
 	return out, nil
