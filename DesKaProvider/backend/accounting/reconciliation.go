@@ -287,14 +287,27 @@ func NewSettlementReconciler(
 func (r ReconciliationReport) WithPersistenceEvidence(referenceID string, evidence ReconciliationPersistenceEvidence) ReconciliationReport {
 	result := r
 	result.Items = append([]TransactionReconciliation(nil), r.Items...)
-	evidence = evidence.WithSnapshotMetadata(r.Snapshot)
+
+	matchIndex := -1
+	matchCount := 0
 	for i := range result.Items {
 		if result.Items[i].ReferenceID != referenceID {
 			continue
 		}
-		copy := evidence
-		result.Items[i].PersistenceEvidence = &copy
+		matchIndex = i
+		matchCount++
 	}
+	// A reference must uniquely identify the reconciliation item before
+	// persistence evidence can be attached. Duplicate references are
+	// intentionally left unresolved because one evidence observation cannot
+	// safely disambiguate multiple financial records.
+	if matchCount != 1 {
+		return result
+	}
+
+	evidence = evidence.WithSnapshotMetadata(r.Snapshot)
+	copy := evidence
+	result.Items[matchIndex].PersistenceEvidence = &copy
 	return result
 }
 
