@@ -268,6 +268,7 @@ func PersistFinalityCertificateWithContext(
 	certificate FinalityCertificate,
 	state RoundState,
 	validators ValidatorSet,
+	votingPower VotingPowerSet,
 	authority TimeoutAuthorityResolver,
 	context PersistenceContext,
 	signer crypto.Signer,
@@ -323,6 +324,7 @@ func RecoverFinalityCertificateWithContext(
 	store EvidenceStore,
 	state RoundState,
 	validators ValidatorSet,
+	votingPower VotingPowerSet,
 	authority TimeoutAuthorityResolver,
 	context PersistenceContext,
 ) (FinalityCertificate, string, error) {
