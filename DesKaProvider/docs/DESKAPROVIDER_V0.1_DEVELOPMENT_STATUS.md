@@ -11228,65 +11228,111 @@ Settlement `COMMIT` failure is especially important: the transaction may already
 - Database read failure remains `unknown`; it is never converted into success or absence.
 - Added deterministic unit coverage for applied, absent, partial, and conflicting outcomes.
 
+### Verification
+
+- Push CI run **37188290904**: GREEN
+  - test: PASS
+  - race: PASS
+  - credential-gated provider validation jobs: skipped as expected
+- Pull Request CI run **37188295076**: GREEN
+  - test: PASS
+  - race: PASS
+  - credential-gated provider validation jobs: skipped as expected
+
+### Remaining Risk After #76
+
+Resolver contracts existed but were not yet consumed by the runtime persistence error paths. That gap was carried directly into Milestone #77.
+
+---
+
+## Milestone #77 — Runtime Persistence Ambiguity Resolution
+
+**Date:** 2026-10-04
+
+### Objective
+
+Make durable-outcome resolution operational at the transaction and settlement runtime boundaries without introducing any retry, resubmission, second write, or provider side effect.
+
+### Problem / Root Cause
+
+Milestone #76 established deterministic read-only classifiers, but runtime callers still returned `ErrTransactionPersistenceAmbiguous` or `ErrSettlementPersistenceAmbiguous` immediately after a persistence boundary reported uncertainty. Therefore an actually durable write could still be reported as a generic failure even though the local store already contained the intended state.
+
+### Implementation
+
+- `routing.Service.persistTransition` now detects transaction persistence ambiguity and, when the store exposes `PersistenceOutcomeReader`, performs exactly one read-only durable outcome resolution.
+- A resolved `PersistenceOutcomeApplied` is treated as successful local persistence; no second write is attempted.
+- `not_applied`, `conflict`, and `unknown` remain unresolved and preserve the ambiguity error so higher-level reconciliation/operator handling can decide next steps.
+- `accounting.SettlementPoster.Post` now applies the same read-only resolution pattern through `SettlementPersistenceOutcomeReader`.
+- Added deterministic runtime regression tests proving:
+  - applied ambiguity resolves without a second write;
+  - unresolved settlement/transaction ambiguity remains machine-detectable;
+  - exactly one read-only resolution occurs after the ambiguous write.
+- No provider retry, failover, transaction resubmission, speculative repair, blind reversal, or automatic settlement retry was added.
+
 ### Changed Files
 
-- `DesKaProvider/backend/routing/transaction_store.go`
-- `DesKaProvider/backend/routing/postgres_transaction_store.go`
-- `DesKaProvider/backend/routing/persistence_outcome_test.go`
+- `DesKaProvider/backend/routing/service.go`
+- `DesKaProvider/backend/routing/persistence_outcome_runtime_test.go`
 - `DesKaProvider/backend/accounting/settlement.go`
-- `DesKaProvider/backend/accounting/postgres_store.go`
-- `DesKaProvider/backend/accounting/settlement_persistence_outcome_test.go`
+- `DesKaProvider/backend/accounting/settlement_persistence_runtime_test.go`
 - `DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md`
 
 ### Safety Impact
 
-This closes an important ambiguity-handling gap without adding recovery side effects.
+This closes the runtime consumption gap while preserving financial safety:
 
-- `applied` means durable local state matches the attempted state.
-- `not_applied` means the expected durable object is absent.
-- `conflict` means durable evidence exists but does not match the attempted identity/result, including partial settlement evidence.
-- `unknown` means durable state could not be read and therefore remains unresolved.
-
-No classification authorizes provider retry, provider failover, transaction resubmission, duplicate payment, ledger mutation, balance mutation, treasury movement, funding, blind reversal, or automatic repair.
+- a provider side effect is never repeated because local persistence returned an ambiguous error;
+- a durable local result is accepted only when the read-only resolver proves `applied`;
+- missing, conflicting, or unreadable durable evidence remains unresolved;
+- resolution performs no ledger mutation, balance mutation, treasury movement, funding, reversal, repair, or provider call;
+- the settlement boundary remains single-write and non-speculative.
 
 ### Architecture Impact
 
-The persistence boundary now exposes a deterministic evidence-resolution contract while keeping recovery read-only.
+The persistence boundary is now end-to-end evidence-aware from storage error to runtime caller:
 
-No distributed transaction abstraction was introduced. Provider transaction persistence and settlement persistence remain independent boundaries, with reconciliation/operator resolution responsible for unresolved cross-boundary ambiguity.
+`ambiguous write -> read-only durable classification -> applied OR unresolved`.
+
+The design still does not introduce a distributed transaction. Provider transaction state and accounting settlement state remain independent persistence domains; cross-domain reconciliation remains an explicit evidence/review boundary.
 
 ### Tests
 
-Added deterministic classification regression tests covering:
+Added deterministic runtime regression coverage:
 
-- transaction applied;
-- transaction not applied;
-- transaction conflicting durable state;
-- settlement fully applied;
-- settlement fully absent;
-- ledger-only partial persistence;
-- audit-only partial persistence;
-- identity mismatch.
+- transaction ambiguous + applied durable evidence -> success;
+- transaction ambiguous + not-applied evidence -> ambiguity preserved;
+- settlement ambiguous + applied durable evidence -> success;
+- settlement ambiguous + not-applied evidence -> ambiguity preserved;
+- exactly one write attempt and one read-only resolution per ambiguous operation.
 
 ### CI
 
-Pending final verification for the milestone. Credential-gated provider validation remains environment-dependent and must not be represented as live compatibility evidence when skipped.
+- Push CI run **37197097526**: **GREEN**
+  - test: PASS
+  - race: PASS
+  - credential-gated provider validation jobs: skipped as expected
+- Pull Request CI run **37197100443**: **GREEN**
+  - test: PASS
+  - race: PASS
+  - credential-gated provider validation jobs: skipped as expected
+
+No authorized live-provider transaction was executed by this milestone.
 
 ### Remaining Risk
 
-- Resolver consumers still need to integrate these contracts into the runtime/operator recovery path before ambiguity resolution becomes fully operational end-to-end.
-- A database outage during resolution remains `unknown`.
-- Cross-store atomicity is still intentionally absent.
-- Live-provider compatibility remains credential-gated.
+- `unknown` durable outcomes still require explicit reconciliation/operator handling when the backing database cannot be read.
+- Cross-store atomicity is intentionally absent.
+- Live-provider compatibility remains credential-gated and was not represented by the skipped validation jobs.
+- Broader production-readiness gaps outside persistence ambiguity remain.
 
 ### Progress
 
-Engineering readiness: **~90%**.
+Engineering readiness: **~92%**.
 
-The increase is justified by closing a concrete crash-consistency ambiguity at both transaction and settlement persistence boundaries. This is still below 99% because runtime recovery integration, cross-store evidence semantics, provider validation, and remaining production-readiness gaps are unresolved.
+The increase reflects that the ambiguity classifier is now consumed by the transaction and settlement runtime error paths. This is still below 99% because unresolved database outages, cross-store non-atomicity, credential-gated live validation, and other production-readiness boundaries remain.
 
 ### Next Highest-Value Milestone
 
-Integrate the persistence-outcome classifiers into the transaction/settlement runtime error paths so ambiguous writes become explicit operator/reconciliation evidence rather than generic persistence failures, while preserving the no-retry/no-resubmission invariant.
+Strengthen explicit reconciliation/operator evidence for unresolved `unknown` and `conflict` persistence outcomes, including deterministic provenance that distinguishes "not observed" from "not durable" without mutating financial state.
 
 No automatic provider retry, failover, transaction resubmission, provider funding, customer-balance mutation, treasury movement, duplicate purchase creation, blockchain action, or public API exposure is included.
