@@ -179,6 +179,14 @@ func (s *PostgresTransactionStore) All() []TransactionState {
  return s.AllContext(context.Background())
 }
 
+func (s *PostgresTransactionStore) ResolvePersistenceOutcomeContext(ctx context.Context, referenceID string, expected TransactionState) (PersistenceOutcome, TransactionState, error) {
+	current, ok, err := s.GetContextE(ctx, referenceID)
+	if err != nil {
+		return PersistenceOutcomeUnknown, TransactionState{}, fmt.Errorf("resolve transaction persistence outcome: %w", err)
+	}
+	return classifyPersistenceOutcome(current, ok, expected), current, nil
+}
+
 func validatePostgresState(state TransactionState) error { return validateTransactionState(state) }
 type postgresScanner interface { Scan(...any) error }
 func scanPostgresState(s postgresScanner) (TransactionState, error) {
