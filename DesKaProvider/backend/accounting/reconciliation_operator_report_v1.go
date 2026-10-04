@@ -113,6 +113,10 @@ func (r ReconciliationOperatorReport) V1() ReconciliationOperatorReportV1 {
 	}
 	items := make([]ReconciliationOperatorItemV1, len(r.Items))
 	for i, item := range r.Items {
+		evidenceScope := item.EvidenceScope
+		if evidenceScope == "" {
+			evidenceScope = ReconciliationPersistenceEvidenceScopeUnspecified
+		}
 		items[i] = ReconciliationOperatorItemV1{
 			ReferenceID: item.ReferenceID,
 			ReconciliationStatus: item.ReconciliationStatus,
@@ -121,7 +125,7 @@ func (r ReconciliationOperatorReport) V1() ReconciliationOperatorReportV1 {
 			ResolutionClass: item.ResolutionClass,
 			PersistenceOutcome: item.PersistenceOutcome,
 			EvidenceObserved: item.EvidenceObserved,
-			EvidenceScope: item.EvidenceScope,
+			EvidenceScope: evidenceScope,
 			EvidenceSource: item.EvidenceSource,
 			EvidenceObservedAt: item.EvidenceObservedAt,
 			PersistenceVersion: item.PersistenceVersion,
