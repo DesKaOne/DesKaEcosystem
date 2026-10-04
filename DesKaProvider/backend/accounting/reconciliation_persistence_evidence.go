@@ -36,6 +36,7 @@ type ReconciliationPersistenceEvidence struct {
 	CaptureCompletedAt  time.Time
 	SnapshotConsistency string
 	ObservationScope    ReconciliationPersistenceEvidenceScope
+	SnapshotFingerprint string
 }
 
 func ClassifyTransactionPersistenceEvidence(evidence routing.PersistenceOutcomeEvidence) ReconciliationPersistenceEvidence {
@@ -90,5 +91,20 @@ func (r ReconciliationPersistenceEvidence) WithSnapshotMetadata(snapshot Reconci
 	r.CaptureStartedAt = snapshot.CaptureStartedAt
 	r.CaptureCompletedAt = snapshot.CaptureCompletedAt
 	r.SnapshotConsistency = snapshot.SnapshotConsistency
+	return r
+}
+
+// BindToSnapshot explicitly attributes an evidence observation to a specific
+// reconciliation snapshot. The producer must supply the exact fingerprint it
+// obtained from the same snapshot context; this method does not infer binding
+// from timestamps or copied metadata.
+func (r ReconciliationPersistenceEvidence) BindToSnapshot(snapshot ReconciliationSnapshotMetadata) ReconciliationPersistenceEvidence {
+	if snapshot.SnapshotFingerprint == "" {
+		r.ObservationScope = ReconciliationPersistenceEvidenceScopeUnspecified
+		r.SnapshotFingerprint = ""
+		return r
+	}
+	r.ObservationScope = ReconciliationPersistenceEvidenceScopeSnapshotBound
+	r.SnapshotFingerprint = snapshot.SnapshotFingerprint
 	return r
 }
