@@ -52,6 +52,7 @@ type ReconciliationSnapshotMetadata struct {
 	SettlementAuditReader     string
 	SnapshotConsistency       string
 	SnapshotFingerprint       string
+	SnapshotWindowMillis      int64
 }
 
 type ReconciliationReport struct {
@@ -168,6 +169,7 @@ func (r *SettlementReconciler) readSnapshot(ctx context.Context) (reconciliation
 				return ReconciliationSnapshotConsistencyCaptured
 			}(),
 			SnapshotFingerprint: fingerprint,
+			SnapshotWindowMillis: captureCompletedAt.Sub(captureStartedAt).Milliseconds(),
 		},
 	}, nil
 }
