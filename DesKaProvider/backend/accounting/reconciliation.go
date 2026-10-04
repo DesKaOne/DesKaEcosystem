@@ -65,6 +65,13 @@ type ReconciliationReader interface {
 	Reconcile(context.Context) (ReconciliationReport, error)
 }
 
+// ReconciliationSnapshotCapture is an optional capability for a composed
+// reader that can materialize provider, ledger, and audit datasets under one
+// consistency boundary. Implementations must remain read-only.
+type ReconciliationSnapshotCapture interface {
+	CaptureReconciliationSnapshot(context.Context) (reconciliationSnapshot, error)
+}
+
 // Stable snapshot-capture classifications. Callers may use errors.Is to
 // distinguish which observational dataset boundary failed without depending
 // on error strings or treating the failure as a financial mutation outcome.
