@@ -366,9 +366,16 @@ func TestConsensusRecoveryProposalToRuntimeFinalityHandoff(t *testing.T) {
 	if err != nil { t.Fatal(err) }
 	if err := recovery.Runtime.AddVote(prevote); err != nil { t.Fatal(err) }
 
-	secondPrevote := prevote
-	secondPrevote.Sender = []byte("validator-b")
-	secondPrevote.Signature = nil
+	secondPrevote := consensus.Message{
+		ProtocolVersion: recovery.State.ProtocolVersion,
+		ChainID: recovery.State.ChainID,
+		Epoch: recovery.State.Epoch,
+		Height: recovery.State.Height,
+		Round: recovery.State.Round,
+		Sender: []byte("validator-b"),
+		Type: consensus.MessageTypePrevote,
+		Payload: payload,
+	}
 	secondPrevote, err = secondPrevote.Sign(signerB)
 	if err != nil { t.Fatal(err) }
 	if err := recovery.Runtime.AddVote(secondPrevote); err != nil { t.Fatal(err) }
@@ -387,9 +394,16 @@ func TestConsensusRecoveryProposalToRuntimeFinalityHandoff(t *testing.T) {
 	if err != nil { t.Fatal(err) }
 	if err := recovery.Runtime.AddVote(precommit); err != nil { t.Fatal(err) }
 
-	secondPrecommit := precommit
-	secondPrecommit.Sender = []byte("validator-b")
-	secondPrecommit.Signature = nil
+	secondPrecommit := consensus.Message{
+		ProtocolVersion: recovery.State.ProtocolVersion,
+		ChainID: recovery.State.ChainID,
+		Epoch: recovery.State.Epoch,
+		Height: recovery.State.Height,
+		Round: recovery.State.Round,
+		Sender: []byte("validator-b"),
+		Type: consensus.MessageTypePrecommit,
+		Payload: payload,
+	}
 	secondPrecommit, err = secondPrecommit.Sign(signerB)
 	if err != nil { t.Fatal(err) }
 	if err := recovery.Runtime.AddVote(secondPrecommit); err != nil { t.Fatal(err) }
