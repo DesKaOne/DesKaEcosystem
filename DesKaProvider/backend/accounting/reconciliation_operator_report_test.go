@@ -111,6 +111,71 @@ func TestReconciliationOperatorReportDoesNotConfirmAppliedEvidenceWithoutCorrela
 	}
 }
 
+func TestReconciliationOperatorReportDoesNotConfirmUnverifiedSnapshot(t *testing.T) {
+	observedAt := time.Date(2026, 10, 4, 13, 5, 0, 0, time.UTC)
+	for _, consistency := range []string{
+		ReconciliationSnapshotConsistencyCaptured,
+		ReconciliationSnapshotConsistencyLegacyMixed,
+	} {
+		report := ReconciliationReport{
+			Snapshot: ReconciliationSnapshotMetadata{
+				CaptureStartedAt: startTimeForOperatorTest(),
+				CaptureCompletedAt: observedAt,
+				SnapshotConsistency: consistency,
+			},
+			Items: []TransactionReconciliation{{
+				ReferenceID: "ref-mixed-snapshot",
+				Status: ReconciliationCorrelated,
+				PersistenceEvidence: &ReconciliationPersistenceEvidence{
+					Resolution: ReconciliationPersistenceConfirmedApplied,
+					Outcome: "applied",
+					Observed: true,
+					Source: "postgres.provider_transactions",
+					ObservedAt: observedAt,
+					Version: 13,
+				},
+			}},
+		}
+		view := report.OperatorReport()
+		if view.Items[0].ResolutionClass != ReconciliationOperatorReview {
+			t.Fatalf("snapshot consistency %q promoted applied evidence to %q; want review", consistency, view.Items[0].ResolutionClass)
+		}
+		if view.Summary.ConfirmedItems != 0 || view.Summary.ReviewItems != 1 {
+			t.Fatalf("snapshot consistency %q summary = %+v; want zero confirmed and one review", consistency, view.Summary)
+		}
+	}
+}
+
+func TestReconciliationOperatorReportDoesNotConfirmNotAppliedFromUnverifiedSnapshot(t *testing.T) {
+	observedAt := time.Date(2026, 10, 4, 13, 10, 0, 0, time.UTC)
+	report := ReconciliationReport{
+		Snapshot: ReconciliationSnapshotMetadata{
+			CaptureStartedAt: startTimeForOperatorTest(),
+			CaptureCompletedAt: observedAt,
+			SnapshotConsistency: ReconciliationSnapshotConsistencyLegacyMixed,
+		},
+		Items: []TransactionReconciliation{{
+			ReferenceID: "ref-not-applied-mixed",
+			Status: ReconciliationCorrelated,
+			PersistenceEvidence: &ReconciliationPersistenceEvidence{
+				Resolution: ReconciliationPersistenceConfirmedNotApplied,
+				Outcome: "not_applied",
+				Observed: true,
+				Source: "postgres.provider_transactions",
+				ObservedAt: observedAt,
+				Version: 14,
+			},
+		}},
+	}
+	view := report.OperatorReport()
+	if view.Items[0].ResolutionClass != ReconciliationOperatorReview {
+		t.Fatalf("unverified not-applied evidence promoted to %q; want review", view.Items[0].ResolutionClass)
+	}
+	if view.Summary.ConfirmedItems != 0 || view.Summary.ReviewItems != 1 {
+		t.Fatalf("unverified not-applied summary = %+v; want zero confirmed and one review", view.Summary)
+	}
+}
+
 func TestReconciliationOperatorReportV1PreservesDeliveryContract(t *testing.T) {
 	observedAt := time.Date(2026, 10, 4, 12, 30, 0, 0, time.UTC)
 	report := ReconciliationReport{
