@@ -4863,3 +4863,49 @@ Impact: restart/recovery path kini dapat melanjutkan ke proposal validation tanp
 **5.8l Recovered Proposal → Runtime Finality Context:** gunakan `BuildNextBlockProposalFromRecovery` sebagai input `AcceptBlockProposal`, lalu validasikan bahwa finality certificate yang dihasilkan runtime tetap mengikat candidate payload/hash sebelum node commit.
 
 **Milestone 5.8k status:** DONE — exact-head CI GREEN pada SHA `096049049396ad486d54804b062277e5a6b0b857`.
+
+### 5.8l Recovered Proposal → Runtime Finality → Canonical Commit — 2026-10-04
+
+**Objective**
+
+Memverifikasi handoff end-to-end dari proposal hasil consensus recovery, masuk ke `ValidatorRuntime` untuk mencapai finality berbasis quorum dan signature authority, lalu diteruskan ke node canonical commit tanpa mengambil alih ownership state oleh runtime.
+
+**Implementation / test coverage**
+
+- `IndoChain/internal/node/consensus_recovery_test.go`
+  - membangun authority snapshot Ed25519 yang sama untuk validator-a/b/c;
+  - menghasilkan `BlockProposal` langsung dari recovery;
+  - menerima proposal melalui `ValidatorRuntime.AcceptBlockProposal`;
+  - mengumpulkan authenticated prevote/precommit dari validator-a dan validator-b sampai quorum 2/3;
+  - memfinalisasi proposal melalui runtime authority resolver;
+  - meneruskan `FinalityCertificate` ke `Node.CommitFinalizedBlock`;
+  - memverifikasi canonical height/state-root/head hash setelah commit.
+- Test fixture memakai resolver authority penuh dari immutable `ValidatorAuthoritySet`, sehingga validator signature verification pada runtime dan node commit memakai key yang sama.
+
+**Architecture correction**
+
+Current behavior sebelum 5.8l: 5.8k sudah menghasilkan recovered `BlockProposal`, tetapi belum ada verification boundary yang membuktikan seluruh jalur proposal → runtime finality → canonical commit dalam satu test.
+
+Temuan selama verification: node commit test awal memakai resolver satu-key yang selalu mengembalikan public key validator-a, sehingga certificate yang memuat validator-b ditolak oleh signature validation. Koreksi minimal adalah menggunakan resolver yang mendelegasikan ke `ValidatorAuthoritySet` yang sama dengan runtime finality authority.
+
+**Locked invariants**
+
+1. Proposal candidate tetap berasal dari recovery/canonical block-production boundary.
+2. Runtime finality hanya tercapai setelah authenticated quorum evidence.
+3. Validator public-key authority untuk finality dan canonical commit berasal dari immutable authority snapshot yang sama.
+4. `CommitFinalizedBlock` tetap menjadi canonical execution/storage boundary node.
+5. Runtime tidak menulis canonical block/state.
+6. Transaction sender authority tetap terpisah dari validator authority.
+7. Tidak ada validator lifecycle mutation, staking, reward, slashing, atau financial-service logic.
+
+**Verification**
+
+- Fix/test commit: `c462cd7420f2e60908f3e4d172c467201539950b`.
+- Exact-head GitHub Actions run #2050 / `37199656927`: **GREEN**.
+- CI: Tidy, Test, Race Test, Vet semuanya sukses.
+
+**Next meaningful integration target**
+
+**5.8m Finality Evidence Persistence / Restart Handoff:** persist finality/precommit evidence produced by the runtime using the existing context-bound evidence identity, lalu verifikasi recovery/restart dapat mengaudit evidence tanpa mengubah canonical commit semantics.
+
+**Milestone 5.8l status:** DONE — exact-head CI GREEN pada SHA `c462cd7420f2e60908f3e4d172c467201539950b`.
