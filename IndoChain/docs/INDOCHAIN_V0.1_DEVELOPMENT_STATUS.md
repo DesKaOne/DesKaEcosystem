@@ -4909,3 +4909,57 @@ Temuan selama verification: node commit test awal memakai resolver satu-key yang
 **5.8m Finality Evidence Persistence / Restart Handoff:** persist finality/precommit evidence produced by the runtime using the existing context-bound evidence identity, lalu verifikasi recovery/restart dapat mengaudit evidence tanpa mengubah canonical commit semantics.
 
 **Milestone 5.8l status:** DONE — exact-head CI GREEN pada SHA `c462cd7420f2e60908f3e4d172c467201539950b`.
+
+### 5.8m Finality Evidence Persistence / Restart Handoff — 2026-10-04
+
+**Objective**
+
+Membuat finality certificate yang sudah tervalidasi dapat dipersist sebagai context-bound consensus evidence, dipulihkan setelah restart, lalu direstore ke runtime tanpa mengubah canonical block/state sampai node commit dilakukan secara eksplisit.
+
+**Implementation**
+
+- `IndoChain/internal/consensus/evidence_store.go`
+  - menambahkan `PersistFinalityCertificateWithContext(...)`;
+  - certificate divalidasi terhadap validator authority dan voting power sebelum persist;
+  - certificate dibungkus sebagai `MessageTypeFinalityEvidence`, ditandatangani oleh signer eksplisit, lalu dipersist memakai `PersistAuthenticatedEvidenceWithContext`;
+  - menambahkan `RecoverFinalityCertificateWithContext(...)` untuk recovery context-bound, decode certificate, validasi ulang quorum/signature, dan deterministic single-finality selection.
+- Existing `IndoChain/internal/consensus/finality_recovery.go`
+  - `RestoreFinalizedEvidence(...)` digunakan sebagai explicit restart boundary setelah certificate berhasil direcover.
+- Existing separate `FileConsensusEvidenceStore` tetap menjadi persistence boundary terpisah dari canonical ChainStore.
+
+**Tests**
+
+- `IndoChain/internal/consensus/evidence_store_test.go`
+  - persist + reopen file-backed evidence store;
+  - recover finality certificate dari reopened store;
+  - restore finalized runtime setelah simulated restart;
+  - reject persistence ketika context height berubah.
+
+**Architecture correction**
+
+Current behavior sebelum 5.8m: finality certificate sudah dapat dibangun, diverifikasi, dan direstore secara in-memory, tetapi belum ada persistence API yang mengikat certificate final ke `PersistenceContextDigest` dan membuktikan restart dari file-backed evidence store.
+
+Intended behavior: finality evidence dipersist pada evidence store terpisah dengan identity context yang sama seperti recovery path, kemudian direcover dan direstore ke runtime sebelum canonical commit.
+
+Impact: crash/restart di antara finality dan canonical commit sekarang punya explicit durable evidence handoff tanpa memberi consensus runtime ownership atas canonical block/state storage.
+
+**Locked invariants**
+
+1. Finality certificate hanya dipersist setelah validator signature dan voting-power validation lulus.
+2. Evidence identity tetap diikat ke `PersistenceContextDigest`.
+3. Restart recovery menolak context yang berubah.
+4. `RestoreFinalizedEvidence` tidak menyentuh canonical storage.
+5. Canonical commit tetap dilakukan secara eksplisit oleh node.
+6. Validator authority dan transaction sender authority tetap terpisah.
+7. Tidak ada staking, reward, slashing, atau financial-service logic di IndoChain.
+
+**Verification**
+
+- Code/test commit: `2c348c90abc839a9ad93299113a1f635050dfa3f`.
+- Exact-head GitHub Actions run #2078 / `37201048331`: **GREEN** — Tidy, Test, Race Test, Vet sukses.
+
+**Next meaningful integration target**
+
+**5.8n Canonical Commit Crash Window / Recovery Audit:** verifikasi kondisi ketika finality evidence sudah durable tetapi canonical block commit gagal/terputus, sehingga restart dapat membedakan `finalized-but-uncommitted` dari canonical committed state tanpa double-commit.
+
+**Milestone 5.8m status:** DONE — exact-head CI GREEN pada SHA `2c348c90abc839a9ad93299113a1f635050dfa3f`.
