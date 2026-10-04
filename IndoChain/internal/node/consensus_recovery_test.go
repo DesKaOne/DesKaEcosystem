@@ -358,7 +358,7 @@ func TestConsensusRecoveryProposalToRuntimeFinalityHandoff(t *testing.T) {
 		Type:            consensus.MessageTypePrevote,
 		Payload:         proposal.MessagePayload(),
 	}
-	prevote, err := prevote.Sign(signer)
+	prevote, err = prevote.Sign(signer)
 	if err != nil { t.Fatal(err) }
 	if err := recovery.Runtime.AddVote(prevote); err != nil {
 		t.Fatal(err)
