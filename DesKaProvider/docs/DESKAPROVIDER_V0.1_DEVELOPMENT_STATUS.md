@@ -10940,7 +10940,10 @@ Strengthens the persistence boundary while preserving the ledger as accounting s
 
 ### Verification
 
-Latest CI for final branch HEAD is still in progress. Targeted PostgreSQL-backed accounting tests, full package tests, vet, and race are executed by the DesKaProvider CI workflow. Credential-gated provider validation jobs remain skipped when required credentials are absent.
+- GitHub Actions run **4365** / **37176685445** on HEAD `b8ae949be16a22deccd9f5bb316f743baeade3b3` completed **GREEN**.
+- `test`: success, including PostgreSQL-backed accounting tests; `vet`: success.
+- `race`: success.
+- Provider live-validation jobs (`midtrans-sandbox`, `digiflazz-validation`, `iak-read-only`, `xp-sindonesia-read-only`) were skipped because the required credentials are credential-gated and unavailable in this run.
 
 ### Remaining Risk
 
