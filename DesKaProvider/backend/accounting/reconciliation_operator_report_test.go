@@ -76,6 +76,37 @@ func TestReconciliationReportOperatorReportIsDeterministicAndReadOnly(t *testing
 }
 
 
+
+func TestReconciliationPersistenceEvidenceBindToSnapshotRequiresFingerprint(t *testing.T) {
+	snapshot := ReconciliationSnapshotMetadata{SnapshotFingerprint: "snap-123", SnapshotConsistency: ReconciliationSnapshotConsistencyCapturedVerified}
+	evidence := ReconciliationPersistenceEvidence{Resolution: ReconciliationPersistenceConfirmedApplied, Outcome: "applied", Observed: true, ObservationScope: ReconciliationPersistenceEvidenceScopeIndependent}
+	bound := evidence.BindToSnapshot(snapshot)
+	if bound.ObservationScope != ReconciliationPersistenceEvidenceScopeSnapshotBound || bound.SnapshotFingerprint != "snap-123" {
+		t.Fatalf("bound evidence = %+v; want snapshot-bound with fingerprint", bound)
+	}
+	withoutFingerprint := evidence.BindToSnapshot(ReconciliationSnapshotMetadata{SnapshotConsistency: ReconciliationSnapshotConsistencyCapturedVerified})
+	if withoutFingerprint.ObservationScope != ReconciliationPersistenceEvidenceScopeUnspecified || withoutFingerprint.SnapshotFingerprint != "" {
+		t.Fatalf("binding without fingerprint = %+v; want unspecified", withoutFingerprint)
+	}
+}
+
+func TestReconciliationOperatorReportRejectsMismatchedSnapshotFingerprint(t *testing.T) {
+	report := ReconciliationReport{
+		Snapshot: ReconciliationSnapshotMetadata{SnapshotConsistency: ReconciliationSnapshotConsistencyCapturedVerified, SnapshotFingerprint: "snap-current"},
+		Items: []TransactionReconciliation{{
+			ReferenceID: "ref-1", Status: ReconciliationCorrelated,
+			PersistenceEvidence: &ReconciliationPersistenceEvidence{
+				Resolution: ReconciliationPersistenceConfirmedApplied, Outcome: "applied", Observed: true,
+				ObservationScope: ReconciliationPersistenceEvidenceScopeSnapshotBound, SnapshotFingerprint: "snap-other",
+			},
+		}},
+	}
+	view := report.OperatorReport()
+	if view.Summary.ConfirmedItems != 0 || view.Summary.ReviewItems != 1 {
+		t.Fatalf("mismatched fingerprint was confirmed: %+v", view.Summary)
+	}
+}
+
 func TestReconciliationOperatorReportDoesNotTreatIndependentEvidenceAsSnapshotBound(t *testing.T) {
 	observedAt := time.Date(2026, 10, 4, 14, 0, 0, 0, time.UTC)
 	report := ReconciliationReport{
