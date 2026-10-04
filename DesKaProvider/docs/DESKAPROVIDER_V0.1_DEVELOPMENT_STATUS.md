@@ -10838,3 +10838,67 @@ Engineering estimate remains approximately **88%**. This milestone closes a conc
 Continue the reconciliation correctness audit only against settlement semantics actually represented by the current provider/ledger data model. Prioritize any remaining cross-table identity or economically material agreement gap that can be proven from existing contracts; do not invent account-role semantics or provider behavior absent authoritative evidence.
 
 No automatic provider retry, failover, transaction resubmission, provider funding, customer ledger mutation, treasury movement, duplicate purchase creation, blockchain action, or public API exposure is included in the next milestone.
+
+
+## Milestone #70 — Settlement Audit Mutation Boundary Requires Terminal Success
+
+**Date:** 2026-10-04
+
+### Scope
+
+Harden the explicit settlement persistence boundary so a settlement audit cannot be durably recorded with a non-success provider status, while preserving reconciliation's defensive conflict diagnostics for legacy or externally supplied read models.
+
+### Finding
+
+The explicit SettlementPoster already rejected non-success provider states, but the lower-level SettlementStore.AppendSettlement() contract accepted any non-empty SettlementAudit.Status. That allowed a direct accounting caller to persist an audit record labeled pending/failed alongside a ledger transaction that the API names as a settlement. Reconciliation correctly treated such an audit as CORRELATION_CONFLICT, but the mutation boundary should reject the invalid settlement state before persistence rather than relying on downstream reconciliation to detect it.
+
+### Implementation
+
+- SettlementAudit.Validate() now requires Status == ProviderStatusSuccess.
+- The existing atomic in-memory and PostgreSQL settlement append paths inherit the same validation boundary before financial persistence.
+- Added deterministic regression coverage proving a non-success audit is rejected and does not mutate the in-memory ledger.
+- Preserved the reconciliation read-model seam: a legacy/custom audit reader can still expose a non-success audit for diagnostic testing, and reconciliation continues to classify that state as CORRELATION_CONFLICT rather than treating it as correlated.
+
+### Changed Files
+
+- DesKaProvider/backend/accounting/settlement_audit.go
+- DesKaProvider/backend/accounting/settlement_test.go
+- DesKaProvider/backend/accounting/reconciliation_test.go
+
+### Safety Boundary / Invariants
+
+- only terminal-success provider state can create settlement audit evidence through the settlement mutation boundary;
+- non-success settlement audit input fails before ledger/audit persistence;
+- reconciliation remains defensive and read-only when an inconsistent legacy/read-model audit is observed;
+- no automatic retry, provider failover, transaction resubmission, repair, reversal, provider funding, customer-balance mutation, treasury movement, or public API exposure is introduced;
+- ledger remains the accounting source of truth and settlement audit remains correlation metadata only.
+
+### Verification
+
+Implementation/test HEAD:
+
+4478715b7a1c9f895d30ea04bf4621d48f16bee5
+
+DesKaProvider CI #4345 / run 37175487165: GREEN
+
+- test: PASS
+- vet: PASS
+- race: PASS
+- digiflazz-validation: SKIPPED (credential-gated)
+- iak-read-only: SKIPPED (credential-gated)
+- xp-sindonesia-read-only: SKIPPED (credential-gated)
+- midtrans-sandbox: SKIPPED (credential-gated)
+
+CI #4343 initially caught the expected test-fixture incompatibility after tightening the mutation boundary: the existing reconciliation regression intentionally injected a non-success audit through AppendSettlement(). The fixture was corrected to inject that inconsistent state through the read-model seam instead. No production safety rule was weakened.
+
+No authorized live-provider transaction or external provider request was executed.
+
+### Progress
+
+Engineering estimate remains approximately 88%. This closes a concrete settlement mutation invariant without adding a new financial capability or changing the accounting source-of-truth architecture.
+
+### Next Concrete Engineering Task
+
+Continue the settlement/reconciliation audit only where another financial invariant is directly represented by the existing provider/ledger contracts. Prioritize any remaining mutation-vs-read-model boundary or economically material agreement gap; do not invent account-role semantics, provider behavior, or automatic financial recovery.
+
+No automatic provider retry, failover, transaction resubmission, provider funding, customer ledger mutation, treasury movement, duplicate transaction creation, blockchain action, or public API exposure is included in the next milestone.
