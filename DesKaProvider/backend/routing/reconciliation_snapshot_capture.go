@@ -32,20 +32,6 @@ func verifyTransactionReconciliationSnapshot(expected string, states []Transacti
 	return nil
 }
 
-func (s *MemoryTransactionStore) CaptureReconciliationSnapshot(ctx context.Context) ([]TransactionState, string, error) {
-	states, err := s.AllContextE(ctx)
-	if err != nil { return nil, "", err }
-	token, err := transactionReconciliationSnapshotFingerprint(states)
-	if err != nil { return nil, "", err }
-	return states, token, nil
-}
-
-func (s *MemoryTransactionStore) VerifyReconciliationSnapshot(ctx context.Context, expected string) error {
-	states, err := s.AllContextE(ctx)
-	if err != nil { return err }
-	return verifyTransactionReconciliationSnapshot(expected, states)
-}
-
 func (s *PostgresTransactionStore) CaptureReconciliationSnapshot(ctx context.Context) ([]TransactionState, string, error) {
 	states, err := s.AllContextE(ctx)
 	if err != nil { return nil, "", err }
