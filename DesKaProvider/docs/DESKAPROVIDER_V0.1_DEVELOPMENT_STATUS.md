@@ -12375,3 +12375,70 @@ This closes the concrete metadata-copy binding gap identified during the #89 pro
 ### Next Highest-Value Milestone
 
 Audit whether any future evidence producer can safely consume the binding context across package or process boundaries. If no real producer exists yet, preserve the context as an explicit capability contract and do not add adapters that imply unavailable cross-store atomicity.
+
+
+## Milestone #91 — Snapshot Binding Capability / Package and Process Boundary Audit
+
+**Date:** 2026-10-04
+
+### Objective
+
+Verify that the non-exportable snapshot-binding capability introduced in #90 remains safe when consumed from an external accounting package and when a binding context is serialized or reconstructed across a process boundary.
+
+### Audit Finding
+
+The binding context is intentionally an in-process capability. Its identity-bearing fields and token are unexported, so external packages can consume a context returned by a real reconciliation report but cannot construct a valid token-bearing context from metadata alone. JSON serialization exposes no binding fields; reconstructing the serialized value therefore produces an empty context and cannot recreate snapshot-bound authority.
+
+No real production persistence-evidence producer currently consumes BindToSnapshot, so no cross-process adapter or transport contract is justified. Adding one would imply a provenance/atomicity mechanism that the repository does not currently have.
+
+### Implementation
+
+Added an external-package regression test in DesKaProvider/backend/accounting/reconciliation_binding_context_external_test.go that:
+
+- obtains a binding context from an actual SettlementReconciler.Reconcile() result;
+- verifies the real in-process context can bind persistence evidence to the captured snapshot fingerprint;
+- serializes the context with encoding/json and reconstructs it in the external package test;
+- verifies the reconstructed context cannot produce snapshot_bound evidence and yields an unspecified scope with no fingerprint.
+
+No production code was changed. The test proves the intended package/process boundary without exposing the internal token or adding a transport adapter.
+
+### Safety Boundary / Invariants
+
+- a real reconciliation result remains the only source of a valid binding capability;
+- copied snapshot metadata cannot manufacture snapshot-bound evidence;
+- serialized/deserialized binding context cannot recreate snapshot authority;
+- cross-process evidence binding remains intentionally unsupported until a real producer and authoritative provenance transport exist;
+- fingerprint equality remains required by the operator projection;
+- no cross-store atomicity is claimed;
+- no automatic retry, provider failover, transaction resubmission, repair, reversal, funding, balance mutation, ledger mutation, treasury movement, duplicate transaction creation, blockchain action, or public API exposure is introduced.
+
+### Changed Files
+
+- DesKaProvider/backend/accounting/reconciliation_binding_context_external_test.go
+- DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md
+
+### Verification
+
+Implementation/test commit: 9cb85f6b8a46e0c20b45253c02274f93c2785953.
+
+Push CI run #4576 / 37225936005 was running at documentation time; the provider-validation jobs were skipped as expected. The final documentation-synchronized HEAD must receive GREEN test, vet, and race verification before this milestone is considered complete.
+
+No authorized live-provider transaction or external provider request was executed.
+
+### Remaining Risk
+
+- no production persistence-evidence producer currently invokes the binding API;
+- cross-process snapshot-bound evidence remains intentionally unsupported;
+- fingerprint equality verifies snapshot identity consistency but does not independently prove producer provenance or cross-store atomicity;
+- live-provider compatibility remains credential-gated;
+- authenticated operator delivery integration remains absent.
+
+### Progress
+
+Engineering readiness remains approximately 97%. This milestone closes the package/process boundary audit without inventing a transport or increasing financial execution authority.
+
+### Next Concrete Task
+
+Only add a producer-side transport/binding mechanism when a real persistence-evidence producer requires it. Until then, preserve the non-exportable capability contract and continue the remaining v0.1 readiness audit without manufacturing cross-store atomicity or external validation evidence.
+
+No automatic provider retry, failover, transaction resubmission, provider funding, customer-balance mutation, treasury movement, duplicate purchase creation, blockchain action, or public financial mutation is included.
