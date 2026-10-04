@@ -11045,3 +11045,52 @@ The metadata still does not provide a true cross-store atomic snapshot. A first-
 ### Next Highest-Value Milestone
 
 Introduce a provider/ledger/audit snapshot-capture contract as an internal interface, with an explicit atomic-capable implementation path and a safe legacy mixed-reader fallback.
+
+## Milestone #74 — PostgreSQL Ledger Read Consolidation
+
+**Date:** 2026-10-04
+
+### Objective
+
+Reduce the reconciliation ledger capture window and eliminate the N+1 persistence read pattern in the PostgreSQL accounting store.
+
+### Implementation
+
+- Reworked `PostgresStore.All()` to materialize ledger transactions and entries through one ordered `LEFT JOIN` query instead of listing IDs and issuing a separate `Get()` query per transaction.
+- Preserved deterministic ordering by transaction creation/id and entry line id.
+- Preserved persisted-ledger validation before returning the materialized dataset.
+- Added PostgreSQL-backed regression coverage for transaction count, entry count, and entry ordering.
+- Added explicit reconciliation capture-window metadata in the preceding milestone; this implementation reduces that window without claiming cross-store atomicity.
+
+### Changed Files
+
+- `DesKaProvider/backend/accounting/postgres_store.go`
+- `DesKaProvider/backend/accounting/postgres_store_test.go`
+- `DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md`
+
+### Safety Impact
+
+- Reduces the number of independent reads used to capture the accounting ledger dataset.
+- Does not add retry, failover, provider resubmission, ledger mutation, balance mutation, treasury movement, or automatic reconciliation resolution.
+- Existing ledger validation and database constraints remain active.
+
+### Architecture Impact
+
+Strengthens the accounting persistence read boundary while preserving the existing multi-store architecture. It does not imply that provider, ledger, and settlement-audit stores form one atomic cross-store snapshot.
+
+### Verification
+
+Implementation/test commit: `6b6d04baa4fba02133477181a9eb9a93a959c79a`
+
+GitHub Actions run **4407** / **37178997272**: **GREEN**
+- `test`: success
+- `race`: success
+- credential-gated provider validation jobs: skipped as expected
+
+### Remaining Risk
+
+The provider transaction store, accounting ledger store, and settlement-audit reader remain separate persistence components. A single atomic cross-store reconciliation snapshot is still not available.
+
+### Next Highest-Value Milestone
+
+Audit provider-store and accounting-store read isolation under concurrent mutation, then add deterministic stale-snapshot detection without introducing financial mutation or blind retry.
