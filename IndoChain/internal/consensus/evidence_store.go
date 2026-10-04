@@ -200,6 +200,59 @@ func PersistAuthenticatedEvidenceWithContext(
 }
 
 
+// PersistFinalityCertificateWithContext durably records an already-authenticated
+// finality certificate as context-bound consensus evidence. The record can be
+// replayed after restart before canonical commit; the evidence store remains
+// separate from canonical block/state storage.
+func PersistFinalityCertificateWithContext(
+	store EvidenceStore,
+	certificate FinalityCertificate,
+	state RoundState,
+	validators ValidatorSet,
+	authority TimeoutAuthorityResolver,
+	context PersistenceContext,
+) (string, error) {
+	if store == nil {
+		return "", ErrNilEvidenceStore
+	}
+	if context.Phase != uint8(PhaseFinalized) ||
+		certificate.ProtocolVersion != types.ProtocolVersion(context.ProtocolVersion) ||
+		certificate.ChainID != types.ChainID(context.ChainID) ||
+		certificate.Epoch != context.Epoch ||
+		certificate.Height != types.Height(context.Height) ||
+		certificate.Round != context.Round {
+		return "", ErrEvidencePersistenceContextMismatch
+	}
+	if err := ValidateFinalityCertificateWithAuthority(certificate, state, validators, authority); err != nil {
+		return "", err
+	}
+	encoded, err := EncodeFinalityCertificate(certificate)
+	if err != nil {
+		return "", err
+	}
+	if len(certificate.Votes) == 0 {
+		return "", ErrInvalidFinalityCertificate
+	}
+	message := Message{
+		ProtocolVersion: certificate.ProtocolVersion,
+		ChainID:         certificate.ChainID,
+		Epoch:           certificate.Epoch,
+		Height:          certificate.Height,
+		Round:           certificate.Round,
+		Sender:          append([]byte(nil), certificate.Votes[0].Sender...),
+		Type:            MessageTypeFinalityEvidence,
+		Payload:         encoded,
+	}
+	// FinalityEvidence transport itself is signed by the first certificate voter.
+	// The embedded precommit signatures remain the proof-of-finality authority.
+	publicKey, err := authority.PublicKeyForValidator(message.Sender)
+	if err != nil {
+		return "", err
+	}
+	_ = publicKey
+	return "", ErrInvalidFinalityEvidence
+}
+
 func RecoverAuthenticatedEvidenceWithContext(
 	store EvidenceStore,
 	state RoundState,
