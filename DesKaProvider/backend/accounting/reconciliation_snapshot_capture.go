@@ -49,34 +49,6 @@ func verifySettlementAuditReconciliationSnapshot(expected string, values []Settl
 	return nil
 }
 
-func (s *MemoryStore) CaptureLedgerReconciliationSnapshot(ctx context.Context) ([]LedgerTransaction, string, error) {
-	values, err := s.AllContext(ctx)
-	if err != nil { return nil, "", err }
-	token, err := ledgerReconciliationSnapshotFingerprint(values)
-	if err != nil { return nil, "", err }
-	return values, token, nil
-}
-
-func (s *MemoryStore) VerifyLedgerReconciliationSnapshot(ctx context.Context, expected string) error {
-	values, err := s.AllContext(ctx)
-	if err != nil { return err }
-	return verifyLedgerReconciliationSnapshot(expected, values)
-}
-
-func (s *MemoryStore) CaptureSettlementAuditReconciliationSnapshot(ctx context.Context) ([]SettlementAudit, string, error) {
-	values, err := s.AllSettlementAudits(ctx)
-	if err != nil { return nil, "", err }
-	token, err := settlementAuditReconciliationSnapshotFingerprint(values)
-	if err != nil { return nil, "", err }
-	return values, token, nil
-}
-
-func (s *MemoryStore) VerifySettlementAuditReconciliationSnapshot(ctx context.Context, expected string) error {
-	values, err := s.AllSettlementAudits(ctx)
-	if err != nil { return err }
-	return verifySettlementAuditReconciliationSnapshot(expected, values)
-}
-
 func (s *PostgresStore) CaptureLedgerReconciliationSnapshot(ctx context.Context) ([]LedgerTransaction, string, error) {
 	values, err := s.AllContext(ctx)
 	if err != nil { return nil, "", err }
