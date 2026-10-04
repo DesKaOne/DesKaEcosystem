@@ -945,7 +945,7 @@ func TestSettlementReconcilerLabelsLegacyMixedSnapshot(t *testing.T) {
 	reconciler, err := NewSettlementReconciler(
 		routing.NewMemoryTransactionStore(),
 		ledgerStore,
-		legacyMemoryAuditReader{},
+		nonContextReconciliationAuditReader{MemoryStore: NewMemoryStore()},
 	)
 	if err != nil {
 		t.Fatal(err)
