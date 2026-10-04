@@ -312,3 +312,85 @@ func TestConsensusRecoveryBuildNextBlockProposalFromCanonicalState(t *testing.T)
 		t.Fatalf("runtime phase = %v, want proposal before handoff", got.Phase)
 	}
 }
+
+
+func TestConsensusRecoveryProposalToRuntimeFinalityHandoff(t *testing.T) {
+	store := storage.NewMemoryStore()
+	n, err := NewDevnet(store)
+	if err != nil { t.Fatal(err) }
+
+	validators, power := recoveryValidatorConfig(t)
+	authority, err := consensus.NewValidatorAuthoritySet(0, validators, map[string][]byte{
+		"validator-a": []byte("key-a"),
+		"validator-b": []byte("key-b"),
+		"validator-c": []byte("key-c"),
+	})
+	if err != nil { t.Fatal(err) }
+	authorityResolver, err := authority.ConsensusAuthorityResolver()
+	if err != nil { t.Fatal(err) }
+
+	recovery, err := n.ReconstructConsensusRuntimeWithAuthority(
+		0, validators, power,
+		consensus.QuorumThreshold{Numerator: 2, Denominator: 3},
+		consensus.RoundRobinProposer{}, authority,
+	)
+	if err != nil { t.Fatal(err) }
+
+	rules, err := n.Config.BlockRules(nil)
+	if err != nil { t.Fatal(err) }
+	proposal, err := recovery.BuildNextBlockProposalFromRecovery(
+		n.State, n.Head.Header.Timestamp+1, nil, nil, rules,
+	)
+	if err != nil { t.Fatal(err) }
+	if err := recovery.Runtime.AcceptBlockProposal(proposal); err != nil {
+		t.Fatal(err)
+	}
+
+	proposer := proposal.Candidate.Header.Proposer
+	signer := mustTestSigner(t, 23)
+	precommit := consensus.Message{
+		ProtocolVersion: recovery.State.ProtocolVersion,
+		ChainID: recovery.State.ChainID,
+		Epoch: recovery.State.Epoch,
+		Height: recovery.State.Height,
+		Round: recovery.State.Round,
+		Sender: proposer,
+		Type: consensus.MessageTypePrevote,
+		Payload: proposal.MessagePayload(),
+	}
+	precommit, err = precommit.Sign(signer)
+	if err != nil { t.Fatal(err) }
+	if err := recovery.Runtime.AddVote(precommit); err != nil {
+		t.Fatal(err)
+	}
+	precommit.Type = consensus.MessageTypePrecommit
+	if err := recovery.Runtime.AddVote(precommit); err != nil {
+		t.Fatal(err)
+	}
+	certificate, err := recovery.Runtime.FinalizeProposal(authorityResolver)
+	if err != nil { t.Fatal(err) }
+
+	ctx, err := recovery.NextBlockContext()
+	if err != nil { t.Fatal(err) }
+	beforeHeight := n.Head.Header.Height
+	if err := n.CommitFinalizedBlock(
+		ctx,
+		proposal.Candidate,
+		certificate,
+		validators,
+		power,
+		proposalAuthorityResolver{publicKey: signer.PublicKey()},
+		senderAuthorityResolver{publicKey: signer.PublicKey()},
+	); err != nil {
+		t.Fatal(err)
+	}
+	if n.Head.Header.Height != beforeHeight+1 {
+		t.Fatalf("head height = %d, want %d", n.Head.Header.Height, beforeHeight+1)
+	}
+	if n.State.Root() != proposal.Candidate.Header.StateRoot {
+		t.Fatalf("committed state root = %x, want candidate %x", n.State.Root(), proposal.Candidate.Header.StateRoot)
+	}
+	if n.HeadHash == (types.Hash{}) {
+		t.Fatal("canonical head hash is empty after finalized handoff")
+	}
+}
