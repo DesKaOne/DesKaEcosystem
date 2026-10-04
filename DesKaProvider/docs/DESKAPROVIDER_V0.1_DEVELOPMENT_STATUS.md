@@ -10902,3 +10902,48 @@ Engineering estimate remains approximately 88%. This closes a concrete settlemen
 Continue the settlement/reconciliation audit only where another financial invariant is directly represented by the existing provider/ledger contracts. Prioritize any remaining mutation-vs-read-model boundary or economically material agreement gap; do not invent account-role semantics, provider behavior, or automatic financial recovery.
 
 No automatic provider retry, failover, transaction resubmission, provider funding, customer ledger mutation, treasury movement, duplicate transaction creation, blockchain action, or public API exposure is included in the next milestone.
+
+## Milestone #71 — PostgreSQL Ledger Schema Invariant Hardening
+
+**Date:** 2026-10-04
+
+### Objective
+
+Move already-defined ledger invariants from application-only validation into PostgreSQL constraints where the current data model can express them without inventing new accounting semantics.
+
+### Implementation
+
+- `ledger_entries.direction` is constrained to `DEBIT` or `CREDIT`.
+- `ledger_entries.currency` is constrained to match the parent `ledger_transactions.currency` through a composite foreign key.
+- Added deterministic PostgreSQL regression coverage proving invalid direction and transaction-currency mismatch are rejected by the schema.
+- Existing account foreign keys, positive amount constraint, immutable transaction primary key, and settlement-audit uniqueness remain unchanged.
+
+### Changed Files
+
+- `DesKaProvider/backend/migrations/004_double_entry_ledger.sql`
+- `DesKaProvider/backend/accounting/postgres_store_test.go`
+- `DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md`
+
+### Safety Impact
+
+- invalid ledger direction cannot be persisted through a direct database write;
+- a ledger entry cannot be persisted in a currency different from its transaction;
+- application-level validation remains the first line of defense, with PostgreSQL providing a second invariant boundary;
+- no balance mutation, treasury movement, provider funding, retry, failover, resubmission, or automatic reconciliation repair is introduced.
+
+### Verification
+
+Pending targeted PostgreSQL-backed accounting tests, full package tests, vet, race, commit, push, and latest GitHub Actions verification.
+
+### Architecture Impact
+
+Strengthens the accounting persistence boundary without changing the ledger source-of-truth model or introducing new settlement/account-role semantics.
+
+### Remaining Risk
+
+PostgreSQL constraints still do not encode aggregate double-entry balance equality; that invariant remains transactionally enforced by the application `Validate()` path. Provider-specific live validation remains credential-gated.
+
+### Next Highest-Value Task
+
+Audit the remaining economically material ledger/persistence invariants directly represented by the current schema, then close the highest-confidence gap without inventing financial posting rules.
+
