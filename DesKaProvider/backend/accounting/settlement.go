@@ -76,6 +76,9 @@ type SettlementPersistenceEvidence struct {
 
 type SettlementPersistenceOutcomeReader interface {
 	ResolveSettlementPersistenceOutcome(ctx context.Context, ledger LedgerTransaction, audit SettlementAudit) (SettlementPersistenceOutcome, error)
+}
+
+type SettlementPersistenceEvidenceReader interface {
 	ResolveSettlementPersistenceEvidence(ctx context.Context, ledger LedgerTransaction, audit SettlementAudit) (SettlementPersistenceEvidence, error)
 }
 
