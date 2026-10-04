@@ -932,7 +932,14 @@ func TestSettlementReconcilerSurfacesFinancialRecordsForNonSuccessProviderState(
 	if len(ledger.All()) != 1 { t.Fatal("reconciliation must remain read-only") }
 }
 
-type legacyPerLedgerAuditReader struct { *MemoryStore }
+type legacyPerLedgerAuditReader struct {
+	audits map[string]SettlementAudit
+}
+
+func (s legacyPerLedgerAuditReader) GetSettlementAudit(_ context.Context, transactionID string) (SettlementAudit, bool, error) {
+	audit, ok := s.audits[transactionID]
+	return audit, ok, nil
+}
 
 func TestSettlementReconcilerLabelsLegacyMixedSnapshot(t *testing.T) {
 	ledgerStore := NewMemoryStore()
@@ -947,7 +954,7 @@ func TestSettlementReconcilerLabelsLegacyMixedSnapshot(t *testing.T) {
 	reconciler, err := NewSettlementReconciler(
 		routing.NewMemoryTransactionStore(),
 		ledgerStore,
-		legacyPerLedgerAuditReader{MemoryStore: NewMemoryStore()},
+		legacyPerLedgerAuditReader{audits: map[string]SettlementAudit{}},
 	)
 	if err != nil {
 		t.Fatal(err)
