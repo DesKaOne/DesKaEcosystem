@@ -82,13 +82,32 @@ func TestReconciliationReportOperatorReportIsDeterministicAndReadOnly(t *testing
 func TestReconciliationPersistenceEvidenceBindToSnapshotRequiresFingerprint(t *testing.T) {
 	snapshot := ReconciliationSnapshotMetadata{SnapshotFingerprint: "snap-123", SnapshotConsistency: ReconciliationSnapshotConsistencyCapturedVerified}
 	evidence := ReconciliationPersistenceEvidence{Resolution: ReconciliationPersistenceConfirmedApplied, Outcome: "applied", Observed: true, ObservationScope: ReconciliationPersistenceEvidenceScopeIndependent}
-	bound := evidence.BindToSnapshot(snapshot)
+	report := ReconciliationReport{Snapshot: snapshot, snapshotBindingToken: &reconciliationSnapshotBindingToken{}}
+	bound := evidence.BindToSnapshot(report.SnapshotBindingContext())
 	if bound.ObservationScope != ReconciliationPersistenceEvidenceScopeSnapshotBound || bound.SnapshotFingerprint != "snap-123" {
 		t.Fatalf("bound evidence = %+v; want snapshot-bound with fingerprint", bound)
 	}
-	withoutFingerprint := evidence.BindToSnapshot(ReconciliationSnapshotMetadata{SnapshotConsistency: ReconciliationSnapshotConsistencyCapturedVerified})
+	withoutFingerprint := evidence.BindToSnapshot(ReconciliationSnapshotBindingContext{})
 	if withoutFingerprint.ObservationScope != ReconciliationPersistenceEvidenceScopeUnspecified || withoutFingerprint.SnapshotFingerprint != "" {
 		t.Fatalf("binding without fingerprint = %+v; want unspecified", withoutFingerprint)
+	}
+}
+
+func TestReconciliationSnapshotBindingContextRequiresReconciledReport(t *testing.T) {
+	evidence := ReconciliationPersistenceEvidence{
+		Resolution: ReconciliationPersistenceConfirmedApplied,
+		Outcome: "applied",
+		Observed: true,
+	}
+	manual := ReconciliationReport{
+		Snapshot: ReconciliationSnapshotMetadata{
+			SnapshotConsistency: ReconciliationSnapshotConsistencyCapturedVerified,
+			SnapshotFingerprint: "copied-or-manual",
+		},
+	}
+	bound := evidence.BindToSnapshot(manual.SnapshotBindingContext())
+	if bound.ObservationScope != ReconciliationPersistenceEvidenceScopeUnspecified || bound.SnapshotFingerprint != "" {
+		t.Fatalf("manual/copyable report context must not bind evidence: %+v", bound)
 	}
 }
 
