@@ -23,7 +23,11 @@ func TestMemoryTransactionSnapshotVerificationDetectsMutation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, token, err := store.CaptureReconciliationSnapshot(context.Background())
+	states, err := store.AllContextE(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := transactionReconciliationSnapshotFingerprint(states)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +39,11 @@ func TestMemoryTransactionSnapshotVerificationDetectsMutation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := store.VerifyReconciliationSnapshot(context.Background(), token); !errors.Is(err, ErrReconciliationSnapshotTokenMismatch) {
+	states, err = store.AllContextE(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyTransactionReconciliationSnapshot(token, states); !errors.Is(err, ErrReconciliationSnapshotTokenMismatch) {
 		t.Fatalf("expected deterministic snapshot mismatch after mutation, got %v", err)
 	}
 }
