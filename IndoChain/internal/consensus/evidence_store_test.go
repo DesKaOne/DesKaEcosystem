@@ -197,7 +197,7 @@ func TestPersistAndRecoverFinalityCertificateWithContext(t *testing.T) {
 	if err := f.runtime.AddVote(runtimeMessage(state, "validator-b", MessageTypePrevote, "persisted-finality")); err != nil { t.Fatal(err) }
 	if err := f.runtime.AddVote(authenticatedPrecommit(t, f.runtime.State(), "validator-a", f.signerA, "persisted-finality")); err != nil { t.Fatal(err) }
 	if err := f.runtime.AddVote(authenticatedPrecommit(t, f.runtime.State(), "validator-b", f.signerB, "persisted-finality")); err != nil { t.Fatal(err) }
-	certificate, err := f.runtime.FinalizeProposal(authority)
+	certificate, err := f.runtime.BuildFinalityEvidence(authority)
 	if err != nil { t.Fatal(err) }
 
 	context := PersistenceContext{
@@ -248,7 +248,7 @@ func TestPersistFinalityCertificateWithContextRejectsContextChange(t *testing.T)
 	if err := f.runtime.AddVote(runtimeMessage(state, "validator-b", MessageTypePrevote, "context-finality")); err != nil { t.Fatal(err) }
 	if err := f.runtime.AddVote(authenticatedPrecommit(t, f.runtime.State(), "validator-a", f.signerA, "context-finality")); err != nil { t.Fatal(err) }
 	if err := f.runtime.AddVote(authenticatedPrecommit(t, f.runtime.State(), "validator-b", f.signerB, "context-finality")); err != nil { t.Fatal(err) }
-	certificate, err := f.runtime.FinalizeProposal(f.resolver)
+	certificate, err := f.runtime.BuildFinalityEvidence(f.resolver)
 	if err != nil { t.Fatal(err) }
 	context := PersistenceContext{
 		ProtocolVersion: uint64(state.ProtocolVersion), ChainID: uint64(state.ChainID),
