@@ -11193,3 +11193,100 @@ This milestone closes a concrete reconciliation correctness gap and adds determi
 Audit the remaining persistence/recovery boundaries for crash-consistency evidence, prioritizing ambiguous commit and restart semantics where durable transaction, ledger, and settlement state can diverge without a deterministic operator-visible classification.
 
 No automatic provider retry, failover, transaction resubmission, provider funding, customer-balance mutation, treasury movement, duplicate purchase creation, blockchain action, or public API exposure is included.
+
+
+## Milestone #76 — Durable Persistence Ambiguity Resolution
+
+**Date:** 2026-10-04
+
+### Objective
+
+Close the crash-consistency gap where a local persistence operation can return an ambiguous outcome after a write/commit boundary, leaving recovery without a deterministic read-only classification.
+
+### Problem / Root Cause
+
+Transaction persistence already distinguished `ErrTransactionPersistenceAmbiguous`, and settlement persistence already distinguished `ErrSettlementPersistenceAmbiguous`. However, those sentinels only stated that the write outcome was unknown; there was no first-class contract to resolve the durable local outcome without repeating an external provider side effect.
+
+Settlement `COMMIT` failure is especially important: the transaction may already be durable even though the caller received an error.
+
+### Implementation
+
+- Added transaction `PersistenceOutcome` classification:
+  - `applied`
+  - `not_applied`
+  - `conflict`
+  - `unknown`
+- Added `PersistenceOutcomeReader` and PostgreSQL read-only resolver.
+- Transaction resolver re-reads durable state and compares identity plus observed result; it never calls the provider and never retries the write.
+- Added settlement `SettlementPersistenceOutcome` classification:
+  - `applied`
+  - `not_applied`
+  - `conflict`
+  - `unknown`
+- Added `SettlementPersistenceOutcomeReader` and PostgreSQL resolver.
+- Settlement resolver independently reads ledger and settlement-audit durable state and classifies partial/contradictory evidence as `conflict`.
+- Database read failure remains `unknown`; it is never converted into success or absence.
+- Added deterministic unit coverage for applied, absent, partial, and conflicting outcomes.
+
+### Changed Files
+
+- `DesKaProvider/backend/routing/transaction_store.go`
+- `DesKaProvider/backend/routing/postgres_transaction_store.go`
+- `DesKaProvider/backend/routing/persistence_outcome_test.go`
+- `DesKaProvider/backend/accounting/settlement.go`
+- `DesKaProvider/backend/accounting/postgres_store.go`
+- `DesKaProvider/backend/accounting/settlement_persistence_outcome_test.go`
+- `DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md`
+
+### Safety Impact
+
+This closes an important ambiguity-handling gap without adding recovery side effects.
+
+- `applied` means durable local state matches the attempted state.
+- `not_applied` means the expected durable object is absent.
+- `conflict` means durable evidence exists but does not match the attempted identity/result, including partial settlement evidence.
+- `unknown` means durable state could not be read and therefore remains unresolved.
+
+No classification authorizes provider retry, provider failover, transaction resubmission, duplicate payment, ledger mutation, balance mutation, treasury movement, funding, blind reversal, or automatic repair.
+
+### Architecture Impact
+
+The persistence boundary now exposes a deterministic evidence-resolution contract while keeping recovery read-only.
+
+No distributed transaction abstraction was introduced. Provider transaction persistence and settlement persistence remain independent boundaries, with reconciliation/operator resolution responsible for unresolved cross-boundary ambiguity.
+
+### Tests
+
+Added deterministic classification regression tests covering:
+
+- transaction applied;
+- transaction not applied;
+- transaction conflicting durable state;
+- settlement fully applied;
+- settlement fully absent;
+- ledger-only partial persistence;
+- audit-only partial persistence;
+- identity mismatch.
+
+### CI
+
+Pending final verification for the milestone. Credential-gated provider validation remains environment-dependent and must not be represented as live compatibility evidence when skipped.
+
+### Remaining Risk
+
+- Resolver consumers still need to integrate these contracts into the runtime/operator recovery path before ambiguity resolution becomes fully operational end-to-end.
+- A database outage during resolution remains `unknown`.
+- Cross-store atomicity is still intentionally absent.
+- Live-provider compatibility remains credential-gated.
+
+### Progress
+
+Engineering readiness: **~90%**.
+
+The increase is justified by closing a concrete crash-consistency ambiguity at both transaction and settlement persistence boundaries. This is still below 99% because runtime recovery integration, cross-store evidence semantics, provider validation, and remaining production-readiness gaps are unresolved.
+
+### Next Highest-Value Milestone
+
+Integrate the persistence-outcome classifiers into the transaction/settlement runtime error paths so ambiguous writes become explicit operator/reconciliation evidence rather than generic persistence failures, while preserving the no-retry/no-resubmission invariant.
+
+No automatic provider retry, failover, transaction resubmission, provider funding, customer-balance mutation, treasury movement, duplicate purchase creation, blockchain action, or public API exposure is included.
