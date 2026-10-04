@@ -11685,3 +11685,83 @@ This milestone closes the schema/provenance delivery gap for operator reconcilia
 Integrate the versioned operator report contract into the existing delivery boundary, if one exists, with explicit compatibility tests and no mutation-capable path. If no delivery boundary exists yet, the next step should be a read-only adapter only—not a public financial API.
 
 No automatic provider retry, failover, transaction resubmission, provider funding, customer-balance mutation, treasury movement, duplicate purchase creation, blockchain action, or public financial mutation is included.
+
+
+---
+
+## Milestone #82 — Read-Only Operator Report Stream Adapter
+
+**Date:** 2026-10-04
+
+### Objective
+
+Provide a narrow delivery adapter for the versioned operator report without inventing an HTTP/API boundary that does not currently exist in the repository.
+
+### Problem / Root Cause
+
+Milestone #81 established the V1 schema, but the repository has no existing reconciliation HTTP/API delivery boundary. The runtime command currently starts the provider service; there is no supported reconciliation endpoint to integrate without introducing a new public surface.
+
+### Implementation
+
+- Added `EncodeReconciliationOperatorReportV1(io.Writer, ReconciliationReport) error`.
+- The adapter:
+  - projects through the existing read-only `OperatorReport()`;
+  - converts through the versioned `V1()` contract;
+  - emits JSON through the supplied writer;
+  - rejects a nil writer;
+  - performs no persistence lookup, provider call, retry, repair, reversal, or financial mutation.
+- Kept the adapter transport-neutral so a future authenticated operator boundary can consume it without coupling accounting to HTTP or another protocol.
+
+### Safety Impact
+
+The path is strictly:
+
+`ReconciliationReport -> OperatorReport -> V1 DTO -> JSON writer`.
+
+It cannot authorize a provider operation. `unknown` remains `unresolved`, and `conflict` remains `review`.
+
+### Architecture Impact
+
+This creates the smallest reusable delivery boundary while avoiding an unsupported public API. Transport/authentication, if later required, can remain outside the accounting package.
+
+### Tests
+
+Added deterministic regression coverage for:
+
+- identical report input producing identical JSON output;
+- V1 schema version preservation;
+- snapshot fingerprint/provenance preservation;
+- unknown and conflict state preservation;
+- evidence source/version preservation;
+- source report remaining unchanged;
+- nil writer rejection;
+- output containing no retry/resubmit/repair command vocabulary.
+
+### CI
+
+Implementation/test HEAD `07c2e159979209f632607a9f020739128411dd28`:
+
+- Push CI run **37200972874**: **GREEN**
+  - test: PASS
+  - race: PASS
+  - credential-gated provider validation jobs: skipped as expected
+
+### Remaining Risk
+
+- No public reconciliation API is introduced by this milestone.
+- Cross-store atomicity remains unavailable.
+- Unknown/conflict still require human/operator or higher-level workflow decisions.
+- Live-provider validation remains credential-gated.
+- Future transport integration must preserve authentication, authorization, read-only semantics, and V1 compatibility.
+
+### Progress
+
+Engineering readiness: **~96%**.
+
+This closes the immediate adapter gap after Milestone #81 without expanding the financial mutation surface.
+
+### Next Highest-Value Milestone
+
+If an authenticated operator/API boundary is introduced later, integrate this adapter there with explicit authorization and read-only contract tests. Otherwise continue hardening reconciliation evidence and production-readiness boundaries rather than inventing transport infrastructure.
+
+No automatic provider retry, failover, transaction resubmission, provider funding, customer-balance mutation, treasury movement, duplicate purchase creation, blockchain action, or public financial mutation is included.
