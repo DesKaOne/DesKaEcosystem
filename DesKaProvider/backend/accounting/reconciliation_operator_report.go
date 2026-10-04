@@ -18,6 +18,7 @@ type ReconciliationOperatorItem struct {
 	ResolutionClass      ReconciliationOperatorResolution
 	PersistenceOutcome   string
 	EvidenceObserved     bool
+	EvidenceScope        ReconciliationPersistenceEvidenceScope
 	EvidenceSource       string
 	EvidenceObservedAt   time.Time
 	PersistenceVersion   int64
@@ -64,6 +65,7 @@ func (r ReconciliationReport) OperatorReport() ReconciliationOperatorReport {
 			operatorItem.Resolution = evidence.Resolution
 			operatorItem.PersistenceOutcome = evidence.Outcome
 			operatorItem.EvidenceObserved = evidence.Observed
+			operatorItem.EvidenceScope = evidence.ObservationScope
 			operatorItem.EvidenceSource = evidence.Source
 			operatorItem.EvidenceObservedAt = evidence.ObservedAt
 			operatorItem.PersistenceVersion = evidence.Version
@@ -76,7 +78,8 @@ func (r ReconciliationReport) OperatorReport() ReconciliationOperatorReport {
 				// snapshot was verified across all participating stores.
 				// Mixed or unverified observations are never authoritative.
 				if item.Status == ReconciliationCorrelated &&
-					r.Snapshot.SnapshotConsistency == ReconciliationSnapshotConsistencyCapturedVerified {
+					r.Snapshot.SnapshotConsistency == ReconciliationSnapshotConsistencyCapturedVerified &&
+					evidence.ObservationScope == ReconciliationPersistenceEvidenceScopeSnapshotBound {
 					operatorItem.ResolutionClass = ReconciliationOperatorConfirmed
 					summary.ConfirmedItems++
 				} else {
@@ -84,7 +87,8 @@ func (r ReconciliationReport) OperatorReport() ReconciliationOperatorReport {
 					summary.ReviewItems++
 				}
 			case ReconciliationPersistenceConfirmedNotApplied:
-				if r.Snapshot.SnapshotConsistency == ReconciliationSnapshotConsistencyCapturedVerified {
+				if r.Snapshot.SnapshotConsistency == ReconciliationSnapshotConsistencyCapturedVerified &&
+					evidence.ObservationScope == ReconciliationPersistenceEvidenceScopeSnapshotBound {
 					operatorItem.ResolutionClass = ReconciliationOperatorConfirmed
 					summary.ConfirmedItems++
 				} else {
