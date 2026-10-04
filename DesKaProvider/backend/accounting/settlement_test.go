@@ -24,6 +24,31 @@ func TestSettlementPosterRequiresTerminalSuccess(t *testing.T) {
 	}
 }
 
+func TestSettlementAuditRejectsNonSuccessStatus(t *testing.T) {
+	audit := SettlementAudit{
+		EventID: "audit-1",
+		TransactionID: "tx-1",
+		ReferenceID: "ref-1",
+		SourceType: "PROVIDER_SETTLEMENT",
+		SourceID: "provider-tx-1",
+		Status: "pending",
+		CreatedAt: time.Date(2026, 10, 4, 1, 0, 0, 0, time.UTC),
+	}
+	if err := audit.Validate(); !errors.Is(err, ErrInvalidSettlementAudit) {
+		t.Fatalf("expected non-success settlement audit rejection, got %v", err)
+	}
+	ledger := NewMemoryStore()
+	tx := validLedgerTransaction()
+	tx.ID = "audit-status-tx"
+	tx.CreatedAt = audit.CreatedAt
+	if err := ledger.AppendSettlement(context.Background(), tx, audit); !errors.Is(err, ErrInvalidSettlementAudit) {
+		t.Fatalf("expected append to reject non-success settlement audit, got %v", err)
+	}
+	if _, ok := ledger.Get(tx.ID); ok {
+		t.Fatal("invalid settlement audit must not mutate ledger")
+	}
+}
+
 func TestSettlementPosterRequiresBalancedPredeclaredEntries(t *testing.T) {
 	ledger := NewMemoryStore()
 	poster, err := NewSettlementPoster(ledger)
