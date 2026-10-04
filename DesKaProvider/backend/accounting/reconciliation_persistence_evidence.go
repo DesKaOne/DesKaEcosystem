@@ -59,7 +59,8 @@ func ClassifySettlementPersistenceEvidence(evidence SettlementPersistenceEvidenc
 		LedgerObserved: evidence.LedgerObserved,
 		AuditObserved:  evidence.AuditObserved,
 		Source:         evidence.Source,
-		ObservedAt:     evidence.ObservedAt,
+		ObservedAt:      evidence.ObservedAt,
+		ObservationScope: ReconciliationPersistenceEvidenceScopeIndependent,
 	}
 }
 
