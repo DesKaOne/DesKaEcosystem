@@ -12237,3 +12237,73 @@ This closes the identified gap between a snapshot-bound label and a concrete sna
 Audit the producer-side lifecycle for BindToSnapshot: identify where a real reconciliation snapshot context can safely be retained and passed to persistence evidence producers, and ensure no caller can accidentally bind evidence from a different observation context.
 
 No automatic provider retry, failover, transaction resubmission, provider funding, customer-balance mutation, treasury movement, duplicate purchase creation, blockchain action, or public financial mutation is included.
+
+## Milestone #89 — Symmetric Snapshot Identity Guard for Not-Applied Evidence
+
+**Date:** 2026-10-04
+
+### Objective
+
+Close the remaining asymmetric promotion path where confirmed_not_applied evidence could be operator-confirmed from a snapshot-bound label without verifying that its snapshot identity matched the reconciliation report.
+
+### Audit Finding
+
+Milestone #88 required matching SnapshotFingerprint for confirmed_applied, but the confirmed_not_applied branch only required captured_verified snapshot consistency and snapshot_bound evidence scope.
+
+That left a provenance gap: evidence explicitly labeled snapshot-bound but carrying a different or empty fingerprint could still be promoted to operator confirmed_not_applied.
+
+The producer-side audit also confirmed that there is currently no real production caller of BindToSnapshot in the repository. Therefore this milestone does not invent a producer lifecycle, distributed transaction, or public API that does not exist.
+
+### Implementation
+
+- confirmed_not_applied now requires captured_verified snapshot consistency, explicit snapshot_bound evidence scope, a non-empty evidence SnapshotFingerprint, and exact equality between evidence and report snapshot fingerprints.
+- Added deterministic regression coverage proving mismatched snapshot-bound not_applied evidence remains review.
+- Existing BindToSnapshot behavior remains fail-closed when the supplied snapshot has no fingerprint.
+- No timestamp heuristic, persistence write, provider call, retry, resubmission, repair, reversal, funding, balance mutation, or ledger mutation was introduced.
+
+### Safety Impact
+
+The operator confirmation rule is now symmetric for both persistence outcomes:
+
+verified snapshot + explicit binding + matching fingerprint + applied -> confirmed
+
+verified snapshot + explicit binding + matching fingerprint + not_applied -> confirmed
+
+Any missing or mismatched snapshot identity remains review.
+
+This closes the concrete false-authority path found during the #89 producer-lifecycle audit without pretending that fingerprint equality proves cross-store atomicity or independently proves a producer's provenance claim.
+
+### Producer Lifecycle Finding
+
+The repository currently contains the binding primitive and tests, but no production evidence producer invokes BindToSnapshot. Independent persistence outcome readers remain explicitly independent.
+
+Consequently, snapshot_bound remains available only when a future producer has the exact reconciliation snapshot context and identity. No implicit binding from copied metadata or timestamps is introduced.
+
+### Tests / CI
+
+Code/test changes were made on:
+
+- 5537d9b76d59ae7d4ac5cc810277755f7c1d5070
+
+Final documentation commit will record the CI result for the completed milestone.
+
+### Remaining Risk
+
+- Cross-store atomicity remains unavailable by design.
+- snapshot-bound remains a producer provenance assertion; fingerprint equality verifies identity consistency but does not independently prove producer provenance.
+- No production producer lifecycle currently establishes snapshot-bound evidence.
+- Mixed/unknown/conflict states remain non-actionable without review.
+- Live-provider compatibility remains credential-gated.
+- No authenticated public reconciliation API exists in the repository.
+
+### Progress
+
+Engineering readiness: ~97%.
+
+This closes the remaining asymmetric snapshot-identity promotion gap. It remains below 99% because cross-store atomicity, live-provider validation, authenticated delivery integration, and a real producer-side snapshot-binding lifecycle remain unresolved.
+
+### Next Highest-Value Milestone
+
+Design and audit an explicit producer-side snapshot context contract only if a real persistence-evidence producer requires it. The contract must carry the exact snapshot identity from capture to evidence production without allowing copied report metadata, timestamps, or unrelated snapshot contexts to establish binding.
+
+No automatic provider retry, failover, transaction resubmission, provider funding, customer-balance mutation, treasury movement, duplicate purchase creation, blockchain action, or public financial mutation is included.
