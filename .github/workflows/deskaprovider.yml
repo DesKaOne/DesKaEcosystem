@@ -1,0 +1,258 @@
+name: DesKaProvider CI
+
+on:
+  push:
+    branches:
+      - main
+      - "dev/**"
+    paths:
+      - "DesKaProvider/**"
+      - ".github/workflows/deskaprovider.yml"
+
+  pull_request:
+    branches:
+      - main
+      - "dev/**"
+    paths:
+      - "DesKaProvider/**"
+      - ".github/workflows/deskaprovider.yml"
+
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: deskaprovider
+          POSTGRES_PASSWORD: deskaprovider
+          POSTGRES_DB: deskaprovider_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U deskaprovider -d deskaprovider_test"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=12
+
+    defaults:
+      run:
+        working-directory: DesKaProvider/backend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.1"
+          cache: true
+          cache-dependency-path: DesKaProvider/backend/go.mod
+
+      - name: Tidy
+        run: go mod tidy
+
+      - name: Test
+        env:
+          DESKAPROVIDER_POSTGRES_DSN: postgres://deskaprovider:deskaprovider@localhost:5432/deskaprovider_test?sslmode=disable
+        run: go test ./...
+
+      - name: Vet
+        run: go vet ./...
+
+  race:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: deskaprovider
+          POSTGRES_PASSWORD: deskaprovider
+          POSTGRES_DB: deskaprovider_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U deskaprovider -d deskaprovider_test"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=12
+
+    defaults:
+      run:
+        working-directory: DesKaProvider/backend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.1"
+          cache: true
+          cache-dependency-path: DesKaProvider/backend/go.mod
+
+      - name: Tidy
+        run: go mod tidy
+
+      - name: Race test
+        env:
+          DESKAPROVIDER_POSTGRES_DSN: postgres://deskaprovider:deskaprovider@localhost:5432/deskaprovider_test?sslmode=disable
+        run: go test -race ./...
+
+
+  midtrans-sandbox:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: DesKaProvider/backend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.1"
+          cache: true
+          cache-dependency-path: DesKaProvider/backend/go.mod
+
+      - name: Run authorized Midtrans sandbox validation
+        env:
+          MIDTRANS_SERVER_KEY: ${{ secrets.MIDTRANS_SERVER_KEY }}
+          MIDTRANS_SNAP_ENDPOINT: https://app.sandbox.midtrans.com/snap/v1/transactions
+          MIDTRANS_API_ENDPOINT: https://api.sandbox.midtrans.com
+          DESKAPROVIDER_LIVE_INTEGRATION: "1"
+          DESKAPROVIDER_LIVE_INTEGRATION_PROVIDER: midtrans
+          DESKAPROVIDER_LIVE_INTEGRATION_ALLOWED_HOSTS: app.sandbox.midtrans.com,api.sandbox.midtrans.com
+        run: |
+          if [ -z "$MIDTRANS_SERVER_KEY" ]; then
+            echo "MIDTRANS_SERVER_KEY is required for the explicit sandbox validation run."
+            exit 1
+          fi
+          go test ./Provider/Midtrans -run '^TestSandboxIntegrationPaymentLifecycle$' -count=1
+
+
+  iak-read-only:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: DesKaProvider/backend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.1"
+          cache: true
+          cache-dependency-path: DesKaProvider/backend/go.mod
+
+      - name: Run authorized IAK read-only validation
+        env:
+          IAK_USERNAME: ${{ secrets.IAK_USERNAME }}
+          IAK_API_KEY: ${{ secrets.IAK_API_KEY }}
+          IAK_BASE_URL: https://prepaid.iak.id
+          IAK_PRICE_LIST_ENDPOINT: https://prepaid.iak.id/api/pricelist
+          IAK_BALANCE_ENDPOINT: https://prepaid.iak.id/api/check-balance
+          IAK_INTEGRATION: "1"
+          DESKAPROVIDER_LIVE_INTEGRATION: "1"
+          DESKAPROVIDER_LIVE_INTEGRATION_PROVIDER: iak
+          DESKAPROVIDER_LIVE_INTEGRATION_ALLOWED_HOSTS: prepaid.iak.id
+        run: |
+          if [ -z "$IAK_USERNAME" ] || [ -z "$IAK_API_KEY" ]; then
+            echo "IAK_USERNAME and IAK_API_KEY are required for the explicit read-only validation run."
+            exit 1
+          fi
+          go test ./Provider/IAK -run '^TestLiveReadOnly$' -count=1
+
+  xp-sindonesia-read-only:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: DesKaProvider/backend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.1"
+          cache: true
+          cache-dependency-path: DesKaProvider/backend/go.mod
+
+      - name: Run authorized XP SINDONESIA read-only balance validation
+        env:
+          XP_SINDONESIA_ID: ${{ secrets.XP_SINDONESIA_ID }}
+          XP_SINDONESIA_KEY: ${{ secrets.XP_SINDONESIA_KEY }}
+          XP_SINDONESIA_API: ${{ secrets.XP_SINDONESIA_API }}
+          XP_SINDONESIA_SALDO_ENDPOINT: https://xp.sindonesia.net/api/saldo.php
+          XP_SINDONESIA_INTEGRATION: "1"
+          DESKAPROVIDER_LIVE_INTEGRATION: "1"
+          DESKAPROVIDER_LIVE_INTEGRATION_PROVIDER: xp_sindonesia
+          DESKAPROVIDER_LIVE_INTEGRATION_ALLOWED_HOSTS: xp.sindonesia.net
+        run: |
+          if [ -z "$XP_SINDONESIA_ID" ] || [ -z "$XP_SINDONESIA_KEY" ] || [ -z "$XP_SINDONESIA_API" ]; then
+            echo "XP_SINDONESIA_ID, XP_SINDONESIA_KEY, and XP_SINDONESIA_API are required for the explicit read-only validation run."
+            exit 1
+          fi
+          go test ./Provider/XPSindonesia -run '^TestLiveReadOnlyBalance$' -count=1
+
+  digiflazz-validation:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: DesKaProvider/backend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.1"
+          cache: true
+          cache-dependency-path: DesKaProvider/backend/go.mod
+
+      - name: Run authorized DigiFlazz validation
+        env:
+          DIGIFLAZZ_USERNAME: ${{ secrets.DIGIFLAZZ_USERNAME }}
+          DIGIFLAZZ_API_KEY: ${{ secrets.DIGIFLAZZ_API_KEY }}
+          DIGIFLAZZ_ENDPOINT: https://api.digiflazz.com/v1/transaction
+          DIGIFLAZZ_BALANCE_ENDPOINT: https://api.digiflazz.com/v1/cek-saldo
+          DIGIFLAZZ_PRICE_LIST_ENDPOINT: https://api.digiflazz.com/v1/price-list
+          DIGIFLAZZ_INQUIRY_PLN_ENDPOINT: https://api.digiflazz.com/v1/inquiry-pln
+          DIGIFLAZZ_INTEGRATION: "1"
+          DESKAPROVIDER_LIVE_INTEGRATION: "1"
+          DESKAPROVIDER_LIVE_INTEGRATION_PROVIDER: digiflazz
+          DESKAPROVIDER_LIVE_INTEGRATION_ALLOWED_HOSTS: api.digiflazz.com
+          DIGIFLAZZ_INTEGRATION_REFERENCE_ID: ""
+        run: |
+          if [ -z "$DIGIFLAZZ_USERNAME" ] || [ -z "$DIGIFLAZZ_API_KEY" ]; then
+            echo "DIGIFLAZZ_USERNAME and DIGIFLAZZ_API_KEY are required for the explicit validation run."
+            exit 1
+          fi
+          go test ./Provider/DigiFlazz -run '^(TestLiveCSFailureCase|TestLiveReadOnlyBalance)$' -count=1

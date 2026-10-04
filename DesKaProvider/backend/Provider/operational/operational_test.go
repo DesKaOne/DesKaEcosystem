@@ -1,0 +1,274 @@
+package operational
+
+import (
+	"context"
+	"errors"
+	"testing"
+	"time"
+
+	provider "github.com/DesKaOne/DesKaEcosystem/DesKaProvider/Provider"
+)
+
+type balanceStub struct {
+	balance int64
+	err     error
+}
+
+func (b balanceStub) GetProducts(context.Context, provider.ProductRequest) ([]provider.Product, error) {
+	return nil, provider.ErrUnsupportedOperation
+}
+func (b balanceStub) Inquiry(context.Context, provider.InquiryRequest) (provider.InquiryResult, error) {
+	return provider.InquiryResult{}, provider.ErrUnsupportedOperation
+}
+func (b balanceStub) Purchase(context.Context, provider.PurchaseRequest) (provider.PurchaseResult, error) {
+	return provider.PurchaseResult{}, provider.ErrUnsupportedOperation
+}
+func (b balanceStub) GetStatus(context.Context, provider.StatusRequest) (provider.PurchaseStatus, error) {
+	return provider.PurchaseStatus{}, provider.ErrUnsupportedOperation
+}
+func (b balanceStub) HandleWebhook(context.Context, provider.WebhookRequest) (provider.WebhookEvent, error) {
+	return provider.WebhookEvent{}, provider.ErrUnsupportedOperation
+}
+func (b balanceStub) GetBalance(context.Context) (int64, error) {
+	return b.balance, b.err
+}
+
+func TestSyncProviderSuccess(t *testing.T) {
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", balanceStub{balance: 1250000}); err != nil {
+		t.Fatal(err)
+	}
+	store := NewMemoryStore()
+	svc, err := NewSyncService(registry, store, "IDR", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixed := time.Date(2026, 9, 24, 10, 0, 0, 0, time.UTC)
+	svc.Now = func() time.Time { return fixed }
+
+	snapshot, err := svc.SyncProvider(context.Background(), "mock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.Balance != 1250000 || snapshot.Health != HealthHealthy {
+		t.Fatalf("unexpected snapshot: %#v", snapshot)
+	}
+	if !snapshot.LastCheckedAt.Equal(fixed) || !snapshot.LastSuccessAt.Equal(fixed) {
+		t.Fatalf("unexpected timestamps: %#v", snapshot)
+	}
+}
+
+
+func TestSyncProviderUsesExplicitBalanceCapabilityWithoutPPOBProvider(t *testing.T) {
+	registry := provider.NewRegistry()
+	balance := balanceStub{balance: 3300000}
+	status := provider.CapabilityStatus{AdapterImplemented: true, Enabled: true}
+	if err := registry.RegisterCapabilityProvider("balance-only", provider.CapabilityBalance, balance, status); err != nil {
+		t.Fatal(err)
+	}
+	store := NewMemoryStore()
+	svc, err := NewSyncService(registry, store, "IDR", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	snapshot, err := svc.SyncProvider(context.Background(), "balance-only")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.Balance != 3300000 || snapshot.Health != HealthHealthy {
+		t.Fatalf("unexpected snapshot: %#v", snapshot)
+	}
+}
+
+func TestSyncProviderFailureEscalatesHealth(t *testing.T) {
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", balanceStub{err: errors.New("provider unavailable")}); err != nil {
+		t.Fatal(err)
+	}
+	store := NewMemoryStore()
+	svc, err := NewSyncService(registry, store, "IDR", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixed := time.Date(2026, 9, 24, 10, 0, 0, 0, time.UTC)
+	svc.Now = func() time.Time { return fixed }
+
+	if _, err := svc.SyncProvider(context.Background(), "mock"); err == nil {
+		t.Fatal("expected first sync to fail")
+	}
+	first, _ := store.Get("mock")
+	if first.Health != HealthDegraded || first.ConsecutiveFailures != 1 {
+		t.Fatalf("unexpected first failure state: %#v", first)
+	}
+
+	if _, err := svc.SyncProvider(context.Background(), "mock"); err == nil {
+		t.Fatal("expected second sync to fail")
+	}
+	second, _ := store.Get("mock")
+	if second.Health != HealthUnhealthy || second.ConsecutiveFailures != 2 {
+		t.Fatalf("unexpected second failure state: %#v", second)
+	}
+}
+
+func TestSyncProviderUnsupported(t *testing.T) {
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", testProvider{}); err != nil {
+		t.Fatal(err)
+	}
+	store := NewMemoryStore()
+	svc, err := NewSyncService(registry, store, "IDR", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = svc.SyncProvider(context.Background(), "mock")
+	if !errors.Is(err, provider.ErrUnsupportedOperation) {
+		t.Fatalf("expected unsupported operation, got %v", err)
+	}
+}
+
+type testProvider struct{}
+
+func (testProvider) GetProducts(context.Context, provider.ProductRequest) ([]provider.Product, error) {
+	return nil, provider.ErrUnsupportedOperation
+}
+func (testProvider) Inquiry(context.Context, provider.InquiryRequest) (provider.InquiryResult, error) {
+	return provider.InquiryResult{}, provider.ErrUnsupportedOperation
+}
+func (testProvider) Purchase(context.Context, provider.PurchaseRequest) (provider.PurchaseResult, error) {
+	return provider.PurchaseResult{}, provider.ErrUnsupportedOperation
+}
+func (testProvider) GetStatus(context.Context, provider.StatusRequest) (provider.PurchaseStatus, error) {
+	return provider.PurchaseStatus{}, provider.ErrUnsupportedOperation
+}
+func (testProvider) HandleWebhook(context.Context, provider.WebhookRequest) (provider.WebhookEvent, error) {
+	return provider.WebhookEvent{}, provider.ErrUnsupportedOperation
+}
+
+type cancellationAwareBalanceProvider struct {
+	balanceStub
+	calls  int
+	cancel context.CancelFunc
+}
+
+func (p *cancellationAwareBalanceProvider) GetBalance(ctx context.Context) (int64, error) {
+	p.calls++
+	if p.cancel != nil {
+		p.cancel()
+		p.cancel = nil
+	}
+	return p.balanceStub.GetBalance(ctx)
+}
+
+func TestSyncAllStopsAfterContextCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	first := &cancellationAwareBalanceProvider{
+		balanceStub: balanceStub{balance: 1000000},
+		cancel:      cancel,
+	}
+	second := &cancellationAwareBalanceProvider{
+		balanceStub: balanceStub{balance: 2000000},
+	}
+	registry := provider.NewRegistry()
+	if err := registry.Register("first", first); err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.Register("second", second); err != nil {
+		t.Fatal(err)
+	}
+
+	svc, err := NewSyncService(registry, NewMemoryStore(), "IDR", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	errs := svc.SyncAll(ctx)
+	if len(errs) != 0 {
+		t.Fatalf("expected successful first sync with cancellation stopping progression, got %#v", errs)
+	}
+	if first.calls != 1 {
+		t.Fatalf("expected first provider to be attempted once, got %d", first.calls)
+	}
+	if second.calls != 0 {
+		t.Fatalf("expected second provider not to be attempted after cancellation, got %d", second.calls)
+	}
+}
+
+func TestSyncServiceRunPerformsImmediateSyncAndStopsOnContextCancellation(t *testing.T) {
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", balanceStub{balance: 2200000}); err != nil {
+		t.Fatal(err)
+	}
+	store := NewMemoryStore()
+	svc, err := NewSyncService(registry, store, "IDR", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- svc.Run(ctx, time.Hour)
+	}()
+
+	deadline := time.After(time.Second)
+	for {
+		snapshot, ok := store.Get("mock")
+		if ok {
+			if snapshot.Balance != 2200000 || snapshot.Health != HealthHealthy {
+				t.Fatalf("unexpected immediate sync snapshot: %#v", snapshot)
+			}
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("sync worker did not perform its immediate synchronization")
+		default:
+			time.Sleep(time.Millisecond)
+		}
+	}
+
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("expected context cancellation, got %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("sync worker did not stop after context cancellation")
+	}
+}
+
+
+func TestApplyHealthObservationPersistsOperationalStateWithoutAuthorization(t *testing.T) {
+	registry := provider.NewRegistry()
+	if err := registry.Register("mock", balanceStub{balance: 5000000}); err != nil {
+		t.Fatal(err)
+	}
+	store := NewMemoryStore()
+	svc, err := NewSyncService(registry, store, "IDR", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	initial := Snapshot{ProviderName: "mock", Balance: 5000000, Currency: "IDR", Health: HealthHealthy, LastCheckedAt: time.Date(2026, 9, 28, 10, 0, 0, 0, time.UTC), LastSuccessAt: time.Date(2026, 9, 28, 10, 0, 0, 0, time.UTC)}
+	if err := store.Put(initial); err != nil {
+		t.Fatal(err)
+	}
+	observedAt := time.Date(2026, 9, 28, 10, 1, 0, 0, time.UTC)
+	got, err := svc.ApplyHealthObservation(HealthObservation{
+		ProviderName: "mock", Status: HealthDegraded, ObservedAt: observedAt,
+		ConsecutiveFailures: 1, LastError: "provider unavailable",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Balance != initial.Balance || got.Health != HealthDegraded || got.LastCheckedAt != observedAt {
+		t.Fatalf("unexpected operational observation state: %#v", got)
+	}
+	if got.LastSuccessAt != initial.LastSuccessAt {
+		t.Fatalf("health observation should preserve last successful observation: %#v", got)
+	}
+}
