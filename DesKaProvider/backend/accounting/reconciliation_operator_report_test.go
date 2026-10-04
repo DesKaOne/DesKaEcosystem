@@ -339,6 +339,7 @@ func TestReconciliationOperatorReportV1PreservesDeliveryContract(t *testing.T) {
 		"\"resolution\":\"needs_review_conflict\"",
 		"\"resolution_class\":\"review\"",
 		"\"evidence_source\":\"postgres.provider_transactions\"",
+		"\"evidence_scope\":\"unspecified\"",
 		"\"persistence_version\":12",
 	} {
 		if !contains(jsonText, required) {
@@ -398,6 +399,7 @@ func TestReconciliationOperatorReportV1ValidateAcceptsProjectedReport(t *testing
 				Source: "postgres.provider_transactions",
 				ObservedAt: observedAt,
 				Version: 15,
+				ObservationScope: ReconciliationPersistenceEvidenceScopeSnapshotBound,
 			},
 		}},
 	}
