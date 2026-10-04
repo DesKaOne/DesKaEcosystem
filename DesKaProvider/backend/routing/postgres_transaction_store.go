@@ -180,11 +180,29 @@ func (s *PostgresTransactionStore) All() []TransactionState {
 }
 
 func (s *PostgresTransactionStore) ResolvePersistenceOutcomeContext(ctx context.Context, referenceID string, expected TransactionState) (PersistenceOutcome, TransactionState, error) {
+	evidence, current, err := s.ResolvePersistenceOutcomeEvidenceContext(ctx, referenceID, expected)
+	if err != nil {
+		return PersistenceOutcomeUnknown, TransactionState{}, err
+	}
+	return evidence.Outcome, current, nil
+}
+
+func (s *PostgresTransactionStore) ResolvePersistenceOutcomeEvidenceContext(ctx context.Context, referenceID string, expected TransactionState) (PersistenceOutcomeEvidence, TransactionState, error) {
+	observedAt := time.Now().UTC()
 	current, ok, err := s.GetContextE(ctx, referenceID)
 	if err != nil {
-		return PersistenceOutcomeUnknown, TransactionState{}, fmt.Errorf("resolve transaction persistence outcome: %w", err)
+		return PersistenceOutcomeEvidence{
+			Outcome: PersistenceOutcomeUnknown, Observed: false, Source: "postgres.provider_transactions", ObservedAt: observedAt,
+		}, TransactionState{}, fmt.Errorf("resolve transaction persistence outcome: %w", err)
 	}
-	return classifyPersistenceOutcome(current, ok, expected), current, nil
+	outcome := classifyPersistenceOutcome(current, ok, expected)
+	return PersistenceOutcomeEvidence{
+		Outcome: outcome,
+		Observed: true,
+		Source: "postgres.provider_transactions",
+		ObservedAt: observedAt,
+		Version: current.Version,
+	}, current, nil
 }
 
 func validatePostgresState(state TransactionState) error { return validateTransactionState(state) }
