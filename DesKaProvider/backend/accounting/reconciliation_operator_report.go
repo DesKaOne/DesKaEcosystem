@@ -79,7 +79,9 @@ func (r ReconciliationReport) OperatorReport() ReconciliationOperatorReport {
 				// Mixed or unverified observations are never authoritative.
 				if item.Status == ReconciliationCorrelated &&
 					r.Snapshot.SnapshotConsistency == ReconciliationSnapshotConsistencyCapturedVerified &&
-					evidence.ObservationScope == ReconciliationPersistenceEvidenceScopeSnapshotBound {
+					evidence.ObservationScope == ReconciliationPersistenceEvidenceScopeSnapshotBound &&
+					evidence.SnapshotFingerprint != "" &&
+					evidence.SnapshotFingerprint == r.Snapshot.SnapshotFingerprint {
 					operatorItem.ResolutionClass = ReconciliationOperatorConfirmed
 					summary.ConfirmedItems++
 				} else {
