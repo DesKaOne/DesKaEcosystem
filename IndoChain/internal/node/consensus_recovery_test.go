@@ -379,8 +379,8 @@ func TestConsensusRecoveryProposalToRuntimeFinalityHandoff(t *testing.T) {
 		certificate,
 		validators,
 		power,
-		validatorAuthorityResolver{publicKey: mustTestSigner(t, 23).PublicKey()},
-		senderAuthorityResolver{publicKey: mustTestSigner(t, 23).PublicKey()},
+		validatorAuthorityResolver{publicKey: []byte("key-a")},
+		senderAuthorityResolver{publicKey: []byte("key-a")},
 	); err != nil {
 		t.Fatal(err)
 	}
