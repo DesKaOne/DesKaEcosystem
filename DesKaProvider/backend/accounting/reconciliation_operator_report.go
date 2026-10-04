@@ -70,7 +70,19 @@ func (r ReconciliationReport) OperatorReport() ReconciliationOperatorReport {
 			operatorItem.LedgerObserved = evidence.LedgerObserved
 			operatorItem.AuditObserved = evidence.AuditObserved
 			switch evidence.Resolution {
-			case ReconciliationPersistenceConfirmedApplied, ReconciliationPersistenceConfirmedNotApplied:
+			case ReconciliationPersistenceConfirmedApplied:
+				// Durable "applied" evidence is only operator-confirmable when
+				// the reconciliation itself established a valid correlation.
+				// Otherwise persistence evidence must not override a missing or
+				// conflicting financial identity/linkage.
+				if item.Status == ReconciliationCorrelated {
+					operatorItem.ResolutionClass = ReconciliationOperatorConfirmed
+					summary.ConfirmedItems++
+				} else {
+					operatorItem.ResolutionClass = ReconciliationOperatorReview
+					summary.ReviewItems++
+				}
+			case ReconciliationPersistenceConfirmedNotApplied:
 				operatorItem.ResolutionClass = ReconciliationOperatorConfirmed
 				summary.ConfirmedItems++
 			case ReconciliationPersistenceNeedsReviewConflict:
