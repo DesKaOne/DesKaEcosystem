@@ -11105,3 +11105,80 @@ GitHub Actions run **4409** / **37179072160** completed **GREEN**:
 - credential-gated provider validation jobs: skipped as expected
 
 Milestone #74 is complete. Engineering readiness remains approximately **88%** because cross-store atomic reconciliation snapshot semantics and provider live-validation coverage remain unresolved.
+
+
+## Milestone #75 — Reconciliation Snapshot Stability Verification
+
+**Date:** 2026-10-04
+
+### Objective
+
+Close the proven read-isolation gap where reconciliation could capture a store-local snapshot and then continue across the capture window without evidence that the source remained unchanged.
+
+### Problem / Root Cause
+
+Milestone #72–#74 correctly made snapshot consistency explicit and reduced the PostgreSQL ledger capture window, but the reconciliation reader still had no first-class source-local stability contract. Provider, ledger, and settlement-audit reads were individually bounded, yet a concurrent mutation during the overall capture window could leave the report based on stale mixed-time evidence without deterministic detection.
+
+This is not solved by a cross-store transaction abstraction: the current architecture has independent persistence boundaries and does not justify a distributed transaction.
+
+### Implementation
+
+- Added store-local reconciliation snapshot capture contracts for provider transactions, ledger transactions, and settlement audits.
+- Each supported source now returns a deterministic SHA-256 capture token over its ordered dataset.
+- After all source datasets are captured, reconciliation re-verifies every supported source token.
+- A token mismatch fails reconciliation closed with `ErrReconciliationSnapshotChanged`; no reconciliation items are exposed from the unstable capture.
+- Added a distinct `captured_verified` snapshot classification when all three sources support the capture/verification contract.
+- Preserved `captured` for existing bulk-reader implementations without the new verification contract.
+- Preserved `legacy_mixed` for the per-ledger audit fallback.
+- Legacy reader behavior remains available; no cross-store transaction abstraction was introduced.
+
+### Changed Files
+
+- `DesKaProvider/backend/routing/reconciliation_snapshot_capture.go`
+- `DesKaProvider/backend/routing/reconciliation_snapshot_capture_test.go`
+- `DesKaProvider/backend/accounting/reconciliation_snapshot_capture.go`
+- `DesKaProvider/backend/accounting/reconciliation_snapshot_capture_test.go`
+- `DesKaProvider/backend/accounting/reconciliation.go`
+
+### Safety Impact
+
+- Concurrent source mutation during reconciliation capture is no longer silently classified as current when the affected source implements the capture contract.
+- Snapshot instability fails closed before financial correlation results are emitted.
+- Reconciliation remains strictly observational and read-only.
+- No ledger mutation, balance mutation, treasury movement, provider funding, automatic repair, retry, failover, resubmission, reversal, or duplicate financial action is introduced.
+- The verification token is evidence of source-local stability only; it is not presented as proof of an atomic cross-store snapshot.
+
+### Architecture Impact
+
+Introduces a narrow internal capture/verification contract at existing persistence boundaries without coupling provider, accounting, and settlement stores through a distributed transaction.
+
+The architecture still does not provide a true atomic cross-store snapshot. The new `captured_verified` state means each participating store was stable between its capture and verification reads; it does not mean all three stores shared one transaction or one serialization point.
+
+### Tests
+
+- deterministic MemoryTransactionStore mutation detection;
+- deterministic reconciliation fail-closed behavior when provider data changes after capture;
+- existing reconciliation context/error, PostgreSQL, ledger, settlement, and race-sensitive regression coverage remains unchanged.
+
+### CI
+
+Pending final CI verification for the milestone. Credential-gated live-provider validation remains environment-dependent and must not be represented as live compatibility evidence when skipped.
+
+### Remaining Risk
+
+- No atomic cross-store snapshot exists across provider transaction, ledger, and settlement-audit persistence.
+- The verification contract detects source-local changes during the bounded capture/verification interval but cannot exclude a mutation immediately after verification.
+- Legacy mixed-reader deployments remain explicitly classified and are not promoted to atomic snapshot semantics.
+- Authorized live-provider validation remains credential-gated.
+
+### Progress
+
+Engineering readiness: **~89%**.
+
+This milestone closes a concrete reconciliation correctness gap and adds deterministic source-local stability evidence. The estimate remains well below 99% because cross-store atomicity, live-provider validation, and other production-readiness boundaries remain unresolved.
+
+### Next Highest-Value Milestone
+
+Audit the remaining persistence/recovery boundaries for crash-consistency evidence, prioritizing ambiguous commit and restart semantics where durable transaction, ledger, and settlement state can diverge without a deterministic operator-visible classification.
+
+No automatic provider retry, failover, transaction resubmission, provider funding, customer-balance mutation, treasury movement, duplicate purchase creation, blockchain action, or public API exposure is included.
