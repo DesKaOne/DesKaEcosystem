@@ -219,12 +219,12 @@ func TestPersistAndRecoverFinalityCertificateWithContext(t *testing.T) {
 	}
 	store := storage.NewMemoryConsensusEvidenceStore()
 	key, err := PersistFinalityCertificateWithContext(
-		store, certificate, state, validators, authority, context, f.signerA, []byte("validator-a"),
+		store, certificate, state, validators, power, authority, context, f.signerA, []byte("validator-a"),
 	)
 	if err != nil { t.Fatal(err) }
 
 	recovered, recoveredKey, err := RecoverFinalityCertificateWithContext(
-		store, state, validators, authority, context,
+		store, state, validators, power, authority, context,
 	)
 	if err != nil { t.Fatal(err) }
 	if recoveredKey != key { t.Fatalf("recovered key = %q, want %q", recoveredKey, key) }
