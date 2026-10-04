@@ -13,5 +13,9 @@ func EncodeReconciliationOperatorReportV1(w io.Writer, report ReconciliationRepo
 	if w == nil {
 		return errors.New("reconciliation operator report writer is required")
 	}
-	return json.NewEncoder(w).Encode(report.OperatorReport().V1())
+	contract := report.OperatorReport().V1()
+	if err := contract.Validate(); err != nil {
+		return err
+	}
+	return json.NewEncoder(w).Encode(contract)
 }
