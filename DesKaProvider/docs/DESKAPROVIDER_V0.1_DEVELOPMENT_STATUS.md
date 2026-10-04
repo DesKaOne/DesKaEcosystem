@@ -11840,3 +11840,77 @@ This closes a concrete evidence-attribution safety gap in the reconciliation/ope
 Continue hardening evidence attribution and operator-read-only boundaries, prioritizing any remaining path where ambiguous identity, stale observation, or incomplete provenance could be interpreted as confirmed financial state.
 
 No automatic provider retry, failover, transaction resubmission, provider funding, customer-balance mutation, treasury movement, duplicate purchase creation, blockchain action, or public financial mutation is included.
+---
+
+## Milestone #84 — Prevent Applied Evidence from Overriding Reconciliation Conflicts
+
+**Date:** 2026-10-04
+
+### Objective
+
+Prevent durable persistence evidence showing an applied transaction from being surfaced as operator-confirmed when reconciliation has not established a valid financial correlation.
+
+### Problem / Root Cause
+
+The operator projection previously classified both `confirmed_applied` and `confirmed_not_applied` evidence as `confirmed` without checking the reconciliation status.
+
+That allowed an item such as `LEDGER_MISSING`, `CORRELATION_CONFLICT`, `DUPLICATE_REFERENCE`, or `DUPLICATE_AUDIT_IDENTITY` to carry `confirmed_applied` evidence and still appear in the operator summary as confirmed. Persistence evidence alone cannot safely override an unresolved reconciliation identity/linkage.
+
+### Implementation
+
+- `confirmed_applied` is now operator-confirmed only when `ReconciliationStatus == CORRELATED`.
+- `confirmed_applied` on any non-correlated reconciliation status is surfaced as `review`.
+- `confirmed_not_applied` remains `confirmed`, because it establishes the absence of the durable persistence outcome rather than asserting a successful financial correlation.
+- Added deterministic regression coverage for missing-ledger, correlation-conflict, duplicate-reference, and duplicate-audit-identity states.
+- No persistence write, provider call, retry, resubmission, repair, reversal, funding, balance mutation, or ledger mutation was introduced.
+
+### Safety Impact
+
+The operator boundary now follows:
+
+`applied evidence + valid correlation -> confirmed`
+
+`applied evidence + unresolved/conflicting correlation -> review`
+
+This prevents a durable "applied" observation from silently overriding an identity or linkage conflict in the reconciliation layer.
+
+### Tests
+
+Added deterministic regression coverage ensuring `confirmed_applied` cannot become operator `confirmed` for:
+
+- `LEDGER_MISSING`;
+- `CORRELATION_CONFLICT`;
+- `DUPLICATE_REFERENCE`;
+- `DUPLICATE_AUDIT_IDENTITY`.
+
+### CI
+
+Implementation commit:
+
+- `23a8f68de8131c8371a22caae0c14a0af14b7222`
+
+Regression test commit:
+
+- `63d2fb8242666c9fb621332429b2a0164ec92e77`
+
+Final CI status is recorded on the final documentation commit below.
+
+### Remaining Risk
+
+- Cross-store atomicity remains unavailable.
+- Unknown/conflict evidence still requires explicit review.
+- Live-provider compatibility remains credential-gated.
+- No authenticated public reconciliation API exists in the repository.
+- This milestone does not resolve reconciliation conflicts; it only prevents evidence from being over-promoted at the operator boundary.
+
+### Progress
+
+Engineering readiness: **~97%**.
+
+This closes another concrete state-promotion safety gap while preserving the read-only architecture. It remains below 99% because cross-store atomicity, live-provider validation, authenticated delivery integration, and broader production-readiness boundaries remain unresolved.
+
+### Next Highest-Value Milestone
+
+Continue auditing operator-state promotion rules for cases where evidence provenance can conflict with reconciliation identity, correlation, or snapshot consistency. Any contradictory state should remain review/unresolved rather than being promoted automatically.
+
+No automatic provider retry, failover, transaction resubmission, provider funding, customer-balance mutation, treasury movement, duplicate purchase creation, blockchain action, or public financial mutation is included.
