@@ -58,6 +58,31 @@ type ContextReadTransactionStore interface {
 // A successful create returns created=true; an existing reference returns its
 // durable state with created=false. Implementations must make the decision
 // atomically so concurrent service instances cannot both authorize submission.
+type PersistenceOutcome string
+
+const (
+	PersistenceOutcomeApplied    PersistenceOutcome = "applied"
+	PersistenceOutcomeNotApplied PersistenceOutcome = "not_applied"
+	PersistenceOutcomeConflict   PersistenceOutcome = "conflict"
+	PersistenceOutcomeUnknown    PersistenceOutcome = "unknown"
+)
+
+// PersistenceOutcomeReader resolves an ambiguous local persistence attempt by
+// reading durable state only. It never retries or repeats an external provider side effect.
+type PersistenceOutcomeReader interface {
+	ResolvePersistenceOutcomeContext(ctx context.Context, referenceID string, expected TransactionState) (PersistenceOutcome, TransactionState, error)
+}
+
+func classifyPersistenceOutcome(current TransactionState, found bool, expected TransactionState) PersistenceOutcome {
+	if !found {
+		return PersistenceOutcomeNotApplied
+	}
+	if sameTransactionObservedResult(current, expected) && sameTransactionIdentity(current, expected) {
+		return PersistenceOutcomeApplied
+	}
+	return PersistenceOutcomeConflict
+}
+
 type CreateIfAbsentTransactionStore interface {
 	CreateIfAbsentContext(ctx context.Context, state TransactionState) (existing TransactionState, created bool, err error)
 }
