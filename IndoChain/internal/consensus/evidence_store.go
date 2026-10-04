@@ -6,6 +6,9 @@ import (
 	"encoding/hex"
 	"errors"
 	"sort"
+
+	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/crypto"
+	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/types"
 )
 
 var (
@@ -255,6 +258,109 @@ func RecoverAuthenticatedEvidenceWithContext(
 		return bytes.Compare(messages[i].Sender, messages[j].Sender) < 0
 	})
 	return messages, nil
+}
+
+// PersistFinalityCertificateWithContext stores a finalized certificate as one
+// context-bound evidence message. The embedded precommit signatures remain the
+// source of finality authority; the envelope is signed by an existing voter.
+func PersistFinalityCertificateWithContext(
+	store EvidenceStore,
+	certificate FinalityCertificate,
+	state RoundState,
+	validators ValidatorSet,
+	authority TimeoutAuthorityResolver,
+	context PersistenceContext,
+	signer crypto.Signer,
+	sender []byte,
+) (string, error) {
+	if store == nil {
+		return "", ErrNilEvidenceStore
+	}
+	if signer == nil || len(sender) == 0 {
+		return "", ErrInvalidFinalityEvidence
+	}
+	if context.Phase != uint8(PhaseFinalized) ||
+		certificate.ProtocolVersion != types.ProtocolVersion(context.ProtocolVersion) ||
+		certificate.ChainID != types.ChainID(context.ChainID) ||
+		certificate.Epoch != context.Epoch ||
+		certificate.Height != types.Height(context.Height) ||
+		certificate.Round != context.Round {
+		return "", ErrEvidencePersistenceContextMismatch
+	}
+	if err := ValidateFinalityCertificateWithAuthority(certificate, state, validators, authority); err != nil {
+		return "", err
+	}
+	if _, err := authority.PublicKeyForValidator(sender); err != nil {
+		return "", err
+	}
+	encoded, err := EncodeFinalityCertificate(certificate)
+	if err != nil {
+		return "", err
+	}
+	message := Message{
+		ProtocolVersion: certificate.ProtocolVersion,
+		ChainID: certificate.ChainID,
+		Epoch: certificate.Epoch,
+		Height: certificate.Height,
+		Round: certificate.Round,
+		Sender: append([]byte(nil), sender...),
+		Type: MessageTypeFinalityEvidence,
+		Payload: encoded,
+	}
+	signed, err := message.Sign(signer)
+	if err != nil {
+		return "", err
+	}
+	if err := PersistAuthenticatedEvidenceWithContext(store, signed, state, validators, authority, context); err != nil {
+		return "", err
+	}
+	return ConsensusEvidencePersistenceKey(signed, PersistenceContextDigest(context))
+}
+
+// RecoverFinalityCertificateWithContext recovers one context-bound finality
+// envelope and fully validates its outer signature plus embedded certificate.
+func RecoverFinalityCertificateWithContext(
+	store EvidenceStore,
+	state RoundState,
+	validators ValidatorSet,
+	authority TimeoutAuthorityResolver,
+	context PersistenceContext,
+) (FinalityCertificate, string, error) {
+	messages, err := RecoverAuthenticatedEvidenceWithContext(store, state, validators, authority, context)
+	if err != nil {
+		return FinalityCertificate{}, "", err
+	}
+	var found *FinalityCertificate
+	var foundKey string
+	for _, message := range messages {
+		if message.Type != MessageTypeFinalityEvidence {
+			continue
+		}
+		certificate, err := DecodeFinalityCertificate(message.Payload)
+		if err != nil {
+			return FinalityCertificate{}, "", err
+		}
+		if err := ValidateFinalityCertificateWithAuthority(certificate, state, validators, authority); err != nil {
+			return FinalityCertificate{}, "", err
+		}
+		if certificate.Epoch != context.Epoch || certificate.Height != types.Height(context.Height) || certificate.Round != context.Round {
+			return FinalityCertificate{}, "", ErrEvidencePersistenceContextMismatch
+		}
+		if found != nil {
+			return FinalityCertificate{}, "", ErrConflictingEvidence
+		}
+		candidate := certificate
+		found = &candidate
+		key, err := ConsensusEvidencePersistenceKey(message, PersistenceContextDigest(context))
+		if err != nil {
+			return FinalityCertificate{}, "", err
+		}
+		foundKey = key
+	}
+	if found == nil {
+		return FinalityCertificate{}, "", ErrFinalityRecoveryNotReady
+	}
+	return *found, foundKey, nil
 }
 
 // RecoverAuthenticatedEvidence loads and validates all persisted evidence for
