@@ -380,6 +380,11 @@ func TestConsensusRecoveryProposalToRuntimeFinalityHandoff(t *testing.T) {
 	if err != nil { t.Fatal(err) }
 	if err := recovery.Runtime.AddVote(secondPrevote); err != nil { t.Fatal(err) }
 
+	// The runtime advances to Precommit as soon as the prevote quorum is reached.
+	if got := recovery.Runtime.State().Phase; got != consensus.PhasePrecommit {
+		t.Fatalf("runtime phase after prevote quorum = %v, want precommit", got)
+	}
+
 	precommit := consensus.Message{
 		ProtocolVersion: recovery.State.ProtocolVersion,
 		ChainID: recovery.State.ChainID,
