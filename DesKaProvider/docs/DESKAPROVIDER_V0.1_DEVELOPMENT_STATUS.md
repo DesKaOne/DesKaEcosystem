@@ -10909,50 +10909,44 @@ No automatic provider retry, failover, transaction resubmission, provider fundin
 
 ### Objective
 
-Move already-defined ledger invariants from application-only validation into PostgreSQL constraints where the current data model can express them without inventing new accounting semantics.
+Harden ledger persistence with PostgreSQL-enforced invariants without changing accounting business semantics.
 
 ### Implementation
 
-- `ledger_entries.direction` is constrained to `DEBIT` or `CREDIT`.
-- `ledger_entries.currency` is constrained to match the parent `ledger_transactions.currency` through a composite foreign key.
-- Added deterministic PostgreSQL regression coverage proving invalid direction and transaction-currency mismatch are rejected by the schema.
-- Existing account foreign keys, positive amount constraint, immutable transaction primary key, and settlement-audit uniqueness remain unchanged.
+- Added versioned migration 006 for databases that already applied migration 004.
+- Migration 006 creates the (transaction_id, currency) uniqueness required by the composite foreign key.
+- Migration 006 fails closed when existing rows violate the supported direction or currency invariants, then adds the direction check and transaction-currency foreign key.
+- Migration 004 remains immutable; the migration runner registers and applies migration 006.
+- PostgreSQL regression coverage rejects invalid ledger direction and transaction-currency mismatch.
+- Accounting schema fixtures now apply migration 006.
 
 ### Changed Files
 
-- `DesKaProvider/backend/migrations/004_double_entry_ledger.sql`
-- `DesKaProvider/backend/accounting/postgres_store_test.go`
-- `DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md`
+- DesKaProvider/backend/migrations/006_ledger_constraint_hardening.sql
+- DesKaProvider/backend/migrations/migrations.go
+- DesKaProvider/backend/accounting/postgres_store_test.go
+- DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md
 
 ### Safety Impact
 
-- invalid ledger direction cannot be persisted through a direct database write;
-- a ledger entry cannot be persisted in a currency different from its transaction;
-- application-level validation remains the first line of defense, with PostgreSQL providing a second invariant boundary;
-- no balance mutation, treasury movement, provider funding, retry, failover, resubmission, or automatic reconciliation repair is introduced.
-
-### Verification
-
-Pending targeted PostgreSQL-backed accounting tests, full package tests, vet, race, commit, push, and latest GitHub Actions verification.
+- Invalid ledger direction cannot be persisted once migration 006 is applied.
+- A ledger entry cannot be persisted with a currency different from its parent transaction.
+- Existing incompatible data is rejected during migration rather than silently accepted.
+- No provider retry, failover, resubmission, treasury movement, balance mutation, or automatic reconciliation repair is introduced.
 
 ### Architecture Impact
 
-Strengthens the accounting persistence boundary without changing the ledger source-of-truth model or introducing new settlement/account-role semantics.
+Strengthens the persistence boundary while preserving the ledger as accounting source of truth and preserving existing provider/settlement boundaries.
+
+### Verification
+
+Latest CI for final branch HEAD is still in progress. Targeted PostgreSQL-backed accounting tests, full package tests, vet, and race are executed by the DesKaProvider CI workflow. Credential-gated provider validation jobs remain skipped when required credentials are absent.
 
 ### Remaining Risk
 
-PostgreSQL constraints still do not encode aggregate double-entry balance equality; that invariant remains transactionally enforced by the application `Validate()` path. Provider-specific live validation remains credential-gated.
+Aggregate double-entry equality remains an application-level invariant rather than a row-level PostgreSQL constraint. Reconciliation snapshot consistency across concurrent PostgreSQL writes remains a separate higher-value audit target.
 
-### Next Highest-Value Task
+### Next Highest-Value Milestone
 
-Audit the remaining economically material ledger/persistence invariants directly represented by the current schema, then close the highest-confidence gap without inventing financial posting rules.
+Make PostgreSQL reconciliation reads a single consistent snapshot boundary, then add concurrency-focused regression coverage without introducing financial mutation or recovery side effects.
 
-
-
-## Milestone #71 Correction — Versioned Deployment Semantics
-
-The initial implementation identified missing PostgreSQL constraints but amended migration 004 in place. The migration runner records applied versions and skips an already-recorded migration, so an edit to 004 would not harden databases where 004 was already applied.
-
-The corrected implementation restores migration 004 to its original immutable definition and adds migration 006 (`006_ledger_constraint_hardening.sql`). Migration 006 idempotently creates the required unique key, rejects incompatible existing rows before constraint creation, and adds the direction check and transaction-currency foreign key for already-migrated databases. The PostgreSQL accounting test fixture now applies migration 006.
-
-This correction is required for migration correctness on both fresh and already-migrated databases.
