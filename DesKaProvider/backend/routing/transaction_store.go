@@ -69,8 +69,17 @@ const (
 
 // PersistenceOutcomeReader resolves an ambiguous local persistence attempt by
 // reading durable state only. It never retries or repeats an external provider side effect.
+type PersistenceOutcomeEvidence struct {
+	Outcome    PersistenceOutcome
+	Observed   bool
+	Source     string
+	ObservedAt time.Time
+	Version    int64
+}
+
 type PersistenceOutcomeReader interface {
 	ResolvePersistenceOutcomeContext(ctx context.Context, referenceID string, expected TransactionState) (PersistenceOutcome, TransactionState, error)
+	ResolvePersistenceOutcomeEvidenceContext(ctx context.Context, referenceID string, expected TransactionState) (PersistenceOutcomeEvidence, TransactionState, error)
 }
 
 func classifyPersistenceOutcome(current TransactionState, found bool, expected TransactionState) PersistenceOutcome {
