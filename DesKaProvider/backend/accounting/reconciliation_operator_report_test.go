@@ -464,6 +464,7 @@ func TestReconciliationOperatorReportV1ValidateAcceptsProjectedReport(t *testing
 			CaptureStartedAt: startTimeForOperatorTest(),
 			CaptureCompletedAt: observedAt,
 			SnapshotConsistency: ReconciliationSnapshotConsistencyCapturedVerified,
+			SnapshotFingerprint: "fingerprint-valid",
 		},
 		Items: []TransactionReconciliation{{
 			ReferenceID: "ref-valid",
@@ -476,6 +477,7 @@ func TestReconciliationOperatorReportV1ValidateAcceptsProjectedReport(t *testing
 				ObservedAt: observedAt,
 				Version: 15,
 				ObservationScope: ReconciliationPersistenceEvidenceScopeSnapshotBound,
+				SnapshotFingerprint: "fingerprint-valid",
 			},
 		}},
 	}
