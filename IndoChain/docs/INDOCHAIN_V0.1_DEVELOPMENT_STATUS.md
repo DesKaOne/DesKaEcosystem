@@ -5590,3 +5590,54 @@ Milestone ini membangun deterministic candidate reconciliation, tetapi belum men
 **5.8n-next9 — Batch Recovery Reconciliation + Evidence Cleanup Boundary:** tambahkan deterministic enumeration/reconciliation seluruh durable candidate artifacts dan kaitkan evidence cleanup dengan canonical finality identity tanpa pernah menghapus evidence yang masih dibutuhkan untuk recovery.
 
 **Milestone 5.8n-next8 status:** DONE — implementation/test exact-head CI GREEN pada `f06db98d91aa6dfc09ebfd0b43a7df62496c9225`.
+
+
+### 5.8n-next9 Batch Recovery Reconciliation + Evidence Cleanup Boundary — 2026-10-05
+
+**Objective**
+
+Menjadikan recovery reconciliation sebagai batch operation node-owned yang mengenumerasi seluruh durable candidate identities secara deterministic, sekaligus mengunci bahwa evidence cleanup hanya boleh menyentuh identity yang secara eksplisit diotorisasi oleh canonical-context-bound GC decision.
+
+**Implementation**
+
+- Added `storage.CandidateEnumerator` sebagai capability terpisah dari `CandidateStore`, sehingga caller/test double lama tidak dipaksa mengimplementasikan enumeration.
+- `MemoryCandidateStore` dan `FileCandidateStore` sekarang menyediakan `ListCandidateKeys()` dengan ordering deterministic berdasarkan `height`, lalu `hash`.
+- Added `Node.ReconcileCandidateRecoveryArtifacts()` yang mengambil snapshot seluruh candidate identities, mengurutkannya deterministic, lalu menjalankan existing per-artifact classification/reconciliation tanpa memutasi canonical ChainStore/StateStore.
+- Existing quorum-backed `ArtifactGCDecision` + `ApplyCoordinatedArtifactGC` menjadi evidence cleanup boundary: plan mengikat protocol/chain/epoch/canonical height/candidate identity/evidence identities, decision membutuhkan validator quorum, dan cleanup hanya menerima evidence identities yang persis cocok dengan decision.
+- Evidence yang tidak tercantum dalam authorized decision tidak ikut dihapus.
+
+**Tests**
+
+`IndoChain/internal/node/recovery_artifact_batch_gc_test.go` covers deterministic enumeration/reconciliation, file-backed cleanup across reopen, dan evidence retention di luar authorized decision.
+
+**Safety Invariants**
+
+1. Batch reconciliation tidak memajukan atau memodifikasi canonical state.
+2. Candidate ordering deterministic sehingga recovery outcome tidak bergantung pada map iteration order.
+3. Pending/context-mismatched candidates tetap dipertahankan.
+4. Committed/stale candidates tetap menggunakan existing exact-identity cleanup boundary.
+5. Evidence cleanup tidak boleh menghapus key yang tidak ada di authorized GC plan.
+6. GC decision tetap bukan finality certificate dan tidak dapat membuat block menjadi canonical.
+7. Tidak ada distributed transaction/2PC diperkenalkan.
+
+**Verification**
+
+- Candidate enumeration implementation: `f989da852e3e4d42fd0dabf02545d94e9100a371`.
+- File-store enumeration implementation: `47dd7300c41ce6fde63fcb941fb8cc5f46040a1a`.
+- Batch reconciliation implementation: `1a0bdc8e47872475765f60b60a1eedb25b1e1a4b`.
+- Batch/evidence tests: `6f63716d09ab52982609db9f351f6bc8c2831790`.
+- CI run #2170 / `37306374183` is the exact-head push run for `6f63716d...`; at documentation time Tidy + Test were PASS and Race Test was still running. Final milestone completion remains gated on the exact status-doc HEAD CI below.
+
+**Remaining Risk**
+
+Enumeration/reconciliation kini deterministic pada candidate store yang mengimplementasikan capability tersebut, tetapi evidence store masih menggunakan full snapshot loading untuk recovery. Actual OS/filesystem power-loss testing, production multi-node consensus hardening, validator lifecycle, dan formal BFT/security analysis tetap terbuka.
+
+**Progress Estimate**
+
+~98% engineering readiness. 99% belum diklaim karena production hardening dan deployment-level fault validation masih belum selesai.
+
+**Next Meaningful Integration Target**
+
+**5.8n-next10 — Recovery Journal / Durable GC Decision Boundary:** evaluasi apakah cleanup decision perlu durable journal/ack boundary agar crash tepat setelah authorized candidate/evidence deletion tetap auditable dan retryable tanpa mengandalkan caller memory.
+
+**Milestone 5.8n-next9 status:** IMPLEMENTED — final DONE hanya setelah exact-head CI untuk commit status-doc ini GREEN.
