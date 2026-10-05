@@ -12509,3 +12509,22 @@ Engineering readiness remains approximately 97%. This milestone closes a concret
 Continue the v0.1 readiness audit for other public/internal delivery boundaries that can independently construct authoritative-looking state. Do not add transport or producer adapters unless a real persistence-evidence producer requires them.
 
 No automatic provider retry, failover, transaction resubmission, provider funding, customer-balance mutation, treasury movement, duplicate transaction creation, blockchain action, or public financial mutation is included.
+
+
+### Milestone #92 CI Correction
+
+The first documentation-synchronized attempt exposed one legacy projected-report fixture that did not include the fingerprint now required by the V1 provenance contract. The fixture was corrected without weakening the validation rule.
+
+Final implementation/test HEAD:
+
+- `0c0e23a48ab2a98a7545b2d148ada5bd54eab1a7`
+
+Final CI:
+
+- Push/PR CI run **4589 / 37276595968**: **GREEN**
+  - test: PASS
+  - vet: PASS
+  - race: PASS
+  - credential-gated provider validation jobs: SKIPPED as expected
+
+The final green run validates the corrected fixture and the new provenance checks together. No authorized live-provider transaction or external provider request was executed.
