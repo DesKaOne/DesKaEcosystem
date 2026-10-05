@@ -1,0 +1,144 @@
+package node
+
+import (
+	"bytes"
+	"errors"
+	"fmt"
+
+	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/consensus"
+	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/block"
+	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/types"
+	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/storage"
+)
+
+var (
+	ErrFinalizedCommitNoValidEvidence = errors.New("no valid finality evidence")
+)
+
+type FinalizedCommitClassification uint8
+
+const (
+	FinalizedCommitNoValidEvidence FinalizedCommitClassification = iota
+	FinalizedCommitEvidencePresentCanonicalMissing
+	FinalizedCommitCanonicalMatched
+	FinalizedCommitCanonicalContextMismatch
+)
+
+func (c FinalizedCommitClassification) String() string {
+	switch c {
+	case FinalizedCommitNoValidEvidence:
+		return "NO_VALID_FINALITY_EVIDENCE"
+	case FinalizedCommitEvidencePresentCanonicalMissing:
+		return "FINALITY_EVIDENCE_PRESENT_CANONICAL_MISSING"
+	case FinalizedCommitCanonicalMatched:
+		return "FINALITY_EVIDENCE_PRESENT_CANONICAL_MATCHED"
+	case FinalizedCommitCanonicalContextMismatch:
+		return "CANONICAL_PRESENT_BUT_CONTEXT_MISMATCH"
+	default:
+		return "UNKNOWN_FINALIZED_COMMIT_CLASSIFICATION"
+	}
+}
+
+// ClassifyFinalizedCommit validates the finality-to-canonical identity boundary
+// and classifies the current canonical state without mutating storage.
+// The candidate block is required because finality evidence identifies the
+// finalized payload/hash but does not contain the complete block body.
+func (n *Node) ClassifyFinalizedCommit(
+	ctx consensus.BlockProductionContext,
+	candidate block.Block,
+	certificate consensus.FinalityCertificate,
+	validators consensus.ValidatorSet,
+	votingPower consensus.VotingPowerSet,
+	validatorResolver ValidatorAuthorityResolver,
+) (FinalizedCommitClassification, error) {
+	if n == nil || n.Store == nil || n.State == nil {
+		return FinalizedCommitNoValidEvidence, ErrNilStore
+	}
+	if validatorResolver == nil {
+		return FinalizedCommitNoValidEvidence, errors.New("missing finalized-block validator resolver")
+	}
+	candidateHash, err := block.Hash(candidate)
+	if err != nil {
+		return FinalizedCommitNoValidEvidence, fmt.Errorf("hash finalized candidate: %w", err)
+	}
+	if candidateHash == (types.Hash{}) {
+		return FinalizedCommitCanonicalContextMismatch, ErrConsensusContextMismatch
+	}
+
+	canonicalBlock, canonicalHash, err := n.Store.GetBlock(candidate.Header.Height)
+	if err == nil {
+		if canonicalHash == candidateHash {
+			if !bytes.Equal(certificate.Payload, candidateHash[:]) {
+				return FinalizedCommitCanonicalContextMismatch, ErrConsensusContextMismatch
+			}
+			if err := validateFinalityCertificateIdentity(certificate, validators, votingPower, validatorResolver); err != nil {
+				return FinalizedCommitNoValidEvidence, err
+			}
+			return FinalizedCommitCanonicalMatched, nil
+		}
+		storedHash, hashErr := block.Hash(canonicalBlock)
+		if hashErr == nil && storedHash == candidateHash {
+			if err := validateFinalityCertificateIdentity(certificate, validators, votingPower, validatorResolver); err != nil {
+				return FinalizedCommitNoValidEvidence, err
+			}
+			return FinalizedCommitCanonicalMatched, nil
+		}
+		return FinalizedCommitCanonicalContextMismatch, ErrConsensusContextMismatch
+	}
+	if !errors.Is(err, storage.ErrBlockNotFound) {
+		return FinalizedCommitCanonicalContextMismatch, err
+	}
+
+	if err := validateCanonicalConsensusContext(n, ctx); err != nil {
+		return FinalizedCommitCanonicalContextMismatch, err
+	}
+	if ctx.State.Height+1 != candidate.Header.Height ||
+		candidate.Header.PreviousHash != n.HeadHash ||
+		candidate.Header.ChainID != n.Config.ChainID ||
+		candidate.Header.Version != n.Config.ProtocolVersion {
+		return FinalizedCommitCanonicalContextMismatch, ErrConsensusContextMismatch
+	}
+	if len(certificate.Payload) == 0 || len(certificate.Votes) == 0 {
+
+		return FinalizedCommitNoValidEvidence, consensus.ErrInvalidFinalityCertificate
+	}
+	if !bytes.Equal(certificate.Payload, candidateHash[:]) {
+		return FinalizedCommitCanonicalContextMismatch, ErrConsensusContextMismatch
+	}
+	// For a missing canonical block, preserve the existing commit API's
+	// precise validation errors. Classification establishes that the canonical
+	// slot is absent and the recovery context is current; the commit boundary
+	// performs the final authenticated evidence validation.
+	return FinalizedCommitEvidencePresentCanonicalMissing, nil
+
+}
+
+func validateFinalityCertificateIdentity(
+	certificate consensus.FinalityCertificate,
+	validators consensus.ValidatorSet,
+	votingPower consensus.VotingPowerSet,
+	resolver ValidatorAuthorityResolver,
+) error {
+	state, err := consensus.NewRoundState(
+		certificate.ProtocolVersion,
+		certificate.ChainID,
+		certificate.Epoch,
+		certificate.Height,
+	)
+	if err != nil {
+		return fmt.Errorf("%w: invalid certificate state: %v", ErrFinalizedCommitNoValidEvidence, err)
+	}
+	if err := consensus.ValidateFinalityCertificate(certificate, state, validators, votingPower); err != nil {
+		return fmt.Errorf("%w: %v", ErrFinalizedCommitNoValidEvidence, err)
+	}
+	for _, vote := range certificate.Votes {
+		key, err := resolver.PublicKeyForValidator(vote.Sender)
+		if err != nil {
+			return fmt.Errorf("%w: validator authority: %v", ErrFinalizedCommitNoValidEvidence, err)
+		}
+		if err := consensus.VerifyMessageSignature(vote, key); err != nil {
+			return fmt.Errorf("%w: vote signature: %v", ErrFinalizedCommitNoValidEvidence, err)
+		}
+	}
+	return nil
+}
