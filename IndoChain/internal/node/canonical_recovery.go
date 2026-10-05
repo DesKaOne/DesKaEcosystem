@@ -58,7 +58,7 @@ func (n *Node) ClassifyFinalizedCommit(
 		return FinalizedCommitNoValidEvidence, errors.New("missing finalized-block validator resolver")
 	}
 	if len(certificate.Payload) == 0 || len(certificate.Votes) == 0 {
-		return FinalizedCommitNoValidEvidence, ErrFinalizedCommitNoValidEvidence
+		return FinalizedCommitNoValidEvidence, consensus.ErrInvalidFinalityCertificate
 	}
 
 	candidateHash, err := block.Hash(candidate)
