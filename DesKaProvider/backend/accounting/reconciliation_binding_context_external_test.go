@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/backend/accounting"
+	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/accounting"
 	"github.com/DesKaOne/DesKaEcosystem/DesKaProvider/routing"
 )
 
