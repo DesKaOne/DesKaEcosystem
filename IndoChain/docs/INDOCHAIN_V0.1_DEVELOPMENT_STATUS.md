@@ -4963,3 +4963,116 @@ Impact: crash/restart di antara finality dan canonical commit sekarang punya exp
 **5.8n Canonical Commit Crash Window / Recovery Audit:** verifikasi kondisi ketika finality evidence sudah durable tetapi canonical block commit gagal/terputus, sehingga restart dapat membedakan `finalized-but-uncommitted` dari canonical committed state tanpa double-commit.
 
 **Milestone 5.8m status:** DONE — exact-head CI GREEN pada SHA `2c348c90abc839a9ad93299113a1f635050dfa3f`.
+
+
+### 5.8n Canonical Commit Crash Window / Recovery Classification — 2026-10-05
+
+**Objective**
+
+Menutup ambiguity pada boundary antara durable finality evidence dan canonical node commit dengan classification deterministic yang membedakan canonical block yang sudah committed, canonical slot yang masih missing, dan context/evidence yang tidak valid.
+
+**Problem**
+
+Sebelum 5.8n, CommitFinalizedBlock memiliki duplicate-commit guard, tetapi belum mempunyai explicit recovery classification. Recovery belum mempunyai semantic boundary yang secara eksplisit membedakan:
+
+- finality evidence valid + canonical block belum ada;
+- finality evidence valid + canonical block sudah matched;
+- canonical block berbeda pada height yang sama;
+- finality/canonical context mismatch;
+- invalid atau kosong finality evidence.
+
+Kondisi tersebut membuat duplicate detection dan context validation bercampur di satu commit path dan dapat menghasilkan error semantics yang tidak secara eksplisit merepresentasikan recovery state.
+
+**Root Cause**
+
+Canonical node storage dan consensus evidence store memang sudah dipisahkan, tetapi belum ada node-layer classification API yang menghubungkan identity finality certificate dengan canonical block/hash sebelum commit.
+
+Selain itu, audit menemukan batas persistence penting: FinalityCertificate hanya membawa finalized payload/hash dan authenticated votes; certificate tidak membawa full block body. Karena itu, kondisi FINALITY_EVIDENCE_PRESENT_CANONICAL_MISSING belum berarti node dapat mereconstruct block secara otomatis setelah restart. Candidate block tetap harus tersedia dari deterministic reconstruction atau persistence boundary terpisah. Jangan menganggap durable evidence saja sebagai durable canonical candidate.
+
+**Implementation**
+
+- IndoChain/internal/node/canonical_recovery.go
+  - menambahkan FinalizedCommitClassification;
+  - classification:
+    - NO_VALID_FINALITY_EVIDENCE
+    - FINALITY_EVIDENCE_PRESENT_CANONICAL_MISSING
+    - FINALITY_EVIDENCE_PRESENT_CANONICAL_MATCHED
+    - CANONICAL_PRESENT_BUT_CONTEXT_MISMATCH
+  - canonical block/hash dibandingkan terhadap finalized candidate sebelum canonical mutation;
+  - matched canonical block menjalani finality certificate identity/signature validation;
+  - missing canonical block harus melewati current canonical context validation sebelum commit boundary dapat melanjutkan;
+  - invalid certificate tetap mempertahankan error identity consensus existing;
+  - classification bersifat non-mutating.
+
+- IndoChain/internal/node/node.go
+  - CommitFinalizedBlock sekarang melewati classification boundary sebelum execution/canonical commit;
+  - already-committed candidate menghasilkan ErrFinalizedBlockAlreadyCommitted;
+  - canonical-missing candidate diteruskan ke existing node execution/commit path;
+  - consensus runtime tetap tidak memiliki ownership canonical ChainStore/StateStore.
+
+- IndoChain/internal/node/canonical_recovery_test.go
+  - coverage canonical-missing classification;
+  - coverage canonical-matched classification setelah commit;
+  - invalid authenticated evidence tidak memutasi canonical head;
+  - second recovery tidak melakukan double commit.
+
+**Safety Invariants**
+
+1. Classification tidak memutasi canonical storage.
+2. Canonical block yang hash-nya sama tidak boleh di-commit ulang.
+3. Candidate dengan hash berbeda pada canonical height ditolak sebagai context mismatch.
+4. Empty/invalid finality evidence tidak menjadi authority untuk commit.
+5. Current canonical context wajib cocok sebelum canonical-missing candidate dapat diteruskan ke commit.
+6. Existing consensus error semantics tetap dipertahankan untuk invalid certificate, context mismatch, dan authority failure.
+7. Consensus evidence store tetap terpisah dari canonical ChainStore/StateStore.
+8. Durable finality evidence tidak dianggap sebagai durable full block body.
+
+**Recovery Semantics**
+
+- Evidence absent/invalid: reject; canonical head/state tidak berubah.
+- Evidence valid + canonical candidate missing: classify sebagai FINALITY_EVIDENCE_PRESENT_CANONICAL_MISSING; commit hanya boleh dilanjutkan jika full candidate tersedia dan canonical context tervalidasi.
+- Evidence valid + canonical candidate matched: classify sebagai FINALITY_EVIDENCE_PRESENT_CANONICAL_MATCHED; recovery mengenali block sudah committed dan menolak duplicate commit.
+- Canonical block berbeda pada target identity: reject sebagai context mismatch.
+- Restart dengan evidence durable tetapi full candidate tidak tersedia: belum auto-recoverable; harus ada deterministic candidate reconstruction atau explicit local commit-intent/pending-block persistence.
+
+**Tests**
+
+Exact-head CI verification:
+
+- go mod tidy: PASS
+- go test ./...: PASS
+- go test -race ./...: PASS
+- go vet ./...: PASS
+
+Regression coverage baru berada di canonical_recovery_test.go.
+
+**Verification**
+
+- Implementation/test commits:
+  - 7adb213ca9193d5d890d3542c1afd1e1b97cc946
+  - f15e2ca647526b536a3a5475f8861c50a36dc875
+  - 1b39fb2ff56a67c66ba94a6b5389d0b3e2cf7a43
+  - de46e08dcfbb8b020301bc344fa474bdc29f9616
+  - f8918a78f284f73417ea477ec0a665d61c0df695
+  - 3da2a0e260b8a4a7f3eeb3429b4e2cb4bb42fdf9
+  - e8d57c8c8958de4c7c32fcf669ccae7f44b7fc2f
+- Exact-head CI: GREEN — IndoChain CI run #2103 / 37279156913
+- Exact HEAD: e8d57c8c8958de4c7c32fcf669ccae7f44b7fc2f
+
+**Architecture Impact**
+
+Node recovery sekarang memiliki explicit semantic classification sebelum canonical commit. Consensus remains evidence/finality authority only; node remains canonical execution/storage authority.
+
+**Remaining Risk**
+
+CRITICAL persistence gap remains: finality evidence persistence does not itself durably preserve the complete finalized block candidate. If process terminates after evidence durability but before canonical commit and the candidate is not reconstructable from deterministic durable inputs, restart can prove finality but cannot safely materialize the canonical block body. This must be closed before claiming crash-window recovery complete or 99% readiness.
+
+**Progress Estimate**
+
+~91.5% engineering readiness. Progress increase is limited to the material improvement in canonical recovery semantics and regression coverage; 99% is not claimed.
+
+**Next Meaningful Integration Target**
+
+5.8n-next — Durable Finalized Commit Intent / Candidate Recovery Boundary: define the minimal node-owned persistence boundary needed to retain the complete finalized block candidate (or deterministic reconstruction inputs) across the evidence-persisted → canonical-commit crash window, without merging consensus evidence storage into canonical ChainStore/StateStore and without introducing distributed transactions.
+
+**Milestone 5.8n status:** IN PROGRESS — classification boundary complete and exact-head CI GREEN, but crash recovery is not yet fully closed while durable candidate availability remains unresolved.
