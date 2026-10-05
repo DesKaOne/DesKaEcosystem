@@ -5324,3 +5324,72 @@ Regression test membuktikan reopen semantics dan persistence ordering, bukan fau
 **5.8n-next5 — Canonical Recovery Fault Matrix:** tambahkan fault-injection coverage pada boundary candidate/evidence/canonical commit untuk memastikan setiap failure point memiliki klasifikasi recovery yang deterministik dan tidak menghasilkan state transition ganda.
 
 **Milestone 5.8n-next4 status:** DONE — exact-head CI GREEN pada SHA c510f6da28e243e94a4f0929a3821e7b811a91d0.
+
+
+### 5.8n-next5 Canonical Recovery Fault Matrix — 2026-10-05
+
+**Objective**
+
+Menutup gap regression pada failure cut-points candidate persistence → evidence persistence → canonical commit, dengan memastikan setiap failure memiliki recovery classification deterministik dan tidak menghasilkan canonical state transition ganda.
+
+**Implementation / Test**
+
+- `IndoChain/internal/node/canonical_recovery_fault_matrix_test.go`
+  - **candidate persistence failure:** injected candidate-store failure harus menghentikan pipeline sebelum evidence persistence; evidence store tetap kosong.
+  - **finality evidence persistence failure:** injected evidence-store failure harus mempertahankan full candidate agar retry/recovery tetap tersedia.
+  - **canonical commit failure:** setelah candidate + finality evidence durable, injected `ChainStore.CommitBlockState` failure tidak boleh memajukan node head/state maupun underlying canonical store; candidate dan evidence recovery artifacts harus tetap tersedia.
+- Existing `ClassifyFinalizedCommit` / replay tests tetap menjadi guard untuk:
+  - canonical-missing finalized candidate;
+  - exact canonical replay;
+  - different candidate pada committed height;
+  - invalid/stale finality context.
+
+**Locked invariants**
+
+1. Candidate persistence failure terjadi sebelum evidence persistence attempt.
+2. Evidence persistence failure tidak menghapus candidate yang sudah durable.
+3. Canonical commit failure tidak memajukan node Head/HeadHash/State.
+4. Canonical commit failure tidak memajukan underlying ChainStore head/hash.
+5. Candidate dan finality evidence tetap tersedia setelah canonical commit failure untuk deterministic retry/recovery.
+6. No failure path performs automatic retry or speculative block construction.
+7. Consensus evidence tetap terpisah dari canonical ChainStore/StateStore.
+8. Exact finalized replay tetap ditolak tanpa second state transition.
+9. Different canonical block pada target height tidak diklasifikasikan sebagai exact replay.
+10. Tidak ada 2PC/distributed transaction diperkenalkan.
+
+**CI iteration / root cause**
+
+- Initial fault-matrix commit: `f13f44018d281357773ac268b266b6db47cf3ceb`.
+- CI #2138 / run `37300866788`: **RED** pada compile Test step; Tidy PASS.
+- Root cause hanya pada test harness: import `consensus` tidak terpakai dan satu call `PersistFinalizedCandidateAndEvidence` kehilangan dua authority-resolver arguments.
+- Tidak ada production consensus/storage defect dari failure tersebut.
+- Correction commit: `eba5ac3cfd5590271454d105c8d230170dccd5bb`.
+- Exact-head CI #2140 / run `37300945522`: **GREEN**.
+- Tidy: PASS.
+- `go test ./...`: PASS.
+- `go test -race ./...`: PASS.
+- `go vet ./...`: PASS.
+
+**Recovery Semantics**
+
+| Failure cut-point | Recovery classification | Canonical mutation |
+|---|---|---|
+| Candidate persistence fails | candidate unavailable; evidence write must not start | none |
+| Evidence persistence fails after candidate | candidate retained for retry/recovery | none |
+| Canonical commit fails after both artifacts durable | finalized-but-uncommitted; both artifacts retained | none |
+| Exact canonical replay | already committed | none / reject duplicate |
+| Different block at committed height | canonical context mismatch | none |
+
+**Remaining Risk**
+
+Fault matrix ini masih menggunakan controlled test doubles untuk failure injection pada candidate/evidence/canonical boundaries. Ia belum mensimulasikan actual power-loss tepat di setiap filesystem cut-point, coordinated multi-process recovery, atau adversarial production network behavior.
+
+**Progress Estimate**
+
+~96% engineering readiness. 99% belum diklaim karena production multi-node consensus hardening, broader process/filesystem fault injection, deployment-level recovery, validator lifecycle, dan production security/formal BFT analysis masih belum selesai.
+
+**Next Meaningful Integration Target**
+
+**5.8n-next6 — End-to-End Faulted Restart Matrix:** perluas test dari per-boundary fault injection menjadi sequence restart matrix yang menguji crash sebelum/selama/setelah candidate persistence, evidence persistence, canonical commit, dan post-commit cleanup, dengan deterministic recovery outcome dan exactly-once canonical state transition.
+
+**Milestone 5.8n-next5 status:** DONE — exact-head CI GREEN pada SHA `eba5ac3cfd5590271454d105c8d230170dccd5bb`.
