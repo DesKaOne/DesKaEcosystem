@@ -61,13 +61,16 @@ func (n *Node) ClassifyFinalizedCommit(
 	if err != nil {
 		return FinalizedCommitNoValidEvidence, fmt.Errorf("hash finalized candidate: %w", err)
 	}
-	if candidateHash == (types.Hash{}) || !bytes.Equal(certificate.Payload, candidateHash[:]) {
+	if candidateHash == (types.Hash{}) {
 		return FinalizedCommitCanonicalContextMismatch, ErrConsensusContextMismatch
 	}
 
 	canonicalBlock, canonicalHash, err := n.Store.GetBlock(candidate.Header.Height)
 	if err == nil {
 		if canonicalHash == candidateHash {
+			if !bytes.Equal(certificate.Payload, candidateHash[:]) {
+				return FinalizedCommitCanonicalContextMismatch, ErrConsensusContextMismatch
+			}
 			if err := validateFinalityCertificateIdentity(certificate, validators, votingPower, validatorResolver); err != nil {
 				return FinalizedCommitNoValidEvidence, err
 			}
@@ -96,7 +99,11 @@ func (n *Node) ClassifyFinalizedCommit(
 		return FinalizedCommitCanonicalContextMismatch, ErrConsensusContextMismatch
 	}
 	if len(certificate.Payload) == 0 || len(certificate.Votes) == 0 {
+
 		return FinalizedCommitNoValidEvidence, consensus.ErrInvalidFinalityCertificate
+	}
+	if !bytes.Equal(certificate.Payload, candidateHash[:]) {
+		return FinalizedCommitCanonicalContextMismatch, ErrConsensusContextMismatch
 	}
 	// For a missing canonical block, preserve the existing commit API's
 	// precise validation errors. Classification establishes that the canonical
