@@ -5,7 +5,6 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/consensus"
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/block"
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/state"
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/types"
@@ -103,6 +102,7 @@ func TestFinalityRecoveryFaultMatrixCanonicalCommitFailureRetainsRecoveryArtifac
 		candidateStore,
 		evidenceStore,
 		ctx, candidate, certificate, validators, power,
+		validatorResolver, senderResolver,
 		finalizedPersistenceContext(ctx, certificate),
 		mustTestSigner(t, 23), certificate.Votes[0].Sender,
 	)
@@ -117,16 +117,17 @@ func TestFinalityRecoveryFaultMatrixCanonicalCommitFailureRetainsRecoveryArtifac
 	beforeHash := n.HeadHash
 	beforeRoot := n.State.Root()
 	canonicalStore := n.Store
+	fault := errors.New("injected canonical commit failure")
 	n.Store = &faultMatrixCanonicalStore{
 		ChainStore: canonicalStore,
-		err:        errors.New("injected canonical commit failure"),
+		err:        fault,
 	}
 
 	err = n.CommitFinalizedBlock(
 		ctx, candidate, certificate, validators, power,
 		validatorResolver, senderResolver,
 	)
-	if !errors.Is(err, n.Store.(*faultMatrixCanonicalStore).err) {
+	if !errors.Is(err, fault) {
 		t.Fatalf("error = %v, want canonical commit failure", err)
 	}
 	if !reflect.DeepEqual(n.Head, beforeHead) || n.HeadHash != beforeHash || n.State.Root() != beforeRoot {
