@@ -12442,3 +12442,70 @@ Engineering readiness remains approximately 97%. This milestone closes the packa
 Only add a producer-side transport/binding mechanism when a real persistence-evidence producer requires it. Until then, preserve the non-exportable capability contract and continue the remaining v0.1 readiness audit without manufacturing cross-store atomicity or external validation evidence.
 
 No automatic provider retry, failover, transaction resubmission, provider funding, customer-balance mutation, treasury movement, duplicate purchase creation, blockchain action, or public financial mutation is included.
+
+
+## Milestone #92 — V1 Operator Delivery Provenance Validation
+
+**Date:** 2026-10-05
+
+### Objective
+
+Harden the versioned read-only operator delivery boundary so a manually constructed V1 DTO cannot claim `confirmed` status without satisfying the same provenance invariants enforced by the internal operator projection.
+
+### Audit Finding
+
+The internal `OperatorReport()` projection already required verified snapshot consistency, explicit `snapshot_bound` evidence scope, a non-empty matching snapshot fingerprint, and outcome-specific confirmation rules. However, `ReconciliationOperatorReportV1.Validate()` previously checked only schema version, item totals, resolution classes, and summary counts.
+
+That meant a future caller holding the public V1 DTO type could construct an internally inconsistent `confirmed` payload that passed structural validation even though the authoritative projection would never produce it.
+
+### Implementation
+
+- V1 validation now recognizes only the supported reconciliation snapshot-consistency values.
+- A `captured_verified` snapshot must carry a non-empty snapshot fingerprint.
+- Snapshot-bound evidence must carry a fingerprint that exactly matches the report snapshot.
+- Non-snapshot-bound evidence cannot carry a snapshot fingerprint.
+- `confirmed` items require a verified snapshot and snapshot-bound evidence with matching identity.
+- `confirmed_applied` requires correlated reconciliation status and an `applied` persistence outcome.
+- `confirmed_not_applied` requires a `not_applied` persistence outcome.
+- Added deterministic regression tests for forged confirmed-applied evidence, mismatched snapshot binding, and a valid confirmed snapshot-bound applied projection.
+
+### Safety Boundary / Invariants
+
+The delivery boundary now preserves the same provenance chain as the internal projection:
+
+verified snapshot -> explicit snapshot binding -> matching fingerprint -> outcome-consistent confirmation
+
+Validation remains read-only. It does not resolve persistence evidence, retry a provider call, resubmit a transaction, repair state, reverse a transaction, mutate a ledger, move funds, or expose a public financial API.
+
+### Changed Files
+
+- DesKaProvider/backend/accounting/reconciliation_operator_report_v1.go
+- DesKaProvider/backend/accounting/reconciliation_operator_report_v1_test.go
+- DesKaProvider/docs/DESKAPROVIDER_V0.1_DEVELOPMENT_STATUS.md
+
+### Verification
+
+Implementation/test commits:
+
+- d3096081a46ce6be14f841d9d4833c598ccc2871
+- 52116ff9e917713fc3c2ecceeb29f060a207570b
+
+The documentation-synchronized HEAD must receive GREEN test, vet, and race verification before this milestone is considered complete.
+
+### Remaining Risk
+
+- cross-store atomicity remains unavailable by design;
+- snapshot-bound remains a producer provenance assertion and fingerprint equality does not independently prove producer provenance;
+- no production persistence-evidence producer currently invokes the binding API;
+- live-provider compatibility remains credential-gated;
+- authenticated operator delivery integration remains absent.
+
+### Progress
+
+Engineering readiness remains approximately 97%. This milestone closes a concrete delivery-contract validation gap without increasing financial execution authority.
+
+### Next Concrete Task
+
+Continue the v0.1 readiness audit for other public/internal delivery boundaries that can independently construct authoritative-looking state. Do not add transport or producer adapters unless a real persistence-evidence producer requires them.
+
+No automatic provider retry, failover, transaction resubmission, provider funding, customer-balance mutation, treasury movement, duplicate transaction creation, blockchain action, or public financial mutation is included.
