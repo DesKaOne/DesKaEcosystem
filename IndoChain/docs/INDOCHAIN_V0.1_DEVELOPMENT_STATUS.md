@@ -5137,3 +5137,71 @@ Critical crash-window gap berikutnya tetap cross-store ordering: node perlu memi
 **5.8n-next2 — Durable Candidate → Finality Evidence Ordering Boundary:** sediakan node-owned sequencing API/test yang persist full finalized candidate terlebih dahulu, baru persist context-bound finality evidence, sehingga setiap crash state tetap recoverable atau safely non-committable.
 
 **Milestone 5.8n-next status:** DONE — exact-head CI GREEN pada SHA 387119d00d0de16d97fa640fe9d298c7a009ef2b.
+
+### 5.8n-next2 Durable Candidate → Finality Evidence Ordering Boundary — 2026-10-05
+
+**Objective**
+
+Menjadikan urutan persistence candidate finalized → finality evidence sebagai explicit node-owned protocol boundary, bukan convention caller.
+
+**Problem**
+
+Sebelumnya CandidateStore dan EvidenceStore sudah durable secara individual, tetapi caller masih dapat secara tidak sengaja mempersist finality evidence lebih dahulu. Jika crash terjadi pada state evidence durable tetapi full block candidate belum durable, restart dapat membuktikan finality namun tidak memiliki block body yang aman untuk canonical commit.
+
+**Implementation**
+
+- IndoChain/internal/node/finality_evidence_commit.go
+  - menambahkan Node.PersistFinalizedCandidateAndEvidence;
+  - seluruh canonical context + finality authority validation dilakukan sebelum storage mutation;
+  - full finalized candidate dipersist terlebih dahulu melalui CandidateStore;
+  - setelah candidate persistence sukses, context-bound finality certificate baru dipersist melalui consensus.PersistFinalityCertificateWithContext;
+  - jika evidence persistence gagal, candidate sengaja dipertahankan untuk retry/recovery;
+  - node tetap menjadi owner orchestration dan canonical boundary; consensus tetap hanya menyediakan finality authority/evidence.
+- IndoChain/internal/node/finality_evidence_commit_test.go
+  - successful ordering coverage;
+  - injected evidence persistence failure coverage;
+  - memastikan candidate tetap tersedia dan hash identity tetap konsisten setelah evidence failure.
+
+**Safety Invariants**
+
+1. Tidak ada candidate/evidence persistence sebelum canonical context dan finality authority validation sukses.
+2. Full candidate selalu durable attempt sebelum finality evidence persistence attempt.
+3. Evidence failure tidak menghapus candidate.
+4. Candidate cleanup hanya aman dilakukan setelah canonical commit sukses.
+5. Retry bersifat idempotent pada identity candidate/evidence.
+6. Consensus tidak memperoleh ownership atas ChainStore/StateStore.
+7. Tidak ada distributed transaction atau 2PC diperkenalkan.
+
+**Recovery Semantics**
+
+- Candidate persist sukses + evidence persist gagal → candidate retained; retry dapat mengulang evidence persistence tanpa kehilangan block body.
+- Candidate persist sukses + evidence persist sukses + crash sebelum canonical commit → restart memiliki dua durable inputs yang dibutuhkan untuk finality recovery.
+- Canonical commit gagal setelah kedua artifacts durable → candidate/evidence tetap tersedia dan recovery dapat mengulang commit.
+- Canonical commit sukses → existing post-commit cleanup dapat menghapus candidate secara idempotent.
+- Evidence durable tanpa candidate seharusnya tidak dapat terjadi melalui boundary API baru ini.
+
+**Verification**
+
+- Implementation commits:
+  - 6865d65999ae86d91c394cbd6f63308dba513fc1
+  - 1464398c00b0ab7f92ab820289f8e54605fc026e
+  - cd2665804dec967750c11b612fb5ad26ef9e2619
+- Exact-head GitHub Actions: GREEN — IndoChain CI run #2122 / 37288728677.
+- Tidy: PASS.
+- Test: PASS.
+- Race Test: PASS.
+- Vet: PASS.
+
+**Remaining Risk**
+
+Ordering boundary sekarang explicit, tetapi belum ada satu test end-to-end yang benar-benar melakukan sequence candidate persist → evidence persist → reopen both stores → recover finality → canonical commit exactly once → verify canonical state root/hash/height. Test tersebut menjadi verifikasi berikutnya sebelum crash-window recovery dapat dianggap fully closed.
+
+**Progress Estimate**
+
+~93% engineering readiness. Kenaikan dibatasi pada correctness boundary yang sudah explicit dan regression coverage; 99% belum diklaim.
+
+**Next Meaningful Integration Target**
+
+**5.8n-next3 — End-to-End Finality Crash Recovery Simulation:** gunakan file-backed CandidateStore + EvidenceStore + ChainStore, simulate restart setelah kedua artifact durable, recover certificate/candidate, commit exactly once, lalu reopen canonical store dan verify block hash, height, state root, serta candidate cleanup.
+
+**Milestone 5.8n-next2 status:** DONE — exact-head CI GREEN pada SHA cd2665804dec967750c11b612fb5ad26ef9e2619.
