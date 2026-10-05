@@ -5269,3 +5269,58 @@ Milestone ini membuktikan process restart / reopen, bukan simulasi power-loss di
 **5.8n-next4 — Canonical FileStore Filesystem Durability Boundary:** samakan durability sequence temp.Sync() → close → atomic rename → parent-directory Sync() pada canonical FileStore, tambahkan regression test untuk persisted canonical state setelah reopen, lalu verifikasi exact-head CI GREEN.
 
 **Milestone 5.8n-next3 status:** DONE — exact-head CI GREEN pada SHA 7a00d73b15da5456102607bf1cec56e92a4f3e58.
+
+
+### 5.8n-next4 Canonical FileStore Filesystem Durability Boundary — 2026-10-05
+
+**Objective**
+
+Menutup gap filesystem durability pada canonical ChainStore: setelah snapshot canonical ditulis dan di-fsync, atomic rename juga harus durable terhadap power-loss restart.
+
+**Root Cause**
+
+FileStore.persistSnapshotLocked sebelumnya melakukan temp.Sync(), Close(), dan os.Rename(), tetapi tidak melakukan Sync() pada parent directory. Akibatnya isi file baru sudah durable, tetapi metadata rename belum memiliki durability barrier eksplisit.
+
+**Implementation**
+
+- IndoChain/internal/storage/file_store.go
+  - sequence: encode snapshot ke temporary file; tmp.Sync(); tmp.Close(); os.Rename(tmpName, s.path); open parent directory; dir.Sync(); close directory; update in-memory snapshot.
+  - jika directory sync gagal, in-memory canonical snapshot tidak dipublikasikan.
+- Sequence ini sekarang konsisten dengan durability boundary FileCandidateStore dan FileConsensusEvidenceStore.
+
+**Regression Test**
+
+IndoChain/internal/storage/file_store_test.go menambahkan TestFileStoreSnapshotRenameSurvivesReopen, yang melakukan dua canonical commits berturut-turut lalu reopen FileStore dan memverifikasi latest canonical height, hash, dan state tetap konsisten.
+
+**Safety Invariants**
+
+1. Canonical snapshot contents di-fsync sebelum rename.
+2. Atomic rename diikuti parent-directory Sync().
+3. In-memory canonical state hanya diperbarui setelah seluruh persistence sequence berhasil.
+4. Temporary/orphan snapshot tidak menjadi canonical state saat reopen.
+5. Canonical ChainStore tidak berbagi persistence boundary dengan candidate/evidence stores.
+6. Tidak ada 2PC/distributed transaction diperkenalkan.
+
+**Verification**
+
+- Implementation commit: f65501722fde28f6c999820076a40bb4ca00941d
+- Test commit: c510f6da28e243e94a4f0929a3821e7b811a91d0
+- Exact-head CI: GREEN — IndoChain CI run #2134 / 37298239804.
+- Tidy: PASS.
+- Test: PASS.
+- Race Test: PASS.
+- Vet: PASS.
+
+**Remaining Risk**
+
+Regression test membuktikan reopen semantics dan persistence ordering, bukan fault injection terhadap filesystem/OS tepat di antara rename dan directory journal commit. Production filesystem behavior tetap bergantung pada platform/filesystem semantics.
+
+**Progress Estimate**
+
+~95% engineering readiness. 99% belum diklaim karena production multi-node consensus integration, broader fault-injection coverage, dan deployment-level recovery testing masih belum selesai.
+
+**Next Meaningful Integration Target**
+
+**5.8n-next5 — Canonical Recovery Fault Matrix:** tambahkan fault-injection coverage pada boundary candidate/evidence/canonical commit untuk memastikan setiap failure point memiliki klasifikasi recovery yang deterministik dan tidak menghasilkan state transition ganda.
+
+**Milestone 5.8n-next4 status:** DONE — exact-head CI GREEN pada SHA c510f6da28e243e94a4f0929a3821e7b811a91d0.
