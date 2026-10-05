@@ -5525,3 +5525,68 @@ Milestone ini membuktikan logical cleanup failure/retry semantics, tetapi belum 
 **5.8n-next8 — Durable Recovery Artifact Garbage-Collection Boundary:** definisikan node-owned cleanup/reconciliation pass yang secara deterministic membedakan artifact pending, committed, stale, dan context-mismatched, sehingga retained candidate/evidence tidak bergantung pada caller-specific cleanup timing.
 
 **Milestone 5.8n-next7 status:** DONE — exact-head CI GREEN pada SHA `237cacd1bd5081a1ef21f35e980838ece5d07e71`.
+
+
+### 5.8n-next8 Durable Recovery Artifact Garbage-Collection Boundary — 2026-10-05
+
+**Objective**
+
+Memindahkan keputusan cleanup recovery artifact ke boundary node-owned yang deterministic. Candidate tidak lagi bergantung pada timing cleanup caller untuk menentukan apakah aman dihapus.
+
+**Implementation**
+
+- Added `IndoChain/internal/node/recovery_artifact_gc.go`.
+- `ClassifyCandidateRecoveryArtifact` mengklasifikasikan candidate terhadap canonical head menjadi:
+  - `pending`
+  - `committed`
+  - `stale`
+  - `context-mismatched`
+- `ReconcileCandidateRecoveryArtifact` hanya menghapus artifact yang secara deterministic aman dibersihkan:
+  - `committed`
+  - `stale`
+- `pending` dan `context-mismatched` dipertahankan untuk recovery/diagnostics.
+- Candidate identity selalu diverifikasi melalui exact height + hash sebelum klasifikasi.
+- Canonical ChainStore tidak pernah dimutasi oleh reconciliation.
+- Added `CandidateRecoveryArtifactKey` sebagai helper deterministic untuk identity candidate.
+
+**Recovery Semantics**
+
+| Artifact state | Canonical interpretation | Reconciliation |
+|---|---|---|
+| pending | exact next canonical candidate | retain |
+| committed | canonical block at same height/hash already exists | delete |
+| stale | height is at/below canonical head but exact canonical hash does not match | delete |
+| context-mismatched | future/non-contiguous or previous-hash mismatch | retain |
+
+Cleanup tetap melalui CandidateStore abstraction sehingga retry tidak mengubah canonical state.
+
+**Tests**
+
+`IndoChain/internal/node/recovery_artifact_gc_test.go` covers:
+- pending candidate is retained;
+- committed candidate is deleted;
+- stale candidate is deleted;
+- future/context-mismatched candidate is retained.
+
+**CI Verification**
+
+- Implementation/test HEAD: `f06db98d91aa6dfc09ebfd0b43a7df62496c9225`.
+- Exact-head CI #2161 / run `37303929691`: **GREEN**.
+- Tidy: PASS.
+- `go test ./...`: PASS.
+- `go test -race ./...`: PASS.
+- `go vet ./...`: PASS.
+
+**Remaining Risk**
+
+Milestone ini membangun deterministic candidate reconciliation, tetapi belum mengimplementasikan batch enumeration/reconciliation seluruh candidate store maupun evidence garbage collection berbasis canonical finality context. Actual OS/filesystem power-loss semantics juga tetap deployment-level risk.
+
+**Progress Estimate**
+
+~98% engineering readiness. 99% belum diklaim karena production multi-node consensus integration/hardening, validator lifecycle, deployment fault testing, and production security/formal BFT analysis masih terbuka.
+
+**Next Meaningful Integration Target**
+
+**5.8n-next9 — Batch Recovery Reconciliation + Evidence Cleanup Boundary:** tambahkan deterministic enumeration/reconciliation seluruh durable candidate artifacts dan kaitkan evidence cleanup dengan canonical finality identity tanpa pernah menghapus evidence yang masih dibutuhkan untuk recovery.
+
+**Milestone 5.8n-next8 status:** DONE — implementation/test exact-head CI GREEN pada `f06db98d91aa6dfc09ebfd0b43a7df62496c9225`.
