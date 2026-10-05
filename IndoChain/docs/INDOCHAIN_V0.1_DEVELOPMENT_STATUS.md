@@ -5076,3 +5076,64 @@ CRITICAL persistence gap remains: finality evidence persistence does not itself 
 5.8n-next — Durable Finalized Commit Intent / Candidate Recovery Boundary: define the minimal node-owned persistence boundary needed to retain the complete finalized block candidate (or deterministic reconstruction inputs) across the evidence-persisted → canonical-commit crash window, without merging consensus evidence storage into canonical ChainStore/StateStore and without introducing distributed transactions.
 
 **Milestone 5.8n status:** IN PROGRESS — classification boundary complete and exact-head CI GREEN, but crash recovery is not yet fully closed while durable candidate availability remains unresolved.
+
+### 5.8n-next Finality Evidence Filesystem Durability — 2026-10-05
+
+**Objective**
+
+Menutup crash window pada file-backed consensus finality evidence setelah atomic snapshot rename. Evidence harus tetap durable setelah power-loss/restart, bukan hanya setelah proses kembali normal.
+
+**Problem**
+
+FileCandidateStore sudah melakukan temp.Sync() + os.Rename() + parent-directory sync, tetapi FileConsensusEvidenceStore sebelumnya berhenti setelah os.Rename(). Tanpa sync parent directory, durability metadata dari rename belum dipastikan melewati filesystem crash boundary.
+
+**Root Cause**
+
+Durability file contents dan durability directory entry adalah dua boundary berbeda. fsync temporary file memastikan bytes snapshot tersimpan; atomic rename membuat snapshot baru visible; parent-directory sync diperlukan agar rename metadata itself durable terhadap power-loss.
+
+**Implementation**
+
+- IndoChain/internal/storage/consensus_evidence_store.go
+  - setelah os.Rename(tmpName, s.path), membuka parent directory;
+  - menjalankan dir.Sync();
+  - hanya setelah directory sync berhasil, snapshot dianggap durable dan s.records diperbarui.
+- Pola durability sekarang konsisten dengan FileCandidateStore.
+
+**Safety Invariants**
+
+1. Evidence snapshot ditulis ke temporary file dan di-Sync() sebelum rename.
+2. Rename tetap atomic terhadap target snapshot.
+3. Parent directory di-Sync() setelah rename.
+4. In-memory record tidak dipublikasikan sebagai persisted state sebelum seluruh durability sequence sukses.
+5. Consensus evidence store tetap terpisah dari canonical ChainStore/StateStore.
+6. Tidak ada 2PC/distributed transaction diperkenalkan.
+
+**Recovery Semantics**
+
+- Crash sebelum rename: old evidence snapshot tetap menjadi authoritative durable snapshot.
+- Crash setelah rename tetapi sebelum directory sync: implementation sekarang menunggu directory sync sebelum menyatakan persistence sukses.
+- Restart setelah successful persistence: evidence dapat direopen dari file-backed store dan tetap menjadi input recovery.
+- Candidate persistence ordering tetap menjadi boundary terpisah; evidence durability tidak dianggap sebagai canonical block persistence.
+
+**Verification**
+
+- Implementation commit: 387119d00d0de16d97fa640fe9d298c7a009ef2b.
+- Exact-head GitHub Actions: GREEN — IndoChain CI run #2114 / 37285184868.
+- Tidy: PASS.
+- Test: PASS.
+- Race Test: PASS.
+- Vet: PASS.
+
+**Remaining Risk**
+
+Critical crash-window gap berikutnya tetap cross-store ordering: node perlu memiliki explicit orchestration boundary yang memastikan complete finalized candidate durable sebelum finality evidence dianggap durable authority. Jika candidate belum durable lalu evidence sudah durable, restart dapat membuktikan finality tetapi belum tentu memiliki full block body untuk canonical commit. Ini harus ditutup tanpa 2PC.
+
+**Progress Estimate**
+
+~92% engineering readiness. Tidak ada klaim 99%; crash-window recovery belum dianggap fully closed sampai candidate-before-evidence ordering dan end-to-end restart simulation terbukti.
+
+**Next Meaningful Integration Target**
+
+**5.8n-next2 — Durable Candidate → Finality Evidence Ordering Boundary:** sediakan node-owned sequencing API/test yang persist full finalized candidate terlebih dahulu, baru persist context-bound finality evidence, sehingga setiap crash state tetap recoverable atau safely non-committable.
+
+**Milestone 5.8n-next status:** DONE — exact-head CI GREEN pada SHA 387119d00d0de16d97fa640fe9d298c7a009ef2b.
