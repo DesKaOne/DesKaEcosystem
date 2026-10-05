@@ -5205,3 +5205,67 @@ Ordering boundary sekarang explicit, tetapi belum ada satu test end-to-end yang 
 **5.8n-next3 — End-to-End Finality Crash Recovery Simulation:** gunakan file-backed CandidateStore + EvidenceStore + ChainStore, simulate restart setelah kedua artifact durable, recover certificate/candidate, commit exactly once, lalu reopen canonical store dan verify block hash, height, state root, serta candidate cleanup.
 
 **Milestone 5.8n-next2 status:** DONE — exact-head CI GREEN pada SHA cd2665804dec967750c11b612fb5ad26ef9e2619.
+
+
+### 5.8n-next3 End-to-End Finality Crash Recovery Simulation — 2026-10-05
+
+**Objective**
+
+Membuktikan end-to-end restart recovery ketika full finalized candidate dan context-bound finality evidence sudah durable, tetapi canonical block belum committed.
+
+**Implementation / Test**
+
+- IndoChain/internal/node/finality_evidence_commit_test.go
+  - menggunakan tiga file-backed persistence boundary terpisah:
+    - FileStore untuk canonical ChainStore;
+    - FileCandidateStore untuk full finalized candidate;
+    - FileConsensusEvidenceStore untuk authenticated finality evidence.
+  - membangun finalized candidate + authenticated finality certificate;
+  - memanggil Node.PersistFinalizedCandidateAndEvidence, sehingga candidate durable lebih dahulu daripada evidence;
+  - mensimulasikan process restart dengan membuka ulang ketiga file stores;
+  - menjalankan OpenDevnet untuk memvalidasi canonical ChainStore sebelum recovery;
+  - menjalankan RecoverFinalityCertificateWithContext dan memulihkan full candidate berdasarkan CandidateKey;
+  - melakukan canonical commit tepat satu kali;
+  - melakukan second recovery attempt dan memastikan ErrFinalizedBlockAlreadyCommitted;
+  - menghapus candidate setelah canonical commit dan memverifikasi ErrCandidateNotFound;
+  - membuka ulang ChainStore sekali lagi dan memverifikasi canonical height, block hash, state root, dan node state root.
+
+**Safety Invariants**
+
+1. Candidate dan finality evidence tetap berada pada persistence boundary terpisah dari canonical ChainStore.
+2. Restart tidak menganggap finality evidence sebagai full block body; candidate tetap harus tersedia secara durable.
+3. Canonical commit hanya terjadi setelah evidence dan candidate berhasil direcover serta divalidasi.
+4. Canonical commit replay tidak menghasilkan second state transition.
+5. Candidate cleanup dilakukan setelah canonical commit berhasil.
+6. Reopen canonical store harus menghasilkan head/hash/state root yang sama dengan commit hasil recovery.
+7. Tidak ada distributed transaction atau 2PC diperkenalkan.
+
+**Verification**
+
+- Initial test commit: e4602200673b5af0751e8ce11f3140c6d0ebcbc0 — CI #2126 RED hanya karena test menggunakan interface crypto.Signer seolah memiliki PublicKey().
+- Fix commit: 7a00d73b15da5456102607bf1cec56e92a4f3e58.
+- Exact-head GitHub Actions: GREEN — IndoChain CI run #2128 / 37289491764.
+- Tidy: PASS.
+- Test: PASS.
+- Race Test: PASS.
+- Vet: PASS.
+
+**Architecture Impact**
+
+Crash-window recovery sekarang memiliki bukti integration-level untuk process restart: durable candidate + durable evidence dapat direopen, authenticated finality dapat direcover, full candidate dapat dipulihkan, canonical commit dapat dilakukan sekali, dan canonical state dapat diverifikasi kembali setelah reopen.
+
+Consensus tetap hanya menyediakan finality authority/evidence. Node tetap memiliki orchestration, execution, dan canonical storage ownership.
+
+**Remaining Risk**
+
+Milestone ini membuktikan process restart / reopen, bukan simulasi power-loss di tengah canonical FileStore snapshot replacement. Audit menunjukkan FileCandidateStore dan FileConsensusEvidenceStore sudah melakukan parent-directory Sync() setelah atomic rename, sedangkan FileStore.persistSnapshotLocked masih belum melakukan parent-directory sync. Karena itu canonical ChainStore filesystem durability terhadap power-loss masih menjadi gap berikutnya dan belum boleh dianggap fully closed.
+
+**Progress Estimate**
+
+~94% engineering readiness. 99% belum diklaim karena canonical ChainStore crash/power-loss durability dan production multi-node consensus integration masih belum selesai.
+
+**Next Meaningful Integration Target**
+
+**5.8n-next4 — Canonical FileStore Filesystem Durability Boundary:** samakan durability sequence temp.Sync() → close → atomic rename → parent-directory Sync() pada canonical FileStore, tambahkan regression test untuk persisted canonical state setelah reopen, lalu verifikasi exact-head CI GREEN.
+
+**Milestone 5.8n-next3 status:** DONE — exact-head CI GREEN pada SHA 7a00d73b15da5456102607bf1cec56e92a4f3e58.
