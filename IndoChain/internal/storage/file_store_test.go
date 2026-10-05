@@ -153,3 +153,54 @@ func TestFileStoreFailedPersistenceLeavesMemoryUnchanged(t *testing.T) {
 		t.Fatal("expected failed target path to remain a directory")
 	}
 }
+
+
+func TestFileStoreSnapshotRenameSurvivesReopen(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "chain.gob")
+	store, err := NewFileStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	firstState := state.New()
+	firstState.Set(types.Address("alice"), state.Account{Balance: 42, Nonce: 1})
+	firstBlock := block.Block{Header: block.Header{Height: 1, StateRoot: firstState.Root()}}
+	firstHash := types.Hash{1}
+	if err := store.CommitBlockState(firstBlock, firstHash, firstState); err != nil {
+		t.Fatal(err)
+	}
+
+	secondState := state.New()
+	secondState.Set(types.Address("alice"), state.Account{Balance: 99, Nonce: 2})
+	secondBlock := block.Block{Header: block.Header{
+		Height:       2,
+		PreviousHash: firstHash,
+		StateRoot:    secondState.Root(),
+	}}
+	secondHash := types.Hash{2}
+	if err := store.CommitBlockState(secondBlock, secondHash, secondState); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, err := NewFileStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotBlock, gotHash, err := reopened.Head()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotBlock.Header.Height != secondBlock.Header.Height || gotHash != secondHash {
+		t.Fatalf("reopened head = height %d hash %x, want height %d hash %x",
+			gotBlock.Header.Height, gotHash, secondBlock.Header.Height, secondHash)
+	}
+	gotState, err := reopened.LoadState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	account, ok := gotState.Get(types.Address("alice"))
+	if !ok || account != (state.Account{Balance: 99, Nonce: 2}) {
+		t.Fatalf("reopened state = %+v, want latest committed account", account)
+	}
+}
