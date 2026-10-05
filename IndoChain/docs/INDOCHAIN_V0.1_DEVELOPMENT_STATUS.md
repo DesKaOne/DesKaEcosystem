@@ -5461,3 +5461,67 @@ Matrix ini mensimulasikan crash pada logical persistence cut-points dengan mengh
 **5.8n-next7 — Recovery Cleanup Failure Matrix:** uji kegagalan cleanup candidate/evidence setelah canonical commit, memastikan cleanup failure tidak pernah rollback canonical state dan retry berikutnya tetap deterministic/idempotent.
 
 **Milestone 5.8n-next6 status:** DONE — exact-head CI GREEN pada SHA `64b537073397eccbe68156f9e5a5af7a6febf5de`.
+
+
+### 5.8n-next7 Recovery Cleanup Failure Matrix — 2026-10-05
+
+**Objective**
+
+Membuktikan bahwa kegagalan cleanup setelah canonical commit tidak pernah membatalkan canonical state, artifact recovery tetap aman, dan cleanup dapat diulang secara idempotent.
+
+**Implementation / Test**
+
+- `IndoChain/internal/node/recovery_cleanup_fault_matrix_test.go`
+- Menambahkan injected candidate-cleanup failure pada `ResumeFinalityCommitFromCandidateStore`.
+- Memastikan canonical commit tetap sukses walaupun `DeleteCandidate` gagal.
+- Memastikan candidate tetap tersedia sebagai recovery artifact setelah cleanup failure.
+- Memastikan replay finality setelah canonical commit hanya menghasilkan `AlreadyCommitted` dan tidak membuat second state transition.
+- Memastikan cleanup retry berikutnya berhasil menghapus candidate, dan retry tambahan tetap idempotent.
+- Memastikan helper `consensus.DeleteConsensusEvidence` juga memiliki cleanup semantics idempotent untuk evidence identity yang sudah tidak ada.
+
+**Locked Invariants**
+
+1. Canonical commit selalu terjadi sebelum candidate cleanup.
+2. Candidate cleanup failure tidak rollback Head, HeadHash, atau canonical state.
+3. Candidate yang tertinggal setelah cleanup failure tetap dapat direcover berdasarkan exact height/hash identity.
+4. Post-commit replay tidak menghasilkan canonical state transition kedua.
+5. Candidate cleanup dapat diulang sampai berhasil tanpa mengubah canonical state.
+6. Evidence deletion API bersifat idempotent untuk identity yang sudah absent.
+7. Cleanup failure tidak diperkenankan mengubah canonical commit menjadi failure state.
+8. Tidak ada distributed transaction atau 2PC diperkenalkan.
+
+**Recovery Semantics**
+
+| Cleanup state | Canonical state | Recovery artifact | Action |
+|---|---|---|---|
+| Cleanup succeeds after commit | committed | candidate removed | done |
+| Candidate cleanup fails after commit | committed | candidate retained | retry cleanup; replay remains idempotent |
+| Cleanup retry succeeds | committed | candidate removed | done |
+| Cleanup retry repeats after removal | committed | absent | successful no-op |
+| Evidence identity already absent | committed/unchanged | absent | successful no-op |
+
+**Verification**
+
+- Initial implementation commit: `8e5ccfbd8aa75aa3f8b0928ec349367e88af3548`.
+- Exact-head CI #2150 / run `37301975787`: **RED** only because the new test had an unused `block` import.
+- Root cause was test-harness compilation only; no production protocol/storage defect.
+- Fix commit: `237cacd1bd5081a1ef21f35e980838ece5d07e71`.
+- Exact-head CI #2152 / run `37302031484`: **GREEN**.
+- Tidy: PASS.
+- `go test ./...`: PASS.
+- `go test -race ./...`: PASS.
+- `go vet ./...`: PASS.
+
+**Remaining Risk**
+
+Milestone ini membuktikan logical cleanup failure/retry semantics, tetapi belum menguji actual OS/filesystem fault injection saat cleanup file rename/fsync berlangsung. Evidence retention policy juga masih intentionally separate dari canonical commit; milestone ini hanya mengunci idempotent deletion API, bukan memaksa evidence cleanup pada setiap canonical commit.
+
+**Progress Estimate**
+
+~98% engineering readiness. 99% belum diklaim karena actual deployment power-loss testing, production multi-node consensus integration/hardening, validator lifecycle, dan production security/formal BFT analysis masih belum selesai.
+
+**Next Meaningful Integration Target**
+
+**5.8n-next8 — Durable Recovery Artifact Garbage-Collection Boundary:** definisikan node-owned cleanup/reconciliation pass yang secara deterministic membedakan artifact pending, committed, stale, dan context-mismatched, sehingga retained candidate/evidence tidak bergantung pada caller-specific cleanup timing.
+
+**Milestone 5.8n-next7 status:** DONE — exact-head CI GREEN pada SHA `237cacd1bd5081a1ef21f35e980838ece5d07e71`.
