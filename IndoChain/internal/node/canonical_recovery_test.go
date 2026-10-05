@@ -125,8 +125,8 @@ func TestCommitFinalizedBlockRejectsInvalidEvidenceBeforeAnyMutation(t *testing.
 		recoveryValidatorAuthorityResolver{authority: f.authority},
 		senderAuthorityResolver{publicKey: f.signerA.PublicKey()},
 	)
-	if !errors.Is(err, ErrFinalizedCommitNoValidEvidence) {
-		t.Fatalf("error = %v, want %v", err, ErrFinalizedCommitNoValidEvidence)
+	if !errors.Is(err, consensus.ErrInvalidSignature) {
+		t.Fatalf("error = %v, want invalid consensus signature, got %v", err)
 	}
 	if f.node.Head.Header.Height != originalHeight || f.node.HeadHash != originalHead {
 		t.Fatal("invalid recovery evidence mutated canonical head")
