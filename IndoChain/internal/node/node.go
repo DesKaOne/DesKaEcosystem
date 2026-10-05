@@ -300,26 +300,19 @@ func (n *Node) CommitFinalizedBlock(
 	if validatorResolver == nil || senderResolver == nil {
 		return errors.New("missing finalized-block authority resolver")
 	}
-	// A finalized block is append-only at the node boundary. For a replayed
-	// candidate, identify the exact canonical block first so a stale consensus
-	// context cannot mask the replay error. A different block at an old height
-	// still proceeds to canonical-context validation and is rejected there.
-	if candidate.Header.Height > 0 && candidate.Header.Height <= n.Head.Header.Height {
-		canonicalBlock, canonicalHash, err := n.Store.GetBlock(candidate.Header.Height)
-		if err == nil {
-			candidateHash, hashErr := block.Hash(candidate)
-			if hashErr == nil && candidateHash == canonicalHash {
-				return ErrFinalizedBlockAlreadyCommitted
-			}
-			if canonicalHash != (types.Hash{}) {
-				if storedHash, storedHashErr := block.Hash(canonicalBlock); storedHashErr == nil && storedHash == candidateHash {
-					return ErrFinalizedBlockAlreadyCommitted
-				}
-			}
-		}
-	}
-	if err := validateCanonicalConsensusContext(n, ctx); err != nil {
+	classification, err := n.ClassifyFinalizedCommit(ctx, candidate, certificate, validators, votingPower, validatorResolver)
+	if err != nil {
 		return err
+	}
+	switch classification {
+	case FinalizedCommitCanonicalMatched:
+		return ErrFinalizedBlockAlreadyCommitted
+	case FinalizedCommitEvidencePresentCanonicalMissing:
+		// Continue through the normal canonical execution/commit path below.
+	case FinalizedCommitNoValidEvidence, FinalizedCommitCanonicalContextMismatch:
+		return ErrConsensusContextMismatch
+	default:
+		return ErrConsensusContextMismatch
 	}
 	if _, err := consensus.ValidateFinalizedBlockWithAuthority(
 		ctx, candidate, certificate, validators, votingPower, validatorResolver,
