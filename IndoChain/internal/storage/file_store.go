@@ -196,6 +196,19 @@ func (s *FileStore) persistSnapshotLocked(data fileSnapshot) error {
 	if err := os.Rename(tmpName, s.path); err != nil {
 		return err
 	}
+	// The snapshot file is durable after tmp.Sync(); the directory sync makes
+	// the atomic rename itself durable across a power-loss restart.
+	dir, err := os.Open(filepath.Dir(s.path))
+	if err != nil {
+		return err
+	}
+	if err := dir.Sync(); err != nil {
+		_ = dir.Close()
+		return err
+	}
+	if err := dir.Close(); err != nil {
+		return err
+	}
 	s.data = data
 	return nil
 }
