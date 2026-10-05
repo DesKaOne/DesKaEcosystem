@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/block"
-	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/types"
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/storage"
 )
 
@@ -117,4 +116,3 @@ func CandidateRecoveryArtifactKey(candidate block.Block) (storage.CandidateKey, 
 	return storage.CandidateKey{Height: candidate.Header.Height, Hash: hash}, nil
 }
 
-var _ types.Height
