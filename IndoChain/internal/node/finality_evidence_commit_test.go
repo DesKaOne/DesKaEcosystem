@@ -5,6 +5,8 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/consensus"
+	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/block"
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/storage"
 )
 
@@ -85,5 +87,87 @@ func TestCommitFinalityEvidenceReplayIsIdempotentlyRejected(t *testing.T) {
 	}
 	if !reflect.DeepEqual(n.Head, beforeHead) || n.HeadHash != beforeHash || n.State.Root() != beforeRoot {
 		t.Fatal("node mutated after replay rejection")
+	}
+}
+
+
+type failingFinalityEvidenceStore struct {
+	*storage.MemoryConsensusEvidenceStore
+	err error
+}
+
+func (s *failingFinalityEvidenceStore) PutConsensusEvidence(string, []byte) error {
+	return s.err
+}
+
+func finalizedPersistenceContext(ctx consensus.BlockProductionContext, certificate consensus.FinalityCertificate) consensus.PersistenceContext {
+	return consensus.PersistenceContext{
+		ProtocolVersion: uint64(ctx.State.ProtocolVersion),
+		ChainID: uint64(ctx.State.ChainID),
+		Epoch: certificate.Epoch,
+		Height: uint64(certificate.Height),
+		Round: certificate.Round,
+		Phase: uint8(consensus.PhaseFinalized),
+		ThresholdNumerator: certificate.Threshold.Numerator,
+		ThresholdDenominator: certificate.Threshold.Denominator,
+	}
+}
+
+func TestPersistFinalizedCandidateAndEvidenceOrdersCandidateBeforeEvidence(t *testing.T) {
+	n, ctx, candidate, certificate, validatorResolver, senderResolver, _ := finalizedBlockFixture(t, storage.NewMemoryStore())
+	validators := mustValidatorSet(t, certificate)
+	power := mustVotingPowerSet(t, certificate)
+	evidenceStore := storage.NewMemoryConsensusEvidenceStore()
+
+	key, evidenceKey, err := n.PersistFinalizedCandidateAndEvidence(
+		storage.NewMemoryCandidateStore(),
+		evidenceStore,
+		ctx, candidate, certificate, validators, power,
+		validatorResolver, senderResolver,
+		finalizedPersistenceContext(ctx, certificate),
+		mustTestSigner(t, 23), certificate.Votes[0].Sender,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if key.Height != candidate.Header.Height || evidenceKey == "" {
+		t.Fatalf("unexpected persistence identities: candidate=%+v evidence=%q", key, evidenceKey)
+	}
+}
+
+func TestPersistFinalizedCandidateAndEvidenceRetainsCandidateWhenEvidenceFails(t *testing.T) {
+	n, ctx, candidate, certificate, validatorResolver, senderResolver, _ := finalizedBlockFixture(t, storage.NewMemoryStore())
+	validators := mustValidatorSet(t, certificate)
+	power := mustVotingPowerSet(t, certificate)
+	candidateStore := storage.NewMemoryCandidateStore()
+	evidenceStore := &failingFinalityEvidenceStore{
+		MemoryConsensusEvidenceStore: storage.NewMemoryConsensusEvidenceStore(),
+		err: errors.New("injected evidence persistence failure"),
+	}
+
+	key, evidenceKey, err := n.PersistFinalizedCandidateAndEvidence(
+		candidateStore,
+		evidenceStore,
+		ctx, candidate, certificate, validators, power,
+		validatorResolver, senderResolver,
+		finalizedPersistenceContext(ctx, certificate),
+		mustTestSigner(t, 23), certificate.Votes[0].Sender,
+	)
+	if !errors.Is(err, evidenceStore.err) {
+		t.Fatalf("error = %v, want %v", err, evidenceStore.err)
+	}
+	if evidenceKey != "" {
+		t.Fatalf("evidence key = %q, want empty", evidenceKey)
+	}
+	got, err := candidateStore.GetCandidate(key)
+	if err != nil {
+		t.Fatalf("candidate was not retained after evidence failure: %v", err)
+	}
+	gotHash, err := block.Hash(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotHash != key.Hash {
+		t.Fatal("retained candidate hash does not match persistence key")
 	}
 }
