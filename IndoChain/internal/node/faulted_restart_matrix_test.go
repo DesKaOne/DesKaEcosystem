@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/consensus"
+	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/crypto"
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/block"
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/storage"
 )
@@ -21,7 +22,7 @@ type faultedRestartFixture struct {
 	power       consensus.VotingPowerSet
 	validatorAuthority validatorAuthorityResolver
 	senderAuthority senderAuthorityResolver
-	signer       interface{ PublicKey() []byte }
+	signer       crypto.Signer
 	validatorID  []byte
 }
 
