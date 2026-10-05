@@ -137,4 +137,3 @@ func validateFinalityCertificateIdentity(
 	}
 	return nil
 }
-}
