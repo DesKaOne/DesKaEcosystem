@@ -57,5 +57,15 @@ func (n *Node) ResumeFinalityCommitFromCandidateStore(
 	if candidate.Header.Height != certificate.Height+1 || candidateHash != hash {
 		return FinalityRecoveryResult{}, consensus.ErrCanonicalCommitPublicationContextMismatch
 	}
-	return n.ResumeFinalityCommit(recovery, candidate, certificate, validators, votingPower, validatorResolver, senderResolver, authority)
+	result, err := n.ResumeFinalityCommit(recovery, candidate, certificate, validators, votingPower, validatorResolver, senderResolver, authority)
+	if err != nil {
+		return FinalityRecoveryResult{}, err
+	}
+	if result.Committed {
+		// Cleanup is deliberately after canonical commit. If cleanup itself
+		// fails, retaining the candidate is safe: the next recovery observes
+		// the already-committed canonical hash and remains idempotent.
+		_ = store.DeleteCandidate(key)
+	}
+	return result, nil
 }
