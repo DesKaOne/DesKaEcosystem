@@ -1,10 +1,12 @@
 package storage
 
 import (
+	"bytes"
 	"encoding/gob"
 	"errors"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/block"
@@ -99,3 +101,19 @@ func (s *FileCandidateStore) persistLocked(data candidateSnapshot) error {
 func init() { gob.Register(transaction.Transaction{}) }
 
 var _ CandidateStore = (*FileCandidateStore)(nil)
+
+
+func (s *FileCandidateStore) ListCandidateKeys() ([]CandidateKey, error) {
+	if s == nil { return nil, ErrNilCandidateStore }
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	keys := make([]CandidateKey, 0, len(s.data.Candidates))
+	for key := range s.data.Candidates { keys = append(keys, key) }
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].Height != keys[j].Height { return keys[i].Height < keys[j].Height }
+		return bytes.Compare(keys[i].Hash[:], keys[j].Hash[:]) < 0
+	})
+	return keys, nil
+}
+
+var _ CandidateEnumerator = (*FileCandidateStore)(nil)
