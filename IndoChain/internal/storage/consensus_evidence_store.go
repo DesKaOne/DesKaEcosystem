@@ -190,6 +190,16 @@ func (s *FileConsensusEvidenceStore) persistLocked(records map[string][]byte) er
 	if err := os.Rename(tmpName, s.path); err != nil {
 		return err
 	}
+	// The rename makes the new snapshot visible atomically. Sync the parent
+	// directory as well so the rename itself survives a power-loss restart.
+	dir, err := os.Open(filepath.Dir(s.path))
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+	if err := dir.Sync(); err != nil {
+		return err
+	}
 	s.records = records
 	return nil
 }
