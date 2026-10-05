@@ -86,6 +86,12 @@ func (s *FileCandidateStore) persistLocked(data candidateSnapshot) error {
 	if err := tmp.Sync(); err != nil { _ = tmp.Close(); return err }
 	if err := tmp.Close(); err != nil { return err }
 	if err := os.Rename(name, s.path); err != nil { return err }
+	// The rename makes the new snapshot visible atomically. Sync the parent
+	// directory as well so the rename itself survives a power-loss restart.
+	dir, err := os.Open(filepath.Dir(s.path))
+	if err != nil { return err }
+	defer dir.Close()
+	if err := dir.Sync(); err != nil { return err }
 	s.data = data
 	return nil
 }
