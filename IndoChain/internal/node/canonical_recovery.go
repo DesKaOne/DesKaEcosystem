@@ -68,6 +68,28 @@ func (n *Node) ClassifyFinalizedCommit(
 	if candidateHash == (types.Hash{}) || !bytes.Equal(certificate.Payload, candidateHash[:]) {
 		return FinalizedCommitCanonicalContextMismatch, ErrConsensusContextMismatch
 	}
+
+	canonicalBlock, canonicalHash, err := n.Store.GetBlock(candidate.Header.Height)
+	if err == nil {
+		if canonicalHash == candidateHash {
+			if err := validateFinalityCertificateIdentity(certificate, validators, votingPower, validatorResolver); err != nil {
+				return FinalizedCommitNoValidEvidence, err
+			}
+			return FinalizedCommitCanonicalMatched, nil
+		}
+		storedHash, hashErr := block.Hash(canonicalBlock)
+		if hashErr == nil && storedHash == candidateHash {
+			if err := validateFinalityCertificateIdentity(certificate, validators, votingPower, validatorResolver); err != nil {
+				return FinalizedCommitNoValidEvidence, err
+			}
+			return FinalizedCommitCanonicalMatched, nil
+		}
+		return FinalizedCommitCanonicalContextMismatch, ErrConsensusContextMismatch
+	}
+	if !errors.Is(err, storage.ErrBlockNotFound) {
+		return FinalizedCommitCanonicalContextMismatch, err
+	}
+
 	if err := validateCanonicalConsensusContext(n, ctx); err != nil {
 		return FinalizedCommitCanonicalContextMismatch, err
 	}
@@ -77,27 +99,42 @@ func (n *Node) ClassifyFinalizedCommit(
 		candidate.Header.Version != n.Config.ProtocolVersion {
 		return FinalizedCommitCanonicalContextMismatch, ErrConsensusContextMismatch
 	}
-
 	if _, err := consensus.ValidateFinalizedBlockWithAuthority(
 		ctx, candidate, certificate, validators, votingPower, validatorResolver,
 	); err != nil {
 		return FinalizedCommitNoValidEvidence, fmt.Errorf("%w: %v", ErrFinalizedCommitNoValidEvidence, err)
 	}
-
-	canonicalBlock, canonicalHash, err := n.Store.GetBlock(candidate.Header.Height)
-	if err == nil {
-		if canonicalHash == candidateHash {
-			return FinalizedCommitCanonicalMatched, nil
-		}
-		storedHash, hashErr := block.Hash(canonicalBlock)
-		if hashErr == nil && storedHash == candidateHash {
-			return FinalizedCommitCanonicalMatched, nil
-		}
-		return FinalizedCommitCanonicalContextMismatch, ErrConsensusContextMismatch
-	}
-	if !errors.Is(err, storage.ErrBlockNotFound) {
-		return FinalizedCommitCanonicalContextMismatch, err
-	}
-
 	return FinalizedCommitEvidencePresentCanonicalMissing, nil
+
+}
+
+func validateFinalityCertificateIdentity(
+	certificate consensus.FinalityCertificate,
+	validators consensus.ValidatorSet,
+	votingPower consensus.VotingPowerSet,
+	resolver ValidatorAuthorityResolver,
+) error {
+	state, err := consensus.NewRoundState(
+		certificate.ProtocolVersion,
+		certificate.ChainID,
+		certificate.Epoch,
+		certificate.Height,
+	)
+	if err != nil {
+		return fmt.Errorf("%w: invalid certificate state: %v", ErrFinalizedCommitNoValidEvidence, err)
+	}
+	if err := consensus.ValidateFinalityCertificate(certificate, state, validators, votingPower); err != nil {
+		return fmt.Errorf("%w: %v", ErrFinalizedCommitNoValidEvidence, err)
+	}
+	for _, vote := range certificate.Votes {
+		key, err := resolver.PublicKeyForValidator(vote.Sender)
+		if err != nil {
+			return fmt.Errorf("%w: validator authority: %v", ErrFinalizedCommitNoValidEvidence, err)
+		}
+		if err := consensus.VerifyMessageSignature(vote, key); err != nil {
+			return fmt.Errorf("%w: vote signature: %v", ErrFinalizedCommitNoValidEvidence, err)
+		}
+	}
+	return nil
+}
 }
