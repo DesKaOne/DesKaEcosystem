@@ -1,7 +1,9 @@
 package storage
 
 import (
+	"bytes"
 	"errors"
+	"sort"
 	"sync"
 
 	"github.com/DesKaOne/DesKaEcosystem/IndoChain/internal/core/block"
@@ -23,6 +25,12 @@ type CandidateStore interface {
 	SaveCandidate(CandidateKey, block.Block) error
 	GetCandidate(CandidateKey) (block.Block, error)
 	DeleteCandidate(CandidateKey) error
+}
+
+// CandidateEnumerator exposes a deterministic snapshot of all durable
+// candidate identities without widening the canonical storage contract.
+type CandidateEnumerator interface {
+	ListCandidateKeys() ([]CandidateKey, error)
 }
 
 type MemoryCandidateStore struct {
@@ -80,3 +88,19 @@ func cloneBlock(b block.Block) block.Block {
 }
 
 var _ CandidateStore = (*MemoryCandidateStore)(nil)
+
+
+func (s *MemoryCandidateStore) ListCandidateKeys() ([]CandidateKey, error) {
+	if s == nil { return nil, ErrNilCandidateStore }
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	keys := make([]CandidateKey, 0, len(s.items))
+	for key := range s.items { keys = append(keys, key) }
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].Height != keys[j].Height { return keys[i].Height < keys[j].Height }
+		return bytes.Compare(keys[i].Hash[:], keys[j].Hash[:]) < 0
+	})
+	return keys, nil
+}
+
+var _ CandidateEnumerator = (*MemoryCandidateStore)(nil)
