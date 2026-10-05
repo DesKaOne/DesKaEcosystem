@@ -188,7 +188,7 @@ func TestFinalizedCrashRecoveryAcrossFileStoresCommitsExactlyOnce(t *testing.T) 
 		t.Fatal(err)
 	}
 
-	signer := mustTestSigner(t, 23)
+	signer := testEd25519Signer(t, 23)
 	validatorID := []byte("fixture-validator")
 	validators, err := consensus.NewValidatorSet([][]byte{validatorID})
 	if err != nil {
