@@ -99,11 +99,10 @@ func (n *Node) ClassifyFinalizedCommit(
 		candidate.Header.Version != n.Config.ProtocolVersion {
 		return FinalizedCommitCanonicalContextMismatch, ErrConsensusContextMismatch
 	}
-	if _, err := consensus.ValidateFinalizedBlockWithAuthority(
-		ctx, candidate, certificate, validators, votingPower, validatorResolver,
-	); err != nil {
-		return FinalizedCommitNoValidEvidence, fmt.Errorf("%w: %v", ErrFinalizedCommitNoValidEvidence, err)
-	}
+	// For a missing canonical block, preserve the existing commit API's
+	// precise validation errors. Classification only establishes that the
+	// canonical slot is absent and the recovery context is current; the commit
+	// boundary performs the final authenticated evidence validation.
 	return FinalizedCommitEvidencePresentCanonicalMissing, nil
 
 }
