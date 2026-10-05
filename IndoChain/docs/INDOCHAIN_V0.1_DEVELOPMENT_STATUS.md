@@ -5393,3 +5393,71 @@ Fault matrix ini masih menggunakan controlled test doubles untuk failure injecti
 **5.8n-next6 — End-to-End Faulted Restart Matrix:** perluas test dari per-boundary fault injection menjadi sequence restart matrix yang menguji crash sebelum/selama/setelah candidate persistence, evidence persistence, canonical commit, dan post-commit cleanup, dengan deterministic recovery outcome dan exactly-once canonical state transition.
 
 **Milestone 5.8n-next5 status:** DONE — exact-head CI GREEN pada SHA `eba5ac3cfd5590271454d105c8d230170dccd5bb`.
+
+
+### 5.8n-next6 End-to-End Faulted Restart Matrix — 2026-10-05
+
+**Objective**
+
+Memperluas fault-injection unit boundary menjadi restart matrix end-to-end yang memverifikasi deterministic recovery outcome pada setiap cut-point persistence utama dan exactly-once canonical state transition.
+
+**Implementation / Test**
+
+- `IndoChain/internal/node/faulted_restart_matrix_test.go`
+- Menggunakan tiga persistence boundary file-backed yang terpisah:
+  - canonical `FileStore`;
+  - `FileCandidateStore`;
+  - `FileConsensusEvidenceStore`.
+- Empat crash/restart cut-points diuji:
+  1. crash sebelum candidate persistence;
+  2. crash setelah candidate durable tetapi sebelum evidence;
+  3. crash setelah candidate + finality evidence durable tetapi sebelum canonical commit;
+  4. crash setelah canonical commit tetapi sebelum candidate cleanup.
+- Setiap subtest benar-benar reopen file stores melalui `OpenDevnet` / constructors baru sebelum melanjutkan recovery.
+- Post-commit replay diverifikasi tidak menghasilkan second canonical state transition dan cleanup candidate tetap aman setelah restart.
+
+**Recovery Matrix**
+
+| Crash point | Durable artifacts after restart | Recovery action | Canonical transition |
+|---|---|---|---|
+| Before candidate persistence | none | no recovery action | none |
+| After candidate / before evidence | candidate only | retain candidate; await valid evidence | none |
+| After evidence / before canonical commit | candidate + evidence | recover certificate + candidate, then commit | exactly once |
+| After canonical commit / before cleanup | canonical + candidate + evidence | detect already-committed canonical identity, reject replay, cleanup candidate | no second transition |
+
+**Safety Invariants**
+
+1. Restart tidak menganggap candidate yang belum memiliki finality evidence sebagai canonical.
+2. Candidate-only crash window tidak memajukan canonical head.
+3. Candidate + evidence dapat direcover independently setelah process restart.
+4. Canonical commit setelah restart tetap memakai existing authenticated finality validation boundary.
+5. Post-commit replay tidak menghasilkan second state transition.
+6. Candidate cleanup tetap berada setelah canonical commit.
+7. Retained candidate/evidence setelah crash tidak menjadi distributed transaction atau 2PC.
+8. Canonical ChainStore tetap terpisah dari candidate/evidence persistence boundaries.
+
+**Verification**
+
+- Initial implementation commit: `6c8063098de6cefc4157d0a6fbdb98418b0da88b`.
+- CI #2144 / run `37301517085`: **RED** pada test compile karena test fixture menyimpan signer sebagai interface yang hanya mengekspos `PublicKey()`, sementara persistence API membutuhkan full `crypto.Signer`.
+- Root cause diperbaiki tanpa perubahan production protocol/storage.
+- Correction commit: `64b537073397eccbe68156f9e5a5af7a6febf5de`.
+- Exact-head CI #2146 / run `37301578532`: **GREEN**.
+- Tidy: PASS.
+- `go test ./...`: PASS.
+- `go test -race ./...`: PASS.
+- `go vet ./...`: PASS.
+
+**Remaining Risk**
+
+Matrix ini mensimulasikan crash pada logical persistence cut-points dengan menghentikan workflow antar-boundary dan kemudian reopen, bukan mematikan OS/process di instruction-level tepat di tengah `fsync/rename`. Actual power-loss semantics tetap platform/filesystem dependent dan membutuhkan deployment-level testing.
+
+**Progress Estimate**
+
+~97% engineering readiness. 99% belum diklaim karena production multi-node consensus integration/hardening, actual deployment power-loss testing, validator lifecycle, dan production security/formal BFT analysis masih belum selesai.
+
+**Next Meaningful Integration Target**
+
+**5.8n-next7 — Recovery Cleanup Failure Matrix:** uji kegagalan cleanup candidate/evidence setelah canonical commit, memastikan cleanup failure tidak pernah rollback canonical state dan retry berikutnya tetap deterministic/idempotent.
+
+**Milestone 5.8n-next6 status:** DONE — exact-head CI GREEN pada SHA `64b537073397eccbe68156f9e5a5af7a6febf5de`.
